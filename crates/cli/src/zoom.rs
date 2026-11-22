@@ -17,11 +17,12 @@
 //! `preview --zoom`: the zoomed view (decision 99) through an in-process session, as the
 //! app sends it: a `Resize` to the bounds, then a `View`. It times entering the zoom, pans
 //! (`--pans`), each inside the rendered region's margin rendering nothing, a pinch's steps
-//! of the zoom (`--pinch`), each rendering the detail at its scale, and exposure changes
-//! there, the detail's frame first, a whole-image round's tiles in submissions of their
-//! own before it, and the fitted frame after it, each timed apart; and writes the zoomed
-//! frame with `--png`. The photo is opened through a link in a folder of its own, so its
-//! edit is never written beside it.
+//! of the zoom (`--pinch`), each rendering the detail at its scale, and an exposure drag
+//! there, the detail's frame first and the fitted frame after it, each timed apart, or
+//! where a change would rerun a whole-image round the fitted frame alone, the detail
+//! pending until the drag's end, whose round's tiles, in submissions of their own, and
+//! detail are timed; and writes the zoomed frame with `--png`. The photo is opened
+//! through a link in a folder of its own, so its edit is never written beside it.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -128,13 +129,14 @@ impl Client {
     /// The frames that answer the command numbered `sent`, among those arrived since
     /// [`Self::frames`] was last emptied, waiting two minutes at most: the first to include
     /// it, and zoomed, where that one is the detail's alone, the fitted frame that follows
-    /// it, its overview (decision 99).
+    /// it, its overview; none follows a fitted frame standing in for a pending detail
+    /// (decision 99).
     fn answers(&mut self, sent: u64, zoomed: bool) -> Result<(Frame, Option<Frame>)> {
         let deadline = Instant::now() + Duration::from_secs(120);
         loop {
             let mut answering = (self.frames.iter()).filter(|(frame, _)| frame.through >= sent);
             if let Some((first, _)) = answering.next() {
-                if !zoomed || first.overview.is_some() {
+                if !zoomed || first.overview.is_some() || first.detail_pending {
                     return Ok((first.clone(), None));
                 }
                 if let Some((fitted, _)) = answering.find(|(frame, _)| frame.overview.is_some()) {
@@ -455,14 +457,17 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
     }
 
     // Exposure changes, as a slider drag sends them, each waited for: zoomed, the detail
-    // from exposure first, a whole-image round's tiles before it, and the fitted frame in
-    // a frame of its own after it, or both in one where the detail reads what the fitted
-    // passes write; at Fit, the fitted one.
+    // from exposure first and the fitted frame in a frame of its own after it, or both in
+    // one where the detail reads what the fitted passes write, or the fitted frame alone
+    // where the detail would rerun a whole-image round, the detail pending until the drag
+    // ends (decision 99); at Fit, the fitted one.
     let step = if base + 0.01 > 4.0 { -0.01 } else { 0.01 };
     let (mut latency, mut times) = (Vec::new(), Vec::new());
     let (mut fitted_latency, mut fitted_times) = (Vec::new(), Vec::new());
     // The latest frame's: the zoomed one, or at Fit any.
     let mut last = if zoomed.is_some() { viewed } else { 0 };
+    // The drag's last value, and whether its last frame stood in for a pending detail.
+    let (mut dragged, mut pending) = (base, false);
     let changes = if client.view_only { 0 } else { options.changes };
     if client.view_only && options.changes > 0 {
         println!("No changes timed: the photo is open for viewing only.");
@@ -472,6 +477,7 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         client.frames.clear();
         last = client.change(ev, false);
         let (frame, fitted) = client.answers(last, zoomed.is_some())?;
+        (dragged, pending) = (ev, frame.detail_pending);
         let after = match &fitted {
             Some(fitted) => format!(
                 "; the fitted frame after it {:.2} ms to it, GPU {:.2} ms",
@@ -479,6 +485,7 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
                 gpu_ms(fitted)
             ),
             None if frame.overview.is_some() => ", both pipelines".to_owned(),
+            None if frame.detail_pending => ", the fitted frame, the detail pending".to_owned(),
             None => String::new(),
         };
         tracing::debug!(
@@ -515,12 +522,35 @@ fn zoom(photo: &Path, options: &Options, engine: engine::Options) -> Result<()> 
         tracing::debug!(target: "perf", "{line}");
         println!("{line}");
     }
+    // The drag's end, as the app sends it, its last value again: it renders the detail
+    // the drag left pending, its rounds run first (decision 99); nothing otherwise.
+    if changes > 0 {
+        client.frames.clear();
+        let end = client.change(dragged, true);
+        if pending {
+            last = end;
+            let (frame, fitted) = client.answers(end, true)?;
+            let after = fitted.map_or_else(String::new, |fitted| {
+                format!(
+                    "; the fitted frame after it {:.2} ms to it",
+                    fitted.latency_ms
+                )
+            });
+            let line = format!(
+                "zoom: the drag's end: the detail {:.2} ms to the frame, GPU {:.2} ms{after}",
+                frame.latency_ms,
+                gpu_ms(&frame)
+            );
+            tracing::debug!(target: "perf", "{line}");
+            println!("{line}");
+        }
+    }
 
     if let Some(png_path) = &options.png {
         // The frame shown at the exposure it started from: an odd number of changes left
         // it a step away.
         if changes % 2 == 1 {
-            last = client.change(base, false);
+            last = client.change(base, true);
         }
         let (frame, _) = client.frame(last)?;
         let pixels = frame.download(&gpu)?;

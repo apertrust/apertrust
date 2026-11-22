@@ -20,7 +20,8 @@
 //! the fitted one, a change rendering the detail first and the fitted frame after it, a pan
 //! rendering the detail alone, the scopes and the Colour picker reading the fitted frame, and a tiled viewport's detail from the raw
 //! stage's output; the detail's margin, a pan inside it rendering nothing and one past it updating the detail
-//! in place.
+//! in place; and a drag upstream of a whole-image round rendering the fitted frame, the
+//! detail pending until the drag ends.
 
 use crate::session::history::MERGE_WITHIN;
 use crate::settings::registry;
@@ -867,11 +868,13 @@ fn a_small_budget_drops_the_full_resolution_image_and_keeps_the_detail_exact() {
     let edits: [&[Command]; 2] = [&[], &[tone_equalizer()]];
     for (photo, scale, edit) in every(&photos, &scales, &edits) {
         let case = format!("{photo} at {scale:?} with {} commands", edit.len());
-        let path = scratch("detail-budget").with_file_name(photo);
+        // A folder each, as the change done saves the edit beside the photo.
+        let paths = ["detail-budget", "detail-budget-small"]
+            .map(|name| scratch(name).with_file_name(photo));
         let view = zoom(*scale, [0.4, 0.6]);
-        let brightness = set("brightness", ControlValue::Number(0.5), false);
-        let frames = |driven: &mut Driven| {
-            driven.open(&path);
+        let brightness = set("brightness", ControlValue::Number(0.5), true);
+        let frames = |driven: &mut Driven, path: &Path| {
+            driven.open(path);
             driven.run(edit.to_vec());
             let mut bytes = Vec::new();
             for command in [view.clone(), brightness.clone()] {
@@ -884,7 +887,7 @@ fn a_small_budget_drops_the_full_resolution_image_and_keeps_the_detail_exact() {
             bytes
         };
         let mut untiled = Driven::new(&WITH_TONE_EQUALIZER);
-        let expected = frames(&mut untiled);
+        let expected = frames(&mut untiled, &paths[0]);
         let (fitted, Some(detail), reserved) = taken(&untiled) else {
             panic!("{case}: a detail");
         };
@@ -894,7 +897,7 @@ fn a_small_budget_drops_the_full_resolution_image_and_keeps_the_detail_exact() {
             "{case}"
         );
         let mut small = Driven::within(&WITH_TONE_EQUALIZER, reserved + fitted + detail - 1);
-        let rendered = frames(&mut small);
+        let rendered = frames(&mut small, &paths[1]);
         let open = small.engine.open.as_ref().unwrap();
         assert!(
             open.pipeline.as_ref().unwrap().plan().tiled.is_some(),
@@ -903,7 +906,9 @@ fn a_small_budget_drops_the_full_resolution_image_and_keeps_the_detail_exact() {
         let source = open.detail.as_ref().unwrap().pipeline.plan().input.format;
         assert_eq!(source, apertrust_plugin::Format::Mosaic, "{case}");
         assert!(rendered == expected, "{case}");
-        remove(&path);
+        for path in &paths {
+            remove(path);
+        }
     }
 }
 
@@ -986,9 +991,10 @@ fn a_view_at_100_with_the_tone_equalizer_renders_its_round() {
     let [("toneequal", Some(first))] = held(&driven)[..] else {
         panic!("the mask held: {:?}", held(&driven));
     };
-    // Exposure, before the tone equalizer: the round again, into the same buffers.
+    // Exposure, before the tone equalizer, a change done: the round again, into the same
+    // buffers.
     let turns = driven.gpu.gate.turns();
-    let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
+    let events = driven.run([set("brightness", ControlValue::Number(0.5), true)]);
     at_100(&events);
     assert!(
         driven.gpu.gate.turns() - turns > 1,
@@ -1323,4 +1329,271 @@ fn the_anticipate_setting_reaches_the_session() {
         assert_eq!((frame.width, frame.height), (width, 62), "{view:?}");
     }
     remove(&path);
+}
+
+static WITH_WHOLE_IMAGE_TOOLS: [&dyn ProcessingTool; 4] = [
+    &Sample,
+    &apertrust_tools::highlight_reconstruction::HighlightReconstruction,
+    &apertrust_tools::tone_equalizer::ToneEqualizer,
+    &apertrust_tools::haze_removal::HazeRemoval,
+];
+
+/// Haze removal on, its strength set as a change done.
+fn haze_removal() -> Command {
+    Command::SetControl {
+        tool: "hazeremoval".into(),
+        control: "strength".into(),
+        value: ControlValue::Number(0.3),
+        done: true,
+    }
+}
+
+/// The sample tool's brightness, Exposure's: before the tone equalizer, after haze removal.
+fn brightness(value: f32, done: bool) -> Command {
+    set("brightness", ControlValue::Number(value), done)
+}
+
+/// Highlight reconstruction's clipping threshold, in the raw stage, before every
+/// whole-image operation.
+fn clipping(value: f32, done: bool) -> Command {
+    Command::SetControl {
+        tool: "highlights".into(),
+        control: "clip".into(),
+        value: ControlValue::Number(value),
+        done,
+    }
+}
+
+/// The untiled export of the open photo's edit as `driven` shows it, cut to the region
+/// `frame` shows: its bytes, as a 100% frame's.
+fn exported_region(driven: &Driven, frame: &Frame) -> Vec<u8> {
+    let engine = &driven.engine;
+    let open = engine.open.as_ref().expect("a photo open");
+    let bound = edit::instances(&open.shown(), engine.operations, &engine.tools, &open.image);
+    let input = open.input.clone().expect("a live photo");
+    let exported = crate::export::export(
+        &driven.gpu,
+        &bound.instances,
+        &open.image,
+        input,
+        crate::export::Tiling::Whole,
+    );
+    let exported = pollster::block_on(exported).expect("the export");
+    let width = exported.desc.width;
+    let [x, y] = frame.place.origin;
+    let pixels: Vec<[f32; 4]> = (y..y + frame.height)
+        .flat_map(|row| {
+            let start = (row * width + x) as usize;
+            exported.pixels[start..start + frame.width as usize]
+                .iter()
+                .copied()
+        })
+        .collect();
+    bytemuck::cast_slice(&pixels).to_vec()
+}
+
+/// What a session that never drags renders of `photo`, in a folder `name` names, with `on`
+/// after each of `edits`, a change done each: at Fit, the fitted frame of each; then zoomed
+/// to `view`, the detail's frame of the last.
+fn undragged(
+    name: &str,
+    photo: &str,
+    on: &Command,
+    edits: &[Command],
+    view: &Command,
+) -> Vec<Vec<u8>> {
+    let path = scratch(name).with_file_name(photo);
+    let mut driven = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+    driven.open(&path);
+    driven.run([on.clone()]);
+    let mut frames = Vec::new();
+    for edit in edits {
+        let events = driven.run([edit.clone()]);
+        frames.push(frame_bytes(&driven.gpu, the_frame(&events)));
+    }
+    let events = driven.run([view.clone()]);
+    frames.push(frame_bytes(&driven.gpu, the_frame(&events)));
+    remove(&path);
+    frames
+}
+
+#[test]
+fn an_upstream_drag_renders_the_fitted_frame_until_the_gesture_ends() {
+    // A drag of a control upstream of a whole-image operation past Fit (decision 99): each
+    // change whose detail would rerun a round renders the fitted frame alone, in one
+    // submission, placed as at Fit and the detail pending, nothing following; the gesture's
+    // end, its last value again, runs the round once and renders the detail, the same
+    // pixels as a session that never dragged, and at 100% as the export's region, bit for
+    // bit. Haze removal at 100% borrows the fitted pipeline's estimate whole and runs no
+    // round, so a drag upstream of it renders the detail on every change. With the tone
+    // equalizer the same drag in a tiled viewport, its budget just under both pipelines'
+    // untiled buffers, the detail from the raw stage's output, gives the same frames.
+    let photos = ["synthetic.ARW", "xtrans.ARW"];
+    let scales = [ViewScale::Factor(1.0), ViewScale::Factor(0.75)];
+    // The tool turned on, a control upstream of it, whether a drag of it at 100% leaves
+    // the detail pending, as it does below 100%, and whether a small budget tiles the
+    // fitted viewport: haze removal's estimate keeps its full-resolution image.
+    type Drag = fn(f32, bool) -> Command;
+    let tools: [(&str, Command, Drag, bool, bool); 2] = [
+        (
+            "the tone equalizer",
+            tone_equalizer(),
+            brightness,
+            true,
+            true,
+        ),
+        ("haze removal", haze_removal(), clipping, false, false),
+    ];
+    for (photo, scale, (tool, on, drag, at_100_pending, tiles)) in every(&photos, &scales, &tools) {
+        let at_100 = *scale == ViewScale::Factor(1.0);
+        let pending = *at_100_pending || !at_100;
+        let view = zoom(*scale, [0.4, 0.6]);
+        let edits = [drag(0.3, true), drag(0.6, true)];
+        let expected = undragged("drag-upstream-undragged", photo, on, &edits, &view);
+        // The drag in `driven`, of the photo at `path`, tiled or not.
+        let dragged = |driven: &mut Driven, path: &Path, tiled: bool| {
+            let case = format!("{photo} at {scale:?} with {tool}, tiled: {tiled}");
+            let extent = values(&driven.open(path)).extent;
+            let fitted = FramePlace::fitted(extent, (40, 40));
+            driven.run([on.clone()]);
+            driven.run([view.clone()]);
+            let open = driven.engine.open.as_ref().unwrap();
+            let plan = open.pipeline.as_ref().unwrap().plan();
+            assert_eq!(plan.tiled.is_some(), tiled, "{case}");
+            let source = open.detail.as_ref().unwrap().pipeline.plan().input.format;
+            let mosaic = source == apertrust_plugin::Format::Mosaic;
+            assert_eq!(mosaic, tiled, "{case}: the detail's source");
+            let mut detail = None;
+            for (n, value) in [0.3, 0.6].into_iter().enumerate() {
+                let turns = driven.gpu.gate.turns();
+                let events = driven.run([drag(value, false)]);
+                assert!(failures(&events).is_empty(), "{case}: {events:?}");
+                let frame = the_frame(&events);
+                assert_eq!(frame.detail_pending, pending, "{case}");
+                if !pending {
+                    assert_ne!(frame.place, fitted, "{case}: the detail");
+                    detail = Some(with_overview(driven, &events).0);
+                    continue;
+                }
+                assert_eq!(driven.gpu.gate.turns() - turns, 1, "{case}: no round");
+                assert_eq!(frame.place, fitted, "{case}");
+                assert!(frame.overview.is_none(), "{case}");
+                assert!(frame_bytes(&driven.gpu, frame) == expected[n], "{case}");
+                assert!(!kinds(&follow(driven)).contains(&"frame"), "{case}");
+            }
+            // The gesture's end, the value it left: the round once, then the detail; with
+            // no round to run, the detail shown already, nothing.
+            let turns = driven.gpu.gate.turns();
+            let events = driven.run([drag(0.6, true)]);
+            assert!(failures(&events).is_empty(), "{case}: {events:?}");
+            let frame = if pending {
+                let (frame, _) = with_overview(driven, &events);
+                assert!(!frame.detail_pending, "{case}");
+                assert_ne!(frame.place, fitted, "{case}: the detail");
+                assert!(driven.gpu.gate.turns() - turns > 1, "{case}: the round");
+                assert!(held(driven).iter().all(|(_, key)| key.is_some()), "{case}");
+                frame
+            } else {
+                assert!(!kinds(&events).contains(&"frame"), "{case}");
+                detail.expect("the drag's detail")
+            };
+            assert!(frame_bytes(&driven.gpu, &frame) == expected[2], "{case}");
+            if at_100 {
+                let exported = exported_region(driven, &frame);
+                let same = frame_bytes(&driven.gpu, &frame) == exported;
+                assert!(same, "{case}: the export");
+            }
+            assert!(!kinds(&follow(driven)).contains(&"frame"), "{case}");
+        };
+        let path = scratch("drag-upstream").with_file_name(photo);
+        let mut untiled = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+        dragged(&mut untiled, &path, false);
+        remove(&path);
+        if !*tiles {
+            continue;
+        }
+        let (fitted, Some(detail), reserved) = taken(&untiled) else {
+            panic!("{photo} at {scale:?}: a detail");
+        };
+        let budget = reserved + fitted + detail - 1;
+        let path = scratch("drag-upstream-tiled").with_file_name(photo);
+        let mut tiled = Driven::within(&WITH_WHOLE_IMAGE_TOOLS, budget);
+        dragged(&mut tiled, &path, true);
+        remove(&path);
+    }
+}
+
+#[test]
+fn a_pending_detail_renders_on_the_gesture_s_cancel_or_any_other_command() {
+    // A detail an upstream drag left pending renders, its round run, on the drag's cancel,
+    // of the edit before the drag, and on any other command, a pan here, of the dragged
+    // edit: each frame a session's that never dragged (decision 99).
+    let photos = ["synthetic.ARW", "xtrans.ARW"];
+    let scales = [ViewScale::Factor(1.0), ViewScale::Factor(0.75)];
+    // What ends it: a cancel, or a pan to a centre.
+    let ends = [("a cancel", None), ("a pan", Some([0.6, 0.4]))];
+    for (photo, scale, (end, pan)) in every(&photos, &scales, &ends) {
+        let case = format!("{photo} at {scale:?}, {end}");
+        let path = scratch("drag-ends").with_file_name(photo);
+        let mut driven = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+        driven.open(&path);
+        driven.run([tone_equalizer()]);
+        driven.run([zoom(*scale, [0.4, 0.6])]);
+        let events = driven.run([brightness(0.6, false)]);
+        assert!(the_frame(&events).detail_pending, "{case}");
+        let (command, edits, centre) = match pan {
+            None => {
+                let tool = "sample".to_owned();
+                (Command::CancelGesture { tool }, vec![], [0.4, 0.6])
+            }
+            Some(centre) => (zoom(*scale, *centre), vec![brightness(0.6, true)], *centre),
+        };
+        let events = driven.run([command]);
+        assert!(failures(&events).is_empty(), "{case}: {events:?}");
+        let (frame, _) = with_overview(&mut driven, &events);
+        assert!(!frame.detail_pending, "{case}");
+        let expected = undragged(
+            "drag-ends-undragged",
+            photo,
+            &tone_equalizer(),
+            &edits,
+            &zoom(*scale, centre),
+        );
+        let detail = expected.last().expect("the detail");
+        assert!(frame_bytes(&driven.gpu, &frame) == *detail, "{case}");
+        remove(&path);
+    }
+}
+
+#[test]
+fn a_downstream_drag_renders_the_detail_on_every_change() {
+    // A drag of the tone equalizer's own band reruns no round: each change renders the
+    // detail, its results kept (decision 99).
+    for photo in ["synthetic.ARW", "xtrans.ARW"] {
+        for scale in [ViewScale::Factor(1.0), ViewScale::Factor(0.75)] {
+            let case = format!("{photo} at {scale:?}");
+            let path = scratch("drag-downstream").with_file_name(photo);
+            let mut driven = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+            driven.open(&path);
+            driven.run([tone_equalizer()]);
+            let events = driven.run([zoom(scale, [0.4, 0.6])]);
+            let place = the_frame(&events).place;
+            let results = held(&driven);
+            for value in [0.5, 1.0] {
+                let events = driven.run([Command::SetControl {
+                    tool: "toneequal".into(),
+                    control: "shadows".into(),
+                    value: ControlValue::Number(value),
+                    done: false,
+                }]);
+                assert!(failures(&events).is_empty(), "{case}: {events:?}");
+                let frame = the_frame(&events);
+                assert!(!frame.detail_pending, "{case}");
+                assert_eq!(frame.place, place, "{case}");
+                assert_eq!(held(&driven), results, "{case}: no round");
+                follow(&mut driven);
+            }
+            remove(&path);
+        }
+    }
 }

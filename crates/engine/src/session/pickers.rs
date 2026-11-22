@@ -1485,7 +1485,7 @@ impl Engine {
         // it.
         events.extend(self.history_event());
         if changed {
-            match self.render(started, events) {
+            match self.render(started, false, events) {
                 Ok(Some(frame)) => events.push(Event::Frame(frame)),
                 Ok(None) => {}
                 Err(error) => events.push(Event::Failed(error)),
