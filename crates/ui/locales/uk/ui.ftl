@@ -1117,6 +1117,15 @@ cursor-list =
         [settings] Налаштування: { $group }
        *[both] Курсори й налаштування: { $group }
     }
+cursor-select = Вибір
+cursor-select-how = Клацніть позначку на фото, щоб вибрати її, перетягніть, щоб посунути; перетягніть деінде, щоб зсунути фото
+cursor-pan = Зсув
+cursor-pan-how = Перетягніть, щоб зсунути збільшене фото, навіть над позначками
+cursor-group-select = Вибір
+cursor-group-pan = Зсув
+cursor-group-pick = Піпетки
+cursor-setting-pick-show-last = Показувати останню пробу на фото
+cursor-well-no-photo = Відкрийте фото, щоб вибрати курсор
 
 ## Плашки піпетки (docs/pickers.md, Declaring pickers).
 picker-patch-input = Вхід

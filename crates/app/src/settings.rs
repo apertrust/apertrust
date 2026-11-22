@@ -247,6 +247,9 @@ pub struct Settings {
     pub ask_before_overwrite: bool,
     /// Whether Discard History asks first, `history.ask_before_discard`.
     pub ask_before_discard: bool,
+    /// Whether the area a picker cursor last read stays drawn on the photo,
+    /// `cursors.pick.show_last` (decision 104).
+    pub show_last_pick: bool,
 }
 
 impl Default for Settings {
@@ -290,6 +293,7 @@ impl Default for Settings {
             tool_settings: ToolSettings::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
             ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
+            show_last_pick: CURSORS_PICK_SHOW_LAST.default(),
         }
     }
 }
@@ -379,6 +383,7 @@ impl Settings {
             tool_settings: ToolSettings::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
             ask_before_discard: store.get(&HISTORY_ASK_BEFORE_DISCARD),
+            show_last_pick: store.get(&CURSORS_PICK_SHOW_LAST),
         }
     }
 
@@ -536,6 +541,9 @@ impl Settings {
         }
         if s.ask_before_discard != was.ask_before_discard {
             store.set(&HISTORY_ASK_BEFORE_DISCARD, s.ask_before_discard);
+        }
+        if s.show_last_pick != was.show_last_pick {
+            store.set(&CURSORS_PICK_SHOW_LAST, s.show_last_pick);
         }
     }
 }
@@ -1462,6 +1470,7 @@ mod tests {
             },
             ask_before_overwrite: false,
             ask_before_discard: false,
+            show_last_pick: false,
         }
     }
 
@@ -1595,6 +1604,7 @@ mod tests {
                 },
                 ask_before_overwrite: true,
                 ask_before_discard: true,
+                show_last_pick: true,
             }
         );
         // What the app takes where nothing is kept.
@@ -1689,6 +1699,9 @@ rows = 3
 sort = \"file-name\"
 square_thumbnails = true
 thumbnails = \"large\"
+
+[cursors.pick]
+show_last = false
 
 [edit.groups.exposure]
 area_exposure_mapping = true

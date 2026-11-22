@@ -361,6 +361,16 @@ decimals = 1
 default = 1.2
 applies = "after-restart"
 
+# Pick's Show the last pick on the photo (decision 104; docs/cursors.md, Group settings):
+# the area a picker cursor last read stays drawn on the photo, secondary and dashed, until
+# the next pick, another photo or another cursor. A toggle in the Pick group's list in the
+# cursors' well, not on a page of the Settings dialog.
+[cursors.pick.show_last]
+owner = "app"
+kind = "boolean"
+default = true
+applies = "at-once"
+
 # Edit's Tools panel tab, by its id, as earlier builds kept it: read only where state.toml
 # holds no tab for the Default workspace, for its move there (decision 96), then left as
 # it is; never written.

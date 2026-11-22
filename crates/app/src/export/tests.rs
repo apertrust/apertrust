@@ -68,6 +68,9 @@ struct Bench {
     reveal: bool,
     /// Whether its ⋯ holds what the shell gives it (`menus::options`); empty otherwise.
     options: bool,
+    /// The app's shell, whose keys are read before the tool draws and noted after, as the
+    /// app's frame reads them, a photo shown: where a test asks for them.
+    shell: Option<Box<crate::Shell>>,
 }
 
 /// A stand-in for the folder button's dialog and the disk under it: `folders` are the
@@ -140,6 +143,15 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 let panel = theme(ui.ctx()).colors.panel;
                 ui.painter()
                     .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                // The app's keys first, as `App::ui` reads them.
+                if let Some(shell) = &mut bench.shell {
+                    let ctx = ui.ctx().clone();
+                    let state = shell.state(&ctx, true, false);
+                    let keys = crate::actions::read(&ctx, &shell.keymap, &state);
+                    for id in keys.pressed {
+                        shell.run(id, &state, &ctx, &[]);
+                    }
+                }
                 // As the Tools panel does before it draws the Photos tab.
                 bench
                     .content
@@ -226,6 +238,10 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     });
                     ui.ctx().request_repaint();
                 }
+                // Who has the keys for the next frame's Escape, last.
+                if let Some(shell) = &mut bench.shell {
+                    shell.find_keys(ui.ctx(), ui.ctx().content_rect());
+                }
                 if asked.changed || asked.pressed {
                     let press = asked.pressed.then(|| press(bench.content.values()));
                     if press == Some(Press::Start) {
@@ -259,6 +275,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 picker: Picker::default(),
                 reveal: false,
                 options: false,
+                shell: None,
             },
         );
     harness.run();
@@ -3472,4 +3489,67 @@ fn only_the_focused_row_takes_the_wheel() {
         wheel(&mut harness, Role::ComboBox, row, -1.0, with);
         assert!(held(&mut harness).upscale, "{scrolls}");
     }
+}
+
+/// With the app's keys read first, Esc stays with what had it (decision 104): Export's own,
+/// giving the focus back, and the path's list of variables, closing; the Select cursor is
+/// chosen only by an Esc with nothing focused.
+#[test]
+fn the_app_s_esc_leaves_the_tool_its_own() {
+    let spot = crate::cursors::Cursor {
+        owner: crate::cursors::Owner::Tool("temperature"),
+        id: "spot",
+    };
+    let with_keys = || {
+        let mut harness = open();
+        let os = egui::os::OperatingSystem::Mac;
+        let settings = crate::settings::Settings::default();
+        let mut shell = crate::Shell::new(&settings, Locale::EnGb, os);
+        shell.cursors.choose(spot);
+        harness.state_mut().shell = Some(Box::new(shell));
+        harness.run();
+        harness
+    };
+    let chosen =
+        |harness: &Harness<'_, Bench>| harness.state().shell.as_ref().map(|s| s.cursors.chosen());
+    // Export's Esc gives the focus back to the row focused before its reveal.
+    let mut harness = with_keys();
+    harness
+        .get_by_role_and_label(Role::ComboBox, "Target storage")
+        .focus();
+    harness.run();
+    harness.state_mut().reveal = true;
+    harness.run();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::ComboBox, "On conflict")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert!(focused(&harness, Role::ComboBox, "Target storage"));
+    assert_eq!(chosen(&harness), Some(spot));
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert!(harness.ctx.memory(|m| m.focused()).is_none());
+    assert_eq!(chosen(&harness), Some(spot));
+    // With nothing focused, Esc chooses Select.
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert_eq!(chosen(&harness), Some(crate::cursors::Cursor::SELECT));
+
+    // The path's list of variables closes, the field keeping the focus.
+    let mut harness = with_keys();
+    harness
+        .get_by_role_and_label(Role::TextInput, "Path")
+        .focus();
+    harness.run();
+    harness.event(egui::Event::Text("$(FI".to_owned()));
+    harness.run();
+    assert!(harness.query_by_role(Role::ListBox).is_some());
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert!(harness.query_by_role(Role::ListBox).is_none());
+    assert!(focused(&harness, Role::TextInput, "Path"));
+    assert_eq!(chosen(&harness), Some(spot));
 }

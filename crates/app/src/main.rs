@@ -52,6 +52,7 @@
 mod about;
 mod actions;
 mod alerts;
+mod cursors;
 mod dialog_host;
 mod dialogs;
 mod dropped;
@@ -1526,6 +1527,11 @@ enum FromToolbar {
     Jobs,
     /// The save warning was pressed: why the edit is not saved shows, with Try Again.
     NotSaved,
+    /// A cursor chosen in the cursors' well, by its face or its line in its group's list,
+    /// as its action's `on` chooses it.
+    Cursor(cursors::Cursor),
+    /// Pick's Show the last pick turned on or off in its list in the cursors' well.
+    ShowLastPick(bool),
 }
 
 /// What the Toolbar's empty areas, and its caption buttons where it draws them, ask of
@@ -2046,6 +2052,18 @@ struct Shell {
     /// The tool whose section a History line opened, scrolled to as its tab next shows
     /// ([`Shell::reveal`]).
     reveal: Option<&'static str>,
+    /// The cursor chosen, each group's active one and A held (decision 104): Select at
+    /// every start, never saved; Pick's Show the last pick kept in settings
+    /// (`cursors.pick.show_last`).
+    cursors: cursors::Mode,
+    /// Why no pick can be made on the photo now, and the photo open, as the cursors'
+    /// readiness reads them, kept up to date by the app before each frame
+    /// ([`App::follow_cursors`]).
+    pick_why: Option<String>,
+    pick_photo: Option<PathBuf>,
+    /// Whether a widget had the keys as the last frame ended, whose Escape this frame's is
+    /// ([`Shell::find_keys`]).
+    escape_kept: bool,
     /// The tool the History tab's eye has hidden while it is held ([`Shell::peek`]), and
     /// the open of the photo it hid it on.
     peeking: Option<&'static str>,
@@ -2162,6 +2180,10 @@ impl Shell {
             keymap,
             sections: settings.edit.sections.clone(),
             reveal: None,
+            cursors: cursors::Mode::new(settings.show_last_pick),
+            pick_why: None,
+            pick_photo: None,
+            escape_kept: false,
             peeking: None,
             peeked_on: None,
             groups: settings.edit.groups.clone(),
@@ -2676,6 +2698,7 @@ impl Shell {
             tool_settings: self.tool_settings.clone(),
             ask_before_overwrite: self.overwrite.asks(),
             ask_before_discard: self.discard.asks(),
+            show_last_pick: self.cursors.show_last,
         }
     }
 
@@ -3319,6 +3342,7 @@ impl Shell {
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
             background: Background::of(theme(ctx).colors.photo_surround),
+            escape_kept: self.escape_kept,
         }
     }
 
@@ -3471,8 +3495,15 @@ impl Shell {
         for (button, keys) in &tips {
             bar = bar.shortcut(*button, keys);
         }
+        // The cursors' well, between the actions and the end (decision 104).
+        let well = self.well(&ctx, state.photo);
+        let shown = well.with(|cursors| bar.cursors(cursors).show(ui));
         let window = |gesture| Some(FromToolbar::Window(gesture));
-        match bar.show(ui)? {
+        match shown? {
+            ToolbarAction::Cursors(action) => match well.answer(action)? {
+                cursors::Answer::Choose(cursor) => Some(FromToolbar::Cursor(cursor)),
+                cursors::Answer::ShowLast(on) => Some(FromToolbar::ShowLastPick(on)),
+            },
             ToolbarAction::MoveWindow => window(TitleBar::Move),
             ToolbarAction::TitleBarDoubleClick => window(TitleBar::DoubleClick),
             ToolbarAction::WindowMenu => window(TitleBar::Menu),
@@ -3487,6 +3518,20 @@ impl Shell {
                 .find(|(button, _)| *button == clicked)
                 .map(|(_, id)| FromToolbar::Action(*id)),
         }
+    }
+
+    /// The cursors' well as this frame draws it (decision 104): the mode's cursors with
+    /// their words, keys and readiness; disabled while no photo is shown, `photo`.
+    fn well(&self, ctx: &egui::Context, photo: bool) -> cursors::Well {
+        let words = translator(ctx);
+        let cx = cursors::Context {
+            why: self.pick_why.as_deref(),
+            hidden: self.peeking,
+            settings: &self.tool_settings,
+            photo: self.pick_photo.as_deref(),
+            words: &words,
+        };
+        cursors::Well::new(&self.cursors, &cx, &self.keymap, ctx.os(), photo)
     }
 
     /// The Tools panel's tab bar, each tab's tooltip with its keys, the tabs that cannot be
@@ -3613,11 +3658,16 @@ impl Shell {
     /// Notes, as the frame's last step, once its Tools panel, `panel`, Browser, Viewer and
     /// popups have drawn and its actions have run, whether an open list, a text field below
     /// Find Tool…'s field or a widget outside the panel has the keys, for the next frame's
-    /// Escape ([`Shell::find_escape`]).
+    /// Escape ([`Shell::find_escape`]); and whether any widget has the focus but the zoomed
+    /// photo's stop, a list is open or Find Tool…'s search, whose Escape the next frame's is
+    /// then, left in the input for them, never the Select cursor's (decision 104).
     fn find_keys(&mut self, ctx: &egui::Context, panel: egui::Rect) {
         if let Some(search) = &mut self.find {
             search.inner = inner_keys(ctx, panel);
         }
+        let focused = ctx.memory(|m| m.focused());
+        let focused = focused.filter(|id| *id != zoom::photo_view_id());
+        self.escape_kept = focused.is_some() || popup::any_open(ctx) || self.find.is_some();
     }
 
     /// Runs `id` if it can run where it is in `state`: applies its intent, or returns its
@@ -3746,6 +3796,7 @@ impl Shell {
             }
             // Read while held, by the sections.
             Intent::Peek => {}
+            Intent::Cursor(cursor) => self.cursors.choose(cursor),
             Intent::BrowserBar(chosen) => self.browser.apply(chosen),
             Intent::ToolsPanelPosition(position) => self.panel_position = position,
             Intent::Background(background) => {
@@ -5256,6 +5307,16 @@ impl App {
     fn tool_action(&mut self, tool: &'static str, action: &'static str, ctx: &egui::Context) {
         let change = tool_action_change(&self.mirror.values, tool, action);
         self.change(change, ctx);
+    }
+
+    /// Keeps what the cursors' readiness reads of the photo up to date for this frame
+    /// (decision 104): why no pick can be made, the photo still opening or open for
+    /// viewing only, as a tool's picker button says, and the photo open.
+    fn follow_cursors(&mut self, ctx: &egui::Context) {
+        let words = translator(ctx);
+        let why = controls_opening(&self.mirror, &words);
+        self.shell.pick_why = why.or_else(|| view_only_words(&self.mirror, &words));
+        self.shell.pick_photo = self.mirror.photo.asked().map(Path::to_owned);
     }
 
     /// Whether the photo open is open for viewing only: a newer Apertrust wrote its edit,
@@ -7416,6 +7477,7 @@ impl eframe::App for App {
         // its menus against the key window.
         let drawn = self.state_in_window(&ctx);
         let peek = keys.held.contains(&ActionId::PEEK);
+        self.follow_cursors(&ctx);
         let keyed = keys.pressed;
         let mut run = Vec::new();
         // The Tools panel runs the window's height under the Toolbar; the Browser runs
@@ -7455,6 +7517,8 @@ impl eframe::App for App {
                 );
             }
             Some(FromToolbar::NotSaved) => self.ask_why_not_saved(&ctx),
+            Some(FromToolbar::Cursor(cursor)) => self.shell.cursors.choose(cursor),
+            Some(FromToolbar::ShowLastPick(on)) => self.shell.cursors.show_last = on,
             None => {}
         }
         // The Tools panel is as wide as its edge was dragged, a drag in progress included.
@@ -8667,23 +8731,10 @@ fn edit_tab(
         tab.history = actions;
         return tab;
     }
-    let opening = mirror.opening_name().map(|name| {
-        let mut args = apertrust_ui::i18n::Args::new();
-        args.set(
-            "name",
-            Path::new(&name)
-                .file_stem()
-                .map_or(name.clone(), |stem| stem.to_string_lossy().into_owned()),
-        );
-        words.text_with("controls-opening", Some(&args))
-    });
+    let opening = controls_opening(mirror, &words);
     // A tool's picker is pressed only on the open photo once live, and never on one
     // open for viewing only, whose notice says why.
-    let view_only = match &mirror.photo {
-        PhotoState::Open(photo) => photo.view_only.as_ref(),
-        _ => None,
-    };
-    let view_only = view_only.map(|view_only| view_only_notice(&words, view_only));
+    let view_only = view_only_words(mirror, &words);
     let gone = |path: &str| shell.references.gone(path);
     let pickers = tools::Pickers {
         drawn: tools::PICKING,
@@ -8709,6 +8760,28 @@ fn edit_tab(
     );
     (tab.scopes, tab.changes, tab.pressed, tab.history) = drawn;
     tab
+}
+
+/// What every control of a photo still opening says it waits for: "Opening IMG_2041…".
+fn controls_opening(mirror: &Mirror, words: &Translator) -> Option<String> {
+    mirror.opening_name().map(|name| {
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set(
+            "name",
+            Path::new(&name)
+                .file_stem()
+                .map_or(name.clone(), |stem| stem.to_string_lossy().into_owned()),
+        );
+        words.text_with("controls-opening", Some(&args))
+    })
+}
+
+/// Why the photo open takes no edit, where it is open for viewing only: its notice.
+fn view_only_words(mirror: &Mirror, words: &Translator) -> Option<String> {
+    match &mirror.photo {
+        PhotoState::Open(photo) => (photo.view_only.as_ref()).map(|v| view_only_notice(words, v)),
+        _ => None,
+    }
 }
 
 /// The name `tab` shows, in the interface's language: a tab a build knows by its message,
@@ -17876,6 +17949,12 @@ mod tests {
         }
     }
 
+    /// White balance's cursor (decision 104).
+    const SPOT: cursors::Cursor = cursors::Cursor {
+        owner: cursors::Owner::Tool("temperature"),
+        id: "spot",
+    };
+
     #[test]
     fn a_zoom_draws_on_the_frame_of_its_input() {
         // 400% chosen at Fit: before the session's frame for it, the fitted frame, enlarged
@@ -21152,6 +21231,8 @@ mod tests {
                     match top.inner {
                         Some(FromToolbar::Action(id)) => run.push(id),
                         Some(FromToolbar::Window(gesture)) => window = Some(gesture),
+                        Some(FromToolbar::Cursor(cursor)) => bench.shell.cursors.choose(cursor),
+                        Some(FromToolbar::ShowLastPick(on)) => bench.shell.cursors.show_last = on,
                         Some(FromToolbar::Jobs | FromToolbar::NotSaved) | None => {}
                     }
                     let name = tr(&ctx, "tools-panel-width");
@@ -21318,6 +21399,9 @@ mod tests {
                     if let Some(gesture) = window {
                         run_title_bar(gesture, &ctx, &mut bench.system);
                     }
+                    // Who has the keys for the next frame's Escape, last, as `App::ui`.
+                    let panel = bench.regions[1];
+                    bench.shell.find_keys(&ctx, panel);
                 },
                 Bench {
                     shell: Shell::new(settings, Locale::EnGb, os),
@@ -24626,6 +24710,227 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().pressed, [ActionId::PANEL_TABS[6]]);
         assert_eq!(harness.state().shell.panel_tab, HISTORY);
+    }
+
+    /// The cursors' well on the Toolbar (decision 104; `docs/cursors.md`): Select chosen at
+    /// start; each cursor chosen from its face, its group's list and its key, which the
+    /// well shows checked; Esc back to Select; K White balance's.
+    #[test]
+    fn the_cursors_are_chosen_from_the_well_and_their_keys() {
+        let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
+        let checked = |harness: &Harness<'_, Bench>, name: &str| {
+            let face = harness.get_by_role_and_label(Role::RadioButton, name);
+            face.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+        };
+        let exposure = cursors::Cursor {
+            owner: cursors::Owner::Tool("exposure"),
+            id: "exposure",
+        };
+        for os in [OperatingSystem::Mac, OperatingSystem::Windows] {
+            let mut harness = bench(os);
+            harness.run();
+            assert_eq!(chosen(&harness), cursors::Cursor::SELECT, "{os:?}");
+            assert!(checked(&harness, "Select, Esc"), "{os:?}");
+            harness
+                .get_by_role_and_label(Role::RadioButton, "Pan, A")
+                .click();
+            harness.run();
+            assert_eq!(chosen(&harness), cursors::Cursor::PAN);
+            assert!(checked(&harness, "Pan, A"));
+            // Pick's list, its cursors with their keys, then Show the last pick.
+            harness
+                .get_by_role_and_label(Role::Button, "Pick cursors and settings")
+                .click();
+            harness.run();
+            harness
+                .get_by_role_and_label(Role::MenuItemCheckBox, "Exposure picker")
+                .click();
+            harness.run();
+            assert_eq!(chosen(&harness), exposure, "{os:?}");
+            assert!(checked(&harness, "Exposure picker"));
+            // Its key chooses White balance's, which the face shows from now on.
+            harness.key_press(Key::K);
+            harness.run();
+            assert_eq!(chosen(&harness), SPOT, "{os:?}");
+            assert!(checked(&harness, "White balance picker, K"));
+            assert_eq!(
+                harness
+                    .state()
+                    .shell
+                    .cursors
+                    .active(apertrust_tools::CursorGroup::Pick),
+                Some(SPOT)
+            );
+            // Esc: the chevron its list gave the focus back to takes the first, and the
+            // next, with nothing focused, goes back to Select.
+            harness.key_press(Key::Escape);
+            harness.run();
+            assert_eq!(chosen(&harness), SPOT, "{os:?}");
+            harness.key_press(Key::Escape);
+            harness.run();
+            assert_eq!(chosen(&harness), cursors::Cursor::SELECT, "{os:?}");
+            assert!(checked(&harness, "Select, Esc"));
+        }
+    }
+
+    /// Esc chooses Select only where nothing focused keeps it: a focused control takes it
+    /// first, as egui gives up its focus, and the next Esc chooses Select (`docs/cursors.md`,
+    /// Keys). Without a photo, the well is disabled and K chooses nothing.
+    #[test]
+    fn esc_chooses_select_only_where_nothing_focused_keeps_it() {
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        harness.key_press(Key::K);
+        harness.run();
+        assert_eq!(harness.state().shell.cursors.chosen(), SPOT);
+        harness
+            .get_by_role_and_label(Role::Button, "Exposure")
+            .focus();
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(harness.state().shell.cursors.chosen(), SPOT);
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(
+            harness.state().shell.cursors.chosen(),
+            cursors::Cursor::SELECT
+        );
+
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.state_mut().photo = false;
+        harness.run();
+        harness.key_press(Key::K);
+        harness.run();
+        assert_eq!(
+            harness.state().shell.cursors.chosen(),
+            cursors::Cursor::SELECT
+        );
+        let pan = harness.get_by_role_and_label(Role::RadioButton, "Pan, A");
+        assert!(pan.accesskit_node().is_disabled());
+        assert_eq!(
+            pan.accesskit_node().description().as_deref(),
+            Some("Open a photo to choose a cursor")
+        );
+    }
+
+    /// A slider's value, as the app's frame reads the keys first and notes who has them
+    /// last, and the cursor chosen ([`Esc`'s test](esc_in_a_slider_s_value_field_puts_the_value_back)).
+    struct Sliding {
+        shell: Shell,
+        value: f64,
+    }
+
+    /// Esc in a slider's typed value cancels it, the value put back, as before the cursors
+    /// had a key: egui takes the focus as Esc begins the frame, and the app leaves Esc to
+    /// the field that had it. The next Esc, nothing focused, chooses Select (decision 104).
+    #[test]
+    fn esc_in_a_slider_s_value_field_puts_the_value_back() {
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        shell.cursors.choose(SPOT);
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 200.0))
+            .with_os(OperatingSystem::Mac)
+            .with_context_setup(|ctx| {
+                apertrust_ui::install(ctx, Theme::default());
+                registry_keys_only(ctx);
+            })
+            .build_ui_state(
+                |ui, sliding: &mut Sliding| {
+                    let ctx = ui.ctx().clone();
+                    let state = sliding.shell.state(&ctx, true, false);
+                    let keys = actions::read(&ctx, &sliding.shell.keymap, &state);
+                    for id in keys.pressed {
+                        sliding.shell.run(id, &state, &ctx, &[]);
+                    }
+                    let row = SliderRow::new("Brightness", sliding.value, -100.0..=100.0);
+                    if let Some(components::SliderAction::Set { value, .. }) = row.show(ui) {
+                        sliding.value = value;
+                    }
+                    sliding.shell.find_keys(&ctx, ui.max_rect());
+                },
+                Sliding { shell, value: 0.0 },
+            );
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Slider, "Brightness")
+            .focus();
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert!(harness.ctx.text_edit_focused());
+        harness.event(egui::Event::Text("42".to_owned()));
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(harness.state().value, 0.0);
+        assert_eq!(harness.state().shell.cursors.chosen(), SPOT);
+        // The slider took the focus back; the next Esc is its, the one after it Select's.
+        for _ in 0..3 {
+            harness.key_press(Key::Escape);
+            harness.run();
+        }
+        assert_eq!(harness.state().value, 0.0);
+        assert_eq!(
+            harness.state().shell.cursors.chosen(),
+            cursors::Cursor::SELECT
+        );
+    }
+
+    /// Pick's Show the last pick, on by default, turned off and on from its group's list
+    /// and kept in settings (`cursors.pick.show_last`); each face says its cursor's key and
+    /// what it does, Exposure's following Picker target (decision 88).
+    #[test]
+    fn show_the_last_pick_is_a_toggle_in_pick_s_list_kept_in_settings() {
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        assert!(harness.state().shell.cursors.show_last);
+        for on in [false, true] {
+            harness
+                .get_by_role_and_label(Role::Button, "Pick cursors and settings")
+                .click();
+            harness.run();
+            let item = harness
+                .get_by_role_and_label(Role::MenuItemCheckBox, "Show the last pick on the photo");
+            let shown = item.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
+            assert_eq!(shown, !on);
+            item.click();
+            harness.run();
+            assert_eq!(harness.state().shell.cursors.show_last, on);
+            let ctx = harness.ctx.clone();
+            assert_eq!(harness.state().shell.to_settings(&ctx).show_last_pick, on);
+        }
+        let settings = Settings {
+            show_last_pick: false,
+            ..Settings::default()
+        };
+        let mut harness = bench_with(OperatingSystem::Mac, &settings);
+        harness.run();
+        assert!(!harness.state().shell.cursors.show_last);
+        let face = harness.get_by_role_and_label(Role::RadioButton, "White balance picker, K");
+        assert_eq!(
+            face.accesskit_node().description().as_deref(),
+            Some("White balance picker · K — Click a neutral area, or drag one")
+        );
+        harness
+            .get_by_role_and_label(Role::Button, "Pick cursors and settings")
+            .click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Exposure picker")
+            .click();
+        harness.run();
+        let face = harness.get_by_role_and_label(Role::RadioButton, "Exposure picker");
+        let words = face.accesskit_node().description().unwrap_or_default();
+        assert_eq!(words, "Exposure picker — Make an area middle grey");
+        // Picker target changed to Lightness, the tooltip follows it.
+        let shell = &mut harness.state_mut().shell;
+        let lightness = apertrust_tools::ControlValue::Choice(1);
+        shell.tool_settings.set("exposure", "target", lightness);
+        harness.run();
+        let face = harness.get_by_role_and_label(Role::RadioButton, "Exposure picker");
+        let words = face.accesskit_node().description().unwrap_or_default();
+        assert_eq!(words, "Exposure picker — Make an area L 50 %");
     }
 
     #[test]

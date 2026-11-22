@@ -1470,6 +1470,20 @@ cursor-list =
        *[both] { $group } cursors and settings
     }
 
+# The app's own cursors and the groups, their names and what a press with each does; a
+# group's name says what its chevron's list holds.
+cursor-select = Select
+cursor-select-how = Click a mark on the photo to select it, drag to move it; drag elsewhere to pan
+cursor-pan = Pan
+cursor-pan-how = Drag to pan a zoomed photo, over marks too
+cursor-group-select = Select
+cursor-group-pan = Pan
+cursor-group-pick = Pick
+# Pick's setting, in its list: the area a picker cursor last read stays drawn on the photo.
+cursor-setting-pick-show-last = Show the last pick on the photo
+# The well's tooltip while no photo is shown.
+cursor-well-no-photo = Open a photo to choose a cursor
+
 ## A picker's patches (docs/pickers.md, Declaring pickers): darktable's input and target
 ## patches under an area mapping. $value is the input's L, in the language's number format
 ## with one decimal.
