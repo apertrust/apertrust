@@ -431,6 +431,8 @@ tool-temperature-control-various-promise = На що множаться смар
 tool-temperature-picker-spot-label = З області зображення
 tool-temperature-picker-spot-full = Баланс білого з області зображення
 tool-temperature-picker-spot-promise = Встановити баланс білого на виявлений з області зображення
+tool-temperature-cursor-spot = Піпетка балансу білого
+tool-temperature-cursor-spot-how = Клацніть нейтральну область або обведіть її перетягуванням
 
 ## Орієнтація (docs/tools/orientation.md)
 
@@ -519,6 +521,7 @@ tool-exposure-picker-exposure-promise-reference-this-photo = Зіставити 
 tool-exposure-picker-exposure-hint-reference-this-photo = Зіставити ділянку з цим знімком (L { $reference_lightness } %)
 tool-exposure-picker-exposure-unavailable = Спершу задайте еталон піпеткою в рядку «Еталон»
 tool-exposure-picker-exposure-short-black = Рівень чорного зсунуто, щоб чорний лишився нижче білого
+tool-exposure-cursor-exposure = Піпетка експозиції
 tool-exposure-picker-reference-label = Еталон
 tool-exposure-picker-reference-full = Задати еталон за ділянкою
 tool-exposure-picker-reference-promise = Задати еталон за ділянкою

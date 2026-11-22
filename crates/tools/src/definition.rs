@@ -41,6 +41,10 @@ use std::collections::BTreeSet;
 
 use crate::values::{ControlValue, Controls};
 
+mod cursor;
+
+pub use cursor::{CursorDef, CursorGroup, CursorGroupDef, Gesture, Surface, ToolCursor};
+
 /// What every tool declares, a processing tool's and a utility tool's alike (decision 93):
 /// the parent each kind's definition embeds, as darktable's `dt_action_t` begins both its
 /// processing and its utility modules. Its words are message ids that follow from its id
@@ -75,12 +79,16 @@ pub struct ToolDefinition {
     /// builds the menus, every item, the app's included, where its section and order put
     /// it ([`Section`]).
     pub menus: &'static [MenuItem],
+    /// Its picker cursors (decision 104; `docs/cursors.md`, The API), each picking once with
+    /// one of its pickers, which the app's well offers in Pick; none for a tool with none,
+    /// and for every utility until the Colour readout's design.
+    pub cursors: &'static [ToolCursor],
 }
 
 impl ToolDefinition {
     /// A processing tool's declaration with a processing tool's defaults: its page `tabs`
     /// and no rows before or after them, its own reset, the presets button, no context menu
-    /// items, and closed at first, as every processing tool is unless it sets
+    /// items or cursors, and closed at first, as every processing tool is unless it sets
     /// `open_at_first` (decision 93). A tool that differs writes the fields it changes
     /// over it, `ToolDefinition { menus: MENUS, ..ToolDefinition::processing(id, TABS) }`.
     pub const fn processing(id: &'static str, tabs: &'static [Tab]) -> ToolDefinition {
@@ -93,6 +101,7 @@ impl ToolDefinition {
             presets: true,
             open_at_first: false,
             menus: &[],
+            cursors: &[],
         }
     }
 
@@ -1375,6 +1384,24 @@ pub enum DefinitionError {
         "the context menu item {0} comes before Reset: a tool's in EDIT take order 200 or more"
     )]
     MenuOrder(&'static str),
+    #[error("two cursors are called {0}")]
+    DuplicateCursor(&'static str),
+    #[error("the cursor {0} names no picker of the tool that writes controls")]
+    CursorPicker(&'static str),
+    #[error("two cursors pick with the picker {0}; a picker has one cursor at most")]
+    CursorsOfPicker(&'static str),
+    #[error("the cursor {0} is in a group other than Pick, a tool's cursors' one group")]
+    CursorGroup(&'static str),
+    #[error(
+        "the cursor {0} takes no gesture, one twice, one other than a click and an area, or an area its picker does not take"
+    )]
+    CursorGestures(&'static str),
+    #[error("the cursor {0} acts somewhere other than the Viewer alone")]
+    CursorSurfaces(&'static str),
+    #[error("the picker cursor {0} has amounts, which a picker cursor has none of")]
+    CursorOptions(&'static str),
+    #[error("a utility declares cursors, which a utility has none of until the Colour readout's")]
+    UtilityCursors,
     #[error(
         "a utility's row edits, by {0}: a utility holds settings, labels, groups and custom rows naming no control"
     )]
@@ -1527,7 +1554,10 @@ impl ProcessingDefinition {
     /// each once. A last
     /// pick row names a picker of the tool that writes controls, once. Each context menu
     /// item names one of its actions, once in its place, and no place holds more of
-    /// them than it takes ([`check_menus`]).
+    /// them than it takes ([`check_menus`]). Each cursor has an id of its own and picks
+    /// in Pick with a picker of the tool that writes controls, no picker with two, by a
+    /// click, an area or both, an area only where its picker takes one, on the Viewer
+    /// alone, with no amounts ([`ToolCursor`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.tool.id) {
             return Err(DefinitionError::Id(self.tool.id));
@@ -1946,7 +1976,8 @@ impl ProcessingDefinition {
             }
             check_section(item)?;
         }
-        check_menus(self.tool.menus)
+        check_menus(self.tool.menus)?;
+        self.check_cursors()
     }
 
     /// Whether a picker's writes are controls of the tool and the settings it reads
@@ -2511,6 +2542,7 @@ mod tests {
             presets: true,
             open_at_first: false,
             menus: &[],
+            cursors: &[],
         },
         version: 1,
         layers: true,
@@ -2644,6 +2676,7 @@ mod tests {
             presets: true,
             open_at_first: false,
             menus: &[],
+            cursors: &[],
         },
         version: 1,
         layers: true,
@@ -3501,6 +3534,167 @@ mod tests {
         .check()
     }
 
+    /// A picker cursor for [`LEVEL`], an area picker that writes controls.
+    const LEVEL_CURSOR: ToolCursor = ToolCursor {
+        cursor: CursorDef {
+            id: "level",
+            group: CursorGroup::Pick,
+            icon: "pick",
+            key: Some("L"),
+            order: 100,
+            gestures: &[Gesture::Click, Gesture::Area],
+            surfaces: &[Surface::Viewer],
+            options: &[],
+        },
+        picker: "level",
+    };
+
+    /// [`PAGE`] with `cursors`, [`LEVEL`] on contrast's quad, and a point picker, `dot`,
+    /// and one that only shows, `shown`, in a row of pickers.
+    fn with_cursors(cursors: &[ToolCursor]) -> Result<(), DefinitionError> {
+        const DOT: Picker = Picker {
+            id: "dot",
+            kind: PickerKind::Point,
+            ..LEVEL
+        };
+        const SHOWN: Picker = Picker {
+            id: "shown",
+            writes: &[],
+            ..LEVEL
+        };
+        let rows = [
+            Row::Setting(CHART),
+            Row::Slider(Slider::new("contrast").quad(Quad::Picker("level"))),
+            Row::Pickers {
+                label: None,
+                pickers: &["dot", "shown"],
+            },
+        ];
+        let page = page(with_mode(&rows));
+        ProcessingDefinition {
+            tool: ToolDefinition {
+                cursors: Box::leak(cursors.into()),
+                ..page.tool
+            },
+            pickers: &[LEVEL, DOT, SHOWN],
+            ..page
+        }
+        .check()
+    }
+
+    /// A tool's cursor picks with one of its pickers that writes controls, one cursor a
+    /// picker, in Pick, by a click or an area its picker takes, on the Viewer alone, with
+    /// no amounts (`docs/cursors.md`, The API).
+    #[test]
+    fn a_tool_s_cursor_picks_with_one_of_its_pickers() {
+        let dot = ToolCursor {
+            cursor: CursorDef {
+                id: "dot",
+                gestures: &[Gesture::Click],
+                ..LEVEL_CURSOR.cursor
+            },
+            picker: "dot",
+        };
+        assert_eq!(with_cursors(&[]), Ok(()));
+        assert_eq!(with_cursors(&[LEVEL_CURSOR, dot]), Ok(()));
+        let with = |change: fn(&mut CursorDef)| {
+            let mut cursor = LEVEL_CURSOR;
+            change(&mut cursor.cursor);
+            cursor
+        };
+        let naming = |picker| ToolCursor {
+            picker,
+            ..LEVEL_CURSOR
+        };
+        let refused: Vec<(&str, Vec<ToolCursor>, DefinitionError)> = vec![
+            (
+                "no snake_case id",
+                vec![with(|c| c.id = "Level")],
+                DefinitionError::Id("Level"),
+            ),
+            (
+                "an id twice",
+                vec![
+                    LEVEL_CURSOR,
+                    ToolCursor {
+                        cursor: CursorDef {
+                            id: "level",
+                            ..dot.cursor
+                        },
+                        ..dot
+                    },
+                ],
+                DefinitionError::DuplicateCursor("level"),
+            ),
+            (
+                "a picker the tool lacks",
+                vec![naming("spot")],
+                DefinitionError::CursorPicker("level"),
+            ),
+            (
+                "a picker that writes no control",
+                vec![naming("shown")],
+                DefinitionError::CursorPicker("level"),
+            ),
+            (
+                "two cursors for one picker",
+                vec![LEVEL_CURSOR, with(|c| c.id = "again")],
+                DefinitionError::CursorsOfPicker("level"),
+            ),
+            (
+                "a group other than Pick",
+                vec![with(|c| c.group = CursorGroup::Mask)],
+                DefinitionError::CursorGroup("level"),
+            ),
+            (
+                "no gesture",
+                vec![with(|c| c.gestures = &[])],
+                DefinitionError::CursorGestures("level"),
+            ),
+            (
+                "a gesture twice",
+                vec![with(|c| {
+                    c.gestures = &[Gesture::Click, Gesture::Area, Gesture::Click]
+                })],
+                DefinitionError::CursorGestures("level"),
+            ),
+            (
+                "a stroke",
+                vec![with(|c| c.gestures = &[Gesture::Click, Gesture::Stroke])],
+                DefinitionError::CursorGestures("level"),
+            ),
+            (
+                "an area for a point picker",
+                vec![ToolCursor {
+                    cursor: CursorDef {
+                        gestures: &[Gesture::Click, Gesture::Area],
+                        ..dot.cursor
+                    },
+                    ..dot
+                }],
+                DefinitionError::CursorGestures("dot"),
+            ),
+            (
+                "no surface",
+                vec![with(|c| c.surfaces = &[])],
+                DefinitionError::CursorSurfaces("level"),
+            ),
+            (
+                "the Browser too",
+                vec![with(|c| c.surfaces = &[Surface::Viewer, Surface::Browser])],
+                DefinitionError::CursorSurfaces("level"),
+            ),
+            (
+                "amounts",
+                vec![with(|c| c.options = &[Row::Setting(CHART)])],
+                DefinitionError::CursorOptions("level"),
+            ),
+        ];
+        for (case, cursors, error) in refused {
+            assert_eq!(with_cursors(&cursors), Err(error), "{case}");
+        }
+    }
+
     #[test]
     fn a_picker_is_in_exactly_one_row_a_quad_or_a_row_of_pickers() {
         const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
@@ -4338,6 +4532,7 @@ mod tests {
                 presets: true,
                 open_at_first: false,
                 menus: &[],
+                cursors: &[],
             },
             version: 1,
             layers: true,
@@ -4413,6 +4608,7 @@ mod tests {
                 presets: true,
                 open_at_first: false,
                 menus: &[],
+                cursors: &[],
             },
             version: 1,
             layers: true,

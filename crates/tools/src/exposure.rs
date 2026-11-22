@@ -39,7 +39,8 @@
 //! - **Black level correction,** darktable's offset over the photo's own black.
 //! - **Its picker,** on Exposure's quad: darktable's `_auto_set_exposure`, which sets the
 //!   exposure that maps the area to Picker target's lightness, its tooltip and its hint
-//!   over the photo following Picker target (decision 88).
+//!   over the photo following Picker target (decision 88). Its cursor, `exposure`, with
+//!   no key, picks with it from a click or a drag on the photo (decision 104).
 //!
 //! It drives `exposure`, which every photo runs, and owns every parameter of it. Contrast
 //! and its pivot, which it once bound through colour balance rgb, are the Colour balance
@@ -55,8 +56,9 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Computed, Control, ControlKind, Picker, PickerKind, ProcessingDefinition, Quad,
-    Reset, Row, SettingRow, Slider, Space, Tab, ToolDefinition, Track, Unit,
+    ChoiceStyle, Computed, Control, ControlKind, CursorDef, CursorGroup, Gesture, Picker,
+    PickerKind, ProcessingDefinition, Quad, Reset, Row, SettingRow, Slider, Space, Surface, Tab,
+    ToolCursor, ToolDefinition, Track, Unit,
 };
 use crate::pick::{LastPick, Patch, PickKeys, PickWarnings, Picked, Reading, Short, Shown};
 use crate::transfer::Transfer;
@@ -317,6 +319,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        cursors: &[CURSOR],
     },
     version: 3,
     layers: true,
@@ -351,6 +354,23 @@ const PICKER: Picker = Picker {
     writes: &["exposure", "black_level"],
     settings: &["target", "lightness", REFERENCE_LIGHTNESS],
     words_by: Some("target"),
+};
+
+/// Its picker cursor (decision 104; `docs/cursors.md`): a click or a drag on the photo
+/// picks once with Exposure's picker, its tooltip following Picker target as the picker's
+/// does. No key: E is darktable's Exposure slider.
+const CURSOR: ToolCursor = ToolCursor {
+    cursor: CursorDef {
+        id: "exposure",
+        group: CursorGroup::Pick,
+        icon: "pick-exposure",
+        key: None,
+        order: 200,
+        gestures: &[Gesture::Click, Gesture::Area],
+        surfaces: &[Surface::Viewer],
+        options: &[],
+    },
+    picker: PICKER.id,
 };
 
 /// The reference row's picker (decision 88): an area of the exposure operation's input,

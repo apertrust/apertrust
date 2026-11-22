@@ -393,6 +393,21 @@ pub fn picker_words(definition: &ProcessingDefinition, picker: &crate::Picker) -
     words
 }
 
+/// A tool's cursor's name, its face's and its item's in the well's list (decision 104;
+/// `docs/cursors.md`, Actions and words): `tool-<tool>-cursor-<cursor>`, as White
+/// balance's "White balance picker".
+pub fn cursor(tool: &str, cursor: &str) -> String {
+    format!("tool-{tool}-cursor-{cursor}")
+}
+
+/// How to use a tool's cursor, its tooltip after its name and key:
+/// `tool-<tool>-cursor-<cursor>-how`, as White balance's "Click a neutral area, or drag
+/// one". A cursor whose picker's words follow a setting ([`crate::Picker::words_by`]) has
+/// none, its picker's promise for the setting's option saying it.
+pub fn cursor_how(tool: &str, cursor: &str) -> String {
+    format!("tool-{tool}-cursor-{cursor}-how")
+}
+
 /// A preset row's short label, full name and promise:
 /// `tool-<tool>-preset-<preset>-label`, `-full` and `-promise`.
 pub fn preset(tool: &str, preset: &str) -> [String; 3] {
@@ -428,7 +443,8 @@ pub fn unit_value(unit: Unit) -> String {
 /// option, each view's coordinate's label, full name and promise, as a control's, each
 /// preset row's label, full name, promise and options, each unit it uses, Custom if it
 /// has a preset row, the patches' words if it has patches, a reference row's if it has
-/// one, and each picker's words its button and the viewer bar use ([`picker_words`]),
+/// one, each picker's words its button and the viewer bar use ([`picker_words`]), and
+/// each cursor's name and, unless its picker's words follow a setting, how to use it,
 /// then, where it has darktable's facts, its kind's and what it works on, and each of
 /// darktable's lines.
 pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
@@ -486,6 +502,15 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
     }
     for picker in definition.pickers {
         ids.extend(picker_words(definition, picker));
+    }
+    for crate::ToolCursor { cursor, picker } in definition.tool.cursors {
+        ids.push(self::cursor(tool, cursor.id));
+        let follows = definition
+            .picker(picker)
+            .is_some_and(|found| found.words_by.is_some());
+        if !follows {
+            ids.push(cursor_how(tool, cursor.id));
+        }
     }
     for control in definition.controls {
         let id = control.id;
@@ -721,6 +746,7 @@ mod tests {
                 presets: true,
                 open_at_first: false,
                 menus: &[],
+                cursors: &[],
             },
             version: 1,
             layers: true,
@@ -786,6 +812,7 @@ mod tests {
                 presets: true,
                 open_at_first: false,
                 menus: &[],
+                cursors: &[],
             },
             version: 1,
             layers: false,
@@ -895,6 +922,7 @@ mod tests {
                 presets: true,
                 open_at_first: false,
                 menus: &[],
+                cursors: &[],
             },
             version: 1,
             layers: false,
@@ -919,6 +947,30 @@ mod tests {
                 "tool-levels-control-white-full",
                 "tool-levels-control-white-promise",
             ]
+        );
+    }
+
+    /// A cursor implies its name, and how to use it unless its picker's words, following a
+    /// setting, say so.
+    #[test]
+    fn a_cursor_implies_its_words() {
+        let balance = of(crate::white_balance::WhiteBalance.definition());
+        for id in [
+            "tool-temperature-cursor-spot",
+            "tool-temperature-cursor-spot-how",
+        ] {
+            assert!(balance.iter().any(|found| found == id), "{id}");
+        }
+        let exposure = of(crate::exposure::Exposure.definition());
+        assert!(
+            exposure
+                .iter()
+                .any(|id| id == "tool-exposure-cursor-exposure")
+        );
+        assert!(
+            !exposure
+                .iter()
+                .any(|id| id.starts_with("tool-exposure-cursor-exposure-"))
         );
     }
 }

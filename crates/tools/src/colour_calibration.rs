@@ -569,6 +569,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        cursors: &[],
     },
     version: 1,
     // Background only until Phase 4's layers (`docs/tools/colour-calibration.md`).

@@ -452,6 +452,7 @@ mod tests {
             presets: false,
             open_at_first: false,
             menus: &[],
+            cursors: &[],
         },
         measures: None,
         titles: &[],
@@ -591,6 +592,7 @@ mod tests {
             presets: false,
             open_at_first: false,
             menus: &[],
+            cursors: &[],
         },
         measures: None,
         titles: &[

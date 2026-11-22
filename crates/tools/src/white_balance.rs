@@ -33,6 +33,8 @@
 //!   `preset` from image area ([`ProcessingTool::pick`]). Where darktable redraws the tool, as the
 //!   photo opens and after Undo, Redo or a move through history, from image area becomes
 //!   what the coefficients match, user modified for a picked balance ([`ProcessingTool::redrawn`]).
+//!   Its cursor, `spot` on K, picks with it from a click or a drag on the photo
+//!   (decision 104).
 //! - **Temperature and Tint,** under the scene illuminant temp label: darktable's model of
 //!   the coefficients through the camera's colour matrix
 //!   (`apertrust_color::white_balance`), a lossless view of the three with two
@@ -55,8 +57,9 @@ use apertrust_plugin::{Camera, ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, Picker, PickerKind, PresetRow,
-    ProcessingDefinition, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, CursorDef, CursorGroup, Gesture, Group,
+    GroupKind, Picker, PickerKind, PresetRow, ProcessingDefinition, Reset, Row, Slider, Space,
+    Surface, Tab, ToolCursor, ToolDefinition, Unit, View,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
 use crate::{Base, ControlValue, Controls, Moment, Owned, ProcessingTool, Setting, ToolValues};
@@ -189,6 +192,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        cursors: &[CURSOR],
     },
     version: 1,
     // Background only, as the raw stage.
@@ -229,6 +233,22 @@ const PICKER: Picker = Picker {
     writes: &["red", "green", "blue", "preset"],
     settings: &[],
     words_by: None,
+};
+
+/// Its picker cursor (decision 104; `docs/cursors.md`): a click or a drag on the photo
+/// picks once with the picker, on K, free in darktable's defaults.
+const CURSOR: ToolCursor = ToolCursor {
+    cursor: CursorDef {
+        id: "spot",
+        group: CursorGroup::Pick,
+        icon: "pick-white-balance",
+        key: Some("K"),
+        order: 100,
+        gestures: &[Gesture::Click, Gesture::Area],
+        surfaces: &[Surface::Viewer],
+        options: &[],
+    },
+    picker: PICKER.id,
 };
 
 /// darktable's bound on a picked coefficient, `color_picker_apply`'s own.

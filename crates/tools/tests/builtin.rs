@@ -20,8 +20,9 @@
 //! only what it owns, within the schema, across every control's range, its preset rows'
 //! options hold their controls' ranges and read back, its choices list options for each
 //! photo that hold together (decision 30), its lossless views are given and their
-//! coordinates' ranges keep their controls in theirs, its pickers are darktable's, and
-//! every message its definition implies is in `crates/ui/locales`.
+//! coordinates' ranges keep their controls in theirs, its pickers are darktable's, its
+//! picker cursors are the ones `docs/cursors.md` names, and every message its definition
+//! implies is in `crates/ui/locales`.
 
 use std::collections::BTreeSet;
 
@@ -33,6 +34,7 @@ use apertrust_tools::{
     ProcessingTool, Quad, Reset, Row, Setting, Slider, TOOLS, Tab, ToolDefinition, ToolValues,
     Unit, check, messages,
 };
+use apertrust_ui::icons::Icon;
 
 /// Image contexts the bindings are swept over: an image that is not a raw, a Bayer raw,
 /// an X-Trans raw with an exposure bias, a Bayer4 raw, a monochrome one and a DNG with
@@ -168,6 +170,42 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
         })
         .collect();
     assert_eq!(not_pickers, []);
+}
+
+/// The built tools' picker cursors (decision 104; `docs/cursors.md`, The API): White
+/// balance's `spot` on K and Exposure's `exposure` with no key, each picking with its
+/// tool's picker of the same id, each icon one `apertrust-ui` has, and no key on two.
+#[test]
+fn the_built_in_tools_declare_their_picker_cursors() {
+    let cursors: Vec<(&str, &str, &str, Option<&str>)> = TOOLS
+        .iter()
+        .map(|tool| tool.definition())
+        .flat_map(|definition| {
+            definition.tool.cursors.iter().map(|declared| {
+                let cursor = &declared.cursor;
+                (definition.tool.id, cursor.id, declared.picker, cursor.key)
+            })
+        })
+        .collect();
+    assert_eq!(
+        cursors,
+        [
+            ("temperature", "spot", "spot", Some("K")),
+            ("exposure", "exposure", "exposure", None),
+        ]
+    );
+    let all = || TOOLS.iter().flat_map(|tool| tool.definition().tool.cursors);
+    for declared in all() {
+        let icon = declared.cursor.icon;
+        assert!(
+            Icon::ALL.iter().any(|known| known.name() == icon),
+            "{}: no icon {icon}",
+            declared.cursor.id
+        );
+    }
+    let keys: Vec<&str> = all().filter_map(|declared| declared.cursor.key).collect();
+    let once: BTreeSet<&str> = keys.iter().copied().collect();
+    assert_eq!(once.len(), keys.len(), "a key on two cursors: {keys:?}");
 }
 
 /// What a tool fixes, with no control, is among what it owns, so the refusal that names
@@ -462,6 +500,7 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        cursors: &[],
     },
     version: 1,
     layers: false,
