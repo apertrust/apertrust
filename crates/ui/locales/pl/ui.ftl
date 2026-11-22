@@ -1106,6 +1106,19 @@ picker-photo-down = Przesuń w dół
 picker-said-control = { $control } { $value }
 picker-said-rgb = średnie RGB { $red }, { $green }, { $blue }
 
+## Studnia kursorów (docs/cursors.md, The well).
+cursor-well = Kursory
+cursor-name-key = { $name }, { $key }
+cursor-tip = { $name } · { $key } — { $how }
+cursor-tip-how = { $name } — { $how }
+cursor-tip-key = { $name } · { $key }
+cursor-list =
+    { $has ->
+        [cursors] Kursory: { $group }
+        [settings] Ustawienia: { $group }
+       *[both] Kursory i ustawienia: { $group }
+    }
+
 ## Próbki pipety (docs/pickers.md, Declaring pickers).
 picker-patch-input = Wejście
 picker-patch-input-tip = Kolor wejściowy, który ma zostać odwzorowany na cel.

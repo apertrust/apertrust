@@ -38,6 +38,7 @@ mod buttons_row;
 mod checkbox;
 mod choice;
 mod collapsible_group;
+mod cursor_well;
 mod curve;
 mod equalizer;
 mod grid_cell;
@@ -85,6 +86,7 @@ pub use buttons_row::{ButtonsAction, ButtonsRow};
 pub use checkbox::Checkbox;
 pub use choice::{Choice, ChoiceAction, ChoiceBox, ChoiceStyle};
 pub use collapsible_group::CollapsibleGroup;
+pub use cursor_well::{CursorWell, CursorWellAction, WellCursor, WellGroup, WellSetting};
 pub use curve::{Axis, Curve, CurveAction};
 pub use equalizer::{Equalizer, EqualizerAction, MaskHistogram, Settle};
 pub use grid_cell::{

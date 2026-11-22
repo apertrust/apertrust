@@ -8,7 +8,7 @@ The question is how a person chooses what a press on the photo does, for pickers
 
 ## Decision
 
-**One cursor is chosen at a time; it decides what a press on the photo does, and it stays chosen until another is chosen.** The cursors sit in one sunken well on the Toolbar, one button per group. Cursors are an additional speed-up, never the single way to a feature: tools keep their own buttons. The design in full, with its measures, words, keys, API and plan, is [cursors.md](../cursors.md). Planned: Phase 2 builds Select, Pan and Pick (White balance, Exposure); the rest comes with its feature.
+**One cursor is chosen at a time; it decides what a press on the photo does, and it stays chosen until another is chosen.** The cursors sit in one sunken well on the Toolbar, one button per group. Cursors are an additional speed-up, never the single way to a feature: tools keep their own buttons. The design in full, with its measures, words, keys, API and plan, is [cursors.md](../cursors.md). Built: the one-shot pick (104.1) and the well in the design system (104.3). Planned: Phase 2 builds Select, Pan and Pick (White balance, Exposure); the rest comes with its feature.
 
 ### The groups
 

@@ -27,15 +27,16 @@ use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, 
 use crate::components::{
     About, ActionRow, Available, Axis, Browser, BrowserAction, Button, ButtonState, CellPicture,
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
-    ColourLabel, ColourLabels, Curve, CurveAction, Equalizer, EqualizerAction, FileManager,
-    FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure,
-    JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton,
-    PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine, RailNode, ReadoutRow,
-    Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
-    Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track, VectorscopeBins, ViewMarks,
-    ViewerBar, ViewerBarAction, WarningRow, WaveformBins, Zoom,
+    ColourLabel, ColourLabels, CursorWell, CursorWellAction, Curve, CurveAction, Equalizer,
+    EqualizerAction, FileManager, FindBar, FindBarAction, GridCell, Histogram, HistogramBins,
+    IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram,
+    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption,
+    PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine,
+    RailNode, ReadoutRow, Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView, Section,
+    SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch,
+    TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track,
+    VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor,
+    WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -107,6 +108,12 @@ impl Gallery {
     pub fn show_pickers(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
         pickers(ui, &t);
+    }
+
+    /// Draws the Cursor well section alone, as the snapshot tests photograph it.
+    pub fn show_cursor_well(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        cursor_wells(ui, &t, &mut self.demo.cursors);
     }
 
     /// Draws the Settings controls section alone, as the snapshot tests photograph it in
@@ -193,6 +200,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Pickers");
         pickers(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Cursor well");
+        cursor_wells(ui, &t, &mut self.demo.cursors);
         ui.add_space(t.spacing.l);
         heading(ui, "Timeline rail");
         rails(ui, &t);
@@ -621,6 +631,120 @@ fn over_photos(ui: &mut Ui, t: &Theme, rows: &[(&str, bool, OverPhoto)]) {
         });
         ui.add_space(t.spacing.xs);
     }
+}
+
+/// The cursors' well (decision 104; `docs/cursors.md`, The well): Phase 2's Select, Pan and
+/// Pick, live, the gallery keeping what the app keeps; Pick's face in each state, pinned;
+/// then what later phases bring, a group of one with a setting and a chosen cursor with
+/// amounts, its triangle at its face's corner.
+fn cursor_wells(ui: &mut Ui, t: &Theme, demo: &mut CursorsDemo) {
+    const COLUMN: f32 = 84.0;
+    let select = [WellCursor::new(Icon::Select, "Select")
+        .key("Esc")
+        .how("Click a mark on the photo to select it, drag to move it; drag elsewhere to pan")];
+    let pan = [WellCursor::new(Icon::Pan, "Pan")
+        .key("A")
+        .how("Drag to pan a zoomed photo, over marks too")];
+    let picks = [
+        WellCursor::new(Icon::PickWhiteBalance, "White balance picker")
+            .key("K")
+            .how("Click a neutral area, or drag one"),
+        WellCursor::new(Icon::PickExposure, "Exposure picker")
+            .how("Click an area for Exposure's target, or drag one"),
+    ];
+    let pick_settings = [WellSetting::Toggle {
+        name: "Show the last pick on the photo",
+        on: !demo.hide_last_pick,
+    }];
+    let groups = [
+        WellGroup::new("Select", &select, 0),
+        WellGroup::new("Pan", &pan, 0),
+        WellGroup::new("Pick", &picks, demo.pick).settings(&pick_settings),
+    ];
+    ui.push_id("cursor well", |ui| {
+        let action = CursorWell::new(&groups).chosen(demo.chosen).show(ui);
+        match action {
+            Some(CursorWellAction::Cursor { group, cursor }) => {
+                demo.chosen = group;
+                if group == 2 {
+                    demo.pick = cursor;
+                }
+            }
+            Some(CursorWellAction::Toggle { on, .. }) => demo.hide_last_pick = !on,
+            _ => {}
+        }
+    });
+    ui.label(
+        RichText::new(
+            "Phase 2's well, 101 points: Select, Pan and Pick on a sunken track, the chosen \
+             cursor's icon in the accent and heavier, no plates; Pick's chevron lists its \
+             cursors, then its setting.",
+        )
+        .color(t.colors.text_secondary),
+    );
+    let pick = [WellGroup::new("Pick", &picks, 0).settings(&pick_settings)];
+    let states: [(&str, Option<ButtonState>, bool); 6] = [
+        ("Rest", None, false),
+        ("Hover", Some(ButtonState::Hover), false),
+        ("Held", Some(ButtonState::Pressed), false),
+        ("Chosen", None, true),
+        ("Focus", Some(ButtonState::Focus), false),
+        ("Disabled", None, false),
+    ];
+    ui.push_id("cursor well states", |ui| {
+        ui.horizontal(|ui| {
+            for (name, state, chosen) in states {
+                // The well, 30 points, and its name under it.
+                let size = vec2(COLUMN, t.sizes.toolbar + t.sizes.row);
+                let layout = egui::Layout::top_down(egui::Align::Min);
+                ui.allocate_ui_with_layout(size, layout, |ui| {
+                    ui.set_width(COLUMN);
+                    ui.push_id(name, |ui| {
+                        let mut well = CursorWell::new(&pick);
+                        if let Some(state) = state {
+                            well = well.state(0, state);
+                        }
+                        if chosen {
+                            well = well.chosen(0);
+                        }
+                        if name == "Disabled" {
+                            well = well.disabled("No photo is shown");
+                        }
+                        well.show(ui);
+                        ui.label(RichText::new(name).color(t.colors.text_secondary));
+                    });
+                });
+            }
+        });
+    });
+    // Later: Copy and apply, a group of one with a setting, and a Brush with amounts, which
+    // the pencil stands in for.
+    let apply = [WellCursor::new(Icon::Apply, "Copy and apply")
+        .how("Click a photo to apply the copied edit; Alt-click copies")];
+    let what = ["The whole edit", "The parts chosen in Copy Parts…"];
+    let apply_settings = [WellSetting::Choice {
+        name: "A click applies",
+        options: &what,
+        chosen: 0,
+    }];
+    let brush = [WellCursor::new(Icon::Edited, "Brush")
+        .key("B")
+        .how("Paint the layer's mask; Alt subtracts")
+        .amounts(true)];
+    let later = [
+        WellGroup::new("Mask", &brush, 0),
+        WellGroup::new("Copy and apply", &apply, 0).settings(&apply_settings),
+    ];
+    ui.push_id("cursor well later", |ui| {
+        CursorWell::new(&later).chosen(0).show(ui);
+    });
+    ui.label(
+        RichText::new(
+            "Later: a chosen cursor with amounts, its triangle at the corner, and a group of \
+             one whose chevron holds its settings alone.",
+        )
+        .color(t.colors.text_secondary),
+    );
 }
 
 /// The picker button's states (`docs/pickers.md`, The picker button), pinned as the
@@ -1275,6 +1399,18 @@ struct Demo {
     markers: [f64; 4],
     /// The Settings controls' values.
     settings: SettingsDemo,
+    /// The cursors' well's state, as the app keeps it.
+    cursors: CursorsDemo,
+}
+
+/// The cursors' well's state, which the app keeps (`docs/cursors.md`, A cursor): the chosen
+/// group, Pick's active cursor and its setting.
+#[derive(Clone, Debug, Default)]
+struct CursorsDemo {
+    /// Select's at every start.
+    chosen: usize,
+    pick: usize,
+    hide_last_pick: bool,
 }
 
 impl Default for Demo {
@@ -1368,6 +1504,7 @@ impl Default for Demo {
             selected: vec![5, 6],
             markers: [-4.0, 0.0, 4.0, 1.28],
             settings: SettingsDemo::default(),
+            cursors: CursorsDemo::default(),
         }
     }
 }

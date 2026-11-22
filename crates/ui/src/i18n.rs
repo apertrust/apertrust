@@ -1181,6 +1181,9 @@ mod tests {
                 args.set("max", "2048");
                 // The switch a dimmed settings row needs on.
                 args.set("setting", "Limit the cache's size");
+                // What a group's list in the cursors' well holds.
+                args.set("has", "both");
+                args.set("how", "Click a neutral area, or drag one");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

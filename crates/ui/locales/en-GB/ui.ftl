@@ -1449,6 +1449,27 @@ picker-photo-down = Move down
 picker-said-control = { $control } { $value }
 picker-said-rgb = mean RGB { $red }, { $green }, { $blue }
 
+## The cursors' well (docs/cursors.md, The well; decision 104). $name is a cursor's name,
+## $key its key as shortcuts spell it, $how what a press with it does, $group a group's name
+
+# The well, as screen readers hear it.
+cursor-well = Cursors
+# A face, as screen readers hear it: its cursor's name, then its key where it has one.
+cursor-name-key = { $name }, { $key }
+# A face's tooltip: its cursor's name, key and what it does; without a key; without words
+# of what it does.
+cursor-tip = { $name } · { $key } — { $how }
+cursor-tip-how = { $name } — { $how }
+cursor-tip-key = { $name } · { $key }
+# A group's chevron and the list it opens: $has is what the list holds, the group's
+# cursors, its settings alone (a group of one), or both.
+cursor-list =
+    { $has ->
+        [cursors] { $group } cursors
+        [settings] { $group } settings
+       *[both] { $group } cursors and settings
+    }
+
 ## A picker's patches (docs/pickers.md, Declaring pickers): darktable's input and target
 ## patches under an area mapping. $value is the input's L, in the language's number format
 ## with one decimal.

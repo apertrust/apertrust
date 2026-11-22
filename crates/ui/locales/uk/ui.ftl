@@ -1105,6 +1105,19 @@ picker-photo-down = Посунути вниз
 picker-said-control = { $control } { $value }
 picker-said-rgb = середнє RGB { $red }, { $green }, { $blue }
 
+## Колодязь курсорів (docs/cursors.md, The well).
+cursor-well = Курсори
+cursor-name-key = { $name }, { $key }
+cursor-tip = { $name } · { $key } — { $how }
+cursor-tip-how = { $name } — { $how }
+cursor-tip-key = { $name } · { $key }
+cursor-list =
+    { $has ->
+        [cursors] Курсори: { $group }
+        [settings] Налаштування: { $group }
+       *[both] Курсори й налаштування: { $group }
+    }
+
 ## Плашки піпетки (docs/pickers.md, Declaring pickers).
 picker-patch-input = Вхід
 picker-patch-input-tip = Вхідний колір, який має відобразитися на ціль.
