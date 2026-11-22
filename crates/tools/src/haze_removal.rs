@@ -100,6 +100,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        cursors: &[],
     },
     version: 2,
     layers: true,

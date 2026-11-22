@@ -67,8 +67,9 @@ impl UtilityDefinition {
     /// plain group with rows, each setting's kind as a control's; rows following a setting
     /// following a choice setting of its own, shown outside them and wherever they show,
     /// for options it has, with rows of their own; what it titles a group of its page, and
-    /// what opens at first a collapsible group with rows; and
-    /// its context menu items held to a tool's limits ([`check_menus`]).
+    /// what opens at first a collapsible group with rows; no cursors, until the Colour
+    /// readout's design; and its context menu items held to a tool's limits
+    /// ([`check_menus`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
         let tool = &self.tool;
         if !is_id(tool.id) {
@@ -104,6 +105,10 @@ impl UtilityDefinition {
         // Each setting rows follow shows wherever they do, never hidden by rows it hides.
         if let Some(setting) = tool.hidden_setting() {
             return Err(DefinitionError::Hidden(setting));
+        }
+        // A utility's cursors wait for the Colour readout's design (`docs/cursors.md`).
+        if !tool.cursors.is_empty() {
+            return Err(DefinitionError::UtilityCursors);
         }
         check_menus(tool.menus)
     }
@@ -248,6 +253,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             presets: false,
             open_at_first: true,
             menus: &[],
+            cursors: &[],
         },
         measures: Some(WorksOn::Display),
         titles: &[],
@@ -288,6 +294,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
                 option(Section::HISTORY, 300, "create-style"),
                 option(Section(5000), 100, "discard-history"),
             ],
+            cursors: &[],
         },
         measures: None,
         titles: &[],
@@ -315,6 +322,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             presets: false,
             open_at_first: true,
             menus: &[],
+            cursors: &[],
         },
         measures: None,
         titles: &[],
@@ -374,6 +382,7 @@ mod tests {
                 presets: false,
                 open_at_first: false,
                 menus: &[],
+                cursors: &[],
             },
             measures: None,
             titles: &[],
@@ -501,6 +510,16 @@ mod tests {
         let mut presets = with(&[]);
         presets.tool.presets = true;
         assert_eq!(presets.check(), Ok(()));
+    }
+
+    /// A utility's cursors wait for the Colour readout's design (`docs/cursors.md`).
+    #[test]
+    fn a_utility_has_no_cursor_yet() {
+        let mut picking = with(&[]);
+        picking.tool.cursors = crate::ProcessingTool::definition(&crate::exposure::Exposure)
+            .tool
+            .cursors;
+        assert_eq!(picking.check(), Err(DefinitionError::UtilityCursors));
     }
 
     /// Every row that edits is refused, by what edits in it, inside a group too.

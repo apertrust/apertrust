@@ -432,6 +432,8 @@ tool-temperature-control-various-promise = Przez co mnożone są szmaragdowe fot
 tool-temperature-picker-spot-label = Z obszaru obrazu
 tool-temperature-picker-spot-full = Balans bieli z obszaru obrazu
 tool-temperature-picker-spot-promise = Ustaw balans bieli na wykryty z obszaru
+tool-temperature-cursor-spot = Próbnik balansu bieli
+tool-temperature-cursor-spot-how = Kliknij neutralny obszar lub zaznacz go przeciągnięciem
 
 ## Orientacja (docs/tools/orientation.md)
 
@@ -520,6 +522,7 @@ tool-exposure-picker-exposure-promise-reference-this-photo = Dopasuj obszar do t
 tool-exposure-picker-exposure-hint-reference-this-photo = Dopasuj obszar do tego zdjęcia (L { $reference_lightness } %)
 tool-exposure-picker-exposure-unavailable = Najpierw ustaw wzorzec próbnikiem w wierszu „Wzorzec”
 tool-exposure-picker-exposure-short-black = Poziom czerni przesunięto, aby czerń pozostała poniżej bieli
+tool-exposure-cursor-exposure = Próbnik ekspozycji
 tool-exposure-picker-reference-label = Wzorzec
 tool-exposure-picker-reference-full = Ustaw wzorzec z obszaru
 tool-exposure-picker-reference-promise = Ustaw wzorzec z obszaru

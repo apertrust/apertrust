@@ -563,6 +563,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        cursors: &[],
     },
     version: 1,
     // Background only: the tone mapper's parameters are global (decision 33).

@@ -360,6 +360,7 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        cursors: &[],
     },
     measures: None,
     titles: &[

@@ -455,6 +455,9 @@ tool-temperature-control-various-promise = What a four-colour sensor's emerald p
 tool-temperature-picker-spot-label = From image area
 tool-temperature-picker-spot-full = White balance from an image area
 tool-temperature-picker-spot-promise = Set white balance to detected from area
+# Its picker cursor on the Toolbar (decision 104): its name, and how to use it.
+tool-temperature-cursor-spot = White balance picker
+tool-temperature-cursor-spot-how = Click a neutral area, or drag one
 
 ## Orientation (docs/tools/orientation.md): darktable's orientation, its label, its
 ## buttons and its orientations by darktable's names in British English. darktable shows
@@ -564,6 +567,9 @@ tool-exposure-picker-exposure-hint-reference-this-photo = Match an area to this 
 tool-exposure-picker-exposure-unavailable = Set a reference first, with the picker on the Reference row
 # Added to a short pick's tooltip where the pick moved Black level correction too.
 tool-exposure-picker-exposure-short-black = Black level was moved to keep black below white
+# Its picker cursor on the Toolbar (decision 104): its name; how to use it is the
+# picker's promise for Picker target.
+tool-exposure-cursor-exposure = Exposure picker
 # The reference row's picker (decision 88): its label the row's, its name its action.
 tool-exposure-picker-reference-label = Reference
 tool-exposure-picker-reference-full = Set the reference from an area

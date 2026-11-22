@@ -131,6 +131,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 actions: &ACTIONS,
             },
         }],
+        cursors: &[],
     },
     version: 1,
     layers: false,
