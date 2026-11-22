@@ -730,7 +730,9 @@ impl Render {
         // A photo with no edit shows its render only at the sizes darktable's rule does.
         let shows = |size| !self.unaltered || self.raw.shows_render((size, size), &facts);
         let version = match (self.unaltered, stamp.filter(|_| read)) {
-            (true, Some(stamp)) => library::unaltered_version(&facts, &stamp),
+            (true, Some(stamp)) => {
+                library::unaltered_version(&facts, &stamp, library::Origin::Rule)
+            }
             (true, None) => library::rendered_version(&library::UNALTERED),
             (false, _) => library::rendered_version(&actual),
         };

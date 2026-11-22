@@ -471,7 +471,9 @@ fn body(run: &Run, context: &Context<'_>, delivery: &mut Delivery) {
         return;
     }
     let recorded = |version: &[u8]| {
-        (stamp.as_ref()).and_then(|stamp| library::unaltered_facts(version, stamp))
+        (stamp.as_ref())
+            .and_then(|stamp| library::unaltered_facts(version, stamp))
+            .map(|(facts, _)| facts)
     };
     let mut embedded_read = EmbeddedRead::Unread;
     let (rendered, unaltered) = match rendered {
