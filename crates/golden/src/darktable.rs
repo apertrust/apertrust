@@ -44,8 +44,9 @@ pub struct DarktableCli {
 }
 
 impl DarktableCli {
-    /// Finds darktable-cli: `DARKTABLE_CLI`, then `PATH`, then the platform's default
-    /// install location.
+    /// Finds darktable-cli: `DARKTABLE_CLI`, then `PATH`, then the official package's
+    /// install location on macOS and Windows. Never `/opt/darktable`, where darktable's
+    /// `build.sh` installs a build for the local CPU (decision 103).
     pub fn locate() -> Result<Self> {
         if let Some(path) = std::env::var_os("DARKTABLE_CLI") {
             return Ok(Self { path: path.into() });
@@ -57,7 +58,6 @@ impl DarktableCli {
             .map(|dir| dir.join(&exe));
         let defaults = [
             "/Applications/darktable.app/Contents/MacOS/darktable-cli",
-            "/opt/darktable/bin/darktable-cli",
             r"C:\Program Files\darktable\bin\darktable-cli.exe",
         ]
         .map(PathBuf::from);
