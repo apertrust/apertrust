@@ -67,7 +67,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 - The gaps leave room to put an item between two others without renumbering them.
 - A tool with nothing to add declares nothing.
 - `ProcessingDefinition::check` refuses an item that names none of the tool's actions (`UnknownMenuAction`), an action listed twice in one place, a submenu's children included (`DuplicateMenuItem`), a submenu of no action or of more than eight (`SubmenuItems`), and more than two items in one place among `Photo` and `Thumbnail`, or more than four in `Options` (`MenuItems`), through `check_menus`, and the section rules through `check_section`. An app test holds the utilities' items to the same limits and to actions the registry declares, each in the menu bar on every platform.
-- A picker is no item yet: an item that picks at the pointer waits for the open question below.
+- A picker is no item: picking at the pointer is a picker cursor's ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)).
 
 **How a menu is built.** The app builds every menu, `menus::context(place, target)`, from the app's items for the place and the items tools and utilities add. The surround's is View › Background's items alone, read from `menus::BACKGROUND`.
 
@@ -122,7 +122,7 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 - the items: History's Reset in both menus, and Orientation ▸ on the photo, after Background ▸, the first submenu a tool adds;
 - the tests: the limits and the section rules, the menus' size, a repeated `(section, order)` in one menu, Background ▸ equal to View › Background, every item reachable elsewhere, the photo's and a thumbnail's menus as they read, and the generated actions' ids, words, availability and keys.
 
-⋯ is built through `menus::context` (decision 93's step 93.3, `menus::options`): the app's items first, Reset where the tool has ↺, enabled and run as ↺ is, then Copy Settings and Paste Settings on a processing tool, drawn disabled with their tip until built; each tool's declared items; the layout's last. The Browser's empty area has its menu too (`Place::Browser`). Pickers as items and the other places come later.
+⋯ is built through `menus::context` (decision 93's step 93.3, `menus::options`): the app's items first, Reset where the tool has ↺, enabled and run as ↺ is, then Copy Settings and Paste Settings on a processing tool, drawn disabled with their tip until built; each tool's declared items; the layout's last. The Browser's empty area has its menu too (`Place::Browser`). The other places come later.
 
 ## Options considered
 
@@ -152,6 +152,6 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 - The engine and the session protocol are unchanged: an item runs an action that already sends its command.
 - Decision 92's tools' items on the toolbar are these generated actions.
 - Decisions 83 and 86 no longer open anything on a right-click on a section's header.
+- No item picks at the pointer: a picker cursor picks where it is clicked or dragged, one `PickerCommand::Once`, one step where it changes the edit ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md), [0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)), so a tool's menu entries stay its own actions and submenus, and the photo's menu holds no "Set … from Here" item.
 - Open:
-  - An item that picks at the pointer, such as "Set Exposure from Here", needs a pick at one point that starts, reads and ends as one completed change, which the picker commands (79) may not express. It is settled when a tool first adds one.
   - A processing tool's generated action is available while the photo takes edits (a utility's items name registry actions, each with its own availability, [0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); it does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. It is settled when a tool's action first cannot run on a photo that takes edits, by an availability the tool declares or the app derives from its definition.

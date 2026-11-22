@@ -55,6 +55,7 @@ The registry stays flat by id. Each action gains an **owner**, which places it i
 | A control or a view coordinate | `tool-<tool>-control-<control>` | `iop/<module>/<section>/<label>` |
 | A button or a `Row::Action` | `tool-<tool>-<action>` (built, 91) | the button's |
 | A picker | `tool-<tool>-picker-<picker>` | the picker's toggle |
+| A cursor ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | `tool-<tool>-cursor-<cursor>` for a tool's, `cursor-<id>` for the app's, layers', retouch's and annotations' | none: darktable has no cursors |
 | A tool's setting row | `tool-<tool>-setting-<setting>` | a widget on a conf key |
 | A preset row | `tool-<tool>-preset_row-<id>` | a combobox |
 | A preset | `tool-<tool>-preset-<name>`, with the presets API | `iop/<module>/preset/<name>` |
@@ -76,10 +77,13 @@ Every action is generated from `ToolDefinition` as the app starts, as decision 9
 | `Row::Toggle`, `Row::Pickers`' buttons | `toggle` |
 | `Row::Buttons`' buttons, `Row::Action` | `button` |
 | A slider's quad | the slider's `button` element |
+| A cursor of `ToolDefinition::cursors` | `hold` |
 | `Row::Setting` | `slider`, `dropdown`, `toggle` or `entry`, by its kind |
 | `Row::Custom` (the curve, the equalizer, the wheels) | what darktable defines for that module's widget, listed in its port spec |
 
-The app's actions keep their ids and get a kind: `command` (Undo, Open…), `toggle` (Full Screen, the Map), or `hold` (H's peek, the accels window).
+The app's actions keep their ids and get a kind: `command` (Undo, Open…), `toggle` (Full Screen, the Map), or `hold` (H's peek, the accels window, every cursor).
+
+**A cursor's action** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is of the `hold` kind: `on`, its default effect, chooses the cursor and it stays chosen, run by its key, its face in the well and its item in its group's list; `hold` borrows it while held, the cursor chosen before returning on release; `off` chooses Select; `toggle` chooses it or, chosen already, Select. A tool's sits under its tool in the tree, the app's under Photos, layers' and retouch's under `<blending>`. **Their default keys:** Select on Esc, where no focused widget keeps it; Pan on A held, darktable's own key to force panning; White balance's picker cursor on K, free in darktable's defaults; Exposure's with none, E being darktable's Exposure slider; the mask and retouch cursors' with Phase 4. A cursor's key tapped runs `on`, but Pan's A, a hold alone whose tap never keeps Pan chosen; and, from step 5, a cursor's key held past the long-press time runs `hold`, the plain key then acting at release.
 
 ### Kinds, elements and effects
 
@@ -270,8 +274,9 @@ Everything else is darktable's: every control an action, fallbacks off by defaul
 
 - `settings.toml`'s `[keys]` (43) holds inline tables beside strings: the schema's `keys` list takes items of any TOML value, which the store keeps as written and the app parses; no version changes. The settings `shortcuts.load_defaults`, `shortcuts.fallbacks`, `shortcuts.hide_notice` and `shortcuts.slider_precision` join the schema with their steps ([settings.md](../settings.md#the-settings-dialog)).
 - Decision 42's fine step and the value fallbacks are one table; a change to one is a change to both.
-- The menus' rule that a hold action is never a menu item ([gui.md](../gui.md#who-owns-the-keys), under 39) narrows: the overview's item runs its toggle effect; H's peek stays in no menu. A menu item shows a key equivalent only where its key acts at press.
+- The menus' rule that a hold action is never a menu item ([gui.md](../gui.md#who-owns-the-keys), under 39) narrows: the overview's item runs its toggle effect, and a cursor's item in its group's list its `on` effect (decision 104); H's peek stays in no menu. A menu item shows a key equivalent only where its key acts at press.
 - `[keys]`' load rule changes towards darktable's: a person's shortcut beats another action's clashing default, where it is refused today.
 - Decisions 91 and 92 hold: items run their action's default element and effect, and Map Shortcuts is offered outside the Toolbar's default.
+- Decision 104's cursors are `hold` actions generated as the app starts, their default keys Esc, A held and K in Phase 2's map; a cursor's item in its group's list runs `on`, the one hold action a menu runs at its default effect beside the accels window's toggle.
 - Each port spec lists darktable's actions and default shortcuts for its module, and the table from darktable's paths to Apertrust's ids, so a custom widget's actions are part of the port.
 - Still open, each settled in its step ([gui.md](../gui.md#open-questions)): the focused tool, a write per shortcut step, Ctrl+Shift's `force`, scripts' action call, and preset actions' ids.

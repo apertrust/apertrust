@@ -19,6 +19,7 @@ Buttons with words show hover and press on a plate (`button`, `button_hover`, `b
 
 - **Filled forms.** Lucide draws outlines, so each icon an icon button shows On has a filled form, its closed shapes filled in the icon's colour (`Icon::filled`; `crates/ui/assets/icons`): the viewer bar's toggles and the quads' pipette and line (`pick-filled`, `line-filled`). An icon of lines and dots alone has no shape to fill, so it shows On by `text_strong` alone, as under the pointer: ⋯, ⋮, », ☰ (the menu and presets), ＋ and Sort's arrows, each of which opens a menu, and the menu hanging from it shows that it is open. Every toggle has a filled form; a button that opens a menu tells screen readers whether it is open (`pull_down`).
 - **The hit area** stays the whole button; nothing grows on hover.
+- **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) draws no plates either, but shows the chosen cursor by its icon in `accent_text`, its stroke heavier, not by a filled form: a chosen cursor is where a press on the photo acts, one of a group of choices, as amber marks what is chosen elsewhere, not a toggle that is on.
 - The rule is the wireframe's "Controls · icon-only buttons: no plates, the filled icon for On" board. Built in `IconButton` (`crates/ui/src/components/icon_button.rs`).
 
 ## Options considered

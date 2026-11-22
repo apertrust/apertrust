@@ -22,17 +22,18 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Platform | The default list, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `cursors`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - There is one list for every platform. The Mac never shows `menu-button` and never takes it out of the list.
 - Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the viewer bar has them. So is Settings….
+- **The cursors' well,** `cursors`, stands between two flexible spaces, centred in the room between the actions and the status slots ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
 
 **What can be placed:**
 
 | Kind | Ids | How many |
 | --- | --- | --- |
-| Parts | `menu-button` (Windows and Linux, drawn as the app's icon or ☰ as the setting Menu button says, [0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), `jobs`, `save-state`, `assistant` (Phase 6) | One each |
+| Parts | `menu-button` (Windows and Linux, drawn as the app's icon or ☰ as the setting Menu button says, [0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), `jobs`, `save-state`, `assistant` (Phase 6), and `cursors`, the whole well of cursors, every group in it ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | One each |
 | The app's actions | A registry action that is pressed or toggled and has an icon: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Collections, Show in Folder, Next Photo, Previous Photo, Settings… | One each |
 | Tools' actions | A processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or the registry action a utility names, as History's `reset`, that its tool offers for the toolbar; the item's id is the action's | One each |
 | Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
@@ -58,6 +59,7 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 | The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert are unchanged |
 | The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work |
 | The assistant | It shows whenever an assistant is connected |
+| The cursors | Every cursor keeps its action and key, and its work its tool's own button; the cursor chosen stays chosen |
 | Everything | The toolbar is all empty area and still moves the window |
 
 **Moving the window.** These are empty areas: they move the window and take a double-click, as the Toolbar's empty areas do (39):
@@ -90,7 +92,8 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
   version = 1
   toolbar = ["menu-button", "import", "export", "reset", "undo", "redo", "space",
-             "copy-edit", "apply-edit", "flexible-space", "jobs", "save-state"]
+             "copy-edit", "apply-edit", "flexible-space", "cursors", "flexible-space",
+             "jobs", "save-state"]
 
   [[tabs]]
   id = "photos"
@@ -119,7 +122,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 5. Undo and Redo go into ».
 
 - » lists its items in the toolbar's order, with their keys, check marks and disabled states. It replaces the built ⋯ More actions and matches the Tools panel's ».
-- **Never folded:** the parts placed, », the caption buttons and 24 points of empty area.
+- **Never folded:** the parts placed, the cursors' well among them, », the caption buttons and 24 points of empty area, counted on both sides of the well together.
 - **When even those do not fit,** at a large interface size, the window's minimum width grows to their width, so the bar never overlaps itself or the caption buttons and keeps its 24 points to move the window.
 - A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
 
@@ -180,5 +183,6 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the icon names and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
+- **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is a part of the list, `cursors`; until the list is built it is a fixed part of the built Toolbar in the same place, and the built narrowing folds the actions before it.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.
 - **The default changes:** Import…, Export…, Cull and Reset lose their words by default, labels being off, and the narrowing's thresholds change with it.

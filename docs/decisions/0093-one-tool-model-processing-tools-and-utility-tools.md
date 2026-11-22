@@ -41,6 +41,7 @@ pub struct ToolDefinition {
     pub open_at_first: bool,              // its section open until the person chooses
     pub menus: &'static [MenuItem],       // context menus and ⋯ (decision 91)
     pub toolbar: &'static [ToolbarItem],  // decision 92
+    pub cursors: &'static [ToolCursor],   // a tool's picker cursors (decision 104, planned)
 }
 // ToolDefinition::processing(id, tabs): a processing tool's defaults, closed at first among them
 

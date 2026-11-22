@@ -204,9 +204,15 @@ Details: [history.md](history.md).
 
 ### Colour pickers
 
-One active picker per session, a tool's or the Colour picker's, and stored samples beside it. Built: 79.1, the Colour picker's own picker through the session, its region kept through the geometry and measured on the frame; 79.2, each tool's pickers declared in its definition with `ProcessingTool::pick`; 79.3, tool pickers in the engine, measured at their operation in the render or a sample-only render and applied through the tool's `pick`; the rest planned. The engine reduces the area on the GPU at the tool's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the tool's own pure `pick` as one change of source Auto, the same for every client. The marks on the photo use the design system's one overlay language (decision 79).
+One active picker per session, a tool's or the Colour picker's, and stored samples beside it. Built: 79.1, the Colour picker's own picker through the session, its region kept through the geometry and measured on the frame; 79.2, each tool's pickers declared in its definition with `ProcessingTool::pick`; 79.3, tool pickers in the engine, measured at their operation in the render or a sample-only render and applied through the tool's `pick`; the rest planned. The engine reduces the area on the GPU at the tool's operation in the fitted viewport pipe and on the frame, reads back a few numbers without waiting, and the session applies a reading through the tool's own pure `pick` as one change of source Auto, the same for every client. A one-shot pick, `Once`, reads one region and applies it as one step, which a picker cursor sends (planned, decision 104). The marks on the photo use the design system's one overlay language (decision 79).
 
 Details: [pickers.md](pickers.md).
+
+### Cursors
+
+One cursor is chosen at a time and decides what a press on the photo does, until another is chosen: Select, the default, moves the mark a drag starts on and otherwise pans a zoomed photo, as darktable's drag does; Pan always pans; a picker cursor sets White balance or Exposure from the area clicked or drawn, one `PickerCommand::Once`, one step where it changes the edit; mask, retouch, annotation and Copy and apply cursors come with their features. They sit in one sunken well on the Toolbar, one button per group, whose list holds the group's cursors and settings; tools keep their own buttons. Every owner declares its cursors the same way, a tool as data in `ToolDefinition::cursors`, the rest through the app's `CursorOwner`; the engine never hears of cursors (decision 104, planned).
+
+Details: [cursors.md](cursors.md).
 
 ### Export
 
@@ -323,6 +329,7 @@ Apertrust builds a raw editor on darktable's trusted colour science, with a disc
 | [gui.md](gui.md) | The desktop app's interface: why egui, display colour, the design system, translation, the window, menus, popups, dialogs, the shell, tool panels, keys, settings, accessibility, tests | [Yes](gui.md#open-questions) |
 | [settings.md](settings.md) | The settings schema, the store, `--conf`, the user data folders, edits in another folder | — |
 | [library.md](library.md) | One photo, folders and optional Libraries, where each feature's data lives, sidecars, the XMP layer, finding folders and photos, several computers, the library's API | [Yes](library.md#open-questions) |
+| [cursors.md](cursors.md) | Cursors: the well on the Toolbar, the groups and their settings, the keys, the pointer on the photo, the API every owner uses | [Yes](cursors.md#open-questions) |
 | [layers.md](layers.md) | Layers and masks, and the scene and display domains | — |
 | [ai.md](ai.md) | AI inference, models, agents and MCP, the differentiable pipeline | — |
 | [testing.md](testing.md) | The golden-image harness, the migration's baselines, departures from darktable | [Yes](testing.md#open-questions) |
