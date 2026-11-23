@@ -1838,7 +1838,8 @@ fn resize_hover(ctx: &egui::Context, band: f32) {
 /// The Toolbar's actions that show their words beside their icons while there is room.
 const TOOLBAR_WORDS: [ActionId; 3] = [ActionId::IMPORT, ActionId::EXPORT, ActionId::RESET];
 
-/// The Toolbar's actions that go under ⋯ last as it narrows.
+/// The Toolbar's actions that go under » last as it narrows, after the status words; a
+/// tool's items go first, the app's own after them (decision 92).
 const TOOLBAR_LAST: [ActionId; 2] = [ActionId::UNDO, ActionId::REDO];
 
 /// The viewer bar's zoom menu entries that are actions too, whose keys they show.
@@ -3495,6 +3496,7 @@ impl Shell {
                     let button = ToolbarButton::new(action.id.0, placed.icon?, name)
                         .enabled(can(action))
                         .words(TOOLBAR_WORDS.contains(&action.id))
+                        .folds_first(placed.folds_first())
                         .folds_last(TOOLBAR_LAST.contains(&action.id));
                     if let Some(tip) = self.keymap.tip(action.id, ctx.os(), &words) {
                         tips.push((ToolbarAction::Button(action.id.0), tip));
