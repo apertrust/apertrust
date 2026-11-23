@@ -610,7 +610,7 @@ fn tabs_take_their_titles_and_icons() {
     let (shown, warnings) = layout_of(
         "[[tabs]]\nid = \"adjust\"\n[[tabs]]\nid = \"adjust\"\n[[tabs]]\nid = \"hidden\"\n\
          [[tabs]]\nid = \"raw\"\ntitle = \"Sensor\"\nicon = \"detail\"\n\
-         [[tabs]]\nid = \"skin\"\ntitle = \"Skin\"\nicon = \"sparkles\"\n\
+         [[tabs]]\nid = \"skin\"\ntitle = \"Skin\"\nicon = \"no-such-icon\"\n\
          [order]\nadjust = [\"exposure\"]\n",
     );
     let ids: Vec<&str> = shown.tabs.iter().map(|tab| tab.id.as_str()).collect();
