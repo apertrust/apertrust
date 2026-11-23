@@ -29,7 +29,9 @@
 //! shows anything or not, so neither ever moves anything. Each tooltip carries its
 //! action's keys, which the app's actions registry gives. As it narrows it gives way one
 //! step at a time ([`Fold`]), its labels first, then its buttons going under »
-//! (`toolbar-more`), and its parts never, always keeping empty panel to move the window by.
+//! (`toolbar-more`), and its parts never, always keeping empty panel to move the window by;
+//! it records how wide that leaves it at least, for the app to keep the window so wide
+//! ([`Toolbar::least_width`]).
 //!
 //! **Guards** (decision 92): with no menu button in the list, the menus hang from the
 //! Toolbar's start ([`Toolbar::menu_anchor`]); with no save state, a failed write still
@@ -404,6 +406,15 @@ impl<'a> Toolbar<'a> {
         ctx.data(|d| d.get_temp(menu_anchor_id()))
     }
 
+    /// The least width, in whole points, the panel last drawn needs for what never folds
+    /// (decision 92): its parts, the cursors' well among them, », the caption buttons and
+    /// the empty panel left to move the window by, at the scale and in the language it was
+    /// drawn in. The guards count as if they showed, so a failure never changes it. The app
+    /// keeps the window at least this wide. None before a Toolbar has drawn.
+    pub fn least_width(ctx: &egui::Context) -> Option<f32> {
+        ctx.data(|d| d.get_temp(least_width_id()))
+    }
+
     /// Makes the panel the window's title bar: a drag that starts on an empty part of it
     /// reports [`ToolbarAction::MoveWindow`] once it has moved, never on the press, so a
     /// double-click stays one and reports [`ToolbarAction::TitleBarDoubleClick`]. Its
@@ -647,24 +658,19 @@ impl<'a> Toolbar<'a> {
             }
         };
         let guard_jobs = if jobs_guard { BUTTON } else { 0.0 };
-        // Where the list ends at `fold`: before the guards that show, a group's gap
-        // before them.
-        let list_end = |fold: Fold| {
-            let save = guard_save(fold);
-            let guards = save
-                + guard_jobs
-                + if save > 0.0 && jobs_guard {
-                    t.spacing.m
-                } else {
-                    0.0
-                };
-            inner.max.x
-                - if guards > 0.0 {
-                    guards + t.spacing.m
-                } else {
-                    0.0
-                }
+        // The room the guards take after the list, the save warning `save` wide and the
+        // spinner `jobs`: a group's gap before them, and one between them.
+        let guards = |save: f32, jobs: f32| {
+            let apart = if save > 0.0 && jobs > 0.0 {
+                t.spacing.m
+            } else {
+                0.0
+            };
+            let room = save + jobs + apart;
+            if room > 0.0 { room + t.spacing.m } else { 0.0 }
         };
+        // Where the list ends at `fold`: before the guards that show.
+        let list_end = |fold: Fold| inner.max.x - guards(guard_save(fold), guard_jobs);
 
         let gap = t.spacing.xxs;
         let labelled = |fold: Fold| self.labels && !fold.labels;
@@ -694,26 +700,43 @@ impl<'a> Toolbar<'a> {
             let gaps: f32 = drawn.windows(2).map(|w| between(w[0], w[1])).sum();
             widths + gaps
         };
+        // The room `drawn` needs at `fold` with the empty panel: the cursors' well after a
+        // flexible space asks for a group's gap of it.
+        let needs = |drawn: &[Drawn], fold: Fold| {
+            let after_flexible = drawn
+                .windows(2)
+                .any(|w| w == [Drawn::Flexible, Drawn::Cursors]);
+            let well_gap = if after_flexible { t.spacing.xl } else { 0.0 };
+            taken(drawn, fold) + well_gap + EMPTY
+        };
 
         // How far to fold: the first step whose entries leave the empty panel, measured at
-        // the current scale and language as egui lays them out; the cursors' well after a
-        // flexible space asks for a group's gap of it. A step before the last frame's
-        // needs room to spare.
+        // the current scale and language as egui lays them out. A step before the last
+        // frame's needs room to spare.
         let id = response.id.with("fold");
         let last = ui.data(|d| d.get_temp::<usize>(id)).unwrap_or(0);
         let steps = self.steps();
+        let all = steps[steps.len() - 1];
         let (step, fold) = (steps.iter().copied().enumerate())
             .find(|&(step, fold)| {
-                let drawn = self.arrange(fold, well.is_some());
-                let after_flexible = drawn
-                    .windows(2)
-                    .any(|w| w == [Drawn::Flexible, Drawn::Cursors]);
-                let well_gap = if after_flexible { t.spacing.xl } else { 0.0 };
                 let spare = if step < last { SPARE } else { 0.0 };
-                taken(&drawn, fold) + well_gap + EMPTY + spare <= list_end(fold) - inner.min.x
+                needs(&self.arrange(fold, well.is_some()), fold) + spare
+                    <= list_end(fold) - inner.min.x
             })
-            .unwrap_or((steps.len() - 1, steps[steps.len() - 1]));
+            .unwrap_or((steps.len() - 1, all));
         ui.data_mut(|d| d.insert_temp(id, step));
+        // The least width for what never folds: everything that folds folded, the guards
+        // as if they showed, and the room outside the list, the start's margin or inset and
+        // the end's margin or the caption buttons.
+        let save = if save_guard { saving.width(true) } else { 0.0 };
+        let jobs = if !self.lists(&ToolbarEntry::Jobs) && self.jobs.is_some() {
+            BUTTON
+        } else {
+            0.0
+        };
+        let outside = (inner.min.x - bar.min.x) + (bar.max.x - inner.max.x) + guards(save, jobs);
+        let least = needs(&self.arrange(all, well.is_some()), all) + outside;
+        ctx.data_mut(|d| d.insert_temp(least_width_id(), least.ceil()));
         let drawn = self.arrange(fold, well.is_some());
 
         // Where each entry goes: those before the first flexible space from the start,
@@ -1252,6 +1275,10 @@ enum MenuPress {
 
 fn menu_anchor_id() -> Id {
     Id::unique("apertrust-ui toolbar menu anchor")
+}
+
+fn least_width_id() -> Id {
+    Id::unique("apertrust-ui toolbar least width")
 }
 
 /// The menu button in `style`, with `keys` in its tooltip: a button that opens a menu,
