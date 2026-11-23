@@ -1450,7 +1450,7 @@ Colour maths shared by operations, and the numerical helpers their ports share o
 - darktable's recursive Gaussian (`gaussian.slang`, its coefficients and Rust restatement `gaussian`) and bilinear resampling between grids (`bilinear.slang`, `bilinear`), which the colour equalizer's kernel uses and the tone equalizer's EIGF is to.
 - The tone equalizer's correction curve (`tone_equalizer`): eight Gaussians fitted to the nine bands' gains by least squares in f64, `None` where the fit fails, as `pseudo_solve` can. Its operation's setup and the Tone equalizer tool's band graph share it.
 - AgX's tone curve (`agx_curve`): `Curve::new` of the range and curve settings (`CurveSettings`), in f32 but for `_scale` in the log domain, and `encode` and `eval` as the kernel evaluates them. Its operation's setup packs it; the AgX tool's Pivot target output picker evaluates it too.
-- The colour equalizer's curves (`colour_equalizer`): darktable's periodic RBF through the eight nodes, as a table over the hue, and the `pseudo_solve` that fits it. Its operation's setup uses it, and the Colour equalizer tool's hue curve graph is to.
+- The colour equalizer's curves (`colour_equalizer`): darktable's periodic RBF through the eight nodes, as a table over the hue, and the `pseudo_solve` that fits it; and the colours darktable paints its graph in (`Gradients`, `_build_dt_UCS_HSB_gradients` on sRGB, its gamut mapping and `max_saturation`). Its operation's setup uses the curves, and the Colour equalizer tool's hue curve graph is to use both.
 
 ## apertrust-tools
 

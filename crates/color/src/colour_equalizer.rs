@@ -18,7 +18,8 @@
 //! The colour equalizer's curves (darktable `src/iop/colorequal.c`: `_get_hue_node`,
 //! `_periodic_RBF_interpolate`, and `pseudo_solve` of `src/iop/choleski.h`): eight
 //! nodes, red to magenta, 45° apart in darktable UCS hue, joined by a periodic
-//! interpolation of radial basis functions, sampled as a table over the hue.
+//! interpolation of radial basis functions, sampled as a table over the hue; and the
+//! colours darktable paints its graph in (`_build_dt_UCS_HSB_gradients`).
 //!
 //! Shared by the operation's setup (`apertrust-op-colorequal`), which hands the kernel
 //! the three tables, and by the Colour equalizer tool's hue curve graph
@@ -27,7 +28,7 @@
 
 use std::f32::consts::PI;
 
-use crate::GAMUT_LUT_SIZE;
+use crate::{GAMUT_LUT_SIZE, Mat3, ucs};
 
 /// darktable `NODES`: the nodes of each curve, red to magenta.
 pub const NODES: usize = 8;
@@ -35,10 +36,20 @@ pub const NODES: usize = 8;
 /// offset to put it at the curves' origin.
 const ANGLE_SHIFT: f32 = 20.0;
 
+/// darktable `SLIDER_BRIGHTNESS`: the brightness, in darktable UCS HSB, its sliders and
+/// graph paint the hues at.
+pub const SLIDER_BRIGHTNESS: f32 = 0.65;
+
+/// darktable `_conventional_hue_deg_to_ucs_rad`: a hue in degrees from red, as the
+/// sliders and the graph show hues, as darktable UCS hue, in radians.
+pub fn ucs_hue(degrees: f32) -> f32 {
+    crate::deg_to_rad(degrees + ANGLE_SHIFT)
+}
+
 /// darktable `_get_hue_node`: the k-th node's hue in darktable UCS, in radians, with the
 /// node placement.
 pub fn hue_node(k: usize, hue_shift: f32) -> f32 {
-    crate::deg_to_rad(k as f32 * 360.0 / NODES as f32 + hue_shift + ANGLE_SHIFT)
+    ucs_hue(k as f32 * 360.0 / NODES as f32 + hue_shift)
 }
 
 /// darktable `pseudo_solve` (`src/iop/choleski.h`) for a square system: `A x = y` by the
@@ -165,6 +176,101 @@ pub fn periodic_rbf(nodes: &[f32; NODES], smoothing: f32, hue_shift: f32, clip: 
         .collect()
 }
 
+/// darktable's linear Rec. 709 to XYZ D65, which `gui_init` builds the gamut's table from
+/// when it has no display profile.
+const REC709_TO_XYZ_D65: Mat3 = [
+    [0.4124564, 0.3575761, 0.1804375],
+    [0.2126729, 0.7151522, 0.0721750],
+    [0.0193339, 0.1191920, 0.9503041],
+];
+
+/// darktable `lookup_gamut` (`src/common/darktable_ucs_22_helpers.h`): the table `lut`,
+/// its length a power of two, at `hue` in radians from -π, linearly interpolated and
+/// wrapping around the hue circle.
+pub fn lookup_gamut(lut: &[f32], hue: f32) -> f32 {
+    let mask = lut.len() as i32 - 1;
+    let x = lut.len() as f32 * (hue + PI) / (2.0 * PI);
+    let (prev, next) = (x.floor(), x.ceil());
+    let i = (prev as i32 & mask) as usize;
+    let j = (next as i32 & mask) as usize;
+    if i == j {
+        lut[i]
+    } else {
+        lut[i] + (x - prev) * (lut[j] - lut[i])
+    }
+}
+
+/// darktable `soft_clip`: `x` as it is up to `soft`, then easing exponentially towards
+/// `hard`.
+fn soft_clip(x: f32, soft: f32, hard: f32) -> f32 {
+    let norm = hard - soft;
+    if x > soft {
+        soft + (1.0 - (-(x - soft) / norm).exp()) * norm
+    } else {
+        x
+    }
+}
+
+/// The chroma of the gamut's boundary, for the colourfulness squared `m2` its table
+/// gives, at lightness `j`.
+fn boundary_chroma(j: f32, m2: f32, l_white: f32) -> f32 {
+    15.932993652962535 * (j * l_white).powf(0.6523997524738018) * m2.powf(0.6007557017508491)
+        / l_white
+}
+
+/// darktable `gamut_map_HSB`: `hsb`'s saturation soft-clipped at constant brightness
+/// into the gamut whose table is `lut`.
+pub fn gamut_map_hsb(hsb: [f32; 3], lut: &[f32], l_white: f32) -> [f32; 3] {
+    let jch = ucs::hsb_to_jch(hsb);
+    let chroma = boundary_chroma(jch[0], lookup_gamut(lut, jch[2]), l_white);
+    let boundary = ucs::jch_to_hsb([jch[0], chroma, jch[2]]);
+    [
+        hsb[0],
+        soft_clip(hsb[1], 0.8 * boundary[1], boundary[1]),
+        hsb[2],
+    ]
+}
+
+/// darktable `get_minimum_saturation`: the saturation at `lightness` that every hue of
+/// the gamut whose table is `lut` holds.
+pub fn minimum_saturation(lut: &[f32], lightness: f32, l_white: f32) -> f32 {
+    let m2 = lut.iter().copied().fold(f32::MAX, f32::min);
+    ucs::jch_to_hsb([lightness, boundary_chroma(lightness, m2, l_white), 0.0])[1]
+}
+
+/// The colours darktable paints the colour equalizer's graph and sliders in
+/// (`_build_dt_UCS_HSB_gradients`), on sRGB, darktable's fallback without a display
+/// profile (`dt_XYZ_to_sRGB`).
+#[derive(Debug, Clone)]
+pub struct Gradients {
+    /// The sRGB gamut's table, `dt_UCS_22_build_gamut_LUT`'s.
+    lut: Vec<f32>,
+    /// The saturation every hue holds at lightness 0.2, darktable's `max_saturation`,
+    /// at which the graph paints its hues.
+    pub max_saturation: f32,
+}
+
+impl Gradients {
+    /// darktable `gui_init`'s, on linear Rec. 709 at D65.
+    pub fn srgb() -> Self {
+        let lut = ucs::gamut_lut(&REC709_TO_XYZ_D65);
+        let max_saturation = minimum_saturation(&lut, 0.2, 1.0);
+        Self {
+            lut,
+            max_saturation,
+        }
+    }
+
+    /// darktable `_build_dt_UCS_HSB_gradients`: `hsb`, its hue in darktable UCS
+    /// radians, mapped into the gamut, as encoded sRGB, each channel within 0 to 1.
+    pub fn colour(&self, hsb: [f32; 3]) -> [f32; 3] {
+        let hsb = gamut_map_hsb(hsb, &self.lut, 1.0);
+        let xyz = ucs::xyy_to_xyz(ucs::jch_to_xyy(ucs::hsb_to_jch(hsb), 1.0));
+        let xyz_d50 = crate::apply(&crate::XYZ_D65_TO_D50_CAT16, xyz);
+        crate::xyz_d50_to_srgb(xyz_d50).map(|c| c.clamp(0.0, 1.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +291,49 @@ mod tests {
         }
         let singular = [[1.0f32; NODES]; NODES];
         assert_eq!(pseudo_solve(&singular, &y), None);
+    }
+
+    #[test]
+    fn the_gamut_table_is_looked_up_between_its_entries_and_around_the_circle() {
+        let lut: Vec<f32> = (0..8).map(|i| i as f32).collect();
+        let step = 2.0 * PI / 8.0;
+        assert_eq!(lookup_gamut(&lut, -PI), 0.0);
+        assert!((lookup_gamut(&lut, -PI + 2.5 * step) - 2.5).abs() < 1e-5);
+        // Past the last entry it runs back to the first.
+        assert!((lookup_gamut(&lut, -PI + 7.5 * step) - 3.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn the_graphs_colours_are_greys_without_saturation_and_hues_with_it() {
+        let gradients = Gradients::srgb();
+        let s = gradients.max_saturation;
+        assert!(s > 0.05 && s < 1.0, "{s}");
+        for degrees in [0.0, 90.0, 200.0, 300.0] {
+            let [r, g, b] = gradients.colour([ucs_hue(degrees), 0.0, SLIDER_BRIGHTNESS]);
+            assert!(
+                (r - g).abs() < 2e-3 && (g - b).abs() < 2e-3,
+                "{degrees}: {r} {g} {b}"
+            );
+        }
+        let largest = |degrees: f32| {
+            let rgb = gradients.colour([ucs_hue(degrees), s, SLIDER_BRIGHTNESS]);
+            assert!(rgb.iter().all(|c| (0.0..=1.0).contains(c)), "{rgb:?}");
+            (0..3).max_by(|&a, &b| rgb[a].total_cmp(&rgb[b])).unwrap()
+        };
+        // Red, green and blue each lead where the sliders show them.
+        assert_eq!(largest(0.0), 0);
+        assert_eq!(largest(135.0), 1);
+        assert_eq!(largest(225.0), 2);
+    }
+
+    #[test]
+    fn gamut_mapping_keeps_the_hue_and_brightness_and_narrows_only_past_the_boundary() {
+        let lut = ucs::gamut_lut(&REC709_TO_XYZ_D65);
+        let inside = [ucs_hue(30.0), 0.01, 0.5];
+        assert_eq!(gamut_map_hsb(inside, &lut, 1.0), inside);
+        let outside = [ucs_hue(30.0), 5.0, 0.5];
+        let mapped = gamut_map_hsb(outside, &lut, 1.0);
+        assert_eq!([mapped[0], mapped[2]], [outside[0], outside[2]]);
+        assert!(mapped[1] < outside[1]);
     }
 }
