@@ -212,7 +212,7 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
 - [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
-- [x] 79.17 The one-shot pick: `PickerCommand::Once`, a tool's picker on for one reading of a point or an area, applied as one step where it changes the edit and off again, which a picker cursor sends (104.4; decision 104).
+- [x] 79.17 The one-shot pick: `PickerCommand::Once`, a tool's picker on for one reading of a point or an area, applied as one step where it changes the edit and off again, for scripts, the MCP and assistants (decision 104's 104.1).
 
 ### Cursors
 
@@ -221,7 +221,10 @@ One cursor chosen at a time decides what a press on the photo does (decision 104
 - [x] 104.1 The one-shot pick, 79.17 above.
 - [x] 104.2 The declarations in `apertrust-tools`: `CursorDef`, the groups, `ToolDefinition::cursors` and its checks; White balance's and Exposure's picker cursors and their words.
 - [x] 104.3 The well in the design system: one button per group, its face and its chevron's list of cursors and settings, its states, keys and screen readers, in the gallery.
-- [x] 104.4 The app: Select, the default, Pan and Pick on the Toolbar between two empty strips, the gestures and pointers on the photo, Esc, A held and K, Show the last pick.
+- [x] 104.4 The app: Select, the default, Pan and Pick on the Toolbar between two empty strips, the gestures and pointers on the photo, Esc, A held and K, Show the last pick; its picker cursors pick once.
+- [ ] 104.5 The well shows the picker that is on, whichever door turned it on, and Select, or the cursor the person chose, once it turns off, each turn-off announced with its reason; Esc ends a picker wherever the focus is, but a field being typed in or an open list keeps the first Esc; A held pans over a picker; the crosshair over the photo; "Right-click resets the area." in the viewer bar.
+- [ ] 104.6 The picker cursor as a second door to its tool's picker: choosing it sends `On`, never `Once`; disabled with the reason where the picker cannot turn on; Exposure's reference picker gets its cursor; the picker cursor's own gestures, the last pick's mark and Show the last pick go.
+- [ ] 104.7 The label on the picker's area naming its tool, and the pointer's badge, drawn by the overlay.
 
 ### Scopes
 
