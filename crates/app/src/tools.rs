@@ -1413,7 +1413,7 @@ impl Rows for Page<'_> {
                 photo,
             } => reference_row(ui, self, picker, lightness, photo, changes),
             Row::LastPick { picker } => last_pick_row(ui, self, picker),
-            Row::Pickers { label, pickers } => pickers_row(ui, self, *label, pickers, changes),
+            Row::Pickers { label, pickers, .. } => pickers_row(ui, self, *label, pickers, changes),
             Row::Buttons { control, buttons } => {
                 buttons_row(ui, words, definition, control, buttons, state, changes);
             }

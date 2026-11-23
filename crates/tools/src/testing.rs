@@ -113,6 +113,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                             Row::Pickers {
                                 label: Some("measure"),
                                 pickers: &["spread", "show"],
+                                readout: None,
                             },
                         ],
                     })],

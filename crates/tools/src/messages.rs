@@ -326,6 +326,24 @@ pub fn computed(tool: &str, id: &str) -> [String; 2] {
     ["label", "promise"].map(|part| format!("tool-{tool}-computed-{id}-{part}"))
 }
 
+/// A readout's text `text` and its tooltip ([`crate::ReadoutDef`]):
+/// `tool-<tool>-readout-<readout>-<text>`, its number `$value`, and `-promise`.
+pub fn readout(tool: &str, readout: &str, text: &str) -> [String; 2] {
+    let words = format!("tool-{tool}-readout-{readout}-{text}");
+    let promise = format!("{words}-promise");
+    [words, promise]
+}
+
+/// A readout's swatch's tooltip: `tool-<tool>-readout-<readout>-swatch`.
+pub fn readout_swatch(tool: &str, readout: &str) -> String {
+    format!("tool-{tool}-readout-{readout}-swatch")
+}
+
+/// A collapsible group's title while its tool's settings make what it holds act
+/// ([`crate::ProcessingTool::group_active`]), as darktable's "area color mapping
+/// (active)": `$group` its title.
+pub const GROUP_ACTIVE: &str = "collapsible-group-active";
+
 /// A colour picker's name, full name, promise and, for one that takes a point, the
 /// viewer bar's sentence ([`crate::Picker`]): `tool-<tool>-picker-<picker>-label`, `-full`,
 /// `-promise` and `-what`.
@@ -437,7 +455,8 @@ pub fn unit_value(unit: Unit) -> String {
 
 /// Every message the definition implies, each once: its title, its description, Auto's
 /// tooltip if it has Auto, each titled tab, each group's title, plain or collapsible, a row
-/// of pickers' label among the plain ones', the words of each row that has its own, each
+/// of pickers' label among the plain ones', or its readout's texts with their tooltips and
+/// its swatch's, the words of each row that has its own, each
 /// setting's words and options, with each option's promise where a picker's words follow
 /// the setting, each action's words, each control's label, full name and promise, each
 /// option, each view's coordinate's label, full name and promise, as a control's, each
@@ -467,6 +486,17 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
             Row::Pickers {
                 label: Some(id), ..
             } => ids.push(group(tool, id)),
+            Row::Pickers {
+                readout: Some(found),
+                ..
+            } => {
+                for text in found.texts {
+                    ids.extend(readout(tool, found.id, text));
+                }
+                if found.swatch {
+                    ids.push(readout_swatch(tool, found.id));
+                }
+            }
             Row::Slider(Slider {
                 control,
                 label: Some(words),

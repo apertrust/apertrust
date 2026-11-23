@@ -20,6 +20,8 @@
 //! [`crate::ProcessingTool::pick`] takes a [`Reading`] and gives what it writes and shows;
 //! plain data, so they move into the protocol unchanged.
 
+use apertrust_base::settings::Choice;
+
 use crate::{ControlValue, Controls};
 
 /// A picker's point or area in the photo's coordinates: 0 to 1 across the photo as export
@@ -181,9 +183,67 @@ impl Patch {
     }
 }
 
+/// What a readout at a row of pickers' start shows ([`crate::ProcessingTool::readout`],
+/// [`crate::ReadoutDef`]): one of its texts, with its number, and its swatch's colour, as
+/// Colour calibration's "CCT: 5003 K (daylight)" and the illuminant's colour beside it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Readout {
+    /// Which of its texts, by id.
+    pub text: &'static str,
+    /// The number its text shows, its `$value`; `None` for a text with none.
+    pub value: Option<f32>,
+    /// The swatch's colour, each channel 0 to 1, handed to the screen as it is, as cairo
+    /// paints darktable's; `None` for a readout with no swatch.
+    pub swatch: Option<[f32; 3]>,
+}
+
+/// darktable's area mode (`dt_spot_mode_t`), what an area mapping's picker does with the
+/// area it reads, a tool's setting: Colour calibration's `tools.channelmixerrgb.area_mode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AreaMode {
+    /// darktable's correction, its default: the pick sets what maps the area to the
+    /// target.
+    #[default]
+    Correction,
+    /// darktable's measure: the pick writes no control and hands back the target the area
+    /// renders at.
+    Measure,
+}
+
+impl AreaMode {
+    /// The option a setting's value names, correction where it names none.
+    pub fn of(value: Option<&ControlValue>) -> Self {
+        match value {
+            Some(&ControlValue::Choice(at)) => Self::OPTIONS
+                .get(at as usize)
+                .map_or(Self::Correction, |(mode, _)| *mode),
+            _ => Self::Correction,
+        }
+    }
+}
+
+impl Choice for AreaMode {
+    const OPTIONS: &'static [(Self, &'static str)] =
+        &[(Self::Correction, "correction"), (Self::Measure, "measure")];
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// darktable's area modes, correction first and the default, and a setting's value
+    /// read as one, correction where it names none.
+    #[test]
+    fn area_mode_is_darktable_s_correction_or_measure() {
+        let ids: Vec<&str> = AreaMode::OPTIONS.iter().map(|(_, id)| *id).collect();
+        assert_eq!(ids, ["correction", "measure"]);
+        assert_eq!(AreaMode::default(), AreaMode::Correction);
+        let of = |value| AreaMode::of(value);
+        assert_eq!(of(Some(&ControlValue::Choice(1))), AreaMode::Measure);
+        assert_eq!(of(Some(&ControlValue::Choice(0))), AreaMode::Correction);
+        assert_eq!(of(Some(&ControlValue::Choice(7))), AreaMode::Correction);
+        assert_eq!(of(None), AreaMode::Correction);
+    }
 
     /// A press's area against darktable's `fbox` (`src/views/darkroom.c:4064-4073`), `dx`
     /// 0.02 and `dy` scaled by the processed width over the height, at a few sizes, and

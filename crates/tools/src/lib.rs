@@ -79,11 +79,11 @@ pub use definition::{
     Button, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
     CursorDef, CursorGroup, CursorGroupDef, DefinitionError, Gesture, Group, GroupKind, MAX_POINTS,
     MIN_GAP, MOST_IN_SUBMENU, MOST_ON_TOOLBAR, MenuEntry, MenuItem, Picker, PickerKind, Place,
-    PresetRow, ProcessingDefinition, Quad, Range, Reset, Row, Section, SettingRow, SettingWords,
-    Slider, Space, Surface, Tab, ToolCursor, ToolDefinition, ToolbarItem, Track, Unit, View,
-    Widget, Word, check_menus, check_section, check_toolbar, slider_step,
+    PresetRow, ProcessingDefinition, Quad, Range, ReadoutDef, Reset, Row, Section, SettingRow,
+    SettingWords, Slider, Space, Surface, Tab, ToolCursor, ToolDefinition, ToolbarItem, Track,
+    Unit, View, Widget, Word, check_menus, check_section, check_toolbar, slider_step,
 };
-use pick::{PickKeys, Picked, Reading};
+use pick::{PickKeys, Picked, Reading, Readout};
 pub use values::{ControlValue, Controls, Mark, ToolValues};
 
 /// The built-in tools, in the order the session reports them and an edit saves them:
@@ -422,6 +422,29 @@ pub trait ProcessingTool: Send + Sync {
     /// target holds Reference and no reference is set.
     fn picker_ready(&self, _picker: &str, _settings: &[(&str, ControlValue)]) -> bool {
         true
+    }
+
+    /// What the readout `readout` of a row of pickers ([`ReadoutDef`]) shows while the
+    /// tool's controls hold `values`, every control, the edit's over the defaults: one of
+    /// its texts with its number, and its swatch's colour, as Colour calibration's CCT and
+    /// the illuminant's colour. Pure, as [`Self::view`] is: the session asks after every
+    /// change and reports it with the tool's state. `None`, as provided, for a readout the
+    /// tool lacks.
+    fn readout(
+        &self,
+        _readout: &str,
+        _values: &Controls,
+        _image: &ImageContext,
+    ) -> Option<Readout> {
+        None
+    }
+
+    /// Whether the collapsible group `group`'s title says its rows act, as darktable's
+    /// "area color mapping (active)", for the tool's settings as the client keeps them
+    /// ([`messages::GROUP_ACTIVE`]): false, as provided. Pure, from the settings alone, as
+    /// [`Self::picker_ready`] is.
+    fn group_active(&self, _group: &str, _settings: &[(&str, ControlValue)]) -> bool {
+        false
     }
 
     /// Values saved by version `from`, brought up to this version. A tool raises its
