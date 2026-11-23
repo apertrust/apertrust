@@ -625,7 +625,7 @@ fn every_part(ctx: &egui::Context) -> Vec<ToolbarEntry> {
     entries
 }
 
-/// At 500 points, the window's least width, in `locale`, the list `entries` gives, as on
+/// At 500 points, the planned minimum (decision 39), in `locale`, the list `entries` gives, as on
 /// the Mac where `menu` is None, else as on Windows and Linux with the menu button drawn
 /// as `menu` says: every part shows, the menu button, the cursors' well, the jobs spinner
 /// and the save warning, with », and 24 points of the panel are empty, counted on both
@@ -635,11 +635,28 @@ fn at_500(
     menu: Option<MenuButtonStyle>,
     entries: fn(&egui::Context) -> Vec<ToolbarEntry>,
 ) {
-    let mut harness = Harness::builder()
-        .with_size(egui::vec2(500.0, 120.0))
+    let mut harness = every_part_bar(locale, menu, entries, 1.0, 500.0);
+    harness.run();
+    keeps_every_part(&harness, locale, menu);
+}
+
+/// The Toolbar `width` points wide at the interface size `zoom`, in `locale`, the list
+/// `entries` gives, as on the Mac where `menu` is None, else as on Windows and Linux with
+/// the menu button drawn as `menu` says, with labels, a job running and a failed write; the
+/// traffic lights' 78 points at the interface size, as the app measures them.
+fn every_part_bar(
+    locale: Locale,
+    menu: Option<MenuButtonStyle>,
+    entries: fn(&egui::Context) -> Vec<ToolbarEntry>,
+    zoom: f32,
+    width: f32,
+) -> Harness<'static> {
+    Harness::builder()
+        .with_size(egui::vec2(width, 120.0))
         .with_context_setup(move |ctx| {
             install(ctx);
             apertrust_ui::set_locale(ctx, locale);
+            ctx.options_mut(|o| o.zoom_factor = zoom);
         })
         .build_ui(move |ui| {
             let jobs = [Job::new(
@@ -652,16 +669,23 @@ fn at_500(
                 .labels(true)
                 .saved(SaveState::Failed("disk full"))
                 .jobs(Jobs::new(&jobs))
-                .start_inset(if menu.is_some() { 0.0 } else { 78.0 })
+                .start_inset(if menu.is_some() { 0.0 } else { 78.0 / zoom })
                 .title_bar(true)
                 .menu_button(menu.is_some())
                 .menu_button_style(menu.unwrap_or_default())
                 .caption_buttons(menu.is_some());
             with_well(0, |well| bar.cursors(well).show(ui));
-        });
-    harness.run();
+        })
+}
+
+/// Every part shows, the menu button where `menu` says, the cursors' well, the jobs
+/// spinner and the save warning, with », no button but the well's own runs over another,
+/// the well or past the panel's end, and 24 points of the panel are empty, counted on both
+/// sides of the well together.
+fn keeps_every_part<T>(harness: &Harness<'_, T>, locale: Locale, menu: Option<MenuButtonStyle>) {
     let words = Translator::new(locale);
-    let at = format!("{locale:?}, {menu:?}");
+    let width = harness.ctx.content_rect().width();
+    let at = format!("{locale:?}, {menu:?}, {width} points");
     for id in ["toolbar-more", "jobs-name", "status-not-saved"] {
         let name = words.text(id);
         assert!(harness.query_by_label(&name).is_some(), "{at}: {name}");
@@ -670,10 +694,17 @@ fn at_500(
     let menu_button = harness.query_by_role_and_label(Role::Button, &menu_name);
     assert_eq!(menu_button.is_some(), menu.is_some(), "{at}");
     let well = harness.get_by_role(Role::RadioGroup).rect();
-    let buttons: Vec<egui::Rect> = (harness.query_all_by_role(Role::Button))
+    let mut buttons: Vec<egui::Rect> = (harness.query_all_by_role(Role::Button))
         .map(|node| node.rect())
-        .filter(|rect| !rect.intersects(well))
+        .filter(|rect| !well.contains_rect(*rect))
         .collect();
+    buttons.push(well);
+    buttons.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    for pair in buttons.windows(2) {
+        assert!(pair[0].right() <= pair[1].left(), "{at}: {pair:?} overlap");
+    }
+    let end = buttons.last().map_or(0.0, |rect| rect.right());
+    assert!(end <= width, "{at}: a button ends at {end}");
     let before = (buttons.iter())
         .filter(|rect| rect.right() <= well.left())
         .map(|rect| rect.right())
@@ -725,6 +756,78 @@ fn the_toolbar_folds_where_gui_md_says() {
             at_500(locale, menu, every_part);
         }
     }
+}
+
+/// The interface size setting's largest (`scale` in `data/settings.schema.toml`).
+const LARGEST_SCALE: f32 = 3.0;
+
+/// At the largest interface size, with every part placed, in every language, as on the
+/// Mac and on Windows and Linux with either menu button, the least width the Toolbar
+/// reports (decision 92), the window's least where the app's own minimum is narrower: it
+/// is `docs/gui.md`'s (Narrowing), whatever the language, and at it the Toolbar folds no
+/// part, overlaps nothing and keeps 24 points empty.
+#[test]
+fn the_least_width_keeps_what_never_folds() {
+    for locale in Locale::ALL {
+        for (menu, expected) in [
+            (None, 267.0),
+            (Some(MenuButtonStyle::Icon), 444.0),
+            (Some(MenuButtonStyle::Menu), 433.0),
+        ] {
+            let mut harness = every_part_bar(locale, menu, every_part, LARGEST_SCALE, 1400.0);
+            harness.run();
+            let least = Toolbar::least_width(&harness.ctx).expect("a least width");
+            assert_eq!(least, expected, "{locale:?}, {menu:?}");
+            harness.set_size(vec2(least, 120.0));
+            harness.run();
+            keeps_every_part(&harness, locale, menu);
+        }
+    }
+}
+
+/// With the save state and the jobs left out of the list, as on Windows and Linux, a failed
+/// write and a failed job, whose guards then show, leave the least width as it is, and at it
+/// the Toolbar still folds no part, overlaps nothing and keeps 24 points empty.
+#[test]
+fn a_guard_never_changes_the_least_width() {
+    let hidden: fn(&egui::Context) -> Vec<ToolbarEntry> = |ctx| {
+        let mut entries = every_part(ctx);
+        entries.retain(|entry| !matches!(entry, ToolbarEntry::SaveState | ToolbarEntry::Jobs));
+        entries
+    };
+    let menu = Some(MenuButtonStyle::Icon);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1400.0, 120.0))
+        .with_context_setup(install)
+        .build_ui_state(
+            move |ui, failed: &mut bool| {
+                let (saved, phase) = if *failed {
+                    (SaveState::Failed("disk full"), JobPhase::Failed)
+                } else {
+                    (SaveState::Saved, JobPhase::Running)
+                };
+                let jobs = [Job::new(1, phase, JobMessage::new("job-thumbnails"))];
+                let bar = Toolbar::new()
+                    .entries(hidden(ui.ctx()))
+                    .labels(true)
+                    .saved(saved)
+                    .jobs(Jobs::new(&jobs))
+                    .title_bar(true)
+                    .menu_button(true)
+                    .menu_button_style(MenuButtonStyle::Icon)
+                    .caption_buttons(true);
+                with_well(0, |well| bar.cursors(well).show(ui));
+            },
+            false,
+        );
+    harness.run();
+    let quiet = Toolbar::least_width(&harness.ctx).expect("a least width");
+    *harness.state_mut() = true;
+    harness.run();
+    assert_eq!(Toolbar::least_width(&harness.ctx), Some(quiet));
+    harness.set_size(vec2(quiet, 120.0));
+    harness.run();
+    keeps_every_part(&harness, Locale::EnGb, menu);
 }
 
 /// Where Saving…, or the save warning, whichever shows, is drawn.
