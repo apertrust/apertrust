@@ -746,13 +746,18 @@ pub enum Row {
         id: &'static str,
     },
     /// darktable's picker buttons packed in a box, one line: a label at its start, if any,
-    /// by its id, and the buttons of pickers of [`ProcessingDefinition::pickers`] at its
-    /// end, as AgX's Auto tune levels and RGB levels' black, grey and white. It is no
-    /// control. The label is a plain group's title: its words are
+    /// by its id, or a readout in its place, and the buttons of pickers of
+    /// [`ProcessingDefinition::pickers`] at its end, as AgX's Auto tune levels, RGB levels'
+    /// black, grey and white, and Colour calibration's CCT, the illuminant's colour and its
+    /// picker. It is no control. The label is a plain group's title: its words are
     /// [`crate::messages::group`]'s, and its id is unique among the tool's groups.
     Pickers {
         label: Option<&'static str>,
         pickers: &'static [&'static str],
+        /// A text and a swatch the tool computes from its values
+        /// ([`crate::ProcessingTool::readout`]), at the row's start in place of a label,
+        /// the swatch filling the row up to the buttons.
+        readout: Option<ReadoutDef>,
     },
     /// darktable's input and target patches of a picker's area mapping, side by side
     /// under their headings, as darktable's area mappings show them: the input,
@@ -810,6 +815,24 @@ pub enum Row {
     /// ([`crate::messages::GUIDES`]). Until the tool's guides come the panel draws it
     /// disabled, off.
     Guides,
+}
+
+/// A readout at a row of pickers' start ([`Row::Pickers::readout`]): a text the tool
+/// computes from its values, one of several by what they describe, with a number, and a
+/// swatch of a colour they give, as darktable's "CCT: 5003 K (daylight)" beside the
+/// illuminant's colour (`channelmixerrgb.c:4472-4491`). Its id is unique among the tool's
+/// readouts. Each text's words are `tool-<tool>-readout-<id>-<text>`, its number the
+/// variable `$value`, and its tooltip `-promise` after them; the swatch's tooltip is
+/// `tool-<tool>-readout-<id>-swatch` ([`crate::messages::readout`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadoutDef {
+    pub id: &'static str,
+    /// Its texts' ids, snake_case, one of which the tool gives ([`crate::pick::Readout`]).
+    pub texts: &'static [&'static str],
+    /// Decimals its number shows.
+    pub decimals: u8,
+    /// Whether a swatch follows the text.
+    pub swatch: bool,
 }
 
 /// A titled set of rows inside a tool's tab (decision 100), of one of two kinds, as a tool
@@ -1413,6 +1436,10 @@ pub enum DefinitionError {
     #[error("a row of pickers holds none")]
     NoPickers,
     #[error(
+        "the readout {0}: a row of pickers with a label too, no texts, an id named twice or not snake_case"
+    )]
+    Readout(&'static str),
+    #[error(
         "the picker {picker} is in {rows} places, rows and preset options; each is in exactly one"
     )]
     PickerRows { picker: &'static str, rows: usize },
@@ -1692,6 +1719,7 @@ impl ProcessingDefinition {
             BTreeSet::new(),
         );
         let mut last_picks = BTreeSet::new();
+        let mut readouts = BTreeSet::new();
         for &Placed { row, ref at } in &placed {
             // A group with no rows has nothing behind it yet; rows following a control
             // must be rows.
@@ -1853,6 +1881,25 @@ impl ProcessingDefinition {
             }
             if let Row::Pickers { pickers: [], .. } = row {
                 return Err(DefinitionError::NoPickers);
+            }
+            // A readout stands in the label's place, its id and its texts' ids its words'.
+            if let Row::Pickers {
+                label,
+                readout: Some(readout),
+                ..
+            } = row
+            {
+                let ReadoutDef { id, texts, .. } = *readout;
+                let named =
+                    |text: &&str| is_id(text) && texts.iter().filter(|t| *t == text).count() == 1;
+                if label.is_some()
+                    || !is_id(id)
+                    || texts.is_empty()
+                    || !texts.iter().all(named)
+                    || !readouts.insert(id)
+                {
+                    return Err(DefinitionError::Readout(id));
+                }
             }
             if let Row::Patches { picker, target } = row {
                 if self.picker(picker).is_none() {
@@ -3706,6 +3753,7 @@ mod tests {
             Row::Pickers {
                 label: None,
                 pickers: &["dot", "shown"],
+                readout: None,
             },
         ];
         let page = page(with_mode(&rows));
@@ -3834,6 +3882,78 @@ mod tests {
         }
     }
 
+    /// A readout stands in a row of pickers' label's place: none with a label, one with
+    /// texts, each named once, its id unique among the tool's readouts; and its words follow
+    /// from its ids.
+    #[test]
+    fn a_readout_takes_a_row_of_pickers_label_s_place() {
+        const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
+        const CCT: ReadoutDef = ReadoutDef {
+            id: "cct",
+            texts: &["daylight", "undefined"],
+            decimals: 0,
+            swatch: true,
+        };
+        let row = |label, readout| Row::Pickers {
+            label,
+            pickers: &["level"],
+            readout: Some(readout),
+        };
+        assert_eq!(picking(&[LEVEL], &[CONTRAST, row(None, CCT)]), Ok(()));
+        let refused = |rows: &[Row]| picking(&[LEVEL], rows);
+        assert_eq!(
+            refused(&[CONTRAST, row(Some("auto_tune"), CCT)]),
+            Err(DefinitionError::Readout("cct"))
+        );
+        for readout in [
+            ReadoutDef { texts: &[], ..CCT },
+            ReadoutDef {
+                texts: &["daylight", "daylight"],
+                ..CCT
+            },
+            ReadoutDef {
+                texts: &["Daylight"],
+                ..CCT
+            },
+            ReadoutDef { id: "CCT", ..CCT },
+        ] {
+            assert_eq!(
+                refused(&[CONTRAST, row(None, readout)]),
+                Err(DefinitionError::Readout(readout.id))
+            );
+        }
+        // Two rows of pickers, two readouts by one id.
+        let spot = Picker {
+            id: "spot",
+            ..LEVEL
+        };
+        let other = Row::Pickers {
+            label: None,
+            pickers: &["spot"],
+            readout: Some(CCT),
+        };
+        assert_eq!(
+            picking(&[LEVEL, spot], &[CONTRAST, row(None, CCT), other]),
+            Err(DefinitionError::Readout("cct"))
+        );
+        // Its words: each text's and its tooltip, and the swatch's.
+        let rows: &'static [Row] = Box::leak(Box::new([CONTRAST, row(None, CCT)]));
+        let definition = ProcessingDefinition {
+            pickers: &[LEVEL],
+            ..page(with_mode(rows))
+        };
+        let ids = crate::messages::of(&definition);
+        for id in [
+            "tool-page-readout-cct-daylight",
+            "tool-page-readout-cct-daylight-promise",
+            "tool-page-readout-cct-undefined",
+            "tool-page-readout-cct-undefined-promise",
+            "tool-page-readout-cct-swatch",
+        ] {
+            assert!(ids.iter().any(|found| found == id), "{id}: {ids:?}");
+        }
+    }
+
     #[test]
     fn a_picker_is_in_exactly_one_row_a_quad_or_a_row_of_pickers() {
         const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
@@ -3843,6 +3963,7 @@ mod tests {
         let buttons = |label, pickers: &[&'static str]| Row::Pickers {
             label,
             pickers: Box::leak(pickers.into()),
+            readout: None,
         };
         // A row of pickers shows no control, with a label or none.
         let row = buttons(Some("auto_tune"), &["level"]);

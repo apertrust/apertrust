@@ -627,6 +627,7 @@ mod tests {
                 &[Row::Pickers {
                     label: None,
                     pickers: &["spot"],
+                    readout: None,
                 }],
                 "pickers",
             ),
@@ -635,6 +636,7 @@ mod tests {
                 &[Row::Pickers {
                     label: None,
                     pickers: &[],
+                    readout: None,
                 }],
                 "pickers",
             ),
