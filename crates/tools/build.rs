@@ -18,9 +18,9 @@
 //! `tool:<id>` (`data/settings.schema.toml`), as typed statics in `OUT_DIR/settings.rs`,
 //! which `src/settings.rs` includes as its `registry` (decisions 29 and 43). The generator
 //! embeds the schema, so a change to it reruns this script; one it refuses fails the
-//! build, naming the line. Exposure is the only tool with settings so far, its area
-//! exposure mapping's; the next tool's settings join them here.
+//! build, naming the line. Exposure's and Colour calibration's pickers read settings so
+//! far; the next tool's settings join them here.
 
 fn main() {
-    apertrust_base::settings::codegen::build("tool:exposure");
+    apertrust_base::settings::codegen::build_all(&["tool:exposure", "tool:channelmixerrgb"]);
 }

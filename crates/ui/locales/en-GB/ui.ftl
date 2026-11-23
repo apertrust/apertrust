@@ -1555,6 +1555,10 @@ picker-patch-target = Target
 picker-patch-lch-tip = These LCh coordinates are computed from CIE Lab 1976 coordinates.
 picker-patch-lightness = L: { $value }%
 picker-patch-none = L: N/A
+picker-patch-hue = h: { $value } °
+picker-patch-hue-none = h: N/A
+picker-patch-chroma = c: { $value }
+picker-patch-chroma-none = c: N/A
 
 ## A reference row (docs/pickers.md, Declaring pickers; decision 88): an area's L kept across
 ## photos: its L, $lightness in the language's numbers, then the photo it was measured on,

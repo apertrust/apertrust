@@ -207,16 +207,21 @@ pub const GUIDES: [&str; 5] = [
 ];
 
 /// A picker's patches' words ([`crate::Row::Patches`]), every tool's, darktable's: the
-/// input's heading and tooltip, the target's heading, the L readout's tooltip, and the
-/// readout, `$value` its L in the language's number format, or none before a pick. The
-/// target patch's tooltip is its first setting's promise.
-pub const PATCHES: [&str; 6] = [
+/// input's heading and tooltip, the target's heading, the readout's tooltip, and the
+/// readout's L, `$value` in the language's number format, or none before a pick, then, for
+/// a target of L, C and h, its h and c lines the same way. The target patch's tooltip is
+/// its first setting's promise.
+pub const PATCHES: [&str; 10] = [
     "picker-patch-input",
     "picker-patch-input-tip",
     "picker-patch-target",
     "picker-patch-lch-tip",
     "picker-patch-lightness",
     "picker-patch-none",
+    "picker-patch-hue",
+    "picker-patch-hue-none",
+    "picker-patch-chroma",
+    "picker-patch-chroma-none",
 ];
 
 /// A reference row's words ([`crate::Row::Reference`], decision 88), every tool's: its

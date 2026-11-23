@@ -910,3 +910,60 @@ owner = "tool:exposure"
 kind = "text"
 optional = true
 applies = "at-once"
+
+# Colour calibration's area colour mapping (docs/tools/colour-calibration.md; decision 29),
+# the settings its picker reads, darktable's darkroom/modules/channelmixerrgb/use_mixing,
+# lightness, hue and chroma, kept here as darktable keeps them in its darktablerc, never
+# in an edit, and sent with the picker's On and Settings commands (docs/pickers.md, A
+# tool's settings). darktable sets the area mode back to correction each time it redraws
+# the tool; Apertrust keeps it.
+
+# Area mode: correction sets the illuminant that maps the area picked to the target,
+# measure hands back the target the area renders at.
+[tools.channelmixerrgb.area_mode]
+owner = "tool:channelmixerrgb"
+kind = "choice"
+type = "apertrust_tools::pick::AreaMode"
+default = "correction"
+applies = "at-once"
+
+# Take channel mixing into account: whether the target allows for the R, G and B tabs'
+# mixing.
+[tools.channelmixerrgb.channel_mixing]
+owner = "tool:channelmixerrgb"
+kind = "boolean"
+default = true
+applies = "at-once"
+
+# The target's lightness, CIE L, its slider's range and one decimal.
+[tools.channelmixerrgb.target_lightness]
+owner = "tool:channelmixerrgb"
+kind = "number"
+min = 0.0
+max = 100.0
+step = 1.0
+decimals = 1
+default = 50.0
+applies = "at-once"
+
+# The target's hue, CIE LCh's h in degrees.
+[tools.channelmixerrgb.target_hue]
+owner = "tool:channelmixerrgb"
+kind = "number"
+min = 0.0
+max = 360.0
+step = 1.0
+decimals = 1
+default = 0.0
+applies = "at-once"
+
+# The target's chroma, CIE LCh's C.
+[tools.channelmixerrgb.target_chroma]
+owner = "tool:channelmixerrgb"
+kind = "number"
+min = 0.0
+max = 128.0
+step = 1.0
+decimals = 1
+default = 0.0
+applies = "at-once"

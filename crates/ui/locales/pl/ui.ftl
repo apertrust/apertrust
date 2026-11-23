@@ -1177,6 +1177,10 @@ picker-patch-target = Cel
 picker-patch-lch-tip = Te współrzędne LCh obliczono ze współrzędnych CIE Lab 1976.
 picker-patch-lightness = L: { $value }%
 picker-patch-none = L: b.d.
+picker-patch-hue = h: { $value } °
+picker-patch-hue-none = h: b.d.
+picker-patch-chroma = c: { $value }
+picker-patch-chroma-none = c: b.d.
 
 reference-value = L { $lightness } %
 reference-photo = · { $photo }

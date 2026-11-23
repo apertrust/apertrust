@@ -604,8 +604,21 @@ tool-channelmixerrgb-control-gamut-promise = Sprowadza kolory spoza gamutu potok
 tool-channelmixerrgb-control-clip-label = Odetnij ujemne wartości RGB z gamutu
 tool-channelmixerrgb-control-clip-full = Odetnij ujemne wartości RGB z gamutu
 tool-channelmixerrgb-control-clip-promise = Odcina ujemne wartości RGB, które adaptacja zostawia poza gamutem.
-# Ustawienia miejscowego mapowania kolorów, własne ustawienia darktable, których nie ma w
-# edycji; nieaktywne, dopóki nie pojawi się próbnik.
+# Wiersz odczytu: CCT, kolor oświetlenia i pipeta.
+tool-channelmixerrgb-readout-cct-daylight = CCT: { $value } K (światło dzienne)
+tool-channelmixerrgb-readout-cct-daylight-promise = Przybliżona skorelowana temperatura barw. To oświetlenie może być dokładnie modelowane za pomocą spektrum światła dziennego, więc jego temperatura barwowa ma sens dla oświetlenia typu D.
+tool-channelmixerrgb-readout-cct-black_body = CCT: { $value } K (ciało doskonale czarne)
+tool-channelmixerrgb-readout-cct-black_body-promise = Przybliżona skorelowana temperatura barw. To oświetlenie może być dokładnie modelowane za pomocą spektrum ciała doskonale czarnego, więc jego temperatura barwowa ma sens dla oświetlenia typu Plancka.
+tool-channelmixerrgb-readout-cct-invalid = CCT: { $value } K (niepoprawny)
+tool-channelmixerrgb-readout-cct-invalid-promise = Przybliżona skorelowana temperatura barw. To oświetlenie nie może być modelowane ani za pomocą spektrum światła dziennego, ani ciała doskonale czarnego, więc temperatura barwowa nie ma dla niego sensu i należy użyć niestandardowego rodzaju oświetlenia.
+tool-channelmixerrgb-readout-cct-undefined = CCT: niezdefiniowane
+tool-channelmixerrgb-readout-cct-undefined-promise = Przybliżona skorelowana temperatura barw nie może zostać obliczona, więc konieczne będzie użycie niestandardowego rodzaju oświetlenia.
+tool-channelmixerrgb-readout-cct-swatch = To jest kolor oświetlenia sceny przed adaptacją chromatyczną. Stanie się on czystą bielą po wykonaniu adaptacji.
+tool-channelmixerrgb-picker-illuminant-label = Oświetlenie z obszaru
+tool-channelmixerrgb-picker-illuminant-full = Oświetlenie z obszaru obrazu
+tool-channelmixerrgb-picker-illuminant-promise = Ustaw balans bieli na wykryty z obszaru
+# Ustawienia miejscowego mapowania kolorów, własne ustawienia darktable, zachowane w
+# ustawieniach i nigdy w edycji, które odczytuje próbnik.
 tool-channelmixerrgb-collapsible-area_colour_mapping = Miejscowe mapowanie kolorów
 tool-channelmixerrgb-setting-area_mode-label = Tryb miejscowy
 tool-channelmixerrgb-setting-area_mode-full = Tryb miejscowy
@@ -615,7 +628,6 @@ tool-channelmixerrgb-setting-area_mode-option-measure = Pomiar
 tool-channelmixerrgb-setting-channel_mixing-label = Uwzględnij miksowanie kanałów
 tool-channelmixerrgb-setting-channel_mixing-full = Uwzględnij miksowanie kanałów
 tool-channelmixerrgb-setting-channel_mixing-promise = Oblicza cel, biorąc pod uwagę miksowanie kanałów. Wyłączone: uwzględniany jest tylko CAT.
-tool-channelmixerrgb-group-target = Cel
 tool-channelmixerrgb-setting-target_lightness-label = Jasność
 tool-channelmixerrgb-setting-target_lightness-full = Docelowa jasność
 tool-channelmixerrgb-setting-target_lightness-promise = Jasność oczekiwanego koloru docelowego po mapowaniu.

@@ -145,21 +145,20 @@ mod tests {
             }
         }
         // Owned by their tool, as the generator gives them.
-        assert!(
-            registry::ALL
-                .iter()
-                .all(|s| s.id().starts_with("tools.exposure."))
-        );
         assert!(matches!(
             registry::TOOLS_EXPOSURE_LIGHTNESS.owner,
             Owner::Tool("exposure")
         ));
+        assert!(matches!(
+            registry::TOOLS_CHANNELMIXERRGB_AREA_MODE.owner,
+            Owner::Tool("channelmixerrgb")
+        ));
     }
 
     /// Every setting a tool's built pick reads is kept: Exposure's, Picker target,
-    /// Lightness and the reference.
+    /// Lightness and the reference, and Colour calibration's area colour mapping's.
     #[test]
-    fn exposure_s_settings_are_kept() {
+    fn the_pickers_settings_are_kept() {
         let ids: Vec<&str> = registry::ALL.iter().map(|s| s.id()).collect();
         assert_eq!(
             ids,
@@ -168,10 +167,23 @@ mod tests {
                 "tools.exposure.lightness",
                 "tools.exposure.reference_lightness",
                 "tools.exposure.reference_photo",
+                "tools.channelmixerrgb.area_mode",
+                "tools.channelmixerrgb.channel_mixing",
+                "tools.channelmixerrgb.target_lightness",
+                "tools.channelmixerrgb.target_hue",
+                "tools.channelmixerrgb.target_chroma",
             ]
         );
-        assert!(setting("exposure", "lightness").is_some());
-        // Colour calibration's still drawn disabled, its picker to come.
-        assert!(setting("channelmixerrgb", "area_mode").is_none());
+        // Each setting a picker reads, kept: none drawn disabled any more.
+        for tool in TOOLS {
+            let definition = tool.definition();
+            for picker in definition.pickers {
+                for name in picker.settings {
+                    assert!(setting(definition.tool.id, name).is_some(), "{name}");
+                }
+            }
+        }
+        // The colour checker's still drawn disabled, its tool to come.
+        assert!(setting("channelmixerrgb", "chart").is_none());
     }
 }

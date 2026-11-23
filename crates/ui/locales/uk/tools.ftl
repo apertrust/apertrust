@@ -603,8 +603,21 @@ tool-channelmixerrgb-control-gamut-promise = Повертає кольори п�
 tool-channelmixerrgb-control-clip-label = Обрізати негативні значення RGB з охоплення
 tool-channelmixerrgb-control-clip-full = Обрізати негативні значення RGB з охоплення
 tool-channelmixerrgb-control-clip-promise = Обрізає негативні значення RGB, які адаптація залишає поза охопленням.
-# Налаштування відображення кольору області, власні налаштування darktable, яких немає у
-# правці; неактивні, доки не з'явиться піпетка.
+# Рядок показів: CCT, колір освітлювача і піпетка.
+tool-channelmixerrgb-readout-cct-daylight = CCT: { $value } K (денне світло)
+tool-channelmixerrgb-readout-cct-daylight-promise = Наближена корельована колірна температура. Цей освітлювач можна точно змоделювати за спектром денного світла, тому його температура є релевантною та значущою з D-освітлювачем.
+tool-channelmixerrgb-readout-cct-black_body = CCT: { $value } K (чорне тіло)
+tool-channelmixerrgb-readout-cct-black_body-promise = Наближена корельована колірна температура. Цей освітлювач можна точно змоделювати за спектром чорного тіла, тому його температура є релевантною та значущою з планківським випромінювачем.
+tool-channelmixerrgb-readout-cct-invalid = CCT: { $value } K (недійсна)
+tool-channelmixerrgb-readout-cct-invalid-promise = Наближена корельована колірна температура. Цей освітлювач не можна точно змоделювати за спектром денного світла чи чорного тіла, тому його температура не є релевантною та значущою, і вам потрібно використовувати спеціальний освітлювач.
+tool-channelmixerrgb-readout-cct-undefined = CCT: невизначена
+tool-channelmixerrgb-readout-cct-undefined-promise = Наближену корельовану колірну температуру неможливо обчислити взагалі, тому вам потрібно використовувати спеціальний освітлювач.
+tool-channelmixerrgb-readout-cct-swatch = Це колір джерела світла до хроматичної адаптації. Цей колір адаптацією перетвориться на чисто білий.
+tool-channelmixerrgb-picker-illuminant-label = Освітлювач з області
+tool-channelmixerrgb-picker-illuminant-full = Освітлювач з області зображення
+tool-channelmixerrgb-picker-illuminant-promise = Встановити баланс білого на виявлений з області зображення
+# Налаштування відображення кольору області, власні налаштування darktable, що зберігаються
+# в налаштуваннях і ніколи у правці, які читає піпетка.
 tool-channelmixerrgb-collapsible-area_colour_mapping = Відображення кольору області зображення
 tool-channelmixerrgb-setting-area_mode-label = Режим області зображення
 tool-channelmixerrgb-setting-area_mode-full = Режим області зображення
@@ -614,7 +627,6 @@ tool-channelmixerrgb-setting-area_mode-option-measure = Вимірювання
 tool-channelmixerrgb-setting-channel_mixing-label = Врахувати змішування каналів
 tool-channelmixerrgb-setting-channel_mixing-full = Врахувати змішування каналів
 tool-channelmixerrgb-setting-channel_mixing-promise = Обчислює ціль, беручи до уваги змішування каналів. Якщо вимкнено, розглядається лише CAT.
-tool-channelmixerrgb-group-target = Ціль
 tool-channelmixerrgb-setting-target_lightness-label = Світлість
 tool-channelmixerrgb-setting-target_lightness-full = Цільова світлість
 tool-channelmixerrgb-setting-target_lightness-promise = Світлість бажаного цільового кольору після відображення.

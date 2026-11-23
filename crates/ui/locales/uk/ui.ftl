@@ -1176,6 +1176,10 @@ picker-patch-target = Ціль
 picker-patch-lch-tip = Ці координати LCh обчислено з координат CIE Lab 1976.
 picker-patch-lightness = L: { $value }%
 picker-patch-none = L: н/д
+picker-patch-hue = h: { $value } °
+picker-patch-hue-none = h: н/д
+picker-patch-chroma = c: { $value }
+picker-patch-chroma-none = c: н/д
 
 reference-value = L { $lightness } %
 reference-photo = · { $photo }
