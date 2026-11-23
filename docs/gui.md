@@ -450,7 +450,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 
 | Platform | Frame | The Toolbar's caption parts | Empty areas of the Toolbar |
 | --- | --- | --- | --- |
-| macOS | A full-size content view, a transparent title bar, the title hidden | The traffic lights, AppKit's own buttons, centred vertically in the 44-point Toolbar; the Toolbar starts after them | A drag moves the window; a double-click does what the system's setting says (`AppleActionOnDoubleClick`: zoom, minimise or nothing) |
+| macOS | A full-size content view, a transparent title bar, the title hidden | The traffic lights, AppKit's own buttons, centred vertically in the Toolbar, 56 points with its labels and 44 without; the Toolbar starts after them | A drag moves the window; a double-click does what the system's setting says (`AppleActionOnDoubleClick`: zoom, minimise or nothing) |
 | Windows | Decorations off, winit's undecorated shadow and Windows 11's rounded corners | Minimise, maximise or restore, and close at the end, drawn by the app | A drag starts the system's move, with Aero Snap at the screen's edges; a double-click maximises or restores; a right-click opens the toolbar menu, the system menu on Alt+Space and a right-click on the menu button (decision 92) |
 | Linux, X11 and Wayland, every desktop | Decorations off: neither GNOME, KDE nor an X11 window manager draws a title bar | As on Windows: minimise, maximise and close at the end, until the desktop's own layout is read from the settings portal | A drag hands the move to the window manager or compositor, its edge tiling included; a double-click maximises or restores; a right-click opens the toolbar menu, the compositor's window menu on its own key (Alt+Space on GNOME) and a right-click on the menu button, none on X11 (decision 92) |
 
@@ -463,15 +463,15 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 - **The window keeps its title,** hidden in the Mac's frame, for Mission Control, the Window menu, the taskbar and screen readers. With a user data folder other than the default, it ends with the folder's name, "Apertrust — work" (decision 89; [Instances and windows](#instances-and-windows)).
 - **Scale.** Everything the frame draws is in points, so it follows a monitor's scale; on Windows winit applies the system's suggested rectangle on `WM_DPICHANGED`.
 - **The minimum window size** is 960 by 600 pixels on every platform, wider where what the Toolbar never folds needs more at a large interface size ([Narrowing](#narrowing)). Planned: 500 by 600 once the shell gives way, so Windows 11's half and third snap zones take the window (Microsoft asks for 500 effective pixels or less), and macOS's and the Linux desktops' tiling gain too. The quarter zones need a height of about 520 on a 1080-pixel screen, which 600 keeps out.
-  - Below 960 points the shell gives way: the Toolbar drops its words, the menu button of Windows and Linux never folding while shown (decisions 39 and 92), in the order [the Toolbar](#the-toolbar) gives, Undo and Redo the last to go into ».
+  - Below 960 points the shell gives way: the Toolbar's actions go under » as they stop fitting, the menu button of Windows and Linux never folding while shown (decisions 39 and 92), in the order [the Toolbar](#the-toolbar) gives, Undo and Redo the last to go into ».
   - How the Tools panel narrows, hides or lies over the photo in a narrow window is an open design item.
   - The minimum is lowered in code (`WINDOW_MIN`) only once the shell gives way, so no window ever shows a broken layout.
 
 #### The Mac's frame
 
 - **The traffic lights** are moved by `apertrust-display`, since winit cannot place them, and moved again after every layout AppKit makes: a resize, leaving full screen, a change of scale. It reports where they end, so the Toolbar's inset is measured, never a constant. In full screen they leave with the title bar, and the Toolbar starts at its edge.
-  - **Where:** the close button's centre as far from the window's left edge as from its top, 22 points in the 44-point bar, as AppKit places them in its taller toolbars; the others at AppKit's spacing; the Toolbar's content after a margin as wide as the one before them.
-  - **How:** `apertrust_display::place_window_buttons`, called each frame before the Toolbar is drawn, since every such layout brings egui a frame. It makes the title bar's container as tall as the Toolbar in the window system's points (44 times the interface's scale), so the buttons sit at its centre and still take clicks, and returns the room they take, which the Toolbar's start inset takes in place of its margin.
+  - **Where:** the close button's centre as far from the window's left edge as from its top, 28 points in the 56-point bar with labels and 22 in the 44-point bar without, as AppKit places them in its taller toolbars; the others at AppKit's spacing; the Toolbar's content after a margin as wide as the one before them.
+  - **How:** `apertrust_display::place_window_buttons`, called each frame before the Toolbar is drawn, since every such layout brings egui a frame. It makes the title bar's container as tall as the Toolbar in the window system's points (`Toolbar::height` times the interface's scale, 56 or 44 as the labels are on or off), so the buttons sit at its centre and still take clicks, and returns the room they take, which the Toolbar's start inset takes in place of its margin.
   - **After AppKit's own layouts.** AppKit puts the buttons back in its own 32-point title bar's place whenever it tiles the title bar: on every step of a zoom's or a resize's animation, while egui draws no frame, and after leaving full screen. So two methods are replaced at run time that always run: the `layout` of the title bar's container, a private AppKit class (`NSTitlebarContainerView`), which comes before anything is drawn; and winit's window's `setFrame:display:`, a partial fallback should that class be renamed, since with `display:YES` the step may already be drawn with the buttons in AppKit's place.
   - **Only on the views it knows.** It touches nothing unless the views are as AppKit has built them since OS X 10.10: the container straight in the frame view that holds the window's content view. Otherwise the buttons stay where AppKit put them, and the Toolbar is still the title bar, its inset measured from where they are, or 78 points when the window cannot be reached; the window can always be moved. No oldest macOS is set yet, so the views need checking on the oldest one the app will support.
 - **Only the empty areas move the window.** Under a transparent title bar AppKit moves the window from any view that lets it, and winit's view does.
@@ -575,7 +575,7 @@ One menu button at the very start of the Toolbar (decision 39), with the look an
 
 - **The button** never folds while shown, so the menus cost neither height nor a line of their own. It is drawn one of two ways, as the setting Menu button chooses (`toolbar.menu_button`, Settings › General › Interface, Windows and Linux only, applied at once; [Settings and workspace](#settings-and-workspace)):
   - **Apertrust icon,** the default, on the UI wireframe's board "Toolbar · the menu button as the app's icon": the app's icon, the macOS icon's rounded square in one colour with the Slider A cut out of it (`Icon::AppIcon`, `app-icon.svg`), 20 points, then 3 points and a caret ▾, an 8-point chevron of 1.3-point lines (`Icon::Caret`), in a button 30 points high with 5 points each side, 41 wide. It is drawn as the Toolbar's icon buttons are (decision 81), with no plate: `text_secondary` at rest, `text_strong` under the pointer and while its menu is open, `accent_text` while held down, and high contrast's `button_edge` round it under the pointer.
-  - **Menu icon:** ☰, an icon button like the Toolbar's others, 30 points square (`Icon::Menu`, `menu.svg`).
+  - **Menu icon:** ☰, an icon button like the Toolbar's », 30 points square (`Icon::Menu`, `menu.svg`).
   - Either way it is the same button: named Menu to screen readers, with its menu popup, expanded or not, its tooltip "Menu (F10)", its keys, its place and its anchor. A person may hide it through the workspace's file (decision 92, [Customising the Toolbar](#customising-the-toolbar)): F10 and Alt with an access key still open the menu, hung from the toolbar's start, as will Alt alone on Windows once built, and View › Panels and the toolbar menu offer Show Menu Button, which puts it back at the list's start. `Toolbar` draws it and reports `Menu`, as it reports its caption buttons.
 - **The menu:** one, drawn in the theme, listing the top-level menus of `MENUS` (File, Edit, Photo, Select, Layer from Phase 4, View, Help) as submenus, with items, a shortcut column, check marks, separators, submenus and disabled items. AccessKit's menu roles, so Narrator and Orca read them as menus.
   - It is a pull-down from a button through [the popup service](#popups) (decision 40), drawn on Windows and Linux as every popup is there, so one drawn menu serves it and every other pull-down; there is no `MenuBar` component.
@@ -1692,7 +1692,7 @@ The Import tool's presets hold the settings the tool owns, as darktable's import
 
 ### Sizes and small windows
 
-| Window | The sheet's room, less the 44-point Toolbar, the bar and the 52-point footer | Column | Grid |
+| Window | The sheet's room, less the Toolbar, the bar and the 52-point footer | Column | Grid |
 | --- | --- | --- | --- |
 | 1440 × 900, a 13-inch Mac | About 768 high | 440 | About 1000 wide: eight Medium cells |
 | 1280 × 720, Windows at 150 % | About 540 high | 440; the column scrolls | About 840: seven Medium cells |
@@ -2539,7 +2539,7 @@ The names are written as names, capitalised as the tabs and tools are; the bars 
 
 | Part | In `apertrust-ui` | In the app | Its messages |
 | --- | --- | --- | --- |
-| Toolbar | `components::toolbar`, `Toolbar`, `ToolbarEntry`, `ToolbarButton`, `ToolbarAction`; the themes' size `toolbar` | `fn toolbar`, `toolbar::listed`, the workspace's `toolbar` | `toolbar`, `toolbar-menu`, `toolbar-more` |
+| Toolbar | `components::toolbar`, `Toolbar`, `ToolbarEntry`, `ToolbarButton`, `ToolbarAction`; the themes' sizes `toolbar` and `toolbar_labelled` | `fn toolbar`, `toolbar::listed`, the workspace's `toolbar` | `toolbar`, `toolbar-menu`, `toolbar-more` |
 | Tools panel | `components::tools_panel`; the themes' size `tools_panel` | `fn tools_panel` | `tools-panel-tabs`, `tools-panel-width`, `menu-tools-panel-tab`, `settings-group-tools-panel` |
 | Viewer | | `fn viewer`, `settings::Viewer` | |
 | Viewer bar | `components::viewer_bar`, `ViewerBar`, `ViewerBarAction` | | `viewer-bar` |
@@ -2786,32 +2786,43 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
   - No mark of its own and no name beside it: About is in the app menu on the Mac and in Help on Windows and Linux ([Help](#help)), and the Mac's app menu, the window's title and About carry the name. The colour mark, the app icon in colour and the full logo are for where the logo stands alone, away from the photo.
 - **Keys and screen readers.** F6 into the Toolbar lands on its first control: the first action that can run on the Mac, Import… where it can, the menu button on Windows and Linux; with the toolbar, whatever item is first, and with nothing focusable F6 skips the region. The menu button is in the Tab order like the other buttons, also opens on F10, and with a top-level menu expanded on Alt and that menu's access key (decision 39). The caption buttons are last. Map's key, Shift+M, goes with the viewer bar's Map toggle ([The viewer bar](#the-viewer-bar)); Photo has none.
 - **What a script sees:** nothing new: the actions send the commands their buttons send.
-- **A card coming in** (planned, step 20c; decision 85): while a card with photos not imported is in, Import… gains a dot, `accent`, 6 points, at its icon's top end, and keeps it when the labels fold; its tooltip names the card and its new photos ("EOS_DIGITAL: 214 new photos"), and screen readers hear it once, politely. Import then opens with the card chosen. Settings › Import's When a card is connected can make Import open by itself instead ([The Import sheet](#the-import-sheet)). Collections' Import… carries the same dot and tooltip (decision 90).
+- **A card coming in** (planned, step 20c; decision 85): while a card with photos not imported is in, Import… gains a dot, `accent`, 6 points, at its icon's top end, labels on or off; its tooltip names the card and its new photos ("EOS_DIGITAL: 214 new photos"), and screen readers hear it once, politely. Import then opens with the card chosen. Settings › Import's When a card is connected can make Import open by itself instead ([The Import sheet](#the-import-sheet)). Collections' Import… carries the same dot and tooltip (decision 90).
 - **When.** Built: the order and the narrowing's steps; the traffic lights' inset on the Mac ([The frame](#the-frame)); the menu button, in either drawing, and its menu and the caption buttons on Windows and Linux; the cursors' well (`Toolbar::cursors`); the Toolbar drawn from the workspace's list, the well where `cursors` stands in it, the overflow with », and the labels under the icons, Toolbar Labels (decision 92).
 
 #### Narrowing
 
-Built, decision 92's overflow ([Customising the Toolbar](#customising-the-toolbar)): the Toolbar measures its entries at the current scale and language each frame and gives way one step at a time, undoing a step only with 16 points to spare so a resize never flickers:
+Built, decision 92's overflow ([Customising the Toolbar](#customising-the-toolbar)): the Toolbar measures its entries at the current scale and language each frame and gives way one step at a time, undoing a step only with 16 points to spare so a resize never flickers. The steps are the same with labels on or off: what does not fit goes under », a labelled action with its word, the ones still shown keeping theirs.
 
-1. the labels fold, all at once, while Toolbar Labels is on: every action becomes its icon alone ([Labels](#customising-the-toolbar));
-2. the fixed spaces narrow to 8 points, then go one at a time from the end;
-3. the actions move into » (`toolbar-more`) one at a time, in reverse reading order, a tool's items before the app's own: Apply edit, Copy edit, Reset and Export…, then Import…. The first two go together, since » takes the first one's room. » stands just before the first flexible space, or with none at the end, and lists them in the Toolbar's order with their keys, disabled where they cannot run;
-4. the save warning and Saving… lose their words, to the sign and "…", and the assistant's connection its, planned with it in Phase 6 (the jobs spinner has none);
-5. Undo and Redo go into » together, and the assistant's connection becomes one button whose menu holds Disconnect, planned with it.
+1. the fixed spaces narrow to 8 points, then go one at a time from the end;
+2. the actions move into » (`toolbar-more`) one at a time, in reverse reading order, a tool's items before the app's own: Apply edit, Copy edit, Reset and Export…, then Import…, » fitting in the first one's room. » stands just before the first flexible space, or with none at the end, and lists them in the Toolbar's order with their keys, disabled where they cannot run;
+3. the save warning and Saving… lose their words, to the sign and "…", and the assistant's connection its, planned with it in Phase 6 (the jobs spinner has none);
+4. Undo and Redo go into » together, and the assistant's connection becomes one button whose menu holds Disconnect, planned with it.
 
 On Windows and Linux the menu button holds the menus at every width.
 
-Where each step starts is measured by a test in every language, with labels on, as a new user has them. With labels off the Toolbar is icons from the widest, and every other step starts where it does with them, since past the first step both are the same. The status slots are measured at their widest at each step, shown or not, so neither a save nor a job moves the fold:
+Where each step starts is measured by a test in every language, with labels on, as a new user has them, and off; the labels only make the actions wider. The status slots are measured at their widest at each step, shown or not, so neither a save nor a job moves the fold. The Mac's columns take the traffic lights' room as 78 points with labels on or off; on a Mac the 56-point bar places them 6 points further right than the 44-point one ([The Mac's frame](#the-macs-frame)), so with labels there each step starts up to 12 points wider:
+
+With labels:
 
 | Step starts below | Mac, English | Linux, English, the app's icon | Linux, English, ☰ | Mac, Ukrainian | Mac, Polish |
 | --- | --- | --- | --- | --- | --- |
-| The labels fold | 744 points | 869 | 858 | 875 | 848 |
-| The fixed space narrows to 8 points | 599 | 724 | 713 | 626 | 614 |
-| The fixed space goes | 591 | 716 | 705 | 618 | 606 |
-| Apply edit and Copy edit go under » | 585 | 710 | 699 | 612 | 600 |
-| Import…, the last before Undo and Redo, goes under » | 489 | 614 | 603 | 516 | 504 |
-| The status words fold | 457 | 582 | 571 | 484 | 472 |
-| Undo and Redo go under » | 399 | 524 | 513 | 399 | 399 |
+| The fixed space narrows to 8 points | 744 points | 869 | 858 | 875 | 848 |
+| The fixed space goes | 736 | 861 | 850 | 867 | 840 |
+| Apply edit goes under » | 730 | 855 | 844 | 861 | 834 |
+| Import…, the last before Undo and Redo, goes under » | 533 | 658 | 647 | 618 | 567 |
+| The status words fold | 481 | 606 | 595 | 564 | 506 |
+| Undo and Redo go under » | 423 | 548 | 537 | 480 | 433 |
+
+Without labels:
+
+| Step starts below | Mac, English | Linux, English, the app's icon | Linux, English, ☰ | Mac, Ukrainian | Mac, Polish |
+| --- | --- | --- | --- | --- | --- |
+| The fixed space narrows to 8 points | 613 points | 738 | 727 | 640 | 628 |
+| The fixed space goes | 605 | 730 | 719 | 632 | 620 |
+| Apply edit goes under » | 599 | 724 | 713 | 626 | 614 |
+| Import…, the last before Undo and Redo, goes under » | 495 | 620 | 609 | 522 | 510 |
+| The status words fold | 461 | 586 | 575 | 488 | 476 |
+| Undo and Redo go under » | 403 | 528 | 517 | 403 | 403 |
 
 Linux needs 125 points more than the Mac, 114 with ☰, 49 + 146 − 70: the menu button and the 8 points after it, 49 (38 with ☰, which is 11 narrower than the app's icon and its caret); at the end the caption buttons with the 16 points before them, 154, less the Mac's 8-point end margin they replace, 146; less the 70 points by which the traffic lights' room, 78, is wider than the start's 8-point margin. Each step starts 117 points wider than it would without the cursors' well, which never folds: the well, 101 points for Phase 2's Select, Pan and Pick, and the 16 points before it. The test (`the_toolbar_folds_where_gui_md_says`) holds these numbers, with labels and without, the jobs spinner's slot and the well counted as the app draws them, and checks at 500 points, in every language, as on the Mac and on Linux with either menu button, that the default list and one with every part and twelve more actions placed fold no part and leave 24 points of empty panel. The narrowing test checks at every width down to 500, in every language, that those 24 points are left, counted on both sides of the well together, the menu button included.
 
@@ -2888,19 +2899,20 @@ labels = true
 
 **The overflow** (built; [Narrowing](#narrowing) has where each step starts and the window's minimum width), measured every frame at the current scale and language, a step undone only once 16 points are spare:
 
-1. the labels fold, all at once;
-2. the fixed spaces narrow to 8 points, then go one at a time from the end, so any number of them fits;
-3. the actions move into » (`toolbar-more`, 30 points) one at a time, in reverse reading order, tools' items before the app's, Undo and Redo last; » stands just before the first flexible space, or with none at the toolbar's end, after the last item and before the caption buttons;
-4. the status words fold to their signs;
-5. Undo and Redo go into ».
+1. the fixed spaces narrow to 8 points, then go one at a time from the end, so any number of them fits;
+2. the actions move into » (`toolbar-more`, 30 points) one at a time, a labelled one with its word, in reverse reading order, tools' items before the app's, Undo and Redo last; » stands just before the first flexible space, or with none at the toolbar's end, after the last item and before the caption buttons;
+3. the status words fold to their signs;
+4. Undo and Redo go into ».
 
 » lists its items in the toolbar's order with their keys and disabled states, and their check marks, planned; it matches the Tools panel's ». Never folded: the parts placed, the cursors' well among them, », the caption buttons and 24 points of empty area; when even those do not fit, at a large interface size, the window's minimum width grows to their width, so the bar never overlaps and keeps its 24 points to move the window. A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
 
 **Labels** (built). Under the icons by default, as the Tools panel's tab names. Toolbar Labels (`toolbar.labels`, on, app-wide, applied at once) is in View › Panels, the toolbar menu and Settings › General › Interface; off, each item is its icon alone, Import…, Export… and Reset too.
 
-- A labelled item: in the 44-point Toolbar, 6 points above the 16-point icon in `text_secondary`, 3 points, then the word under it, centred, at the caption size (`text.caption`, 11 points), Regular, in `text`, set as the tab names are; the item as wide as its word or its icon, the wider, with 8 points at each side. An icon drawn smaller than 16 points, as Reset's 14, is centred in the 16-point square, so every word stands on one line. Disabled, the icon and the word are `text_disabled`. The parts, », the menu button and the cursors' well have no label. The Toolbar keeps its height with labels on or off.
+- The Toolbar is 56 points tall with labels (the themes' `toolbar_labelled`) and 44 without (`toolbar`; `Toolbar::height`). The height follows the setting alone, never the window's width.
+- Every action's icon is drawn at 22 points, labels on or off, as the Tools panel's tabs' icons (`IconButton::icon_size`): `Icon::paint` renders it at that size from its own file with the same 1.25-point line, so no second file is needed. Full Screen's icon, which keeps the caption button's own box, keeps its 10 points. With labels off each action is a 32-point button, its icon at the centre.
+- A labelled item: 8 points from the bar's top to the 22-point icon in `text_secondary`, 4 points, then the word on its 14-point line, centred, at the caption size (`text.caption`, 11 points), Regular, in `text`, set as the tab names are, and 8 points under it; the item as wide as its word or its icon, the wider, with 8 points at each side. Disabled, the icon and the word are `text_disabled`. The parts, », the menu button and the cursors' well have no label: they, the jobs spinner, the save state, the caption buttons, which run the bar's whole height, and the Mac's traffic lights keep their sizes, centred in the bar.
 - The word is the action's message's `.toolbar` attribute, else the message, short and on one line, with no ellipsis: Import, Export, Copy edit. Every built-in action that can be placed has one in every language, a tool's on its `-full` message; a test fails on one missing from a language's own file, and on one over 96 points at the caption size. A third-party tool's action may leave it out, and then shows its full message. Ukrainian's Copy edit and Apply edit, 100 and 109 points in full, are Копіювати and Застосувати. The widest words are English's Copy or apply parts, at 95, and Ukrainian's Поворот праворуч, Rotate 90° clockwise, at 95.
-- Where the labels fold, in each language and on each platform, is the first row of [Narrowing](#narrowing)'s table.
+- The labels never fold on their own: as the window narrows, an action that does not fit goes under » with its word, as one without labels does. [Narrowing](#narrowing)'s tables give where each step starts with labels and without.
 - Tooltips give the words and the first key always ("Undo Exposure · Ctrl+Z"); a tool's item is prefixed by its tool, "Orientation: Rotate 90° clockwise".
 
 **States:**
