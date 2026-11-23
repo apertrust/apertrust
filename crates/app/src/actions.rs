@@ -209,6 +209,12 @@ impl ActionId {
     pub const TOOLBAR_LABELS: ActionId = ActionId("toolbar-labels");
     /// The Customise Toolbar window, drawn disabled until it is built (decision 92).
     pub const CUSTOMISE_TOOLBAR: ActionId = ActionId("customise-toolbar");
+    /// The toolbar menu's Hide "X", taking the item its menu opened on out of the
+    /// workspace's list (decision 92).
+    pub const TOOLBAR_HIDE: ActionId = ActionId("toolbar-hide");
+    /// The menu button put back at the Toolbar's start while it is hidden, on Windows and
+    /// Linux (decision 92).
+    pub const SHOW_MENU_BUTTON: ActionId = ActionId("show-menu-button");
     pub const FULL_SCREEN: ActionId = ActionId("full-screen");
     /// File › Close: the folder or photo open.
     pub const CLOSE: ActionId = ActionId("close");
@@ -389,6 +395,11 @@ pub enum Intent {
     Menu,
     /// Toolbar Labels turned on or off, `toolbar.labels`, at once (decision 92).
     ToolbarLabels,
+    /// The item the toolbar menu opened on taken out of the workspace's Toolbar, run by
+    /// that menu alone (decision 92).
+    ToolbarHide,
+    /// The menu button put back at the start of the workspace's Toolbar (decision 92).
+    ShowMenuButton,
     FullScreen,
     /// The main window, which ends the app as Quit does; a dialog's own window is the
     /// app's to close (`run_action`, in the app's `main`).
@@ -610,6 +621,12 @@ pub struct State {
     /// Whether the Toolbar shows its words under its icons, which Toolbar Labels' item shows
     /// checked (decision 92).
     pub toolbar_labels: bool,
+    /// The Toolbar's item whose menu is open, by its id in the workspace's list, which Hide
+    /// takes out; none elsewhere, and it cannot run (decision 92).
+    pub toolbar_item: Option<&'static str>,
+    /// Whether the app draws the menus here and the workspace's Toolbar leaves the menu
+    /// button out, so Show Menu Button can put it back: on Windows and Linux alone.
+    pub menu_button_hidden: bool,
     /// The Tools panel's tab shown, by position, whose item is shown checked.
     pub panel_tab: usize,
     /// The workspace shown, by its action ([`workspace`]), whose item is shown checked.
@@ -1058,7 +1075,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 142] = [
+pub static ACTIONS: [Action; 144] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1726,6 +1743,24 @@ pub static ACTIONS: [Action; 142] = [
         trigger: Trigger::Press,
         available: |s| on_main_window(s) && !s.modal,
         emits: Emit::Intent(Intent::ToolbarLabels),
+    },
+    Action {
+        id: ActionId::TOOLBAR_HIDE,
+        message: "action-toolbar-hide",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.toolbar_item.is_some() && on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::ToolbarHide),
+    },
+    Action {
+        id: ActionId::SHOW_MENU_BUTTON,
+        message: "action-show-menu-button",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.menu_button_hidden && on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::ShowMenuButton),
     },
     Action {
         id: ActionId::CUSTOMISE_TOOLBAR,
@@ -3309,6 +3344,8 @@ pub(crate) mod tests {
             dialog_window: false,
             full_screen: false,
             toolbar_labels: true,
+            toolbar_item: None,
+            menu_button_hidden: false,
             panel_tab: 0,
             workspace: workspace(crate::layout::DEFAULT),
             workspace_given: false,

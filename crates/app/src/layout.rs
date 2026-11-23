@@ -597,13 +597,6 @@ pub enum Move {
     /// The Toolbar's list as it now is (decision 92), the whole list, ids this build does
     /// not know in their places, written over the file's `toolbar`; its tabs and every
     /// other key stay as the file has them.
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the toolbar menu's Hide and Show Menu Button make it once built"
-        )
-    )]
     Toolbar(Vec<String>),
 }
 

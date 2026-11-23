@@ -270,6 +270,7 @@ impl MenuButtonStyle {
 #[derive(Default)]
 pub struct Toolbar<'a> {
     entries: Vec<ToolbarEntry>,
+    focus: Vec<usize>,
     labels: bool,
     cursors: Option<CursorWell<'a>>,
     saved: SaveState<'a>,
@@ -344,6 +345,14 @@ impl<'a> Toolbar<'a> {
     /// empty area, the guards apart.
     pub fn entries(mut self, entries: Vec<ToolbarEntry>) -> Self {
         self.entries = entries;
+        self
+    }
+
+    /// Gives the focus to the first of `entries`, by their places in the list, that it draws
+    /// able to take it: an enabled button not under », the menu button or the spinner. None
+    /// by default; the app asks for it for one frame, as after Hide from the keys.
+    pub fn focus(mut self, entries: Vec<usize>) -> Self {
+        self.focus = entries;
         self
     }
 
@@ -750,6 +759,8 @@ impl<'a> Toolbar<'a> {
         };
         let mut items: Vec<(Option<usize>, Rect)> = Vec::new();
         let mut keyed = None;
+        // The entries drawn that can take the focus, by their places in the list.
+        let mut focusable: Vec<(Option<usize>, Id)> = Vec::new();
         let mut menu_drawn = false;
         let mut well_rect = None;
         let mut more_rect = None;
@@ -770,6 +781,7 @@ impl<'a> Toolbar<'a> {
                         if menu_asked(&ctx, &button) {
                             keyed = Some(keyed_menu(entry_of(d), &button));
                         }
+                        focusable.push((entry_of(d), button.id));
                         pressed(button);
                         match press {
                             Some(MenuPress::Open) => action = Some(ToolbarAction::Menu),
@@ -794,6 +806,9 @@ impl<'a> Toolbar<'a> {
                         .inner;
                     if menu_asked(&ctx, &response) {
                         keyed = Some(keyed_menu(entry_of(d), &response));
+                    }
+                    if button.enabled {
+                        focusable.push((entry_of(d), response.id));
                     }
                     if pressed(response) {
                         action = Some(done);
@@ -851,6 +866,18 @@ impl<'a> Toolbar<'a> {
                     if let Some(chosen) = drawn.inner {
                         action = Some(ToolbarAction::Cursors(chosen));
                     }
+                    // Its Tab stop, the chosen cursor's face or the first, takes the focus
+                    // asked for as a button does: the one target of the well that can.
+                    let stop = ctx.viewport(|v| {
+                        (v.this_pass.widgets.get_layer(ui.layer_id()))
+                            .find(|w| {
+                                w.enabled && w.sense.is_focusable() && rect.contains_rect(w.rect)
+                            })
+                            .map(|w| w.id)
+                    });
+                    if let Some(stop) = stop {
+                        focusable.push((entry_of(d), stop));
+                    }
                     // The menu keys on a focused face or chevron ask for the menu on the
                     // well, as on a button.
                     let focused = ctx.memory(|m| m.focused()).and_then(|id| {
@@ -878,6 +905,7 @@ impl<'a> Toolbar<'a> {
                             if menu_asked(&ctx, &spinner) {
                                 keyed = Some(keyed_menu(entry_of(d), &spinner));
                             }
+                            focusable.push((entry_of(d), spinner.id));
                             items.push((entry_of(d), spinner.rect));
                             if pressed(spinner) {
                                 action = Some(ToolbarAction::Jobs);
@@ -977,6 +1005,14 @@ impl<'a> Toolbar<'a> {
         }
         // The well is no empty area, between its buttons too.
         controls.extend(well_rect);
+        // The focus asked for, on the first of those entries that can take it.
+        let wanted = (self.focus.iter()).find_map(|at| {
+            let found = focusable.iter().find(|(entry, _)| *entry == Some(*at));
+            found.map(|(_, id)| *id)
+        });
+        if let Some(id) = wanted {
+            ctx.memory_mut(|m| m.request_focus(id));
+        }
         // The toolbar menu, asked for on whatever is under the pointer or from the keys,
         // in place of a press its Control-click on the Mac made; never on the caption
         // buttons, which are the platform's, nor a Control-click on » or the well, whose
