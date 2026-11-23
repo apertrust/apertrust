@@ -1835,9 +1835,6 @@ fn resize_hover(ctx: &egui::Context, band: f32) {
     }
 }
 
-/// The Toolbar's actions that show their words beside their icons while there is room.
-const TOOLBAR_WORDS: [ActionId; 3] = [ActionId::IMPORT, ActionId::EXPORT, ActionId::RESET];
-
 /// The Toolbar's actions that go under » last as it narrows, after the status words; a
 /// tool's items go first, the app's own after them (decision 92).
 const TOOLBAR_LAST: [ActionId; 2] = [ActionId::UNDO, ActionId::REDO];
@@ -3490,12 +3487,12 @@ impl Shell {
                 (toolbar::Kind::Part, _) => return None,
                 (toolbar::Kind::App | toolbar::Kind::Tool(_), id) => {
                     let action = actions::named(id)?;
-                    let name = placed
-                        .words
-                        .map_or_else(String::new, |message| words.text(message));
+                    let (name, word) = placed.words.map_or_default(|message| {
+                        (words.text(message), toolbar::word(&words, message))
+                    });
                     let button = ToolbarButton::new(action.id.0, placed.icon?, name)
+                        .label(word)
                         .enabled(can(action))
-                        .words(TOOLBAR_WORDS.contains(&action.id))
                         .folds_first(placed.folds_first())
                         .folds_last(TOOLBAR_LAST.contains(&action.id));
                     if let Some(tip) = self.keymap.tip(action.id, ctx.os(), &words) {
@@ -3509,6 +3506,7 @@ impl Shell {
         let entries: Vec<ToolbarEntry> = entries.collect();
         let mut bar = Toolbar::new()
             .entries(entries)
+            .labels(true)
             .menu_button(self.drawn_menus)
             .menu_button_style(self.menu_button)
             .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))

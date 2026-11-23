@@ -6,19 +6,32 @@ app-name = Apertrust
 
 ## The Toolbar's common actions
 
+# Every action the Toolbar can show has a .toolbar attribute (decision 92), in every
+# language: its word under its icon while Toolbar Labels is on, short and on one line, at
+# most 96 points at the caption size, with no ellipsis. A tool's has it on its -full
+# message (tools.ftl).
 action-import = Import…
+    .toolbar = Import
 action-export = Export…
+    .toolbar = Export
 # File › Export Again: the export with the settings as last kept, with no dialog.
 action-export-again = Export Again
+    .toolbar = Export again
 action-reset = Reset
+    .toolbar = Reset
 # Edit › Discard History… and the History section's options: clears the history, asking
 # first.
 action-discard-history = Discard History…
 action-undo = Undo
+    .toolbar = Undo
 action-redo = Redo
+    .toolbar = Redo
 action-copy-edit = Copy edit
+    .toolbar = Copy edit
 action-apply-edit = Apply edit
+    .toolbar = Apply edit
 action-copy-apply-parts = Copy or apply parts
+    .toolbar = Copy or apply parts
 # The Select menu's items, darktable's select all, select none, invert selection and select
 # untouched: they act on the Browser's photos, the folder open's.
 action-select-all = Select all
@@ -28,6 +41,7 @@ action-select-unedited = Select unedited
 # Goes back to the selection as it was before its last change, one level.
 action-previous-selection = Previous selection
 action-settings = Settings
+    .toolbar = Settings
 # Heard once the edit is saved again after a failed write (the Toolbar's save state).
 status-saved = Saved
 
@@ -238,6 +252,7 @@ window-close = Close
 jobs-name = Jobs
 # View › Jobs: the jobs window, opened or brought to the front.
 action-show-jobs = Jobs
+    .toolbar = Jobs
 jobs-tip = Jobs: { $value }
 jobs-value-running = { $running } running
 jobs-value-waiting = { $waiting } waiting
@@ -608,6 +623,7 @@ open-kind-folder = Folder: { $name }
 ## Folder mode: File › Open Folder…, the Photos tab's Collections and the empty states
 
 action-open-folder = Open Folder…
+    .toolbar = Open folder
 # The title of the platform's folder dialog, where it shows one.
 open-folder-title = Open Folder
 # The Photos tab's first section, which chooses what the Browser shows, and its group
@@ -1002,9 +1018,11 @@ about-back = Back
 
 # File › Open…: raws, their folder opened with the first in place of the photo open.
 action-open = Open…
+    .toolbar = Open
 action-view-edit = Switch to Edit
 # View › Collections: the first tab holding Collections.
 action-show-collections = Collections
+    .toolbar = Collections
 # The Tools panel's tabs by position, whatever they hold.
 action-panel-tab-1 = Tools panel tab 1
 action-panel-tab-2 = Tools panel tab 2
@@ -1056,6 +1074,7 @@ action-scale-reset = Normal interface size
 action-next-region = Next pane
 action-previous-region = Previous pane
 action-full-screen = Full screen
+    .toolbar = Full screen
 # File › Close Window on the Mac: the window with the focus, Settings' or the main window,
 # which quits.
 action-close-window = Close window
@@ -1078,11 +1097,15 @@ action-quit = Quit
 action-restart = Restart
 action-peek = See the photo without the section under the pointer
 action-next-photo = Next photo
+    .toolbar = Next
 action-previous-photo = Previous photo
+    .toolbar = Previous
 action-zoom-in = Zoom in
 action-zoom-out = Zoom out
 action-zoom-fit = Zoom to fit
+    .toolbar = Fit
 action-zoom-100 = Zoom to 100%
+    .toolbar = 100%
 action-zoom-small = Zoom to small
 action-zoom-fill = Zoom to fill
 action-zoom-50 = Zoom to 50%

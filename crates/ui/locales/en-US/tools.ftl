@@ -58,6 +58,7 @@ tool-temperature-control-various-promise = What a four-color sensor's emerald ph
 
 tool-flip-action-rotate_ccw-label = Rotate 90° counterclockwise
 tool-flip-action-rotate_ccw-full = Rotate 90° counterclockwise
+    .toolbar = Rotate left
 tool-flip-action-rotate_ccw-promise = Rotate the image 90° counterclockwise.
 
 ## Exposure

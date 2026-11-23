@@ -3011,16 +3011,22 @@ fn sample_jobs() -> Vec<Job> {
 }
 
 /// The Toolbar's entries as the app draws the default workspace's list (decision 92), each
-/// button named in `ctx`'s language, those `disabled` names drawn disabled: the menu
-/// button, Import…, Export… and Reset with their words, Undo and Redo, which fold last, a
-/// space, Copy edit and Apply edit, the cursors' well between two flexible spaces, the
-/// jobs and the save state. Every button but Import… is a tool's item, Export's or
-/// History's, which folds first. The gallery and the design system's tests draw it.
+/// button named in `ctx`'s language with its `.toolbar` word as its label, those
+/// `disabled` names drawn disabled: the menu button, Import…, Export…, Reset, Undo and
+/// Redo, which fold last, a space, Copy edit and Apply edit, the cursors' well between two
+/// flexible spaces, the jobs and the save state. Every button but Import… is a tool's
+/// item, Export's or History's, which folds first. The gallery and the design system's
+/// tests draw it.
 pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEntry> {
+    let words = crate::translator(ctx);
     let button = |id: &'static str, icon: Icon| {
-        let name = crate::tr(ctx, &format!("action-{id}"));
-        let button = ToolbarButton::new(id, icon, name).enabled(!disabled.contains(&id));
-        let button = button.words(["import", "export", "reset"].contains(&id));
+        let message = format!("action-{id}");
+        let name = words.text(&message);
+        let label = words
+            .attribute(&message, "toolbar")
+            .unwrap_or_else(|| name.clone());
+        let button = ToolbarButton::new(id, icon, name).label(label);
+        let button = button.enabled(!disabled.contains(&id));
         let button = button.folds_first(id != "import");
         ToolbarEntry::Button(button.folds_last(["undo", "redo"].contains(&id)))
     };
@@ -3047,8 +3053,10 @@ pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEnt
 fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     let ctx = ui.ctx().clone();
     let disabled = ["redo", "apply-edit"];
-    // Undo says what it would undo.
+    // Undo says what it would undo, its label its word alone.
+    let word = crate::translator(&ctx).attribute("action-undo", "toolbar");
     let undo = ToolbarButton::new("undo", Icon::Undo, "Undo Exposure: Brightness +8");
+    let undo = undo.label(word.unwrap_or_default());
     let entries = toolbar_entries(&ctx, &disabled)
         .into_iter()
         .map(|entry| match entry {
@@ -3060,6 +3068,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     let jobs = sample_jobs();
     if let Some(action) = Toolbar::new()
         .entries(entries.collect())
+        .labels(true)
         .saved(SaveState::Saved)
         .jobs(Jobs::new(&jobs).file_manager(FileManager::Finder))
         .shortcut(ToolbarAction::Button("export"), "Ctrl+E")
@@ -3071,7 +3080,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     // As the title bar on Windows and Linux, with the menu button at its start and the
     // window's caption buttons at its end: the window as it is, the button the app's icon,
     // its menu open at first with View expanded where the snapshots photograph it, then
-    // maximised, the button ☰. Without Saved, as with no photo open.
+    // maximised, the button ☰ and labels off. Without Saved, as with no photo open.
     let menu = Toolbar::menu_popup();
     for maximised in [false, true] {
         ui.add_space(t.spacing.s);
@@ -3084,6 +3093,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
             .entries(toolbar_entries(&ctx, &disabled))
             .menu_button(true)
             .menu_button_style(style)
+            .labels(!maximised)
             .title_bar(true)
             .caption_buttons(true)
             .maximised(maximised)

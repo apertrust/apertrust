@@ -124,6 +124,7 @@ fn panel_in(locale: Locale, width: f32, jobs: Vec<Job>) -> Harness<'static, Run>
                 let jobs = run.jobs.clone();
                 let action = Toolbar::new()
                     .entries(toolbar_entries(ui.ctx(), &["redo", "apply-edit"]))
+                    .labels(true)
                     .saved(run.saved)
                     .title_bar(true)
                     .jobs(Jobs::new(&jobs).file_manager(FileManager::Finder))
@@ -524,11 +525,11 @@ fn the_status_slots_never_move_anything() {
         let ends: Vec<f32> = save_at.values().map(|r| r.right()).collect();
         assert!(ends.windows(2).all(|w| w[0] == w[1]), "{width}: {ends:?}");
     }
-    // Every fold step was driven: words, icons, », and Undo under ».
+    // Every fold step was driven: labels, icons, », and Undo under ».
     assert_eq!(folds.len(), 4, "{folds:?}");
 }
 
-/// Whether the panel at `width` shows Import's words, », and Undo.
+/// Whether the panel at `width` shows Import's label, », and Undo.
 fn fold(harness: &Harness<'_, Run>) -> (bool, bool, bool) {
     (
         harness

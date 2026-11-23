@@ -19,13 +19,14 @@
 //! in one stable order ([`placeable`]). An action that belongs to a tool is offered by that
 //! tool (`ToolDefinition::toolbar`); only actions that belong to no tool are the app's,
 //! those the registry gives an icon ([`actions::ICONS`]). The Toolbar draws a list from it
-//! ([`listed`]), and the Customise Toolbar window will list it.
+//! ([`listed`]), each action with its word under its icon ([`word`]), and the Customise
+//! Toolbar window will list it.
 
 use std::sync::OnceLock;
 
 use apertrust_tools::utility::{UTILITIES, UtilityDefinition};
 use apertrust_tools::{ProcessingDefinition, Row, ToolbarItem};
-use apertrust_ui::Icon;
+use apertrust_ui::{Icon, Translator};
 
 use crate::actions;
 
@@ -172,6 +173,12 @@ impl Placeable {
     }
 }
 
+/// An item's word under its icon (decision 92, Labels), its words being the message
+/// `message`: the message's `.toolbar` attribute, short and on one line, else the message.
+pub fn word(words: &Translator, message: &str) -> String {
+    (words.attribute(message, "toolbar")).unwrap_or_else(|| words.text(message))
+}
+
 /// `apertrust-ui`'s icon called `name`, if it has one.
 fn named(name: &str) -> Option<Icon> {
     Icon::ALL.into_iter().find(|icon| icon.name() == name)
@@ -192,7 +199,9 @@ fn button_icon(tool: &ProcessingDefinition, action: &str) -> Option<Icon> {
 mod tests {
     use std::collections::BTreeSet;
 
-    use apertrust_ui::{Locale, Translator};
+    use apertrust_ui::{Locale, Theme, Translator};
+    use eframe::egui;
+    use egui_kittest::Harness;
 
     use super::*;
     use crate::actions::Trigger;
@@ -342,6 +351,59 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Every action's word under its icon (decision 92, Labels) is its language's own
+    /// `.toolbar` attribute, never British English's in its place, and at most 96 points at
+    /// the caption size, Regular, in every language.
+    #[test]
+    fn every_action_s_word_is_its_own_and_at_most_96_points() {
+        let set = placeable(&tools(), UTILITIES);
+        let messages: Vec<&str> = (set.iter())
+            .filter(|placed| matches!(placed.kind, Kind::App | Kind::Tool(_)))
+            .filter_map(|placed| placed.words)
+            .collect();
+        // Every language; the pseudo-locale lengthens every word on purpose.
+        let locales = Locale::ALL.into_iter().filter(|l| *l != Locale::Pseudo);
+        let words: Vec<(Locale, &str, String)> = locales
+            .flat_map(|locale| {
+                let tr = Translator::new(locale);
+                (messages.iter()).map(move |&message| {
+                    assert!(
+                        tr.has_attribute(message, "toolbar"),
+                        "{}: {message} has no .toolbar word",
+                        locale.id()
+                    );
+                    (locale, message, word(&tr, message))
+                })
+            })
+            .collect();
+        let mut harness = Harness::builder()
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, widths: &mut Vec<f32>| {
+                    let caption = apertrust_ui::theme(ui.ctx()).text.caption;
+                    let font = egui::FontId::proportional(caption);
+                    let measure = |(_, _, word): &(Locale, &str, String)| {
+                        let galley = ui.painter().layout_no_wrap(
+                            word.clone(),
+                            font.clone(),
+                            egui::Color32::WHITE,
+                        );
+                        galley.size().x
+                    };
+                    *widths = words.iter().map(measure).collect();
+                },
+                Vec::new(),
+            );
+        harness.run();
+        for ((locale, message, word), width) in words.iter().zip(harness.state()) {
+            assert!(
+                *width <= 96.0,
+                "{}: {message}'s word {word:?} is {width} points",
+                locale.id()
+            );
         }
     }
 }

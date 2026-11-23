@@ -914,6 +914,7 @@ fn menu_buttons(which: Builtin) -> Harness<'static> {
                 ui.push_id(style, |ui| {
                     Toolbar::new()
                         .entries(toolbar_entries(ui.ctx(), &[]))
+                        .labels(true)
                         .menu_button(true)
                         .menu_button_style(style)
                         .show(ui);
