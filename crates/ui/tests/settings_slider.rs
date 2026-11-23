@@ -54,6 +54,13 @@ fn track(harness: &Harness<'_, f64>) -> egui::Rect {
     harness.get_by_role_and_label(Role::Slider, NAME).rect()
 }
 
+/// The value the slider shows, as screen readers hear it: where the pointer holds the
+/// thumb during a drag.
+fn heard(harness: &Harness<'_, f64>) -> f64 {
+    let node = harness.get_by_role_and_label(Role::Slider, NAME);
+    node.accesskit_node().numeric_value().unwrap()
+}
+
 fn button(harness: &mut Harness<'_, f64>, pos: Pos2, pressed: bool) {
     harness.event(Event::PointerButton {
         pos,
@@ -74,15 +81,18 @@ fn a_click_on_the_track_jumps_and_a_drag_sets_the_value() {
     button(&mut harness, end, true);
     button(&mut harness, end, false);
     assert_eq!(*harness.state(), 300.0);
-    // Pressed near the start and dragged to the middle, on a step.
+    // Pressed near the start and dragged to the middle, on a step: shown where the
+    // pointer holds it, and set only as it is let go.
     let start = pos2(rect.left() + 3.0, rect.center().y);
     harness.hover_at(start);
     button(&mut harness, start, true);
-    assert_eq!(*harness.state(), 50.0);
+    assert_eq!((*harness.state(), heard(&harness)), (300.0, 50.0));
     let middle = pos2(rect.center().x, rect.center().y);
     harness.event(Event::PointerMoved(middle));
     harness.run();
+    assert_eq!(*harness.state(), 300.0);
     button(&mut harness, middle, false);
+    assert_eq!(heard(&harness), *harness.state());
     let value = *harness.state();
     assert!((160.0..=190.0).contains(&value), "{value}");
     assert_eq!(value % 10.0, 0.0, "{value}");
@@ -263,7 +273,8 @@ fn a_drag_ends_where_it_is_let_go() {
     button(&mut harness, middle, true);
     harness.hover_at(pos2(middle.x - 20.0, middle.y));
     harness.run();
-    assert_ne!(*harness.state(), 200.0, "dragged");
+    assert_ne!(heard(&harness), 200.0, "dragged");
+    assert_eq!(*harness.state(), 200.0, "set only as it is let go");
     for event in [
         Event::PointerMoved(start),
         Event::PointerButton {
@@ -393,8 +404,75 @@ fn a_press_held_still_then_dragged_still_drags() {
     let end = pos2(rect.right() - 3.0, rect.center().y);
     harness.hover_at(end);
     harness.run();
-    assert_eq!(*harness.state(), 300.0, "from {pressed}");
+    assert_eq!(heard(&harness), 300.0, "from {pressed}");
     button(&mut harness, end, false);
+    assert_eq!(*harness.state(), 300.0, "from {pressed}");
+}
+
+/// A drag sets the value once, as it is let go: each pass of it leaves the value as it
+/// was, so a setting that applies at once, as Interface size, changes once, and one let
+/// go where it started changes nothing.
+#[test]
+fn a_drag_sets_the_value_once_as_it_is_let_go() {
+    let mut harness = Harness::builder()
+        .with_size(vec2(280.0, 60.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(|ctx| install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, sets: &mut Vec<f64>| {
+                ui.set_width(260.0);
+                let value = sets.last().copied().unwrap_or(100.0);
+                let set = Slider::new("scale", NAME, value, 50.0..=300.0)
+                    .step(10.0)
+                    .unit("%")
+                    .show(ui);
+                sets.extend(set);
+            },
+            Vec::new(),
+        );
+    harness.run();
+    let rect = harness.get_by_role_and_label(Role::Slider, NAME).rect();
+    let y = rect.center().y;
+    let from = pos2(rect.left() + 3.0, y);
+    harness.hover_at(from);
+    harness.event(Event::PointerButton {
+        pos: from,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run();
+    for step in 1..=10 {
+        harness.hover_at(pos2(rect.left() + rect.width() * step as f32 / 12.0, y));
+        harness.run();
+    }
+    assert!(harness.state().is_empty(), "{:?}", harness.state());
+    let to = pos2(rect.right() - 3.0, y);
+    harness.hover_at(to);
+    harness.event(Event::PointerButton {
+        pos: to,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run();
+    assert_eq!(*harness.state(), [300.0]);
+    // Pressed and let go where it stands, at its end: nothing set.
+    harness.event(Event::PointerButton {
+        pos: to,
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run();
+    harness.event(Event::PointerButton {
+        pos: to,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run();
+    assert_eq!(*harness.state(), [300.0]);
 }
 
 /// A value typed in a slider with a grid, its kept values as shown, is rounded to the
@@ -664,4 +742,90 @@ fn a_track_with_no_room_to_travel_takes_no_pointer() {
             assert_eq!(*harness.state(), 150.0, "{width}: the value still sets it");
         }
     }
+}
+
+/// A press let go in the next pass, the pointer moved past a click's distance in that
+/// same pass, is neither a click nor a drag to egui: it still sets the value where it was
+/// let go.
+#[test]
+fn a_flick_let_go_in_the_next_pass_sets_the_value() {
+    let mut harness = slider(110.0);
+    let rect = track(&harness);
+    let from = pos2(rect.left() + 3.0, rect.center().y);
+    let to = pos2(rect.right() - 3.0, rect.center().y);
+    harness.hover_at(from);
+    button(&mut harness, from, true);
+    assert_eq!(*harness.state(), 110.0);
+    for event in [
+        Event::PointerMoved(to),
+        Event::PointerButton {
+            pos: to,
+            button: PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        },
+    ] {
+        harness.input_mut().events.push(event);
+    }
+    harness.run();
+    assert_eq!(*harness.state(), 300.0);
+}
+
+/// A press on a slider that was then left undrawn, its page left with the button held,
+/// sets nothing at a later release that draws it again, as a click back on its page.
+#[test]
+fn a_press_left_undrawn_sets_nothing_later() {
+    let mut harness = Harness::builder()
+        .with_size(vec2(280.0, 60.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(|ctx| install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, (value, drawn): &mut (f64, bool)| {
+                ui.set_width(260.0);
+                if !*drawn {
+                    return;
+                }
+                let set = Slider::new("scale", NAME, *value, 50.0..=300.0)
+                    .step(10.0)
+                    .unit("%")
+                    .show(ui);
+                if let Some(set) = set {
+                    *value = set;
+                }
+            },
+            (110.0, true),
+        );
+    harness.run();
+    let rect = harness.get_by_role_and_label(Role::Slider, NAME).rect();
+    let button = |harness: &mut Harness<'_, (f64, bool)>, pos: Pos2, pressed: bool| {
+        harness.hover_at(pos);
+        harness.event(Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        harness.run();
+    };
+    // Held on the track's end, the page left, then let go.
+    let end = pos2(rect.right() - 3.0, rect.center().y);
+    button(&mut harness, end, true);
+    harness.run_steps(3);
+    harness.state_mut().1 = false;
+    harness.run();
+    button(&mut harness, end, false);
+    harness.run_steps(5);
+    // A click on the page list, left of the track, whose release draws the slider again in
+    // its pass.
+    let list = pos2(rect.left() - 10.0, rect.center().y);
+    button(&mut harness, list, true);
+    harness.state_mut().1 = true;
+    harness.input_mut().events.push(Event::PointerButton {
+        pos: list,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: Modifiers::NONE,
+    });
+    harness.step();
+    assert_eq!(harness.state().0, 110.0);
 }
