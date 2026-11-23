@@ -10,7 +10,7 @@ A cursor decides what a press on the photo does. One is chosen at a time: Select
 | --- | --- | --- |
 | The app | Select, Pan, Copy and apply | A mark selected or moved; the view's pan; Copy edit and Apply edit on the photo clicked |
 | A processing tool | A picker cursor for each picker of its own, once its pick is built in the app: White balance's `spot`, Exposure's `exposure` and `reference` | None of its own: choosing it sends its picker's `PickerCommand::On`, and a press on the photo is that picker's ([pickers.md](pickers.md#on-the-photo)) |
-| The Colour picker | Colour readout | Its commands designed with its section (79.16) |
+| The Colour picker | Colour picker, a group of its own | None of its own: choosing it sends `PickerCommand::On` for the Colour picker's own picker, `PickerRef::ColourPicker`, and a press on the photo is that picker's |
 | Layers and masks (decision 34) | Brush, Linear gradient, Radial gradient, AI object, Path | The chosen layer's mask parts, one step a stroke or shape |
 | Retouch layers | Heal, Clone | Spots on a retouch layer |
 | Annotations | Pen, Arrow, Text | A note on the photo, its own decision |
@@ -41,7 +41,7 @@ In the well's order. Each group is one button of the well, even a group of one c
 | Pick | Exposure picker | Its picker's own words, which follow Picker target ([Actions and words](#actions-and-words)) | Its picker's | Viewer | Phase 2 |
 | Pick | Exposure reference picker | Its picker's own words | Its picker's | Viewer | Phase 2, 104.6 |
 | Pick | Each other tool's picker, Colour calibration's, Colour balance RGB's, AgX's and the rest | Its picker's own words | Its picker's | Viewer | With its tool's pick in the app |
-| Pick | Colour readout | Designed with the Colour picker | | Viewer | With 79.16 |
+| Colour picker | Colour picker | "Shows the colour of the point or area it holds; drag to move it" | Its picker's | Viewer | With the Colour picker (79.16) |
 | Mask | Brush | "Paint the layer's mask; Alt subtracts" | Stroke | Viewer | Phase 4 |
 | Mask | Linear gradient | "Drag from full strength to none" | Shape | Viewer | Phase 4 |
 | Mask | Radial gradient | "Drag from the centre" | Shape | Viewer | Phase 4 |
@@ -52,9 +52,10 @@ In the well's order. Each group is one button of the well, even a group of one c
 | Annotate | Pen, Arrow, Text | A note drawn, an arrow dragged, a note typed | Stroke, shape, click | Viewer | Later, its own decision |
 | Copy and apply | Copy and apply | "Click a photo to apply the copied edit; Alt-click copies" | Click | Viewer and Browser | Phase 3, with Copy Parts |
 
-- **A group no owner fills is not drawn,** nor a cursor not yet built: Phase 2's well holds Select, Pan and Pick.
+- **A group no owner fills is not drawn,** nor a cursor not yet built: Phase 2's well holds Select, Pan and Pick, and Colour picker with its section (79.16).
 - **Select:** a click on a mark selects it and a drag that starts on one moves it; a click or a drag on empty photo does nothing, so Select never pans by a drag: Pan does, or A held with any cursor, and the scroll and the trackpad's swipe pan, and Ctrl+scroll and the pinch zoom, with every cursor ([gui.md](gui.md#panning)). Its pointer is the move pointer over a mark that can be moved, elsewhere the arrow.
 - **Pan** pans from any drag, one that starts on a mark too, so a mark is never moved by mistake: the built pan by a drag ([gui.md](gui.md#panning)), the open hand over a photo that can move, the closed hand while dragging, the arrow at Fit, where there is nothing to move.
+- **Colour picker** is the second door to the Colour picker section's own picker (decision 79), apart from Pick, whose pickers change the edit: chosen exactly while that picker is on, from its header button or the well, with every picker's turn-offs ([A cursor](#a-cursor)) but that Restrict the scopes keeps it on when another tool's control changes or another tool's Show on photo turns on. It turns on as its Start as setting says ([Group settings](#group-settings)): Start as always decides the kind it turns on as, the `area` of its `On`, and the picker takes that kind's last place this session, else darktable's default, as every `On` does ([pickers.md](pickers.md#commands)); a click or drag moves the live sample, Ctrl-click switches point and area, and a stored sample is added by the section's Add sample, never by a press on the photo. Choosing it neither opens nor shows the section, hidden by default.
 - **Copy and apply** acts on the photo clicked, in the Viewer or on a thumbnail: its first click with nothing copied, or an Alt-click, runs Copy edit on it, every other click Apply edit, each one undo record as Apply edit is. While it is chosen a click on a thumbnail applies rather than opening the photo; Select gives the Browser its click back. The Toolbar keeps Copy edit and Apply edit.
 - **Mask and Retouch** act on the chosen layer as the Layers section's buttons do (decision 34). A mask button in the Layers section and its cursor are one state: pressing the button chooses the cursor, which the well shows, and choosing the cursor shows the button on. Clone's source has a visible control too, as decision 94's rule 3 requires, settled with retouch's port in Phase 4; Alt-click is its shortcut.
 
@@ -75,7 +76,7 @@ The well stands where the workspace's list places `cursors` (built), and is draw
 | A face | 22 by 26 points, the 16-point icon (`sizes.icon_large`) at its end, next to its chevron |
 | A chevron | 11 by 26 points, its 10-point chevron at its start, right against its face |
 | A group of one with no settings | One face 24 points wide, its icon centred, no chevron |
-| The well | Phase 2's Select, Pan and Pick, 101 points; Phase 4's six groups, 218 |
+| The well | Phase 2's Select, Pan and Pick, 101 points, 140 with Colour picker; Phase 4's seven groups, 257 |
 
 **States** of a face and a chevron, with no plate in any state (decision 81):
 
@@ -110,6 +111,7 @@ A group's settings are toggles and choices its cursors share, shown under its cu
 
 | Group | Setting | Kind | Default | When |
 | --- | --- | --- | --- | --- |
+| Colour picker | Start as: Point, Area (`cursors.colour_picker.start`) | Choice | Point, as darktable's plain click on its button | With 79.16 |
 | Copy and apply | A click applies: The whole edit, The parts chosen in Copy Parts… (`cursors.copy_apply.what`) | Choice | The whole edit | Phase 3 |
 
 Pick has none: its picker's area is the live picker's, drawn while it is on. Each later group's settings are chosen with that group: Mask's and Retouch's with Phase 4, Annotate's with its decision. The built Show the last pick (`cursors.pick.show_last`) goes with 104.6; an old key in a settings file stays an unknown key, read as nothing and left as it is.
@@ -122,6 +124,7 @@ Pick has none: its picker's area is the live picker's, drawn while it is on. Eac
 | Pan | A, held | A, held: force pan, zoom and rotate with the mouse |
 | White balance picker | K | Free in darktable's defaults and in Apertrust's map |
 | Exposure picker | None | E is darktable's Exposure slider |
+| Colour picker | Shift+K | darktable's color picker has no default key; Shift+K is free in darktable's defaults and in Apertrust's map, beside White balance's K, where I is darktable's lighttable hold for the photos' information |
 | Mask and retouch cursors | Chosen with Phase 4, Brush among them | B is darktable's collapsing controls |
 | Copy and apply | None; Copy edit and Apply edit keep Ctrl+Shift+C and Ctrl+Shift+V | |
 
@@ -190,7 +193,7 @@ pub struct CursorDef {
 }
 
 /// The groups, in the well's order.
-pub enum CursorGroup { Select, Pan, Pick, Mask, Retouch, Annotate, CopyApply }
+pub enum CursorGroup { Select, Pan, Pick, ColourPicker, Mask, Retouch, Annotate, CopyApply }  // ColourPicker planned, 104.8
 
 /// A group's own settings, toggles and choices, declared once by its owner.
 pub struct CursorGroupDef {
@@ -210,7 +213,7 @@ pub struct ToolCursor {
 ```
 
 - **`ToolDefinition::cursors: &'static [ToolCursor]`,** in the parent every tool embeds, as `menus` and `toolbar` are (decisions 91 to 93). A tool's cursor runs no code of the tool's own.
-- **`ProcessingDefinition::check` refuses** a cursor naming a picker the tool does not declare; a group other than Pick; surfaces other than the Viewer alone; two cursors for one picker, two of one id or an id not snake_case, and options on a picker cursor. Built, it also refuses a cursor for a picker that writes no control (a picker that only shows, a reference's) and holds the gestures to a click, an area or both, an area only for a picker that takes one; with 104.6 the first refusal goes, so every picker a person can turn on can have its cursor, and a picker cursor declares no gestures, its picker's kinds deciding what a press does. A utility's `cursors` stay empty until the Colour readout's design, `UtilityDefinition::check` refusing any.
+- **`ProcessingDefinition::check` refuses** a cursor naming a picker the tool does not declare; a group other than Pick; surfaces other than the Viewer alone; two cursors for one picker, two of one id or an id not snake_case, and options on a picker cursor. Built, it also refuses a cursor for a picker that writes no control (a picker that only shows, a reference's) and holds the gestures to a click, an area or both, an area only for a picker that takes one; with 104.6 the first refusal goes, so every picker a person can turn on can have its cursor, and a picker cursor declares no gestures, its picker's kinds deciding what a press does. A utility's `cursors` stay empty, `UtilityDefinition::check` refusing any: the Colour picker's cursor names no tool's picker, so its owner is the app's (below).
 - **The first two:** White balance's `spot`, its key K, and Exposure's `exposure`, with no key, each with an icon of its own, not its picker's, so the Pick face and the pointer's badge show which picker is on: White balance's `pick-white-balance`, the pipette with a neutral square badge, and Exposure's `pick-exposure`, the pipette with a dot badge. Exposure's `reference` joins them with 104.6, with no key and an icon of its own; each other tool's pickers get theirs as their pick is built in the app.
 
 **In the app** (built, 104.4, the app's `cursors` module), what Phase 2's cursors need; the rest of the API comes with the cursors that need it:
@@ -232,7 +235,7 @@ pub trait CursorOwner {
 }
 ```
 
-- **The owners:** the app's own, `AppCursors` (Select and Pan; Copy and apply's with it in Phase 3), and every tool's through one built-in owner, whose `ready` says whether its picker can turn on, and why not, and which sends its picker's `On` and `Off`; later layers and masks with their group settings (Phase 4), retouch (Phase 4), annotations. Pan's drag, and A held's, is the built pan, which the Viewer keeps, and Select's drag on empty photo does nothing, so the app's own owner finishes no gesture of its own yet. A gesture under way (`preview`) and one given up (`cancel`) join the trait with the first owner that draws one, Phase 4's Brush. Built (104.4), the tools' owner's `finish` turns a click or an area into `Once`, and `AppCursors` owns Pick's Show the last pick; both go with 104.6.
+- **The owners:** the app's own, `AppCursors` (Select and Pan; Copy and apply's with it in Phase 3), and every tool's through one built-in owner, whose `ready` says whether its picker can turn on, and why not, and which sends its picker's `On` and `Off`; the Colour picker utility's, `ColourPickerCursors` in the app's `colour_picker` module, its cursor and Start as, which sends `On` with `area` as Start as says and `Off` for `PickerRef::ColourPicker` (planned, 104.8 with 79.16); later layers and masks with their group settings (Phase 4), retouch (Phase 4), annotations. Pan's drag, and A held's, is the built pan, which the Viewer keeps, and Select's drag on empty photo does nothing, so the app's own owner finishes no gesture of its own yet. A gesture under way (`preview`) and one given up (`cancel`) join the trait with the first owner that draws one, Phase 4's Brush. Built (104.4), the tools' owner's `finish` turns a click or an area into `Once`, and `AppCursors` owns Pick's Show the last pick; both go with 104.6.
 - **The registry,** `cursors::registry()`, made once as the app starts: every owner's cursors and group settings, refusing one owner's id twice (a tool's cursor known by its tool and its id, as its action is), a key twice among cursors, a group's settings declared twice, and ordering them by group, then `order`.
 - **The mode,** `cursors::Mode`: the chosen `Cursor { owner, id }`, one at a time, Select at every start; each group's active cursor beside it, for the run; A held, borrowing Pan. A picker cursor is chosen when the mirror's `Picker` fact shows its picker on, and Select when it shows it off, unless the person's own choice turned it off, which keeps that cursor (Pan, another picker's), so the well and the picker never disagree (104.5); built, the mode also keeps the last pick's mark, which goes with 104.6.
 - **The Viewer** reads a press as the chosen cursor's gestures allow (`Mode::press`): a picker's while one is on, from `pickers.rs`; Pan's drag, and A held's, the built pan; Select's drag on empty photo nothing. The Browser takes cursors with Copy and apply. Built, a picker cursor's click or area is finished by `cursors::on_photo` as `Once` while no picker is on; that path goes with 104.6.
@@ -297,6 +300,7 @@ Phase 2, one pull request each, each reviewed before the next that needs it:
 | 104.5 | The well shows the picker that is on: the mode follows the mirror's `Picker` fact, a picker with a cursor turned on by its button choosing that cursor (Exposure's `reference` only once 104.6 gives it one) and its turning off choosing Select, or the cursor the person chose; Esc turning a picker off wherever the focus is; A held panning over a picker; the crosshair over the photo while one is on; on and off announced, with the reason; "Right-click resets the area." in the viewer bar's words | app, ui's messages | the cursors' own commands, the label, the badge |
 | 104.6 | The picker cursor as a door: its face, list item and key sending `On` and `Off`, never `Once`; a face disabled with its reason where its picker cannot turn on; Exposure's `reference` cursor and its icon; the check no longer refusing a cursor for a picker that writes no control, and a picker cursor declaring no gestures; the picker cursor's gestures on the photo, the last pick's mark and Show the last pick gone, `cursors.pick.show_last` out of the settings schema | app, tools, ui's icons, settings schema | the engine, the label, the badge |
 | 104.7 | Built: the label on the area, `picker-area-label`, with its placement and fallbacks, and the pointer's badge, `Overlay::icon`, in the design system with snapshots and in the app | ui, app | a system custom pointer |
+| 104.8 | The Colour picker's group, with the Colour picker section (79.16): `CursorGroup::ColourPicker` after Pick, its cursor `cursor-colour` on Shift+K with its icon `pick-colour`, Start as in the settings schema, its owner in the app's `colour_picker` module, the well's measures and fold widths with it | tools, app, ui's icons, settings schema | the engine |
 
 **Later, with their features:** each other tool's picker cursor with its pick in the app (79.9 to 79.13); Phase 3, a key's tap and hold with decision 98's dispatcher, a picker cursor's key held turning its picker on while held, and Copy and apply with Copy Parts and the Browser's selection; the Colour readout with the Colour picker section (79.16); Phase 4, the Mask and Retouch groups with layers, their settings, amounts with `[` and `]`, their keys and the Layers section's buttons sharing their state; Annotate with its own decision.
 
@@ -304,5 +308,5 @@ Phase 2, one pull request each, each reviewed before the next that needs it:
 
 - **Scroll over the photo with a mask or retouch cursor:** it pans, as with every cursor; whether it changes the brush's size instead, as `[` and `]` do, is settled with masks in Phase 4. Meanwhile there are no such cursors.
 - **A mask cursor with no layer to draw on:** whether a press makes a new layer or the cursor cannot act, saying so, is settled with layers. Meanwhile there is none.
-- **The Colour readout's commands:** whether a click moves the Colour picker's live sample or adds a stored sample, settled with the Colour picker section (79.16). Meanwhile it is not drawn.
+- [x] **The Colour picker's cursor:** settled by decision 104, a group of its own after Pick, the second door to the Colour picker's own picker: a click or drag moves the live sample, and stored samples are added by the section's Add sample ([The groups](#the-groups)).
 - **What Select selects:** stored samples' marks (79.14) and a mask's shapes (Phase 4) are its first, settled with them; a picker's area is the picker's alone, gone once Select is chosen. Meanwhile Select's click and drag do nothing on empty photo.
