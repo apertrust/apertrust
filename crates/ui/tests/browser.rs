@@ -751,8 +751,8 @@ fn a_control_click_counts_control_as_the_button_came_up() {
 
 /// Decision 91: a right-click on the Browser's empty space, in the gap between two cells,
 /// after the last cell or all of it with no photos, asks for the Browser's own menu at the
-/// pointer, with no opener, and selects nothing; a cell's, its own empty space included,
-/// keeps its photo's menu, and the browser bar its options menu.
+/// pointer, with no opener, and selects nothing; a cell's asks for its photo's menu, and
+/// the browser bar its options menu.
 #[test]
 fn a_right_click_on_empty_space_asks_for_the_browser_s_own_menu() {
     let mut harness = browser(3);
@@ -768,13 +768,12 @@ fn a_right_click_on_empty_space_asks_for_the_browser_s_own_menu() {
     let at = |at| SpaceMenu { at, opener: None };
     assert_eq!(asked.spaces, [at(between), at(after)]);
     assert!(asked.menus.is_empty() && asked.actions.is_empty());
-    // On a cell, and above its picture in its square, the photo's menu alone.
+    // On a cell with no picture, its No preview yet plate, the photo's menu alone.
     let cell = harness.get_by_label("IMG_0001.ARW").rect();
-    for at in [cell.center(), egui::pos2(cell.center().x, cell.top() + 4.0)] {
-        right_click(&mut harness, at);
-    }
+    let square = egui::pos2(cell.center().x, cell.top() + cell.width() / 2.0);
+    right_click(&mut harness, square);
     assert_eq!(harness.state().spaces.len(), 2);
-    assert_eq!(harness.state().menus.len(), 2);
+    assert_eq!(harness.state().menus.len(), 1);
     // On the browser bar, its options menu, which the panel opens itself.
     let bar = harness
         .get_by_role_and_label(Role::Toolbar, "Browser bar")
@@ -1288,14 +1287,24 @@ fn an_empty_panel_says_why_under_its_icon_in_a_row_and_a_column() {
 struct Clicked {
     actions: Vec<BrowserAction>,
     cells: Vec<(usize, CellAction)>,
+    /// The photos whose menus were asked for.
+    menus: Vec<usize>,
+    /// Where the Browser's own menu was asked for.
+    spaces: Vec<egui::Pos2>,
 }
 
 /// The Browser with `count` rated photos, each with a portrait picture, a third of its
 /// square empty round it, and what it reported.
 fn pictured(count: usize) -> Harness<'static, Clicked> {
+    pictured_on(count, egui::os::OperatingSystem::Nix)
+}
+
+/// [`pictured`] on `os`.
+fn pictured_on(count: usize, os: egui::os::OperatingSystem) -> Harness<'static, Clicked> {
     let texture = std::sync::Arc::new(std::sync::OnceLock::<egui::TextureHandle>::new());
     Harness::builder()
         .with_size(egui::vec2(900.0, 360.0))
+        .with_os(os)
         .with_context_setup(install)
         .build_ui_state(
             move |ui, clicked: &mut Clicked| {
@@ -1319,6 +1328,8 @@ fn pictured(count: usize) -> Harness<'static, Clicked> {
                 let output = Browser::new(count, Some(0), thumb).show(ui);
                 clicked.actions.extend(output.action);
                 clicked.cells.extend(output.cell);
+                clicked.menus.extend(output.menu.map(|menu| menu.photo));
+                clicked.spaces.extend(output.space_menu.map(|menu| menu.at));
             },
             Clicked::default(),
         )
@@ -1478,4 +1489,49 @@ fn a_click_on_a_picture_its_rating_or_its_name_keeps_its_own() {
         let actions = &harness.state().actions;
         assert!(actions.is_empty(), "{at:?}: {actions:?}");
     }
+}
+
+/// Decision 91: a right-click on a cell's empty space, beside its picture or on its
+/// caption outside the rating's row and the name, asks for the Browser's own menu at the
+/// pointer, as one between the cells does, and selects nothing; one on its picture, its
+/// rating's row or its name asks for its photo's menu. On the Mac a Control-click does the
+/// same.
+#[test]
+fn a_right_click_on_a_cell_s_empty_space_asks_for_the_browser_s_own_menu() {
+    let mut harness = pictured(3);
+    harness.run();
+    for at in empty_space(&harness, 2) {
+        right_click(&mut harness, at);
+        let clicked = harness.state();
+        assert_eq!(clicked.spaces, [at], "{at:?}");
+        assert!(clicked.menus.is_empty(), "{at:?}: {:?}", clicked.menus);
+        assert!(clicked.actions.is_empty(), "{at:?}: {:?}", clicked.actions);
+        harness.state_mut().spaces.clear();
+    }
+    let cell = harness.get_by_label("IMG_0001.ARW");
+    let picture = egui::pos2(cell.rect().center().x, cell.rect().top() + 60.0);
+    let star = cell
+        .get_by_role_and_label(Role::Button, "Rate 2 stars")
+        .rect();
+    let reject = cell.get_by_role_and_label(Role::Button, "Reject").rect();
+    let name = egui::pos2(cell.rect().center().x, cell.rect().bottom() - 6.0);
+    let row = egui::pos2((reject.right() + star.left()) / 2.0 - 10.0, star.center().y);
+    for at in [picture, row, name] {
+        right_click(&mut harness, at);
+        let clicked = harness.state();
+        assert_eq!(clicked.menus, [1], "{at:?}");
+        assert!(clicked.spaces.is_empty(), "{at:?}: {:?}", clicked.spaces);
+        harness.state_mut().menus.clear();
+    }
+    // A Control-click on the Mac, beside the picture and on it.
+    let mut harness = pictured_on(3, egui::os::OperatingSystem::Mac);
+    harness.run();
+    let cell = harness.get_by_label("IMG_0001.ARW").rect();
+    let beside = egui::pos2(cell.left() + 8.0, cell.top() + 60.0);
+    let picture = egui::pos2(cell.center().x, cell.top() + 60.0);
+    click_at(&mut harness, beside, egui::Modifiers::CTRL);
+    assert_eq!(harness.state().spaces, [beside]);
+    click_at(&mut harness, picture, egui::Modifiers::CTRL);
+    assert_eq!(harness.state().menus, [1]);
+    assert!(harness.state().actions.is_empty());
 }

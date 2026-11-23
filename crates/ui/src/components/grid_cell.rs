@@ -209,16 +209,16 @@ pub enum CellAction {
     ClearLabels,
 }
 
-/// Where the primary button was last released this frame, if it was.
-fn released_at(ui: &Ui) -> Option<Pos2> {
+/// Where `button` was last released this frame, if it was.
+fn released_at(ui: &Ui, button: PointerButton) -> Option<Pos2> {
     ui.input(|input| {
         input.events.iter().rev().find_map(|event| match event {
             egui::Event::PointerButton {
                 pos,
-                button: PointerButton::Primary,
+                button: released,
                 pressed: false,
                 ..
-            } => Some(*pos),
+            } if *released == button => Some(*pos),
             _ => None,
         })
     })
@@ -233,8 +233,8 @@ pub struct GridCellOutput {
     /// The photo was clicked: by the pointer on its picture, its No preview yet plate, or
     /// the name's box while it has none, or by Enter, Space or a screen reader.
     pub clicked: bool,
-    /// The pointer clicked the cell's empty space: the square round a fitted picture, or the
-    /// caption outside its first line and its name.
+    /// The pointer clicked the cell's empty space, with either button: the square round a
+    /// fitted picture, or the caption outside its first line and its name.
     pub empty: bool,
     pub action: Option<CellAction>,
 }
@@ -506,12 +506,16 @@ impl<'a> GridCell<'a> {
         // released: a move after it in the same frame moves `interact_pointer_pos` on. The
         // keys' and screen readers' click the whole cell.
         let pointer = response.clicked_by(PointerButton::Primary);
-        let released = released_at(ui).filter(|_| pointer);
+        let released = released_at(ui, PointerButton::Primary).filter(|_| pointer);
         let clicked =
             response.clicked() && (!pointer || released.is_some_and(|at| picture.contains(at)));
-        // Anywhere else, but on the first line and the name, is the cell's empty space.
-        let empty = released
-            .is_some_and(|at| !picture.contains(at) && !taken.iter().any(|r| r.contains(at)));
+        // Anywhere else, but on the first line and the name, is the cell's empty space, for
+        // either button: a right-click there asks for the Browser's menu, not the photo's.
+        let secondary = response.clicked_by(PointerButton::Secondary);
+        let landed =
+            released.or_else(|| released_at(ui, PointerButton::Secondary).filter(|_| secondary));
+        let empty =
+            landed.is_some_and(|at| !picture.contains(at) && !taken.iter().any(|r| r.contains(at)));
 
         // What screen readers and the tooltip say of the marks, No preview yet first to
         // screen readers and its line last in the tooltip; whether it is selected as a
