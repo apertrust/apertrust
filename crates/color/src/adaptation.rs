@@ -21,7 +21,7 @@
 //! inverse only to their last decimal (about 5e-6 for CAT16, 1e-4 for Bradford). The
 //! kernels' twins are in `color.slang`.
 
-use crate::Mat3;
+use crate::{Mat3, apply};
 
 /// darktable `dt_adaptation_t`: the space color calibration's von Kries gains apply in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +125,69 @@ pub const CAT16_D50: [f32; 3] = [0.994535, 1.000997, 0.833036];
 /// D50 in XYZ (`XYZ_adapt_D50`): not the ICC's 0.8249 for Z.
 pub const XYZ_D50: [f32; 3] = [0.9642119944211994, 1.0, 0.8251882845188288];
 
+/// darktable's `NORM_MIN` (`src/common/math.h`), 2⁻¹⁶: its floor under a norm it divides
+/// by.
+pub const NORM_MIN: f32 = 1.525_878_906_25e-5;
+
+/// darktable `chroma_adapt_pixel`: `xyz`, CIE XYZ, adapted from the light whose cone
+/// response is `illuminant`, in `adaptation`'s cone space as
+/// [`Adaptation::xyz_to_lms`] gives it, to D50, as color calibration's picker
+/// measures an area. Each cone over the illuminant's, times D50's ([`Adaptation::d50`]),
+/// at unit luminance (darktable's `downscale_vector` and `upscale_vector`); non-linear
+/// Bradford takes its third cone's ratio to the power `p` where it is positive, darktable's
+/// `pow(0.818155 / max(NORM_MIN, illuminant[2]), 0.0834)`; none leaves it as it is.
+pub fn chroma_adapt_pixel(
+    xyz: [f32; 3],
+    illuminant: [f32; 3],
+    adaptation: Adaptation,
+    p: f32,
+) -> [f32; 3] {
+    let y = xyz[1];
+    // darktable's `downscale_vector` and `upscale_vector`, by Y, NORM_MIN where it is not
+    // above it.
+    let valid = y > NORM_MIN;
+    let down = |v: [f32; 3]| {
+        v.map(|c| {
+            if valid {
+                c / (y + NORM_MIN)
+            } else {
+                c / NORM_MIN
+            }
+        })
+    };
+    let up = |v: [f32; 3]| {
+        v.map(|c| {
+            if valid {
+                c * (y + NORM_MIN)
+            } else {
+                c * NORM_MIN
+            }
+        })
+    };
+    let d50 = adaptation.d50();
+    let gains = |lms: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|c| match adaptation {
+            // `bradford_adapt_D50`: D50 times the ratio, the third to the power `p` where
+            // positive.
+            Adaptation::LinearBradford | Adaptation::FullBradford => {
+                let ratio = lms[c] / illuminant[c];
+                let full = adaptation == Adaptation::FullBradford && c == 2 && ratio > 0.0;
+                d50[c] * if full { ratio.powf(p) } else { ratio }
+            }
+            // `CAT16_adapt_D50`, fully adapted, and `XYZ_adapt_D50`.
+            _ => lms[c] * d50[c] / illuminant[c],
+        })
+    };
+    match adaptation {
+        Adaptation::Rgb => xyz,
+        Adaptation::Xyz => up(gains(down(xyz))),
+        _ => {
+            let lms = down(apply(&adaptation.xyz_to_lms(), xyz));
+            apply(&adaptation.lms_to_xyz(), up(gains(lms)))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,5 +240,111 @@ mod tests {
         assert_eq!(Adaptation::from_darktable(1), Some(Adaptation::Cat16));
         assert_eq!(Adaptation::from_darktable(5), None);
         assert_eq!(Adaptation::from_darktable(-1), None);
+    }
+
+    /// darktable's `chroma_adapt_pixel` restated in f64, line for line, from
+    /// `src/common/chromatic_adaptation.h`: the cone space, `downscale_vector`, the
+    /// adaptation to D50, `upscale_vector` and back.
+    fn darktable(xyz: [f64; 3], illuminant: [f64; 3], adaptation: Adaptation, p: f64) -> [f64; 3] {
+        let wide = |m: Mat3| m.map(|row| row.map(f64::from));
+        let times = |m: [[f64; 3]; 3], v: [f64; 3]| -> [f64; 3] {
+            std::array::from_fn(|r| (0..3).map(|c| m[r][c] * v[c]).sum())
+        };
+        let norm_min = f64::from(NORM_MIN);
+        let y = xyz[1];
+        let valid = y > norm_min;
+        let down = |v: [f64; 3]| {
+            v.map(|c| {
+                if valid {
+                    c / (y + norm_min)
+                } else {
+                    c / norm_min
+                }
+            })
+        };
+        let up = |v: [f64; 3]| {
+            v.map(|c| {
+                if valid {
+                    c * (y + norm_min)
+                } else {
+                    c * norm_min
+                }
+            })
+        };
+        let d50 = adaptation.d50().map(f64::from);
+        match adaptation {
+            Adaptation::FullBradford | Adaptation::LinearBradford => {
+                let lms = down(times(wide(XYZ_TO_BRADFORD_LMS), xyz));
+                let mut ratio: [f64; 3] = std::array::from_fn(|c| lms[c] / illuminant[c]);
+                if adaptation == Adaptation::FullBradford && ratio[2] > 0.0 {
+                    ratio[2] = ratio[2].powf(p);
+                }
+                let adapted = up(std::array::from_fn(|c| d50[c] * ratio[c]));
+                times(wide(BRADFORD_LMS_TO_XYZ), adapted)
+            }
+            Adaptation::Cat16 => {
+                let lms = down(times(wide(XYZ_TO_CAT16_LMS), xyz));
+                let adapted = up(std::array::from_fn(|c| lms[c] * d50[c] / illuminant[c]));
+                times(wide(CAT16_LMS_TO_XYZ), adapted)
+            }
+            Adaptation::Xyz => {
+                let lms = down(xyz);
+                up(std::array::from_fn(|c| lms[c] * d50[c] / illuminant[c]))
+            }
+            Adaptation::Rgb => xyz,
+        }
+    }
+
+    /// Each adaptation against darktable's formulas restated in f64, within 1e-6 of the
+    /// largest channel: colours light, dark, saturated and below `NORM_MIN`'s luminance,
+    /// under lights warm, cool and green, darktable's `pp` for non-linear Bradford.
+    #[test]
+    fn chroma_adapt_pixel_is_darktable_s() {
+        let colours: [[f32; 3]; 5] = [
+            [0.9642, 1.0, 0.8249],
+            [0.2, 0.18, 0.05],
+            [0.05, 0.12, 0.4],
+            [0.6, 0.3, 0.02],
+            [1e-6, 5e-6, 2e-6],
+        ];
+        let lights: [[f32; 2]; 4] = [
+            [0.44757, 0.40745],
+            [0.3127, 0.329],
+            [0.28, 0.45],
+            [0.35, 0.3],
+        ];
+        let mut worst = 0.0_f64;
+        for adaptation in Adaptation::ALL {
+            for [x, y] in lights {
+                let white = [x / y, 1.0, (1.0 - x - y) / y];
+                let illuminant = apply(&adaptation.xyz_to_lms(), white);
+                let p = (0.818155 / illuminant[2].max(NORM_MIN)).powf(0.0834);
+                for xyz in colours {
+                    let got = chroma_adapt_pixel(xyz, illuminant, adaptation, p);
+                    let want = darktable(
+                        xyz.map(f64::from),
+                        illuminant.map(f64::from),
+                        adaptation,
+                        f64::from(p),
+                    );
+                    let scale = want.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
+                    for (got, want) in got.iter().zip(want) {
+                        let off = (f64::from(*got) - want).abs() / scale;
+                        worst = worst.max(off);
+                        assert!(
+                            off < 1e-6,
+                            "{adaptation:?} {xyz:?} under {x}, {y}: {got} {want}"
+                        );
+                    }
+                }
+            }
+        }
+        println!("chroma_adapt_pixel: at most {worst:.2e} of the largest channel off");
+        // Adapted from D50 itself, a colour is left as it is, to darktable's constants.
+        let d50 = apply(&XYZ_TO_CAT16_LMS, XYZ_D50);
+        let kept = chroma_adapt_pixel([0.2, 0.18, 0.05], d50, Adaptation::Cat16, 1.0);
+        for (got, want) in kept.iter().zip([0.2, 0.18, 0.05]) {
+            assert!((got - want).abs() < 1e-3, "{kept:?}");
+        }
     }
 }

@@ -167,6 +167,16 @@ pub fn illuminant_xy_to_xyz([x, y]: [f32; 2]) -> [f32; 3] {
     [x / y, 1.0, (1.0 - x - y) / y]
 }
 
+/// darktable `illuminant_xy_to_RGB`: an illuminant's colour for the screen, as color
+/// calibration paints its swatch: its XYZ at Y = 1 ([`illuminant_xy_to_xyz`]) in linear
+/// Rec709 D50 ([`crate::xyz_to_rec709_d50`]), divided by its largest channel, a negative
+/// channel taken to 0. darktable hands cairo these numbers as they are.
+pub fn illuminant_xy_to_rgb(xy: [f32; 2]) -> [f32; 3] {
+    let rgb = crate::xyz_to_rec709_d50(illuminant_xy_to_xyz(xy));
+    let largest = rgb[0].max(rgb[1]).max(rgb[2]);
+    rgb.map(|c| (c / largest).max(0.0))
+}
+
 /// darktable `xy_to_uv`. Its comment says CIE 1960, but it is Judd's 1935 UCS scaled by
 /// 12, with 1.882 where Judd's 0.15735 × 12 is 1.8882; and its `1.9116` is a `double`,
 /// so that sum is taken in `f64`.
@@ -565,5 +575,38 @@ mod tests {
         assert!((u - (5.5932 * 0.3 + 1.9116 * 0.3) / denominator).abs() < 1e-7);
         assert!((v - 7.8972 * 0.3 / denominator).abs() < 1e-7);
         assert_eq!(illuminant_xy_to_xyz([0.25, 0.5]), [0.5, 1.0, 0.5]);
+    }
+
+    /// darktable's `illuminant_xy_to_RGB`, restated in f64 with its D50 Rec709 matrix
+    /// (`xyz_to_srgb_transposed`): its largest channel 1, the others at least 0, D50 white,
+    /// incandescent light orange and a far green light's red taken to 0.
+    #[test]
+    fn an_illuminant_s_swatch_is_darktable_s() {
+        const REC709: [[f64; 3]; 3] = [
+            [3.1338561, -1.6168667, -0.4906146],
+            [-0.9787684, 1.9161415, 0.0334540],
+            [0.0719453, -0.2289914, 1.4052427],
+        ];
+        for xy in [D50_XY, A_XY, [0.3127, 0.329], [0.2, 0.6], [0.5, 0.3]] {
+            let [x, y] = xy.map(f64::from);
+            let xyz = [x / y, 1.0, (1.0 - x - y) / y];
+            let rgb: [f64; 3] =
+                std::array::from_fn(|r| (0..3).map(|c| REC709[r][c] * xyz[c]).sum());
+            let largest = rgb[0].max(rgb[1]).max(rgb[2]);
+            let want = rgb.map(|c| (c / largest).max(0.0));
+            let got = illuminant_xy_to_rgb(xy);
+            for (got, want) in got.iter().zip(want) {
+                assert!(
+                    (f64::from(*got) - want).abs() < 1e-6,
+                    "{xy:?}: {got} {want}"
+                );
+            }
+            assert_eq!(got.iter().fold(0.0_f32, |m, c| m.max(*c)), 1.0, "{xy:?}");
+        }
+        let white = illuminant_xy_to_rgb(D50_XY);
+        assert!(white.iter().all(|c| (c - 1.0).abs() < 2e-3), "{white:?}");
+        let [r, g, b] = illuminant_xy_to_rgb(A_XY);
+        assert!(r == 1.0 && g < r && b < g, "{r} {g} {b}");
+        assert_eq!(illuminant_xy_to_rgb([0.2, 0.6])[0], 0.0);
     }
 }
