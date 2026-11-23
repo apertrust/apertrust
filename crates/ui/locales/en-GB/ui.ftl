@@ -1880,6 +1880,14 @@ equalizer-overflows-shadows = The mask's shadows go past the −8 EV band.
 equalizer-overflows-highlights = The mask's highlights go past the +0 EV band.
 equalizer-overflows-both = The mask's shadows go past the −8 EV band, and its highlights past the +0 EV band.
 
+## The colour equalizer's graph of a curve's nodes; its name and tooltip are the
+## equalizer's
+
+# What the keys do, for screen readers, with the keys spelt as printed on them.
+hue-curve-keys = Page Up and Page Down choose a node, the arrow keys move it, Delete resets it and Shift+Delete resets them all.
+# The same on a Mac, which has no Page Up and Page Down keys of their own.
+hue-curve-keys-mac = Page Up and Page Down (Fn+↑ and Fn+↓) choose a node, the arrow keys move it, Delete resets it and Shift+Delete resets them all.
+
 ## The scopes; $shadows and $highlights are shares of the photo's pixels, in percent
 
 # The section that holds them, pinned at the top of the Tools panel's editing tabs.

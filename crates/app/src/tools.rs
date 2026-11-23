@@ -83,10 +83,10 @@ use apertrust_tools::{
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
-    CollapsibleGroup, Curve, CurveAction, EndAction, EndItem, Equalizer, EqualizerAction,
-    IconButton, LineAction, LineRow, PickerAction, PickerButton, PlainGroup, ReadoutRow, Reference,
-    ReferenceAction, ReferenceRow, Section, SectionAction, Segmented, SliderAction, SliderRow,
-    ToggleRow, WarningRow, Wheel,
+    CollapsibleGroup, Curve, CurveAction, EndAction, EndItem, Equalizer, EqualizerAction, HueCurve,
+    HueCurveAction, IconButton, LineAction, LineRow, PickerAction, PickerButton, PlainGroup,
+    ReadoutRow, Reference, ReferenceAction, ReferenceRow, Section, SectionAction, Segmented,
+    SliderAction, SliderRow, ToggleRow, WarningRow, Wheel,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
@@ -1561,8 +1561,12 @@ impl Rows for Page<'_> {
                 widget: Widget::Equalizer,
                 controls,
             } => equalizer_row(ui, words, tool, controls, state, changes),
-            // The closed registry's other painted widgets (the colour wheels, the hue
-            // curve) join the renderer with the first tool that uses each.
+            Row::Custom {
+                widget: Widget::HueCurve,
+                controls,
+            } => hue_curve_row(ui, words, tool, controls, state, self.wheel(), changes),
+            // The closed registry's other painted widgets (the colour wheels, the
+            // swatches) join the renderer with the first tool that uses each.
             Row::Custom { .. } => {}
             // A list whatever its style: `ProcessingDefinition::check` refuses segments,
             // which cannot draw Custom or an option disabled yet.
@@ -3567,6 +3571,140 @@ fn equalizer_row(
             }
         }
         Some(EqualizerAction::Reset) => {
+            let resets = controls
+                .iter()
+                .map(|&control| Change::Reset { tool: id, control });
+            changes.extend(one_step(resets.collect()));
+        }
+        None => {}
+    }
+}
+
+/// How many points darktable samples its colour equalizer's graph at, one a degree.
+const HUE_CURVE_SAMPLES: usize = 361;
+
+/// darktable's graph of one of a colour equalizer's curves (`Widget::HueCurve`): the
+/// nodes from the mirror, each named by its node, around the hue circle from where the
+/// tool says the first sits (`ProcessingTool::curve_offset`), the curve the tool says the
+/// operation renders through them (`ProcessingTool::curve` of the first) sampled as
+/// darktable samples its graph, and the colours the tool paints (`ProcessingTool::curve_paint`).
+/// A node moved sets its control, rounded to the decimals of its own row, the release
+/// ending the gesture; a reset resets one node or all, all as one step. The tool's code
+/// runs on the UI thread, so a panic in it draws no curve and moves nothing.
+fn hue_curve_row(
+    ui: &mut egui::Ui,
+    words: &Translator,
+    tool: &dyn ProcessingTool,
+    controls: &[&'static str],
+    state: &ToolState,
+    wheel: Wheel,
+    changes: &mut Vec<Change>,
+) {
+    let definition = tool.definition();
+    let id = definition.tool.id;
+    let shown: Option<Vec<Band>> = controls
+        .iter()
+        .map(|&node| Band::of(definition, state, node))
+        .collect();
+    let (Some(shown), Some(&first)) = (shown, controls.first()) else {
+        return;
+    };
+    let nodes: Vec<f32> = shown.iter().map(|node| node.value).collect();
+    let names: Vec<String> = controls
+        .iter()
+        .map(|node| words.text(&messages::full(id, node)))
+        .collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut values = Controls::new();
+    for shown in &state.controls {
+        values.set(shown.control, shown.value.clone());
+    }
+    // While the tool is off it draws its defaults, flat, as the equalizer does.
+    let default = match definition.control(first).map(|c| c.kind) {
+        Some(ControlKind::Number { default, .. }) => default,
+        _ => 0.0,
+    };
+    let drawn = catch_unwind(AssertUnwindSafe(|| {
+        if !state.enabled {
+            return Some(vec![default; HUE_CURVE_SAMPLES]);
+        }
+        let curve = tool.curve(first, &values)?;
+        let last = (HUE_CURVE_SAMPLES - 1) as f32;
+        Some(
+            (0..HUE_CURVE_SAMPLES)
+                .map(|k| curve(360.0 * k as f32 / last))
+                .collect::<Vec<f32>>(),
+        )
+    }));
+    let offset = catch_unwind(AssertUnwindSafe(|| tool.curve_offset(first, &values)));
+    let paint = catch_unwind(AssertUnwindSafe(|| tool.curve_paint(first, &values)))
+        .ok()
+        .flatten();
+    let colour = |[r, g, b]: [f32; 3]| {
+        let byte = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
+        egui::Color32::from_rgb(byte(r), byte(g), byte(b))
+    };
+    let strip: Vec<egui::Color32> = paint
+        .iter()
+        .flat_map(|paint| paint.strip.iter().copied().map(colour))
+        .collect();
+    let background: Vec<egui::Color32> = paint
+        .iter()
+        .flat_map(|paint| paint.background.iter().copied().map(colour))
+        .collect();
+    let mut args = Args::new();
+    args.set("tool", words.text(&messages::title(id)));
+    let name = words.text_with("equalizer-name", Some(&args));
+    let unit = definition
+        .control(first)
+        .and_then(|c| c.unit)
+        .map(messages::unit_value);
+    let mut graph = HueCurve::new(&name, &nodes, &names, [shown[0].min, shown[0].max])
+        .step(shown[0].step)
+        .decimals(usize::from(shown[0].decimals))
+        .wheel(wheel)
+        .strip(&strip)
+        .enabled(shown.iter().any(|node| node.available));
+    if let Some(paint) = &paint {
+        graph = graph.background(&background, paint.columns);
+    }
+    if let Some(unit) = &unit {
+        graph = graph.unit(unit);
+    }
+    if let Ok(Some(offset)) = offset {
+        graph = graph.offset(offset);
+    }
+    let guarded = drawn.is_ok() && offset.is_ok();
+    graph = match &drawn {
+        Ok(Some(samples)) => graph.curve(samples),
+        Ok(None) => graph,
+        Err(_) => graph.no_curve(),
+    };
+    if !guarded {
+        graph = graph.enabled(false);
+    }
+    match graph.show(ui) {
+        Some(HueCurveAction::Move { node, value, done }) => {
+            let (Some(band), Some(&control)) = (shown.get(node), controls.get(node)) else {
+                return;
+            };
+            let value = band.rounded(value);
+            // While dragged, what moves; on release, the value the gesture ends at.
+            if value != band.value || done {
+                changes.push(Change::Set {
+                    tool: id,
+                    control,
+                    value: ControlValue::Number(value),
+                    done,
+                });
+            }
+        }
+        Some(HueCurveAction::ResetNode(i)) => {
+            if let Some(&control) = controls.get(i) {
+                changes.push(Change::Reset { tool: id, control });
+            }
+        }
+        Some(HueCurveAction::Reset) => {
             let resets = controls
                 .iter()
                 .map(|&control| Change::Reset { tool: id, control });

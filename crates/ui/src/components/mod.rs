@@ -49,6 +49,7 @@ mod fields_row;
 mod grid_cell;
 mod group;
 mod histogram;
+mod hue_curve;
 mod icon_button;
 mod jobs;
 mod line_row;
@@ -112,6 +113,7 @@ pub use histogram::{
     Channel, Clipped, Histogram, HistogramAction, HistogramBins, Scale, Scope, ScopeView,
     VectorscopeBins, WaveformBins,
 };
+pub use hue_curve::{HueCurve, HueCurveAction};
 pub use icon_button::{IconButton, ToolButton};
 pub use jobs::{
     ActivityAction, FileManager, Job, JobArg, JobFailure, JobId, JobMessage, JobPhase, Jobs,

@@ -1165,6 +1165,14 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - The mask's histogram is `MaskHistogram` (bins, their EV range, the 5th and 95th percentiles), drawn in `graph_histogram` with darktable's warning signs; `None` until the engine measures it (decision 19).
 - Its open choices are in [docs/gui.md](gui.md), The equalizer.
 
+**`HueCurve`:** darktable's colour equalizer graph of one curve's nodes, in the theme's tokens but for its colours, which the caller gives.
+
+- The nodes around the hue circle across, from where the caller puts the first, their range down; the curve the caller samples over one circle; the bars and ring nodes; the background and the hue strip under it, colours that are data.
+- A press on a node and a drag move it to the pointer's height; a double-click resets it, or every node off them; the wheel steps the node nearest across, as a slider row's.
+- Page Up and Page Down choose a node, the arrows move it, a tenth with Ctrl (Option on the Mac), Delete and Shift+Delete reset.
+- To AccessKit, a group of sliders, one per node.
+- Its behaviour is in [docs/gui.md](gui.md), The hue curve.
+
 **`Histogram`**, the scopes: the histogram, waveform, RGB parade and vectorscope, from counts the caller passes.
 
 - A graph is chosen with buttons over it, not tabs.
@@ -1466,7 +1474,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 - `visible(control, image)` (decision 88): whether a control's row shows on the photo, true by default, read from its metadata alone; only Exposure's two camera rows are ever hidden, which a test holds.
 - `label_value(control, image)` (decision 88): a value of the photo's for a row's label, none by default: `LabelValue { value, unit, format }`, its `ValueFormat` `Thirds` ("−⅔", "+1⅓", "0", one decimal where it is no third or half) or `Decimals(n)`, written by `LabelValue::write` through the client's number format.
 - `range(control, values)` (decision 30): a number's `Range`, track and step for the tool's values, the definition's by default (`ProcessingDefinition::range`).
-- `curve`: the curve a curve row or a band graph draws, as its operation renders it (decision 31); `curve_width`, how far a band graph's drag reaches.
+- `curve`: the curve a curve row or a band graph draws, as its operation renders it (decision 31); `curve_width`, how far a band graph's drag reaches; `curve_offset`, where a hue curve's first node sits across; `curve_paint`, a hue curve's strip and background (`CurvePaint`).
 - `fixed`: the parameters it owns that no control sets; `--param` and `Command::Set` on them are refused as fixed (`EditError::Fixed`).
 - `preset` and `matching`, for a preset row's options.
 - `view` and `unview`, for a lossless view's coordinates (decision 2).

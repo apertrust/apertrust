@@ -30,17 +30,17 @@ use crate::components::{
     Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup, ColourLabel, ColourLabels,
     ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction, Customising, EndItem,
     Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldWell, FieldsRow,
-    FileManager, FindBar, FindBarAction, Fix, GridCell, Histogram, HistogramBins, IconButton, Job,
-    JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker,
-    MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
-    Patches, PathChoice, PathRow, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace,
-    Place, PlainGroup, Problem, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
-    ReferenceRow, Returned, RowField, SaveState, Scale, Scope, ScopeView, Section, SectionAction,
-    Segmented, SelectButton, Sheet, SheetCell, SheetOutput, SliderAction, SliderRow, Summary,
-    Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Tag, TextFieldRow, Thumb, Toggle,
-    ToggleRow, ToolButton, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track, Variable,
-    VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor,
-    WellGroup, WellSetting, Zoom,
+    FileManager, FindBar, FindBarAction, Fix, GridCell, Histogram, HistogramBins, HueCurve,
+    HueCurveAction, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart,
+    Margin, Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction,
+    PanelTab, Patch, Patches, PathChoice, PathRow, PhotoCaption, PhotoFrame, PickerButton,
+    PickerMarks, PickerPlace, Place, PlainGroup, Problem, Quad, Rail, RailLine, RailNode,
+    ReadoutRow, Reference, ReferenceRow, Returned, RowField, SaveState, Scale, Scope, ScopeView,
+    Section, SectionAction, Segmented, SelectButton, Sheet, SheetCell, SheetOutput, SliderAction,
+    SliderRow, Summary, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Tag,
+    TextFieldRow, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, ToolbarButton,
+    ToolbarEntry, Track, Variable, VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction,
+    WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -2210,6 +2210,8 @@ struct Demo {
     bands: Vec<f32>,
     mask: (Vec<f32>, [f32; 2]),
     overflowing: (Vec<f32>, [f32; 2]),
+    /// The colour equalizer's hue nodes, red to magenta, in degrees.
+    hue_nodes: Vec<f32>,
     /// The Tools panel: its width (None for the theme's), its tab, whether tabs show names,
     /// which sections are open, Exposure's tab, and which section is peeking.
     panel_width: Option<f32>,
@@ -2339,6 +2341,7 @@ impl Default for Demo {
             red_curve: vec![(0.0, 0.0), (0.08, 0.14), (0.4, 0.52), (1.0, 1.0)],
             red_levels: (0.0, 1.0),
             bands: vec![0.0, 0.15, 0.4, 0.55, 0.45, 0.1, -0.35, -0.7, -0.9],
+            hue_nodes: vec![0.0, 0.0, 20.0, 45.0, 0.0, -30.0, 0.0, 0.0],
             mask: mask_histogram(false),
             overflowing: mask_histogram(true),
             panel_width: None,
@@ -2934,6 +2937,8 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     curves(ui, t, demo);
     ui.add_space(t.spacing.l);
     equalizers(ui, t, demo);
+    ui.add_space(t.spacing.l);
+    hue_curve(ui, t, demo);
 }
 
 /// A slider in a collapsible group: its label, full name, range, decimal places and
@@ -3322,6 +3327,55 @@ fn equalizers(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
             EqualizerAction::Reset => demo.bands = vec![0.0; 9],
         }
         demo.last = format!("Tone equalizer: {action:?}");
+    }
+}
+
+/// The colour equalizer's graph of its hue nodes, over a stand-in for the hues the tool
+/// paints: the hue strip under it, and each hue turned by the height behind it.
+fn hue_curve(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
+    let names = [
+        "Hue: red",
+        "Hue: orange",
+        "Hue: yellow",
+        "Hue: green",
+        "Hue: cyan",
+        "Hue: blue",
+        "Hue: lavender",
+        "Hue: magenta",
+    ];
+    let hue = |turns: f32| -> Color32 {
+        egui::ecolor::Hsva::new(turns.rem_euclid(1.0), 0.55, 0.85, 1.0).into()
+    };
+    const COLUMNS: usize = 25;
+    let strip: Vec<Color32> = (0..COLUMNS)
+        .map(|k| hue(k as f32 / (COLUMNS - 1) as f32))
+        .collect();
+    let background: Vec<Color32> = (0..9)
+        .flat_map(|row| {
+            let turned = 0.5 - row as f32 / 8.0;
+            (0..COLUMNS).map(move |k| hue(k as f32 / (COLUMNS - 1) as f32 + turned))
+        })
+        .collect();
+    // Straight lines between the nodes stand in for the tool's curve.
+    let width = (ui.available_width() - t.spacing.l) / 2.0;
+    let graph = HueCurve::new(
+        "Colour equalizer, curve",
+        &demo.hue_nodes,
+        &names,
+        [-180.0, 180.0],
+    )
+    .offset(-10.0 / 360.0)
+    .strip(&strip)
+    .background(&background, COLUMNS)
+    .unit("unit-degrees-value")
+    .step(1.0);
+    if let Some(action) = ui.allocate_ui(vec2(width, 0.0), |ui| graph.show(ui)).inner {
+        match &action {
+            HueCurveAction::Move { node, value, .. } => demo.hue_nodes[*node] = *value,
+            HueCurveAction::ResetNode(i) => demo.hue_nodes[*i] = 0.0,
+            HueCurveAction::Reset => demo.hue_nodes = vec![0.0; 8],
+        }
+        demo.last = format!("Colour equalizer: {action:?}");
     }
 }
 

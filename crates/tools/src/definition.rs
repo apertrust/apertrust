@@ -1491,6 +1491,11 @@ pub enum Widget {
     /// ([`crate::ProcessingTool::curve`] of the first), and a drag reaches as far as the
     /// curve is wide ([`crate::ProcessingTool::curve_width`]).
     Equalizer,
+    /// darktable's colour equalizer graph: its controls are a curve's nodes, numbers
+    /// evenly spaced around the hue circle, red first; it draws them over their range,
+    /// the tool's curve through them ([`crate::ProcessingTool::curve`] of the first) from
+    /// where the first sits ([`crate::ProcessingTool::curve_offset`]), and what the tool
+    /// paints behind it ([`crate::ProcessingTool::curve_paint`]).
     HueCurve,
     Swatches,
     /// History's steps, the edit's history as a list (decision 93).
@@ -2330,14 +2335,14 @@ impl ProcessingDefinition {
                     | (Row::Toggle { .. }, ControlKind::Bool { .. })
                     | (
                         Row::Custom {
-                            widget: Widget::Equalizer,
+                            widget: Widget::Equalizer | Widget::HueCurve,
                             ..
                         },
                         ControlKind::Number { .. },
                     ) => true,
                     (
                         Row::Custom {
-                            widget: Widget::Equalizer,
+                            widget: Widget::Equalizer | Widget::HueCurve,
                             ..
                         },
                         _,
@@ -2366,14 +2371,15 @@ impl ProcessingDefinition {
         };
         for control in self.controls {
             let all = rows_of(control.id);
-            // The equalizer over controls with rows of their own is a second view of them,
-            // the tone equalizer's graph of its bands, so only their own rows count; one at
-            // most. It is the only widget allowed so, until another needs it.
+            // A band graph over controls with rows of their own is a second view of them,
+            // the tone equalizer's graph of its bands or the colour equalizer's of its
+            // nodes, so only their own rows count; one at most. They are the only widgets
+            // allowed so.
             let (custom, own): (Vec<&Placed>, Vec<&Placed>) = all.iter().partition(|placed| {
                 matches!(
                     placed.row,
                     Row::Custom {
-                        widget: Widget::Equalizer,
+                        widget: Widget::Equalizer | Widget::HueCurve,
                         ..
                     }
                 )
@@ -5677,9 +5683,10 @@ mod tests {
     }
 
     #[test]
-    fn only_the_equalizer_is_a_second_view_of_number_controls() {
+    fn only_the_band_graphs_are_a_second_view_of_number_controls() {
         // As the tone equalizer's graph over its bands' sliders: one equalizer besides
-        // a control's own row, never two; or the widget alone; and only over numbers.
+        // a control's own row, never two; or the widget alone; and only over numbers. The
+        // colour equalizer's hue curve likewise.
         static VIEWED: &[Row] = &[
             Row::Slider(Slider::new("exposure")),
             Row::Custom {
@@ -5750,6 +5757,29 @@ mod tests {
         );
         assert_eq!(
             with(&CONTROLS[1..2], OF_A_CHOICE).check(),
+            Err(DefinitionError::Row("mode"))
+        );
+        static HUE_VIEWED: &[Row] = &[
+            Row::Slider(Slider::new("exposure")),
+            Row::Custom {
+                widget: Widget::HueCurve,
+                controls: &["exposure"],
+            },
+        ];
+        static HUE_OF_A_CHOICE: &[Row] = &[
+            Row::Choice {
+                control: "mode",
+                style: ChoiceStyle::List,
+                end: &[],
+            },
+            Row::Custom {
+                widget: Widget::HueCurve,
+                controls: &["mode"],
+            },
+        ];
+        assert_eq!(with(&CONTROLS[..1], HUE_VIEWED).check(), Ok(()));
+        assert_eq!(
+            with(&CONTROLS[1..2], HUE_OF_A_CHOICE).check(),
             Err(DefinitionError::Row("mode"))
         );
         // No other widget is a second row: a curve beside its control's own row is two.
