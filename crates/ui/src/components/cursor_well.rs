@@ -262,6 +262,10 @@ pub enum CursorWellAction {
     /// Open the amounts of `group`'s chosen cursor: its face pressed again while chosen, or
     /// given Enter or ↓, where the cursor has amounts.
     Amounts { group: usize },
+    /// `group`'s chosen cursor's face pressed again where it has no amounts: the app turns a
+    /// picker cursor's picker off, as a second press on its picker button does, and does
+    /// nothing for another.
+    Again { group: usize },
     /// The toggle `setting` of `group`'s list, now `on`.
     Toggle {
         group: usize,
@@ -603,7 +607,9 @@ impl<'a> CursorWell<'a> {
                 group: target.group,
             })
         } else {
-            None
+            Some(CursorWellAction::Again {
+                group: target.group,
+            })
         }
     }
 

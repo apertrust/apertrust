@@ -1126,6 +1126,19 @@ picker-photo-down = Посунути вниз
 picker-said-control = { $control } { $value }
 picker-said-rgb = середнє RGB { $red }, { $green }, { $blue }
 
+picker-turned-on = { $picker }: увімкнено
+picker-turned-off = { $picker }: вимкнено
+picker-turned-off-why = { $picker }: вимкнено, { $why }
+picker-turned-replaced = { $before }: вимкнено, увімкнено іншу піпетку. { $picker }: увімкнено
+picker-off-photo = інше фото
+picker-off-closed = фото закрито
+picker-off-control = змінено { $control }
+picker-off-tool = змінено { $tool }
+picker-off-tool-off = { $tool } вимкнено
+picker-off-section = { $tool } згорнуто
+picker-off-history = змінено історію
+picker-off-reset = редагування скинуто
+
 ## Колодязь курсорів (docs/cursors.md, The well).
 cursor-well = Курсори
 cursor-name-key = { $name }, { $key }
