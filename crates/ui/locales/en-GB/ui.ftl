@@ -1459,7 +1459,7 @@ picker-bar-name = { $tool } · { $picker }
 # pickers: "Exposure · Reference".
 picker-area-label = { $tool } · { $picker }
 # How to use a picker measuring an area.
-picker-bar-area = Drag an area on the photo. { $command }-click switches to a point. Esc ends.
+picker-bar-area = Drag an area on the photo. { $command }-click switches to a point. Right-click resets the area. Esc ends.
 # How to use a picker measuring a point, after its own sentence.
 picker-bar-point = { $what } { $command }-click switches to an area. Esc ends.
 # The sentence of a picker with none of its own: an area picker switched to a point.
