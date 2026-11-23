@@ -35,7 +35,7 @@ Each tooltip and screen-reader name is the button's full name, darktable's `rota
 
 **The Viewer's zoom** keeps its centre on the same part of the photo through each turn and flip, their undo and the History tab's eye, its mode worked out again for the new shape ([gui.md](../gui.md#when-the-room-or-the-photo-changes)); `shown_bits` gives the app the orientation the frame shows, auto the photo's own.
 
-**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the tool's guides come: Apertrust's guides overlay (the viewer bar's Guides) is global, and the panel has no tool focus yet.
+**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the tool's guides come: Apertrust's guides overlay (the viewer bar's Guides) is global, and Apertrust has no focused tool to show a tool's own guides with.
 
 **Commands.**
 
@@ -84,7 +84,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/orientation.rs` and the 
 
 ## Gaps
 
-1. **Show guides** waits for the tool's guides: an overlay while the tool has focus, and the global guide settings the button opens.
+1. **Show guides** waits for the tool's guides: an overlay, which darktable shows while the module has focus and Apertrust, with no focused tool, has yet to place, and the global guide settings the button opens.
 2. **The presets** wait for the header's presets menu, and the header's "auto" label for a label in Apertrust's section header.
 3. **Crop following a turn** (`_crop_callback`) comes with crop.
 

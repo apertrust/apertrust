@@ -348,7 +348,7 @@ Decision 98's steps 5 to 9 ([gui.md](gui.md#shortcuts-the-build-in-steps)), afte
 - [ ] 6. Fallbacks, off by default, a person's own added, changed and deleted on the Shortcuts page's fallbacks branch, recorded with no key, modifiers alone with or without a click or a move, as darktable records them, through step 5's recording, the one place a keyless trigger is recorded; speed adjustments and slider precision.
 - [ ] 7. Visual mapping: Help › Map Shortcuts, a button on the Shortcuts page, and a Toolbar item outside the default list.
 - [ ] 8. The files: Export… and Import… by device, Import extras from darktable's sample shortcuts, and a darktable user's `shortcutsrc` imported for the tools ported, the rest listed.
-- [ ] 9. darktable's defaults: the default keyboard map audited against darktable's 247 default registrations, each difference moved to darktable's key or listed as a deviation; the tools' default keys as each lands, rotation's Ctrl+R, Ctrl+[ and Ctrl+] on Windows and Linux, where Alt with a letter is the menus', and darktable's Option+R, Option+[ and Option+] on the Mac; `<focused>` with the focused tool; the accels window, Help › Shortcuts Overview, with no default key, H staying the peek.
+- [ ] 9. darktable's defaults: the default keyboard map audited against darktable's 247 default registrations, each difference moved to darktable's key or listed as a deviation; the tools' default keys as each lands, rotation's Ctrl+R, Ctrl+[ and Ctrl+] on Windows and Linux, where Alt with a letter is the menus', and darktable's Option+R, Option+[ and Option+] on the Mac; the accels window, Help › Shortcuts Overview, with no default key, H staying the peek.
 
 ### The migration complete
 
