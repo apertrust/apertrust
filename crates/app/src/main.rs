@@ -7058,7 +7058,7 @@ impl App {
         let top = if self.start.shown {
             start::STRIP
         } else {
-            theme(ctx).sizes.toolbar
+            Toolbar::height(&theme(ctx), self.shell.toolbar_labels)
         };
         match notice.show(ctx, top, self.notice_held) {
             Some(recovery::Pressed::Keep) if recovery::held(&self.keeper) => {
@@ -7874,7 +7874,10 @@ impl eframe::App for App {
             return;
         }
         let t = theme(&ctx);
-        let title_bar = self.window_buttons(frame, &ctx, t.sizes.toolbar);
+        // The Toolbar's height, taller with its labels, which the window's own buttons are
+        // centred in and the panels below start under.
+        let toolbar_height = Toolbar::height(&t, self.shell.toolbar_labels);
+        let title_bar = self.window_buttons(frame, &ctx, toolbar_height);
         let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         let caption = (CAPTION_BUTTONS && title_bar.is_some()).then_some(maximised);
         // A press in the bands inside the window's edges, taken from egui's input.
@@ -7902,7 +7905,7 @@ impl eframe::App for App {
         // The Tools panel runs the window's height under the Toolbar; the Browser runs
         // under the photo only.
         let toolbar = egui::Panel::top("toolbar")
-            .exact_size(t.sizes.toolbar)
+            .exact_size(toolbar_height)
             .resizable(false)
             .show_separator_line(false)
             .frame(egui::Frame::NONE)
@@ -22592,7 +22595,8 @@ mod tests {
 
     /// Decision 92: a right-click on the Toolbar's empty area opens the toolbar menu, never
     /// the window's, which stays on the system's own key; its Toolbar Labels turns the
-    /// labels off, and on again, at once, and Customise Toolbar… is drawn disabled.
+    /// labels off, and on again, at once, the Toolbar 44 points tall without them and 56
+    /// with, and Customise Toolbar… is drawn disabled.
     #[test]
     fn a_right_click_on_the_toolbar_opens_the_toolbar_menu_and_never_the_window_s() {
         let mut harness = bench(OperatingSystem::Nix);
@@ -22622,6 +22626,9 @@ mod tests {
                 .click();
             harness.run();
             assert_eq!(harness.state().shell.toolbar_labels, on);
+            let bar = harness.get_by_role(Role::Toolbar).rect();
+            assert_eq!(bar.height(), if on { 56.0 } else { 44.0 });
+            assert_eq!(Toolbar::height(&theme(&harness.ctx), on), bar.height());
         }
     }
 
