@@ -1549,6 +1549,17 @@ impl ProcessingDefinition {
         self.pickers.iter().find(|picker| picker.id == id)
     }
 
+    /// The readouts of its rows of pickers ([`Row::Pickers`]), in the rows' order.
+    pub fn readouts(&self) -> impl Iterator<Item = &ReadoutDef> {
+        self.rows().filter_map(|row| match row {
+            Row::Pickers {
+                readout: Some(readout),
+                ..
+            } => Some(readout),
+            _ => None,
+        })
+    }
+
     /// The coordinate called `id`: its view, and its place among the view's coordinates.
     pub fn coordinate(&self, id: &str) -> Option<(&'static View, usize)> {
         self.views.iter().find_map(|view| {

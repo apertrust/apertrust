@@ -3037,6 +3037,7 @@ mod tests {
             presets: Vec::new(),
             views: views(tool),
             computed: Vec::new(),
+            readouts: Vec::new(),
         };
         state.presets = presets(tool, &state);
         report_availability(tool, &mut state);

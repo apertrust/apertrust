@@ -958,6 +958,18 @@ pub struct ToolState {
     pub views: Vec<CoordinateState>,
     /// Every computed value, in the definition's order (decision 87).
     pub computed: Vec<ComputedState>,
+    /// Every readout of its rows of pickers, in the definition's order: Colour
+    /// calibration's CCT and the light's colour.
+    pub readouts: Vec<ReadoutState>,
+}
+
+/// A readout at a row of pickers' start ([`apertrust_tools::ReadoutDef`]): what the tool
+/// gives for the values reported ([`ProcessingTool::readout`]), on the photo's image
+/// context, as its preset rows' matching is; `None` where it gives none, or panics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReadoutState {
+    pub id: &'static str,
+    pub readout: Option<apertrust_tools::pick::Readout>,
 }
 
 /// A computed value ([`apertrust_tools::Row::Computed`]): the number its operation
@@ -2718,6 +2730,9 @@ struct Open {
     /// The tools whose preset rows panicked as the values were reported, each warned
     /// of once for the photo.
     presets_failed: BTreeSet<&'static str>,
+    /// The tools whose readouts panicked as the values were reported, each warned of
+    /// once for the photo.
+    readouts_failed: BTreeSet<&'static str>,
     /// The tools whose availability panicked as the values were reported, each warned
     /// of once for the photo (decision 30).
     available_failed: BTreeSet<&'static str>,
@@ -4699,6 +4714,7 @@ impl Engine {
             unsaved: false,
             failing: BTreeSet::new(),
             presets_failed: BTreeSet::new(),
+            readouts_failed: BTreeSet::new(),
             available_failed: BTreeSet::new(),
             ranges_failed: BTreeSet::new(),
             options,
@@ -6252,6 +6268,7 @@ impl Open {
                     || controls.iter().any(|c| c.value != c.default);
                 edited |= tool_edited;
                 let presets = self.presets(*tool, &controls);
+                let readouts = self.readouts(*tool, &values);
                 let views = self.views(*tool, &controls, &values);
                 let computed = definition.computed(&values);
                 for (row, (value, shown)) in computed.iter().enumerate() {
@@ -6274,6 +6291,7 @@ impl Open {
                             value: None,
                         })
                         .collect(),
+                    readouts,
                 }
             })
             .collect();
@@ -6381,6 +6399,35 @@ impl Open {
                     .collect()
             }
         }
+    }
+
+    /// Each readout of the tool's rows of pickers while its controls hold `values`, every
+    /// control, the edit's over the defaults, on the photo's image context. Should the
+    /// tool's code panic, each reads none, and a warning says so once for the photo.
+    fn readouts(&mut self, tool: &dyn ProcessingTool, values: &Controls) -> Vec<ReadoutState> {
+        let definition = tool.definition();
+        let read = catch_unwind(AssertUnwindSafe(|| {
+            (definition.readouts())
+                .map(|readout| ReadoutState {
+                    id: readout.id,
+                    readout: tool.readout(readout.id, values, &self.image),
+                })
+                .collect()
+        }));
+        read.unwrap_or_else(|panic| {
+            let id = definition.tool.id;
+            // The values are reported after every change: once is enough.
+            if self.readouts_failed.insert(id) {
+                let message = panic_message(panic.as_ref());
+                tracing::warn!(target: "pipe", "tool {id}'s readouts read none: {message}");
+            }
+            (definition.readouts())
+                .map(|readout| ReadoutState {
+                    id: readout.id,
+                    readout: None,
+                })
+                .collect()
+        })
     }
 
     /// Every coordinate of the tool's lossless views: the held coordinates through a
