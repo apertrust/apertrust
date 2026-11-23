@@ -818,9 +818,10 @@ impl<'a> Toolbar<'a> {
                     let hidden = self.under_more(fold);
                     let chosen = ui
                         .scope_builder(left("more"), |ui| {
-                            let more = IconButton::new(Icon::More, &tr(&ctx, "toolbar-more"))
-                                .size(BUTTON)
-                                .show(ui);
+                            let more =
+                                IconButton::new(Icon::ToolbarMore, &tr(&ctx, "toolbar-more"))
+                                    .size(BUTTON)
+                                    .show(ui);
                             pressed(more.clone());
                             more_rect = Some(more.rect);
                             // Each with its keys, and disabled where it can't run. Screen
