@@ -123,7 +123,8 @@ pub use tabs::Tabs;
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
 pub use toolbar::{
-    MenuButtonStyle, SaveState, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, caption_button,
+    MenuButtonStyle, SaveState, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ToolbarMenu,
+    caption_button,
 };
 pub use tools_panel::{
     FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,
@@ -255,13 +256,18 @@ pub fn context_click(ctx: &egui::Context, response: &Response) -> bool {
 /// has the focus, each taken out of the frame's input. It tells screen readers the element
 /// has a menu, so they offer ShowContextMenu for it.
 pub fn menu_asked(ctx: &egui::Context, response: &Response) -> bool {
-    let focused = response.has_focus();
-    ctx.accesskit_node_builder(response.id, |node| {
+    menu_asked_of(ctx, response.id, response.has_focus())
+}
+
+/// [`menu_asked`] for the element `id`, `focused` saying whether it has the focus, where
+/// its response is not at hand, as a focused face of the cursors' well is the Toolbar's.
+pub(crate) fn menu_asked_of(ctx: &egui::Context, id: egui::Id, focused: bool) -> bool {
+    ctx.accesskit_node_builder(id, |node| {
         node.add_action(egui::accesskit::Action::ShowContextMenu);
     });
     ctx.input_mut(|i| {
         let mut asked = false;
-        i.consume_accesskit_action_requests(response.id, |request| {
+        i.consume_accesskit_action_requests(id, |request| {
             let show = request.action == egui::accesskit::Action::ShowContextMenu;
             asked |= show;
             show

@@ -226,6 +226,12 @@ toolbar = Toolbar
 toolbar-menu = Menu
 # », holding the actions a narrow Toolbar has no room for.
 toolbar-more = More actions
+# The toolbar menu, on a right-click anywhere on the Toolbar, and View › Panels (decision
+# 92): the words under the icons on or off, and the Customise Toolbar window, drawn
+# disabled with its tip until it is built.
+action-toolbar-labels = Toolbar labels
+action-customise-toolbar = Customise toolbar…
+toolbar-customise-later = Customise Toolbar comes in a later version
 # The save state at the Toolbar's end, which shows only when a save goes wrong:
 # Saving… while a write is still unconfirmed about two seconds after it started, as on a
 # slow network folder.
@@ -1176,6 +1182,8 @@ menu-help = &Help
 # Submenus of View.
 menu-tools-panel-tab = Tools Panel Tab
 menu-workspace = Workspace
+# View › Panels: the panels' own items, the Toolbar's among them (decision 92).
+menu-panels = Panels
 # A tool's ⋯, its layout items (decisions 83 and 96): its tabs by name under each.
 menu-section-move-to-tab = Move Tool to Tab
 menu-section-show-in-tab = Show Tool in Tab

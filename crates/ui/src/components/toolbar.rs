@@ -37,12 +37,21 @@
 //! still shows at the end while a failed job is left. With no entries at all, the whole
 //! panel is empty area.
 //!
+//! **The toolbar menu** (decision 92): a right-click anywhere on the panel, on an entry or
+//! its empty areas, title bar or not, but the caption buttons and, on the title bar, the
+//! menu button, asks for it with the entry under the pointer, as do the menu key, Shift+F10 and a screen reader's
+//! ShowContextMenu on a focused button, the menu button, the spinner or a face or chevron
+//! of the well ([`ToolbarAction::ContextMenu`]); the app builds it. Where the panel is the
+//! title bar, a right-click on the menu button asks for the window's menu instead, as on a
+//! title bar's icon ([`ToolbarAction::WindowMenu`]), which also stays on the system's own
+//! key.
+//!
 //! It runs to the window's top edge and is the window's title bar ([`Toolbar::title_bar`];
 //! `docs/gui.md`, The window frame and menus, decision 39): it keeps room at its start for
 //! the window's own buttons where the system draws them there, as macOS does
 //! ([`Toolbar::start_inset`]), and reports a drag starting or a double-click on its empty
 //! areas, the same on every platform, for the app to move the window or do what the
-//! system does on a double-click, and a right-click there, for the window's menu. It
+//! system does on a double-click. It
 //! draws the caption buttons Windows and Linux need, minimise, maximise or restore and
 //! close, at its very end when asked ([`Toolbar::caption_buttons`]). It knows nothing of
 //! platforms: the app says whether it is the title bar, how much room the system's
@@ -58,13 +67,14 @@ use egui::{
 use super::icon_button::colour;
 use super::plate::{Touch, paint_focus, undimmed_painter};
 use super::{
-    CursorWell, CursorWellAction, IconButton, Jobs, focus_ring, pull_down, report_shortcut,
+    CursorWell, CursorWellAction, IconButton, Jobs, focus_ring, menu_asked, menu_asked_of,
+    pull_down, report_shortcut,
 };
 use crate::i18n::Args;
 use crate::{Icon, popup, theme, tr, translator};
 
 /// What the user did to the Toolbar this frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ToolbarAction {
     /// The menu button ([`Toolbar::menu_button`]), pressed or given ↓ while its menu is
     /// closed: the menus should open, hung from [`Toolbar::menu_anchor`] as the popup
@@ -79,9 +89,14 @@ pub enum ToolbarAction {
     /// An empty part of the panel double-clicked, where the panel is the title bar: the
     /// window should do what a double-click on its title bar does.
     TitleBarDoubleClick,
-    /// An empty part of the panel right-clicked, where the panel is the title bar: the
-    /// window's menu should open.
+    /// The menu button right-clicked, where the panel is the title bar: the window's menu
+    /// should open at the pointer, as on a title bar's icon (decision 92).
     WindowMenu,
+    /// The toolbar menu asked for (decision 92): by a right-click anywhere on the panel but
+    /// its caption buttons and, on the title bar, the menu button, on an entry or its empty
+    /// areas, or a Control-click on the Mac, or by the menu key, Shift+F10 or a screen reader's
+    /// ShowContextMenu on a focused button.
+    ContextMenu(ToolbarMenu),
     /// The jobs spinner ([`Toolbar::jobs`]): the jobs window should open, or come to the
     /// front.
     Jobs,
@@ -96,6 +111,21 @@ pub enum ToolbarAction {
     MaximiseOrRestore,
     /// Close the window.
     Close,
+}
+
+/// Where the toolbar menu was asked for ([`ToolbarAction::ContextMenu`]), for the app to
+/// build it: on which entry, where it hangs from, and the control the focus goes back to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ToolbarMenu {
+    /// The entry it was asked on, by its place in [`Toolbar::entries`]: a button, the menu
+    /// button, the cursors' well, the spinner or the save state. None on the empty areas
+    /// and ».
+    pub entry: Option<usize>,
+    /// Where it hangs from, in points: the pointer, or under the button from the keys.
+    pub at: Pos2,
+    /// The button the focus goes back to as it closes, asked for from the keys; none from
+    /// the pointer, the focus going back to what had it.
+    pub opener: Option<Id>,
 }
 
 /// One entry of the Toolbar's list (decision 92), drawn in the list's order. Each part
@@ -370,7 +400,6 @@ impl<'a> Toolbar<'a> {
     /// double-click stays one and reports [`ToolbarAction::TitleBarDoubleClick`]. Its
     /// buttons take their presses as before; the spaces and the status slots count as
     /// empty but for the save warning and the spinner.
-    /// A right-click on an empty part reports [`ToolbarAction::WindowMenu`].
     pub fn title_bar(mut self, on: bool) -> Self {
         self.title_bar = on;
         self
@@ -707,10 +736,28 @@ impl<'a> Toolbar<'a> {
         let room =
             |x: f32, w: f32| Rect::from_min_max(pos2(x, inner.top()), pos2(x + w, inner.bottom()));
 
+        // Where each entry drawn stands, by its place in the list, for the toolbar menu
+        // asked for on it; and the menu asked for from the keys on a focused button.
+        let entry_of = |d: Drawn| {
+            (self.entries.iter()).position(|entry| match (d, entry) {
+                (Drawn::Button(drawn), ToolbarEntry::Button(listed)) => drawn.id == listed.id,
+                (Drawn::Menu, ToolbarEntry::MenuButton)
+                | (Drawn::Cursors, ToolbarEntry::Cursors)
+                | (Drawn::Jobs, ToolbarEntry::Jobs)
+                | (Drawn::Save, ToolbarEntry::SaveState) => true,
+                _ => false,
+            })
+        };
+        let mut items: Vec<(Option<usize>, Rect)> = Vec::new();
+        let mut keyed = None;
         let mut menu_drawn = false;
         let mut well_rect = None;
+        let mut more_rect = None;
         for (d, x, w) in placed {
             let rect = room(x, w);
+            if let Drawn::Menu | Drawn::Button(_) = d {
+                items.push((entry_of(d), rect));
+            }
             let builder = |salt: &str| UiBuilder::new().id_salt(salt).max_rect(rect);
             let left = |salt: &str| builder(salt).layout(Layout::left_to_right(Align::Center));
             let right = |salt: &str| builder(salt).layout(Layout::right_to_left(Align::Center));
@@ -720,6 +767,9 @@ impl<'a> Toolbar<'a> {
                     ui.scope_builder(left("menu button"), |ui| {
                         let (button, press) =
                             menu_button(ui, self.menu_style, keys(ToolbarAction::Menu));
+                        if menu_asked(&ctx, &button) {
+                            keyed = Some(keyed_menu(entry_of(d), &button));
+                        }
                         pressed(button);
                         match press {
                             Some(MenuPress::Open) => action = Some(ToolbarAction::Menu),
@@ -742,6 +792,9 @@ impl<'a> Toolbar<'a> {
                             }
                         })
                         .inner;
+                    if menu_asked(&ctx, &response) {
+                        keyed = Some(keyed_menu(entry_of(d), &response));
+                    }
                     if pressed(response) {
                         action = Some(done);
                     }
@@ -754,6 +807,7 @@ impl<'a> Toolbar<'a> {
                                 .size(BUTTON)
                                 .show(ui);
                             pressed(more.clone());
+                            more_rect = Some(more.rect);
                             // Each with its keys, and disabled where it can't run. Screen
                             // readers hear its name, and the keys as its shortcut, as on
                             // every control.
@@ -797,6 +851,22 @@ impl<'a> Toolbar<'a> {
                     if let Some(chosen) = drawn.inner {
                         action = Some(ToolbarAction::Cursors(chosen));
                     }
+                    // The menu keys on a focused face or chevron ask for the menu on the
+                    // well, as on a button.
+                    let focused = ctx.memory(|m| m.focused()).and_then(|id| {
+                        let face = ctx.viewport(|v| v.this_pass.widgets.get(id).copied())?;
+                        rect.contains_rect(face.rect).then_some(face)
+                    });
+                    if let Some(face) = focused
+                        && menu_asked_of(&ctx, face.id, true)
+                    {
+                        keyed = Some(ToolbarMenu {
+                            entry: entry_of(d),
+                            at: face.rect.left_bottom(),
+                            opener: Some(face.id),
+                        });
+                    }
+                    items.push((entry_of(d), rect));
                     well_rect = Some(rect);
                 }
                 Drawn::Jobs => {
@@ -804,10 +874,14 @@ impl<'a> Toolbar<'a> {
                         continue;
                     };
                     ui.scope_builder(right("jobs"), |ui| {
-                        if let Some(spinner) = jobs.spinner(ui)
-                            && pressed(spinner)
-                        {
-                            action = Some(ToolbarAction::Jobs);
+                        if let Some(spinner) = jobs.spinner(ui) {
+                            if menu_asked(&ctx, &spinner) {
+                                keyed = Some(keyed_menu(entry_of(d), &spinner));
+                            }
+                            items.push((entry_of(d), spinner.rect));
+                            if pressed(spinner) {
+                                action = Some(ToolbarAction::Jobs);
+                            }
                         }
                     });
                 }
@@ -815,10 +889,11 @@ impl<'a> Toolbar<'a> {
                     let save = ui.scope_builder(right("save state"), |ui| {
                         saving.show(ui, self.saved, fold.status, true)
                     });
-                    if let Some(button) = save.inner
-                        && pressed(button)
-                    {
-                        action = Some(ToolbarAction::NotSaved);
+                    if let Some(button) = save.inner {
+                        items.push((entry_of(d), button.rect));
+                        if pressed(button) {
+                            action = Some(ToolbarAction::NotSaved);
+                        }
                     }
                 }
                 Drawn::Space | Drawn::Flexible => {}
@@ -902,6 +977,37 @@ impl<'a> Toolbar<'a> {
         }
         // The well is no empty area, between its buttons too.
         controls.extend(well_rect);
+        // The toolbar menu, asked for on whatever is under the pointer or from the keys,
+        // in place of a press its Control-click on the Mac made; never on the caption
+        // buttons, which are the platform's, nor a Control-click on » or the well, whose
+        // own menus that click opens.
+        // Where the panel is the title bar, a right-click on the menu button is the window's
+        // menu, as on a title bar's icon; its keys still ask for the toolbar menu.
+        let menu_button = (self.entries.iter()).position(|e| *e == ToolbarEntry::MenuButton);
+        let mut window_menu = false;
+        let menu = keyed.or_else(|| {
+            let (at, control) = menu_click(ui, bar)?;
+            let owns = |rect: Option<Rect>| rect.is_some_and(|r| r.contains(at));
+            if owns(caption) || (control && (owns(more_rect) || owns(well_rect))) {
+                return None;
+            }
+            let entry = items.iter().find(|(_, rect)| rect.contains(at));
+            let entry = entry.and_then(|(entry, _)| *entry);
+            if self.title_bar && !control && entry.is_some() && entry == menu_button {
+                window_menu = true;
+                return None;
+            }
+            Some(ToolbarMenu {
+                entry,
+                at,
+                opener: None,
+            })
+        });
+        if let Some(menu) = menu {
+            action = Some(ToolbarAction::ContextMenu(menu));
+        } else if window_menu {
+            action = Some(ToolbarAction::WindowMenu);
+        }
         if self.title_bar {
             action = action.or_else(|| title_bar_gesture(ui, bar, response.id, &controls));
         }
@@ -1061,6 +1167,45 @@ fn announce(ui: &Ui, state: SaveState<'_>, because: &dyn Fn(&str) -> String) -> 
     said
 }
 
+/// The toolbar menu asked for from the keys on the focused `response`, the entry at `entry`:
+/// under it, the focus going back to it as it closes.
+fn keyed_menu(entry: Option<usize>, response: &egui::Response) -> ToolbarMenu {
+    ToolbarMenu {
+        entry,
+        at: response.rect.left_bottom(),
+        opener: Some(response.id),
+    }
+}
+
+/// Where a right-click on the panel, `bar`, was let go this frame, as egui's context menus
+/// open, or on the Mac a click with Control held (decision 91), and whether it was that
+/// click: on the panel, under no popup over it, whatever is there.
+fn menu_click(ui: &Ui, bar: Rect) -> Option<(Pos2, bool)> {
+    let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
+    let at = ui.input(|i| {
+        let pointer = &i.pointer;
+        // Control read from the button's coming up, as `context_click` reads it.
+        let control = || {
+            i.events.iter().any(|event| {
+                matches!(event, egui::Event::PointerButton {
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers,
+                    ..
+                } if modifiers.ctrl)
+            })
+        };
+        let control = mac && pointer.button_clicked(egui::PointerButton::Primary) && control();
+        let right = pointer.button_clicked(egui::PointerButton::Secondary);
+        let at = (right || control)
+            .then(|| pointer.interact_pos())
+            .flatten()?;
+        Some((at, control && !right))
+    })?;
+    let on_bar = bar.contains(at.0) && ui.ctx().layer_id_at(at.0) == Some(ui.layer_id());
+    on_bar.then_some(at)
+}
+
 /// What a press of the menu button asks for.
 enum MenuPress {
     Open,
@@ -1119,7 +1264,7 @@ fn menu_button(
 }
 
 /// What the user did to the empty areas of the panel, `bar`, where it is the title bar: a
-/// double-click, a right-click, or a press there that has turned into a drag, reported
+/// double-click, or a press there that has turned into a drag, reported
 /// once a press. A press becomes a drag only once it has moved or been held, so a click
 /// stays a click and two make a double-click.
 ///
@@ -1137,7 +1282,7 @@ fn title_bar_gesture(ui: &Ui, bar: Rect, id: egui::Id, controls: &[Rect]) -> Opt
                 .iter()
                 .any(|control| control.expand(margin).contains(at))
     };
-    let (pressed, down, dragging, double, menu, at, origin) = ui.input(|i| {
+    let (pressed, down, dragging, double, at, origin) = ui.input(|i| {
         let pointer = &i.pointer;
         let down = pointer.primary_down();
         (
@@ -1145,7 +1290,6 @@ fn title_bar_gesture(ui: &Ui, bar: Rect, id: egui::Id, controls: &[Rect]) -> Opt
             down,
             down && pointer.is_decidedly_dragging(),
             pointer.button_double_clicked(egui::PointerButton::Primary),
-            pointer.button_clicked(egui::PointerButton::Secondary),
             pointer.interact_pos(),
             pointer.press_origin(),
         )
@@ -1160,10 +1304,6 @@ fn title_bar_gesture(ui: &Ui, bar: Rect, id: egui::Id, controls: &[Rect]) -> Opt
     // where it was pressed.
     if double && at.is_some_and(is_empty) {
         return Some(ToolbarAction::TitleBarDoubleClick);
-    }
-    // A right-click, on its release as egui's context menus open, where it was let go.
-    if menu && at.is_some_and(is_empty) {
-        return Some(ToolbarAction::WindowMenu);
     }
     // egui lets go of a press's target once it moves, so where it began is asked of the
     // panel.

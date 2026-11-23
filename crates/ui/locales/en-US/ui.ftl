@@ -16,6 +16,8 @@ theme-grey = Gray
 
 window-minimise = Minimize
 window-maximise = Maximize
+action-customise-toolbar = Customize toolbar…
+toolbar-customise-later = Customize Toolbar comes in a later version
 
 ## The jobs
 

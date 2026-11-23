@@ -204,6 +204,11 @@ impl ActionId {
     pub const PREVIOUS_REGION: ActionId = ActionId("previous-region");
     /// The menu button's menu, where the menus are drawn (decision 39).
     pub const MENU: ActionId = ActionId("menu");
+    /// The Toolbar's words under its icons, on or off (decision 92), in View › Panels and
+    /// the toolbar menu.
+    pub const TOOLBAR_LABELS: ActionId = ActionId("toolbar-labels");
+    /// The Customise Toolbar window, drawn disabled until it is built (decision 92).
+    pub const CUSTOMISE_TOOLBAR: ActionId = ActionId("customise-toolbar");
     pub const FULL_SCREEN: ActionId = ActionId("full-screen");
     /// File › Close: the folder or photo open.
     pub const CLOSE: ActionId = ActionId("close");
@@ -382,6 +387,8 @@ pub enum Intent {
     PreviousRegion,
     /// The menu button's menu, opened at its top, or closed where it is open.
     Menu,
+    /// Toolbar Labels turned on or off, `toolbar.labels`, at once (decision 92).
+    ToolbarLabels,
     FullScreen,
     /// The main window, which ends the app as Quit does; a dialog's own window is the
     /// app's to close (`run_action`, in the app's `main`).
@@ -600,6 +607,9 @@ pub struct State {
     pub dialog_window: bool,
     /// Whether the window is full screen, which Full Screen's item shows checked.
     pub full_screen: bool,
+    /// Whether the Toolbar shows its words under its icons, which Toolbar Labels' item shows
+    /// checked (decision 92).
+    pub toolbar_labels: bool,
     /// The Tools panel's tab shown, by position, whose item is shown checked.
     pub panel_tab: usize,
     /// The workspace shown, by its action ([`workspace`]), whose item is shown checked.
@@ -772,6 +782,7 @@ impl Action {
         }
         match self.emits {
             Emit::Intent(Intent::FullScreen) => Some(state.full_screen),
+            Emit::Intent(Intent::ToolbarLabels) => Some(state.toolbar_labels),
             Emit::Intent(Intent::PanelTab(tab)) => {
                 Some(state.panel_tab == tab && state.hidden_tab != Some(true))
             }
@@ -859,10 +870,14 @@ fn never(_: &State) -> bool {
 /// Why the action `id` cannot run in `state`, as its menu item's tooltip says, where the
 /// reason is one the person can act on: Discard History… where it would ask and the
 /// platform shows no alert; the Tools panel's positions where `--conf` sets it for this
-/// run, [`SET_BY_CONF`]. The message's id, or none.
+/// run, [`SET_BY_CONF`]; Customise Toolbar… until its window is built. The message's id, or
+/// none.
 pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
     if state.panel_position_given && ActionId::TOOLS_PANEL_POSITION.contains(&id) {
         return Some(SET_BY_CONF);
+    }
+    if id == ActionId::CUSTOMISE_TOOLBAR {
+        return Some("toolbar-customise-later");
     }
     state
         .discard_why
@@ -1043,7 +1058,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 140] = [
+pub static ACTIONS: [Action; 142] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1701,6 +1716,25 @@ pub static ACTIONS: [Action; 140] = [
         trigger: Trigger::Press,
         available: |s| !s.dialog,
         emits: Emit::Intent(Intent::Menu),
+    },
+    // The Toolbar's own (decision 92), on the main window with no modal dialog over it.
+    Action {
+        id: ActionId::TOOLBAR_LABELS,
+        message: "action-toolbar-labels",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::ToolbarLabels),
+    },
+    Action {
+        id: ActionId::CUSTOMISE_TOOLBAR,
+        message: "action-customise-toolbar",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: never,
+        emits: Emit::Later,
     },
     // macOS keeps F11 for showing the desktop; its own full-screen keys come first there.
     Action {
@@ -3274,6 +3308,7 @@ pub(crate) mod tests {
             modal: false,
             dialog_window: false,
             full_screen: false,
+            toolbar_labels: true,
             panel_tab: 0,
             workspace: workspace(crate::layout::DEFAULT),
             workspace_given: false,

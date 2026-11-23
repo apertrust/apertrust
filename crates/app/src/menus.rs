@@ -338,6 +338,18 @@ static BROWSER_POSITION: Menu = Menu {
     ]],
 };
 
+/// View › Panels: the Toolbar's Toolbar Labels and Customise Toolbar…, which the toolbar
+/// menu holds too (decision 92).
+static PANELS: Menu = Menu {
+    title: "menu-panels",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::TOOLBAR_LABELS),
+        item(ActionId::CUSTOMISE_TOOLBAR),
+    ]],
+};
+
 /// View › Tools Panel Position, which the Tools panel's ⋮ lists as Position ▸.
 static TOOLS_PANEL_POSITION: Menu = Menu {
     title: "menu-tools-panel-position",
@@ -457,6 +469,7 @@ pub static MENUS: [Menu; 8] = [
                 item(ActionId::SHOW_COLLECTIONS),
                 Entry::Submenu(&PANEL_TAB),
                 Entry::Submenu(&WORKSPACE),
+                Entry::Submenu(&PANELS),
                 Entry::Submenu(&INTERFACE_SIZE),
                 Entry::Submenu(&BACKGROUND),
             ],
@@ -693,6 +706,9 @@ pub enum Place {
     /// A job's row in the jobs window: Cancel, Show in Folder and Copy Error, the app's alone
     /// (`docs/gui.md`, The jobs window).
     Job,
+    /// The Toolbar, anywhere on it (decision 92): the toolbar menu, the app's alone
+    /// ([`toolbar_items`]).
+    Toolbar,
 }
 
 /// What a context menu's items act on (decision 91).
@@ -724,10 +740,10 @@ pub enum Target {
 /// wherever the section changes ([`built`]). The surround, the app's alone, holds View ›
 /// Background's items, a History step's its own ([`STEP`]), a job's row its own ([`JOB`]),
 /// and the Browser's empty space Select All, Select None and the browser bar's options
-/// ([`browser_items`]). Each item is its action's, as the menu button's ([`shown`]); in the
-/// photo's, a thumbnail's and a job's row's menus an item that cannot run is hidden, but in
-/// the first two shown disabled while only the photo's not yet being live stops it, and no
-/// item shows its key ([`pared`]). In ⋯ and a step's menu an item that cannot run is drawn
+/// ([`browser_items`]), the Toolbar the toolbar menu ([`toolbar_items`]). Each item is its
+/// action's, as the menu button's ([`shown`]); in the photo's, a thumbnail's and a job's
+/// row's menus an item that cannot run is hidden, but in the first two shown disabled while
+/// only the photo's not yet being live stops it, and no item shows its key ([`pared`]). In ⋯ and a step's menu an item that cannot run is drawn
 /// disabled with its tip, as in a pull-down. Its items' ids are their actions' ([`chosen`]).
 pub fn context(
     ctx: &egui::Context,
@@ -743,7 +759,7 @@ pub fn context(
         .collect();
     let added = match place {
         Place::Open(open) => added(open, target, &tools, apertrust_tools::utility::UTILITIES),
-        Place::Surround | Place::Step | Place::Browser | Place::Job => Vec::new(),
+        Place::Surround | Place::Step | Place::Browser | Place::Job | Place::Toolbar => Vec::new(),
     };
     let (os, tr) = (ctx.os(), translator(ctx));
     built(place, target, &added, keymap, state, os, &tr, anchor)
@@ -1080,8 +1096,11 @@ fn built(
     anchor: Rect,
 ) -> popup::Request {
     let steps = Steps::default();
-    if place == Place::Browser {
-        let entries = browser_items(keymap, state, os, tr);
+    if let Place::Browser | Place::Toolbar = place {
+        let entries = match place {
+            Place::Browser => browser_items(keymap, state, os, tr),
+            _ => toolbar_items(keymap, state, os, tr),
+        };
         return popup::Request::pull_down(anchor, name(place, target, tr), entries);
     }
     let Place::Open(open) = place else {
@@ -1204,6 +1223,30 @@ fn browser_items(
     entries
 }
 
+/// The toolbar menu (decision 92), on a right-click anywhere on the Toolbar: Toolbar
+/// Labels, checked while on, then Customise Toolbar…, drawn disabled with its tip until its
+/// window is built. Each item is its registry action's, drawn disabled where it cannot run;
+/// none shows its keys, as context menus show none.
+fn toolbar_items(
+    keymap: &Keymap,
+    state: &State,
+    os: OperatingSystem,
+    tr: &Translator,
+) -> Vec<popup::Entry> {
+    let steps = Steps::default();
+    let item = |id: ActionId| {
+        let item = action_item(id, keymap, state, &steps, os, tr)?;
+        Some(popup::Entry::Item(popup::Item {
+            shortcut: None,
+            ..item
+        }))
+    };
+    [ActionId::TOOLBAR_LABELS, ActionId::CUSTOMISE_TOOLBAR]
+        .into_iter()
+        .filter_map(item)
+        .collect()
+}
+
 /// The actions a thumbnail's menu hides while several photos are selected, since they act
 /// on one photo alone (decision 91): Reset, whose `Command::Reset` resets the open photo
 /// only, until resetting several is decided.
@@ -1219,11 +1262,12 @@ pub(crate) fn chosen_on_thumbnail(chosen: ActionId, selected: usize) -> Option<A
 /// What screen readers call the menu at `place`: the surround's is Background, as View ›
 /// Background's submenu is; the Browser's empty space's Browser, as its list is; ⋯'s its
 /// tool's or utility's options, as its button is; a History step's the step by its number,
-/// "Step 3"; a job's row's Job.
+/// "Step 3"; a job's row's Job; the Toolbar's Toolbar, as the panel is.
 fn name(place: Place, target: &Target, tr: &Translator) -> String {
     match (place, target) {
         (Place::Surround, _) => tr.text(BACKGROUND.title),
         (Place::Browser, _) => tr.text("browser"),
+        (Place::Toolbar, _) => tr.text("toolbar"),
         (Place::Step, target) => {
             let mut args = Args::new();
             if let Target::Step { number } = target {
@@ -2074,6 +2118,7 @@ mod tests {
             modal: false,
             dialog_window: false,
             full_screen: false,
+            toolbar_labels: true,
             panel_tab: 0,
             workspace: actions::workspace(crate::layout::DEFAULT),
             workspace_given: false,
@@ -4207,6 +4252,137 @@ mod tests {
                 ("White", Some(false)),
             ]
         );
+    }
+
+    /// Each line of `menu` as (id, words, enabled, checked, tip), a line between groups as
+    /// `-`; none may show its keys.
+    #[allow(
+        clippy::type_complexity,
+        reason = "a line's parts, as the test reads them"
+    )]
+    fn toolbar_lines(
+        menu: &popup::Request,
+    ) -> Vec<(String, String, bool, Option<bool>, Option<String>)> {
+        (menu.entries.iter())
+            .map(|entry| match entry {
+                popup::Entry::Item(item) => {
+                    assert!(item.shortcut.is_none(), "{} shows its keys", item.id);
+                    let (id, text) = (item.id.clone(), item.text.clone());
+                    (id, text, item.enabled, item.checked, item.tip.clone())
+                }
+                popup::Entry::Separator => ("-".into(), String::new(), false, None, None),
+                other => panic!("not a toolbar menu's: {other:?}"),
+            })
+            .collect()
+    }
+
+    /// The toolbar menu with `state` on `os`, in British English.
+    fn toolbar_menu(state: &State, os: OperatingSystem) -> popup::Request {
+        let ctx = egui::Context::default();
+        ctx.set_os(os);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let keymap = Keymap::defaults(os);
+        context(
+            &ctx,
+            Place::Toolbar,
+            &Target::App,
+            &keymap,
+            state,
+            Rect::NOTHING,
+        )
+    }
+
+    /// Decision 92: the toolbar menu, named Toolbar, holds Toolbar Labels, checked while the
+    /// labels are on, then Customise Toolbar…, drawn disabled with its tip until its window
+    /// is built; neither shows keys.
+    #[test]
+    fn the_toolbar_menu_holds_toolbar_labels_and_customise_toolbar() {
+        let later = Some("Customise Toolbar comes in a later version".to_owned());
+        for labels in [true, false] {
+            let state = State {
+                toolbar_labels: labels,
+                ..everything()
+            };
+            let menu = toolbar_menu(&state, OperatingSystem::Nix);
+            assert_eq!(menu.name, "Toolbar");
+            assert_eq!(
+                toolbar_lines(&menu),
+                [
+                    (
+                        "toolbar-labels".into(),
+                        "Toolbar labels".into(),
+                        true,
+                        Some(labels),
+                        None
+                    ),
+                    (
+                        "customise-toolbar".into(),
+                        "Customise toolbar…".into(),
+                        false,
+                        None,
+                        later.clone()
+                    ),
+                ]
+            );
+        }
+        // Under a modal dialog Toolbar Labels rests too.
+        let modal = State {
+            modal: true,
+            ..everything()
+        };
+        let lines = toolbar_lines(&toolbar_menu(&modal, OperatingSystem::Mac));
+        assert!(
+            lines.iter().all(|(_, _, enabled, _, _)| !enabled),
+            "{lines:?}"
+        );
+    }
+
+    /// Decision 92: View › Panels, in View on every platform, holds the toolbar menu's
+    /// Toolbar Labels, checked from the state, and Customise Toolbar…, disabled with its
+    /// tip, so both are reached without a right-click (decision 91).
+    #[test]
+    fn view_panels_holds_the_toolbar_menu_s_items() {
+        let ctx = egui::Context::default();
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        let tr = translator(&ctx);
+        for os in PLATFORMS {
+            let view = menus(os).find(|menu| menu.title == "menu-view").unwrap();
+            let held = groups(view, os).into_iter().flatten();
+            assert!(
+                held.into_iter().any(
+                    |entry| matches!(entry, Entry::Submenu(menu) if menu.title == "menu-panels")
+                ),
+                "{os:?}"
+            );
+            let keymap = Keymap::defaults(os);
+            let state = State {
+                toolbar_labels: false,
+                ..everything()
+            };
+            let steps = Steps::default();
+            let panels = drawn(&PANELS, os, &keymap, &state, Lists::default(), &steps, &tr);
+            assert_eq!(panels.text, "Panels");
+            let lines: Vec<(String, bool, Option<bool>, Option<String>)> = (panels.entries.iter())
+                .map(|entry| match entry {
+                    popup::Entry::Item(item) => (
+                        item.id.clone(),
+                        item.enabled,
+                        item.checked,
+                        item.tip.clone(),
+                    ),
+                    other => panic!("{other:?}"),
+                })
+                .collect();
+            let later = Some("Customise Toolbar comes in a later version".to_owned());
+            assert_eq!(
+                lines,
+                [
+                    ("toolbar-labels".into(), true, Some(false), None),
+                    ("customise-toolbar".into(), false, None, later),
+                ],
+                "{os:?}"
+            );
+        }
     }
 
     /// Decision 91: the Browser's own menu, on its empty space, is Select All and Select
