@@ -101,7 +101,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
   # settings.toml
   [toolbar]
-  labels = false
+  labels = true
   ```
 
 - A built-in workspace nobody changed has no file and follows each build's default toolbar; once its file is written, whole, its `toolbar` is the list as it then was.
@@ -128,9 +128,9 @@ The toolbar is measured every frame at the current scale and language, and gives
 
 ### Labels
 
-- **Icons by default.** Toolbar Labels is one app-wide setting, `toolbar.labels`, off by default. It is in View › Panels, the toolbar menu and Settings › General.
-- **A labelled item:** 8 points, the 16-point icon in `text_secondary`, 6 points, the word in the body's 13 points in `text`, 8 points.
-- **The word** is the action's message's new `.toolbar` attribute where it has one, else the message. A test fails on a word over 96 points. Ukrainian's Copy edit and Apply edit need a `.toolbar` form.
+- **Labels by default, under the icons,** as the Tools panel's tab names are under theirs. Toolbar Labels is one app-wide setting, `toolbar.labels`, on by default. It is in View › Panels, the toolbar menu and Settings › General. Off, each item is its icon alone, and the Toolbar keeps its height.
+- **A labelled item:** in the 44-point Toolbar, 6 points above the 16-point icon in `text_secondary`, 3 points, then the word under it, centred, at the caption size (`text.caption`, 11 points), Regular, in `text`, as the tab names are set. The item is as wide as its word or its icon, the wider, with 8 points at each side. The Toolbar keeps its 44 points: the bar, the traffic lights and the caption buttons are the same with labels on or off.
+- **The word** is the action's message's new `.toolbar` attribute where it has one, else the message: short, one line. A test fails on a word over 96 points at the caption size. Ukrainian's Copy edit and Apply edit need a `.toolbar` form.
 - **Tooltips** always give the words and the first key ("Undo Exposure · Ctrl+Z"), labels on or off. A tool's item is prefixed by its tool's title ("Orientation: Rotate 90° clockwise").
 
 ### States
@@ -161,6 +161,9 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **Keeping the system's window menu on a right-click on empty space.** The toolbar menu would then open only on items, so a toolbar with every item hidden could never be reached from it, and one gesture would mean two things on one bar. The system's key keeps its menu.
 - **One toolbar for the app, or one per layout.** A toolbar suits a task as a workspace's tabs do (83). A layout is what the Viewer shows, not a task.
 - **Labels per workspace, or per item.** Labels are about reading the bar, not about the task. One setting is simpler and folds as one step.
+- **The word beside its icon,** 6 points after it at the body's size. Each item is wider, so the bar folds sooner, and it reads unlike the Tools panel's tab names, which sit under their icons.
+- **A setting for the word's place, under or beside.** Two looks double the fold widths, their tests and the snapshots in every language for little gain; the Tools panel's tab names have one look.
+- **Icons alone by default.** The words help a person new to the app, as the Tools panel's tab names, on by default, do; they are the first thing to fold as the window narrows, and the tooltips keep them.
 - **Tools' items without a limit.** The overflow and the bar would fill with one tool's buttons.
 - **Separator lines between groups.** The Toolbar parts its groups by space, and a line on a title bar reads as a border.
 
