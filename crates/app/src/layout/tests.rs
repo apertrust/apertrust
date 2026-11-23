@@ -350,6 +350,7 @@ fn the_hidden_tab_lists_the_hidden_tools_in_processing_order() {
         "colorin",
         "channelmixerrgb",
         "primaries",
+        "colorequal",
         "tone_curve",
         "grain",
         "soften",

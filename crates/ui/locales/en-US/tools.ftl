@@ -160,6 +160,13 @@ tool-colorbalancergb-control-grey_fulcrum-label = Contrast gray fulcrum
 tool-colorbalancergb-control-grey_fulcrum-full = Contrast gray fulcrum
 tool-colorbalancergb-control-grey_fulcrum-promise = Peak gray luminance used to normalize the power function: the gray Contrast keeps.
 
+## Color equalizer
+
+tool-colorequal-title = Color equalizer
+    .search = color equalizer|color zones|hsl
+tool-colorequal-control-contrast-promise = Set saturation contrast for the guided filter. Increase to favor sharp transitions between saturations, leading to higher contrast; decrease for smoother transitions.
+tool-colorequal-picker-white_level-promise = Pick color from the photo
+
 ## Tone curve
 
 tool-tone_curve-control-luma_points-promise = Moves each tone to the height you draw it at. Keeps colors. A straight line = untouched.

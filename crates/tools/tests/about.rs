@@ -149,6 +149,16 @@ const DARKTABLE: &[(&str, &str, [&str; 4])] = &[
             "non-linear, RGB, scene-referred",
         ],
     ),
+    (
+        "colorequal",
+        "colorequal.c",
+        [
+            "corrective and creative",
+            "linear, RGB, scene-referred",
+            "quasi-linear, RGB",
+            "quasi-linear, RGB, scene-referred",
+        ],
+    ),
     // The Luma curve becomes RGB curve's linked curve, and drives `rgbcurve`.
     (
         "tone_curve",

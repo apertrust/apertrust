@@ -10,7 +10,6 @@ It drives one operation, `primaries` ([../ports/primaries.md](../ports/primaries
 
 **Status:** built, in `crates/tools/src/rgb_primaries.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Adjust, last, after Colour equalizer (decision 38).
 
-- In [README.md](README.md)'s order (decision 38) the colour equalizer, whose tool is not built yet, comes between Colour balance RGB and it.
 - Its rows are tests in `crates/tools/tests/rgb_primaries.rs`; [Results](#results) gives what they measured.
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
 - Measures and test images are in [README.md](README.md).

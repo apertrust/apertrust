@@ -4818,6 +4818,7 @@ mod tests {
                 ("agx", "show_curve"),
                 ("channelmixerrgb", "area_colour_mapping"),
                 ("channelmixerrgb", "colour_checker"),
+                ("colorequal", "options"),
                 ("demosaic", "capture_sharpen_controls"),
                 ("export", "global"),
                 ("metadata", "basic"),

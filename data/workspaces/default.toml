@@ -83,6 +83,7 @@ adjust = [
     "hazeremoval",
     "tone_curve",
     "colorbalancergb",
+    "colorequal",
     "primaries",
 ]
 detail = []

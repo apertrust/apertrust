@@ -206,6 +206,13 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
              group slider slider+picker slider choice group slider slider slider group \
              slider+picker slider+picker",
         ),
+        (
+            "colorequal",
+            "slider slider slider slider slider slider slider slider slider slider slider \
+             slider slider slider slider slider slider slider slider slider slider slider \
+             slider slider slider slider group slider+picker toggle when slider slider \
+             slider slider",
+        ),
         ("tone_curve", "custom choice"),
         ("hazeremoval", "slider slider"),
         (
@@ -305,6 +312,7 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
                     "grey_fulcrum",
                 ]
             ),
+            ("colorequal", vec!["white_level"]),
         ]
     );
     // Every slider's end item picks, which `ProcessingDefinition::check` holds them to;
@@ -440,6 +448,7 @@ fn the_built_in_tools_carry_darktable_s_copy_and_style_flags() {
         "agx",
         "channelmixerrgb",
         "colorbalancergb",
+        "colorequal",
         "toneequal",
         "hazeremoval",
         "primaries",
@@ -488,9 +497,10 @@ fn every_fixed_parameter_is_one_its_tool_owns() {
 /// over operations an unedited photo does not run. The Tone curve, over the optional
 /// `rgbcurve`, is not among them: it is to be reshaped into RGB curve, darktable's module,
 /// which is switched as it is built (`docs/tools/README.md`, Planned changes).
-const SWITCHED: [&str; 7] = [
+const SWITCHED: [&str; 8] = [
     "toneequal",
     "colorbalancergb",
+    "colorequal",
     "hazeremoval",
     "primaries",
     "grain",
