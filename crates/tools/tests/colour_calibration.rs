@@ -43,6 +43,7 @@ mod corpus;
 
 use apertrust_color::Adaptation;
 use apertrust_color::illuminants::{self, Illuminant, TEMPERATURE_RANGE};
+use apertrust_color::xyz_to_lab_d50;
 use apertrust_engine::edit::{self, Edit, Held};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
 use apertrust_operations::{OPERATIONS, channelmixerrgb};
@@ -50,6 +51,7 @@ use apertrust_plugin::{ImageContext, ParamValues, Value};
 use apertrust_tools::colour_calibration::{
     CAT, ColourCalibration, HUE_CHROMA, ILLUMINANT_VALUES, ILLUMINANTS, PARAMS,
 };
+use apertrust_tools::pick::{PickKeys, Picked, Reading, Stats};
 use apertrust_tools::{Base, ControlKind, ControlValue, Controls, ProcessingTool, Row, TOOLS};
 use golden::cases::CASES;
 
@@ -977,6 +979,8 @@ fn shown(values: &Controls) -> Vec<&'static str> {
                     }
                 }
                 Row::Group(_) => {}
+                // The readout row, darktable's CCT, the light's colour and the picker.
+                Row::Pickers { .. } => out.push("readout"),
                 row => out.extend(row.controls()),
             }
         }
@@ -992,7 +996,7 @@ fn shown(values: &Controls) -> Vec<&'static str> {
 
 /// C7: the CAT tab's rows as darktable's `_update_illuminants` shows them, for every
 /// adaptation and illuminant: with none, only the adaptation, gamut compression and
-/// clipping; otherwise the illuminant too, with the F source for F, the LED source for
+/// clipping; otherwise the readout row and the illuminant too, with the F source for F, the LED source for
 /// LED, the temperature for daylight and Planckian, hue and chroma for custom, and nothing
 /// more for the others. The tab is darktable's first, the area colour mapping its last row.
 /// The adaptation is unavailable while the illuminant is as shot in camera, which forces
@@ -1024,7 +1028,7 @@ fn c7_the_cat_tab_shows_its_rows_as_darktable_does() {
             values.set("illuminant", illuminant(option));
             let mut expected = vec!["adaptation"];
             if adaptation != "none" {
-                expected.push("illuminant");
+                expected.extend(["readout", "illuminant"]);
                 expected.extend(match option {
                     "f" => &["illum_fluo"][..],
                     "led" => &["illum_led"],
@@ -1067,6 +1071,331 @@ fn c7_the_adaptation_is_unavailable_while_as_shot_in_camera_is_chosen() {
     assert!(!available(&edit));
     set_following(&mut edit, "illuminant", illuminant("d"), &image);
     assert!(available(&edit));
+}
+
+// C8: the picker.
+
+/// What C8 reads: colour calibration alone, on a synthetic image in the working space, so
+/// the patch is the operation's input and the output is its own.
+#[derive(Debug, Clone, Copy)]
+struct Mixer;
+
+impl common::Measure for Mixer {
+    fn keep(self, instances: &mut Vec<Instance<'static>>, _: bool) {
+        instances.retain(|i| id(i) == TOOL);
+    }
+}
+
+/// The edit of these controls rendered by colour calibration alone, its illuminant custom.
+/// The synthetic raw's As shot is a custom light, so an edit choosing custom leaves the
+/// illuminant at its default, unbound, which the bench would take as the pipeline's own:
+/// it is written here.
+fn custom(bench: &mut Bench, set: &[(&'static str, ControlValue)]) -> Rendered {
+    let mut instances = bench.instances(&edit_of(set), Mixer);
+    for instance in &mut instances {
+        let custom = Illuminant::Custom.to_darktable() as u32;
+        instance.params.set("illuminant", Value::Choice(custom));
+    }
+    bench.render(&instances)
+}
+
+/// A flat patch's reading of working RGB `rgb`.
+fn flat(rgb: [f32; 3]) -> Reading {
+    let mean = [rgb[0], rgb[1], rgb[2], 1.0];
+    Reading {
+        input: Stats {
+            mean,
+            min: mean,
+            max: mean,
+        },
+        output: None,
+        input_maximum: [1.0; 3],
+    }
+}
+
+/// Colour calibration's pick of `rgb` with `values` and `settings`.
+fn pick(
+    rgb: [f32; 3],
+    values: &Controls,
+    image: &ImageContext,
+    settings: &[(&'static str, ControlValue)],
+) -> Picked {
+    ColourCalibration
+        .pick(
+            "illuminant",
+            &flat(rgb),
+            values,
+            image,
+            settings,
+            None,
+            None,
+            PickKeys::default(),
+        )
+        .unwrap()
+}
+
+/// Working RGB as CIE Lab D50, through the working profile.
+fn lab(rgb: [f32; 4]) -> [f32; 3] {
+    let profile = common::profile();
+    xyz_to_lab_d50(apertrust_color::apply(
+        &profile.rgb_to_xyz_d50,
+        [rgb[0], rgb[1], rgb[2]],
+    ))
+}
+
+/// LCh of Lab, h in degrees from 0 to 360.
+fn lch([l, a, b]: [f32; 3]) -> [f32; 3] {
+    [l, a.hypot(b), b.atan2(a).to_degrees().rem_euclid(360.0)]
+}
+
+/// The area colour mapping's target settings, L, C and h.
+fn target(mode: &str, [l, c, h]: [f32; 3]) -> Vec<(&'static str, ControlValue)> {
+    vec![
+        (
+            "area_mode",
+            ControlValue::Choice(u32::from(mode == "measure")),
+        ),
+        ("channel_mixing", ON),
+        ("target_lightness", number(l)),
+        ("target_chroma", number(c)),
+        ("target_hue", number(h)),
+    ]
+}
+
+/// C8's mix: a little of each channel into its neighbour, rows that do not sum to 1.
+fn c8_mix() -> Vec<(&'static str, ControlValue)> {
+    vec![
+        ("red_r", number(1.1)),
+        ("red_g", number(-0.05)),
+        ("green_b", number(0.1)),
+        ("blue_r", number(0.05)),
+        ("blue_b", number(0.95)),
+    ]
+}
+
+/// One of C8's picks: the target, the adaptation, the patch as it renders after the
+/// correction pick, as LCh, its ΔE2000 from the target, and what a measure pick of it
+/// then hands back, as LCh.
+struct C8 {
+    target: [f32; 3],
+    adaptation: &'static str,
+    rendered: [f32; 3],
+    off: f64,
+    measured: [f32; 3],
+}
+
+/// C8's targets, (50, 0, 0°) and (60, 20, 40°), each picked on a flat patch of a brown at
+/// its lightness under each adaptation with the mixer `mix`, with Take channel mixing into
+/// account, gamut compression and clipping at their defaults: the correction pick
+/// rendered by colour calibration alone, then a measure pick of the same patch with the
+/// light it wrote.
+fn c8_picks(mix: &[(&'static str, ControlValue)]) -> Vec<C8> {
+    let image = raw_context(4, 1, 0.0);
+    let mut picks = Vec::new();
+    for target_lch in [[50.0, 0.0, 0.0], [60.0, 20.0, 40.0]] {
+        // A light changes an area's chromaticity alone, keeping its luminance, so the
+        // patch is at its target's lightness.
+        let y = apertrust_color::lab_to_xyz_d50([target_lch[0], 0.0, 0.0])[1];
+        let base = [0.3, 0.2, 0.1];
+        let scale = y / apertrust_color::apply(&common::profile().rgb_to_xyz_d50, base)[1];
+        let rgb = base.map(|c| c * scale);
+        let (picture, _) = Picture::row(vec![[rgb[0], rgb[1], rgb[2], 1.0]; 4], 0.0);
+        let mut bench = Bench::picture(&picture, image.clone(), Pipe::Export);
+        for adaptation in ["linear_bradford", "cat16", "non_linear_bradford", "xyz"] {
+            let mut set = mix.to_vec();
+            set.push(("adaptation", choice("adaptation", adaptation)));
+            let mut values = ColourCalibration.defaults(&image);
+            for (control, value) in &set {
+                values.set(control, value.clone());
+            }
+            let picked = pick(rgb, &values, &image, &target("correction", target_lch));
+            let mut written: Vec<&str> = picked.writes.iter().map(|(c, _)| c).collect();
+            written.sort_unstable();
+            assert_eq!(written, ["illuminant", "temperature", "x", "y"]);
+            for (control, value) in picked.writes.iter() {
+                set.push((control, value.clone()));
+                values.set(control, value.clone());
+            }
+            let output = custom(&mut bench, &set);
+            let got = lab(output.pixels[0]);
+            let want = lab_to_xyz_lab(target_lch);
+            let off = golden::delta_e::ciede2000(want.map(f64::from), got.map(f64::from));
+            let measured = pick(rgb, &values, &image, &target("measure", target_lch));
+            assert!(measured.writes.is_empty());
+            let measured = ["target_lightness", "target_chroma", "target_hue"].map(|id| {
+                match measured.shown.settings.iter().find(|(s, _)| *s == id) {
+                    Some((_, ControlValue::Number(n))) => *n,
+                    other => panic!("{id}: {other:?}"),
+                }
+            });
+            picks.push(C8 {
+                target: target_lch,
+                adaptation,
+                rendered: lch(got),
+                off,
+                measured,
+            });
+        }
+    }
+    picks
+}
+
+/// How far apart two LCh are in L, C and h, h only where both have a hue; each must be
+/// finite, so a measurement that is not a number never passes as a match.
+fn lch_apart(a: [f32; 3], b: [f32; 3]) -> f32 {
+    assert!(a.iter().chain(&b).all(|v| v.is_finite()), "{a:?} {b:?}");
+    let hue = if a[1] > 1.0 && b[1] > 1.0 {
+        let d = (a[2] - b[2]).rem_euclid(360.0);
+        d.min(360.0 - d)
+    } else {
+        0.0
+    };
+    (a[0] - b[0]).abs().max((a[1] - b[1]).abs()).max(hue)
+}
+
+/// C8's normalised mix: [`c8_mix`] with Normalise channels on each row, so each sums to 1.
+fn c8_normalised() -> Vec<(&'static str, ControlValue)> {
+    let mut normalised = c8_mix();
+    for row in ["red_normalise", "green_normalise", "blue_normalise"] {
+        normalised.push((row, ON));
+    }
+    normalised
+}
+
+/// C8: a correction pick of a flat patch of colour makes the patch at colour calibration's
+/// output, read as Lab D50 through the working profile, land on the target within ΔE2000
+/// 0.5 (proposed), for targets (50, 0, 0°) and (60, 20, 40°), with the identity mixer under
+/// each adaptation; and a measure pick of the patch with the illuminant it wrote gives back
+/// what the patch renders at within 0.1 in L, C and h, h only where it has a hue. Under
+/// both Bradfords that is not the target itself: darktable's correction normalises the
+/// target and the area to Y 1 but not the light, and leaves out non-linear Bradford's
+/// power, so the patch lands, and measures, where darktable's arithmetic puts it.
+#[test]
+fn c8_a_correction_pick_maps_a_patch_to_the_target() {
+    let (mut worst, mut back) = (0.0_f64, 0.0_f32);
+    for C8 {
+        target,
+        adaptation,
+        rendered,
+        off,
+        measured,
+    } in c8_picks(&[])
+    {
+        println!("C8 under {adaptation}: {rendered:?} for {target:?}, ΔE2000 {off:.4}");
+        worst = worst.max(off);
+        assert!(
+            off <= 0.5,
+            "C8: {target:?} under {adaptation}: ΔE2000 {off:.4}, {rendered:?}"
+        );
+        let apart = lch_apart(measured, rendered);
+        back = back.max(apart);
+        assert!(
+            apart <= 0.1,
+            "C8 measured {measured:?}, rendered {rendered:?}"
+        );
+    }
+    println!(
+        "C8: at most ΔE2000 {worst:.4} from the target; measured within {back:.2e} of the render"
+    );
+}
+
+/// C8 with a mix, plain and with Normalise channels on each row: a mix changes the area's
+/// luminance, as no light can give back, so darktable's correction maps the chromaticity
+/// alone. The patch lands on the target's chroma and hue at the lightness the mix gives it,
+/// within ΔE2000 0.5 there, under each adaptation, and a measure pick gives back what it
+/// renders at within 0.1.
+#[test]
+fn c8_a_mix_keeps_the_target_s_chromaticity() {
+    let (mut worst, mut back, mut shifted) = (0.0_f64, 0.0_f32, 0.0_f32);
+    let picks = [c8_mix(), c8_normalised()].map(|mix| c8_picks(&mix));
+    for pick in picks.into_iter().flatten() {
+        let C8 {
+            target,
+            adaptation,
+            rendered,
+            measured,
+            ..
+        } = pick;
+        let at_its_lightness = lab_to_xyz_lab([rendered[0], target[1], target[2]]);
+        let got = lab_to_xyz_lab(rendered);
+        let off = golden::delta_e::ciede2000(at_its_lightness.map(f64::from), got.map(f64::from));
+        worst = worst.max(off);
+        shifted = shifted.max((rendered[0] - target[0]).abs());
+        assert!(
+            off <= 0.5,
+            "{target:?} under {adaptation}: {rendered:?}, ΔE2000 {off:.4}"
+        );
+        let apart = lch_apart(measured, rendered);
+        back = back.max(apart);
+        assert!(apart <= 0.1, "measured {measured:?}, rendered {rendered:?}");
+    }
+    println!(
+        "C8 with a mix: at most ΔE2000 {worst:.4} from the target's chroma and hue, L moved \
+         by up to {shifted:.2}; measured within {back:.2e} of the render"
+    );
+}
+
+/// The Lab of LCh `lch`, h in degrees.
+fn lab_to_xyz_lab([l, c, h]: [f32; 3]) -> [f32; 3] {
+    let h = h.to_radians();
+    [l, c * h.cos(), c * h.sin()]
+}
+
+/// `chroma_adapt_pixel`, which the picker's measure mode adapts an area by, against the
+/// operation's kernel for the same light: a few colours through colour calibration alone,
+/// a custom illuminant under each adaptation, the identity mixer, no gamut compression
+/// and no clipping, the kernel's output read as XYZ through the working profile, within
+/// 1e-4 of the largest channel.
+#[test]
+fn c8_chroma_adapt_pixel_is_the_kernel_s_adaptation() {
+    use apertrust_color::Adaptation;
+    use apertrust_color::adaptation::{NORM_MIN, chroma_adapt_pixel};
+    let colours = vec![
+        [0.18, 0.18, 0.18, 1.0],
+        [0.3, 0.2, 0.1, 1.0],
+        [0.05, 0.12, 0.4, 1.0],
+        [0.6, 0.55, 0.02, 1.0],
+    ];
+    let (picture, image) = Picture::row(colours.clone(), 0.0);
+    let mut bench = Bench::picture(&picture, image, Pipe::Export);
+    let to_xyz = common::profile().rgb_to_xyz_d50;
+    let mut worst = 0.0_f32;
+    for (option, adaptation) in [
+        ("linear_bradford", Adaptation::LinearBradford),
+        ("cat16", Adaptation::Cat16),
+        ("non_linear_bradford", Adaptation::FullBradford),
+        ("xyz", Adaptation::Xyz),
+    ] {
+        for xy in [[0.44757, 0.40745], [0.3127, 0.329], [0.32, 0.36]] {
+            let set = [
+                ("adaptation", choice("adaptation", option)),
+                ("illuminant", illuminant("custom")),
+                ("x", number(xy[0])),
+                ("y", number(xy[1])),
+                ("gamut", number(0.0)),
+                ("clip", OFF),
+            ];
+            let output = custom(&mut bench, &set);
+            let white = illuminants::illuminant_xy_to_xyz(xy);
+            let cone = apertrust_color::apply(&adaptation.xyz_to_lms(), white);
+            let p = (0.818155 / cone[2].max(NORM_MIN)).powf(0.0834);
+            for (colour, out) in colours.iter().zip(&output.pixels) {
+                let xyz = apertrust_color::apply(&to_xyz, [colour[0], colour[1], colour[2]]);
+                let want = chroma_adapt_pixel(xyz, cone, adaptation, p);
+                let got = apertrust_color::apply(&to_xyz, [out[0], out[1], out[2]]);
+                let scale = want.iter().fold(0.0_f32, |m, v| m.max(v.abs()));
+                for (got, want) in got.iter().zip(want) {
+                    let off = (got - want).abs() / scale;
+                    worst = worst.max(off);
+                    assert!(
+                        off <= 1e-4,
+                        "{option} under {xy:?}, {colour:?}: {got} {want}"
+                    );
+                }
+            }
+        }
+    }
+    println!("chroma_adapt_pixel: at most {worst:.2e} of the largest channel from the kernel");
 }
 
 // The corpus, locally.

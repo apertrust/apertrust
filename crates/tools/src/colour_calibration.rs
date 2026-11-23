@@ -25,11 +25,15 @@
 //!   reads, as darktable's `_update_illuminants` shows them: an F or an LED source, a
 //!   temperature, or a custom light's hue and chroma, a lossless view of its `x` and `y`
 //!   ([`hue_chroma`]); then gamut compression, Clip negative RGB from gamut, and the area
-//!   colour mapping, darktable's settings for its picker, which no edit stores, drawn
-//!   disabled until the picker comes. Choosing an illuminant, a source or a temperature
-//!   writes the light's `x`, `y` and temperature, and editing hue or chroma its
-//!   temperature, as darktable's `gui_changed` and `_illum_xy_callback` do
-//!   ([`ProcessingTool::follow`]).
+//!   colour mapping, darktable's settings for its picker, which no edit stores
+//!   ([`crate::settings`]). Choosing an illuminant, a source or a temperature writes the
+//!   light's `x`, `y` and temperature, and editing hue or chroma its temperature, as
+//!   darktable's `gui_changed` and `_illum_xy_callback` do ([`ProcessingTool::follow`]).
+//! - **The readout row,** first under the adaptation: the light's correlated colour
+//!   temperature with what models it, its colour, and the picker
+//!   ([`ProcessingTool::readout`]). In correction mode a pick sets the custom illuminant
+//!   that maps the area to the target; in measure mode it hands back the target the area
+//!   renders at, darktable's `_auto_set_illuminant` ([`ProcessingTool::pick`]).
 //! - **R, G and B:** the mixer's output rows, each from Input R, G and B, −2 to 2, the
 //!   identity by default, and Normalise channels, which divides the row by its sum.
 //! - **Colourfulness, Brightness and Grey:** the same per input channel, 0 by default:
@@ -48,15 +52,20 @@
 //! older one, which no Apertrust edit is, so the tool owns it with no control and leaves
 //! it at version 3 (`docs/tools/README.md`, rule 12).
 
-use apertrust_color::Adaptation;
+use apertrust_color::adaptation::{NORM_MIN, chroma_adapt_pixel};
 use apertrust_color::illuminants::{self, Illuminant, TEMPERATURE_RANGE};
+use apertrust_color::{
+    Adaptation, Mat3, WorkingProfile, apply, lab_to_xyz_d50, xyz_d50_to_srgb, xyz_to_lab_d50,
+};
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, ProcessingDefinition, Reset,
-    Row, SettingRow, Slider, Tab, ToolDefinition, Track, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, Picker, PickerKind,
+    ProcessingDefinition, ReadoutDef, Reset, Row, SettingRow, Slider, Space, Tab, ToolDefinition,
+    Track, Unit, View,
 };
+use crate::pick::{AreaMode, Patch, PickKeys, Picked, Reading, Readout, Shown};
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct ColourCalibration;
@@ -286,18 +295,20 @@ const fn list(control: &'static str) -> Row {
     }
 }
 
-/// darktable's area colour mapping, under the CAT tab: what its picker does with the area
-/// picked, whether the target allows for the channel mixing, and the colour it maps the
-/// area to, darktable's settings (`darkroom/modules/channelmixerrgb/use_mixing`,
-/// `lightness`, `hue` and `chroma` in its darktablerc, and an area mode `gui_update` resets
-/// to correction), at their defaults there. The input's and the target's patches, the
-/// input's L, h and c readout and the title's "(active)" come with the picker.
+/// darktable's area colour mapping, under the CAT tab, as its `gui_init` lays it out
+/// (`channelmixerrgb.c:4606-4614`): what its picker does with the area picked, whether the
+/// target allows for the channel mixing, the input's and the target's patches, and the
+/// target's lightness, hue and chroma, darktable's settings
+/// (`darkroom/modules/channelmixerrgb/use_mixing`, `lightness`, `hue` and `chroma` in its
+/// darktablerc, and an area mode `gui_update` resets to correction, which Apertrust keeps),
+/// kept in settings as `tools.channelmixerrgb.<setting>`. Its title says "(active)" while a
+/// pick would move the light off the area's own ([`ProcessingTool::group_active`]).
 const MAPPING: Row = Row::Group(Group {
-    id: "area_colour_mapping",
+    id: MAPPING_GROUP,
     kind: GroupKind::Collapsible,
     rows: &[
         Row::Setting(SettingRow {
-            id: "area_mode",
+            id: AREA_MODE,
             kind: ControlKind::Choice {
                 options: &["correction", "measure"],
                 default: 0,
@@ -309,75 +320,127 @@ const MAPPING: Row = Row::Group(Group {
             words: None,
         }),
         Row::Setting(SettingRow {
-            id: "channel_mixing",
+            id: CHANNEL_MIXING,
             kind: ControlKind::Bool { default: true },
             decimals: 0,
             track: Track::Plain,
             key: None,
             words: None,
         }),
-        Row::Group(Group {
-            id: "target",
-            kind: GroupKind::Plain,
-            rows: &[
-                Row::Setting(SettingRow {
-                    id: "target_lightness",
-                    kind: ControlKind::Number {
-                        min: 0.0,
-                        max: 100.0,
-                        step: 1.0,
-                        default: 50.0,
-                    },
-                    decimals: 1,
-                    track: Track::Plain,
-                    key: None,
-                    words: None,
-                }),
-                Row::Setting(SettingRow {
-                    id: "target_hue",
-                    kind: ControlKind::Number {
-                        min: 0.0,
-                        max: 360.0,
-                        step: 1.0,
-                        default: 0.0,
-                    },
-                    decimals: 1,
-                    track: Track::Plain,
-                    key: None,
-                    words: None,
-                }),
-                Row::Setting(SettingRow {
-                    id: "target_chroma",
-                    kind: ControlKind::Number {
-                        min: 0.0,
-                        max: 128.0,
-                        step: 1.0,
-                        default: 0.0,
-                    },
-                    decimals: 1,
-                    track: Track::Plain,
-                    key: None,
-                    words: None,
-                }),
-            ],
+        Row::Patches {
+            picker: PICKER.id,
+            target: &[TARGET_LIGHTNESS, TARGET_CHROMA, TARGET_HUE],
+        },
+        Row::Setting(SettingRow {
+            id: TARGET_LIGHTNESS,
+            kind: ControlKind::Number {
+                min: 0.0,
+                max: 100.0,
+                step: 1.0,
+                default: TARGET_GREY[0],
+            },
+            decimals: 1,
+            track: Track::Plain,
+            key: None,
+            words: None,
+        }),
+        Row::Setting(SettingRow {
+            id: TARGET_HUE,
+            kind: ControlKind::Number {
+                min: 0.0,
+                max: 360.0,
+                step: 1.0,
+                default: TARGET_GREY[2],
+            },
+            decimals: 1,
+            track: Track::Plain,
+            key: None,
+            words: None,
+        }),
+        Row::Setting(SettingRow {
+            id: TARGET_CHROMA,
+            kind: ControlKind::Number {
+                min: 0.0,
+                max: 128.0,
+                step: 1.0,
+                default: TARGET_GREY[1],
+            },
+            decimals: 1,
+            track: Track::Plain,
+            key: None,
+            words: None,
         }),
     ],
 });
+
+/// The area colour mapping's group and its settings, which the picker reads.
+const MAPPING_GROUP: &str = "area_colour_mapping";
+const AREA_MODE: &str = "area_mode";
+const CHANNEL_MIXING: &str = "channel_mixing";
+const TARGET_LIGHTNESS: &str = "target_lightness";
+const TARGET_HUE: &str = "target_hue";
+const TARGET_CHROMA: &str = "target_chroma";
+
+/// The target at its defaults, darktable's: L 50, C 0, h 0°, a middle grey.
+const TARGET_GREY: [f32; 3] = [50.0, 0.0, 0.0];
+
+/// darktable's picker on the CAT tab (`dt_color_picker_new(self, DT_COLOR_PICKER_AREA,
+/// NULL)`, `channelmixerrgb.c:4486`): an area of the operation's input, working RGB, whose
+/// pick sets the custom illuminant that maps it to the target in correction mode, writing
+/// the light and its temperature, and in measure mode writes nothing.
+const PICKER: Picker = Picker {
+    id: "illuminant",
+    operation: CHANNEL_MIXER,
+    kind: PickerKind::Area,
+    denoise: false,
+    output: false,
+    space: Space::Operation,
+    keep: false,
+    writes: &["illuminant", "x", "y", "temperature"],
+    settings: &[
+        AREA_MODE,
+        CHANNEL_MIXING,
+        TARGET_LIGHTNESS,
+        TARGET_HUE,
+        TARGET_CHROMA,
+    ],
+    words_by: None,
+};
+
+/// darktable's readout row, `hbox(approx_cct, expand(illum_color), color_picker)`
+/// (`channelmixerrgb.c:4472-4491`): the light's correlated colour temperature and what
+/// models it, `_update_approx_cct`, its colour, `_illuminant_color_draw`, and the picker.
+const READOUT: Row = Row::Pickers {
+    label: None,
+    pickers: &[PICKER.id],
+    readout: Some(ReadoutDef {
+        id: CCT,
+        texts: &CCT_TEXTS,
+        decimals: 0,
+        swatch: true,
+    }),
+};
+
+/// The readout's id and its texts: a light a daylight or a black body models at its
+/// temperature, one neither models, and one with no temperature to give.
+const CCT: &str = "cct";
+const CCT_TEXTS: [&str; 4] = ["daylight", "black_body", "invalid", "undefined"];
 
 /// The CAT tab, as darktable's `gui_init` builds it and `_update_illuminants` shows it:
 /// the adaptation; with any but none, the illuminant, then the F source for F, the LED
 /// source for LED, the temperature, its track over 3000 to 7000 K, for daylight and
 /// Planckian, and hue and chroma, chroma's track over 0 to 100 %, for custom; then gamut
 /// compression, its track over 0 to 4, clipping and the area colour mapping. A hue has no
-/// direction, so its track has no fill, as darktable's `illum_x` has none. The CCT readout
-/// with the illuminant's colour and the picker, darktable's row after the adaptation, waits
-/// for a row that draws a text and a swatch the tool computes.
+/// direction, so its track has no fill, as darktable's `illum_x` has none. The readout row,
+/// the CCT, the illuminant's colour and the picker, comes first among the rows the
+/// adaptation shows, as darktable's `_update_illuminants` hides all three with none.
 static CAT_TAB: [Row; 5] = [
     list("adaptation"),
     Row::When {
         control: "adaptation",
         is: &ADAPTING,
         rows: &[
+            READOUT,
             list("illuminant"),
             Row::When {
                 control: "illuminant",
@@ -580,7 +643,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     controls: &CONTROLS,
     preset_rows: &[],
     views: &VIEWS,
-    pickers: &[],
+    pickers: &[PICKER],
     // darktable's `description()` in src/iop/channelmixerrgb.c at the reference release.
     facts: Some(Facts {
         purpose: Purpose::CorrectiveOrCreative,
@@ -771,6 +834,228 @@ impl ProcessingTool for ColourCalibration {
         }
         writes
     }
+
+    /// darktable's readout row (`_update_approx_cct`, `_illuminant_color_draw`): the light
+    /// the values describe, as `light` gives it, its correlated colour temperature and
+    /// model as `_check_if_close_to_daylight` gives them, "CCT: N K" with daylight, black
+    /// body or invalid between 1667 and 25000 K, else undefined, and its colour,
+    /// `illuminant_xy_to_RGB`.
+    fn readout(&self, readout: &str, values: &Controls, image: &ImageContext) -> Option<Readout> {
+        if readout != CCT {
+            return None;
+        }
+        let [x, y] = light(values, image);
+        let (temperature, model) = illuminants::closest_cct_model(x, y);
+        let (min, max) = TEMPERATURE_RANGE;
+        let (text, value) = if temperature > min && temperature < max {
+            let text = match model {
+                Illuminant::D => "daylight",
+                Illuminant::BlackBody => "black_body",
+                _ => "invalid",
+            };
+            (text, Some(temperature))
+        } else {
+            ("undefined", None)
+        };
+        Some(Readout {
+            text,
+            value,
+            swatch: Some(illuminants::illuminant_xy_to_rgb([x, y])),
+        })
+    }
+
+    /// The area colour mapping's title says "(active)" in correction mode while the
+    /// target is off L 50 or its chroma off 0, darktable's `_area_mapping_active`
+    /// (`channelmixerrgb.c:601-612`).
+    fn group_active(&self, group: &str, settings: &[(&str, ControlValue)]) -> bool {
+        let target = Target::of(settings);
+        group == MAPPING_GROUP
+            && target.mode == AreaMode::Correction
+            && (target.lch[0] != TARGET_GREY[0] || target.lch[1] != TARGET_GREY[1])
+    }
+
+    /// darktable's `_auto_set_illuminant` (`channelmixerrgb.c:4161-4412`), on the area's
+    /// mean at the operation's input, working RGB, through the working profile to XYZ D50:
+    /// the input patch, the area as sRGB, clamped, with its LCh, and
+    ///
+    /// - **in correction mode,** the custom illuminant whose adaptation maps the area to
+    ///   the target's chromaticity, keeping its luminance: the target's LCh to XYZ at
+    ///   Y 1, through the mixer's pseudo-inverse with Take channel mixing into account,
+    ///   then the illuminant's cone response `D50 · LMS / LMS_target`, written as `x`, `y`
+    ///   and `temperature` as `_check_if_close_to_daylight` gives it, unbounded by
+    ///   darktable, which the session holds to the controls' ranges;
+    /// - **in measure mode,** no control: the target L, C and h the area renders at
+    ///   ([`Shown::settings`]), through the light the values describe, adapted as the
+    ///   operation adapts it ([`chroma_adapt_pixel`]) and, with channel mixing, mixed, each
+    ///   held to its setting's range as darktable's sliders hold them.
+    fn pick(
+        &self,
+        picker: &str,
+        reading: &Reading,
+        values: &Controls,
+        image: &ImageContext,
+        settings: &[(&str, ControlValue)],
+        _channel: Option<&str>,
+        _last: Option<&Reading>,
+        _keys: PickKeys,
+    ) -> Option<Picked> {
+        if picker != PICKER.id {
+            return None;
+        }
+        let [r, g, b, _] = reading.input.mean;
+        let xyz = apply(&WorkingProfile::linear_rec2020().rgb_to_xyz_d50, [r, g, b]);
+        let mut shown = Shown {
+            patch: Some(Patch {
+                srgb: xyz_d50_to_srgb(xyz).map(|c| c.clamp(0.0, 1.0)),
+                lch: lch_of(xyz_to_lab_d50(xyz)),
+            }),
+            ..Shown::default()
+        };
+        let target = Target::of(settings);
+        let mix = mixer(values);
+        let adaptation = Adaptation::from_darktable(values.choice("adaptation") as i32)?;
+        let mut writes = Controls::new();
+        match target.mode {
+            AreaMode::Measure => {
+                // As shot in camera adapts by CAT16 (`_check_if_close_to_daylight`).
+                let camera = ILLUMINANT_VALUES.get(values.choice("illuminant") as usize)
+                    == Some(&Illuminant::Camera);
+                let adaptation = if camera {
+                    Adaptation::Cat16
+                } else {
+                    adaptation
+                };
+                let white = illuminants::illuminant_xy_to_xyz(light(values, image));
+                let cone = apply(&adaptation.xyz_to_lms(), white);
+                let p = (0.818155 / cone[2].max(NORM_MIN)).powf(0.0834);
+                let mut out = chroma_adapt_pixel(xyz, cone, adaptation, p);
+                if target.mixing {
+                    let lms = apply(&mix, apply(&adaptation.xyz_to_lms(), out));
+                    out = apply(&adaptation.lms_to_xyz(), lms);
+                }
+                let [l, c, h] = lch_of(xyz_to_lab_d50(out));
+                shown.settings = vec![
+                    (TARGET_LIGHTNESS, ControlValue::Number(l.clamp(0.0, 100.0))),
+                    (TARGET_CHROMA, ControlValue::Number(c.clamp(0.0, 128.0))),
+                    (TARGET_HUE, ControlValue::Number(h.clamp(0.0, 360.0))),
+                ];
+            }
+            AreaMode::Correction => {
+                let (to_lms, to_xyz) = (adaptation.xyz_to_lms(), adaptation.lms_to_xyz());
+                let unit = |xyz: [f32; 3]| xyz.map(|c| c / xyz[1].max(NORM_MIN));
+                let mut wanted = apply(&to_lms, unit(lab_to_xyz_d50(lab_of(target.lch))));
+                if target.mixing {
+                    let inverse = transpose(&illuminants::pseudoinverse(&mix));
+                    wanted = apply(&to_lms, unit(apply(&to_xyz, apply(&inverse, wanted))));
+                }
+                let input = apply(&to_lms, unit(xyz));
+                let d50 = adaptation.d50();
+                let cone: [f32; 3] = std::array::from_fn(|c| d50[c] * input[c] / wanted[c]);
+                let [cx, cy, cz] = apply(&to_xyz, cone);
+                let sum = (cx + cy + cz).max(NORM_MIN);
+                let (x, y) = (cx / sum, cy / sum);
+                let (temperature, _) = illuminants::closest_cct_model(x, y);
+                writes.set(
+                    "illuminant",
+                    ControlValue::Choice(illuminant(Illuminant::Custom)),
+                );
+                writes.set("x", ControlValue::Number(x));
+                writes.set("y", ControlValue::Number(y));
+                writes.set("temperature", ControlValue::Number(temperature));
+            }
+        }
+        Some(Picked { writes, shown })
+    }
+}
+
+/// What the area colour mapping's settings hold, as the client sent them: each at
+/// darktable's default where it sent none.
+struct Target {
+    mode: AreaMode,
+    mixing: bool,
+    /// The target's L, C and h, h in degrees.
+    lch: [f32; 3],
+}
+
+impl Target {
+    fn of(settings: &[(&str, ControlValue)]) -> Target {
+        let setting = |id: &str| settings.iter().find(|(s, _)| *s == id).map(|(_, v)| v);
+        let number = |id: &str, default: f32| match setting(id) {
+            Some(&ControlValue::Number(value)) => value,
+            _ => default,
+        };
+        Target {
+            mode: AreaMode::of(setting(AREA_MODE)),
+            mixing: !matches!(setting(CHANNEL_MIXING), Some(&ControlValue::Bool(false))),
+            lch: [
+                number(TARGET_LIGHTNESS, TARGET_GREY[0]),
+                number(TARGET_CHROMA, TARGET_GREY[1]),
+                number(TARGET_HUE, TARGET_GREY[2]),
+            ],
+        }
+    }
+}
+
+/// The light the values describe, as darktable's `illuminant_to_xy` gives it: a standard
+/// illuminant's, the stored `x` and `y` for custom, and for as shot in camera the camera's
+/// light at the reference coefficients, as the follow writes take it ([`camera_light`]):
+/// White balance's coefficients are a known gap (`docs/tools/white-balance.md`, Gaps).
+fn light(values: &Controls, image: &ImageContext) -> [f32; 2] {
+    let stored = [values.number("x"), values.number("y")];
+    let Some(chosen) = ILLUMINANT_VALUES.get(values.choice("illuminant") as usize) else {
+        return stored;
+    };
+    illuminants::illuminant_to_xy(
+        *chosen,
+        values.number("temperature"),
+        values.choice("illum_fluo") as usize,
+        values.choice("illum_led") as usize,
+        camera_light(image),
+    )
+    .unwrap_or(stored)
+}
+
+/// The mixer as darktable's picker builds it (`channelmixerrgb.c:4197-4217`): rows R, G
+/// and B of Input R, G and B, each divided by `max(NORM_MIN, sum)` where its Normalise
+/// channels is on.
+fn mixer(values: &Controls) -> Mat3 {
+    let row = |[r, g, b, normalise]: [&str; 4]| {
+        let weights = [r, g, b].map(|control| values.number(control));
+        let norm = if values.flag(normalise) {
+            (weights[0] + weights[1] + weights[2]).max(NORM_MIN)
+        } else {
+            1.0
+        };
+        weights.map(|w| w / norm)
+    };
+    [
+        row(["red_r", "red_g", "red_b", "red_normalise"]),
+        row(["green_r", "green_g", "green_b", "green_normalise"]),
+        row(["blue_r", "blue_g", "blue_b", "blue_normalise"]),
+    ]
+}
+
+fn transpose(m: &Mat3) -> Mat3 {
+    std::array::from_fn(|r| std::array::from_fn(|c| m[c][r]))
+}
+
+/// darktable `dt_Lab_2_LCH`, its hue in degrees: a turn's share times 360, a negative
+/// angle taken from a whole turn.
+fn lch_of([l, a, b]: [f32; 3]) -> [f32; 3] {
+    let angle = b.atan2(a);
+    let turn = std::f32::consts::TAU;
+    let hue = if angle > 0.0 {
+        angle / turn
+    } else {
+        1.0 - angle.abs() / turn
+    };
+    [l, a.hypot(b), hue * 360.0]
+}
+
+/// darktable `dt_LCH_2_Lab`, of a hue in degrees.
+fn lab_of([l, c, h]: [f32; 3]) -> [f32; 3] {
+    let angle = std::f32::consts::TAU * (h / 360.0);
+    [l, angle.cos() * c, angle.sin() * c]
 }
 
 /// An adaptation as its control's option, its darktable value.
@@ -1253,6 +1538,403 @@ mod tests {
             let back = hue_chroma(from_hue_chroma([hue, 37.5]));
             assert!((back[0] - hue).abs() < 1e-9 && (back[1] - 37.5).abs() < 1e-9);
         }
+    }
+
+    /// The tool's values with these controls set over its defaults on `image`.
+    fn values_of(set: &[(&'static str, ControlValue)], image: &ImageContext) -> Controls {
+        let mut values = ColourCalibration.defaults(image);
+        for (control, value) in set {
+            values.set(control, value.clone());
+        }
+        values
+    }
+
+    /// The option called `option` of the choice `control`.
+    fn option(control: &str, option: &str) -> ControlValue {
+        match DEFINITION.control(control).unwrap().kind {
+            ControlKind::Choice { options, .. } => {
+                ControlValue::Choice(options.iter().position(|o| *o == option).unwrap() as u32)
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    fn cct(set: &[(&'static str, ControlValue)]) -> Readout {
+        let image = ImageContext::full(8, 8);
+        ColourCalibration
+            .readout(CCT, &values_of(set, &image), &image)
+            .unwrap()
+    }
+
+    /// darktable's `_update_approx_cct`: D65's light reads daylight near 6504 K, a
+    /// Planckian 5000 K black body, a Planckian 3000 K daylight, since darktable's daylight
+    /// below 4000 K is the Planckian and a tie goes to daylight, a light far from both loci
+    /// invalid, and one whose
+    /// temperature falls outside 1667 to 25000 K undefined, with no number; the swatch is
+    /// `illuminant_xy_to_RGB`'s, its largest channel 1.
+    #[test]
+    fn the_readout_is_darktable_s_cct_and_the_light_s_colour() {
+        let custom = |x: f32, y: f32| {
+            cct(&[
+                ("illuminant", option("illuminant", "custom")),
+                ("x", ControlValue::Number(x)),
+                ("y", ControlValue::Number(y)),
+            ])
+        };
+        let d65 = custom(0.3127, 0.3290);
+        assert_eq!(d65.text, "daylight");
+        assert!((d65.value.unwrap() - 6504.0).abs() < 10.0, "{d65:?}");
+        let planckian = |temperature: f32| {
+            cct(&[
+                ("illuminant", option("illuminant", "planckian")),
+                ("temperature", ControlValue::Number(temperature)),
+            ])
+        };
+        let (warm, tie) = (planckian(5000.0), planckian(3000.0));
+        assert_eq!(warm.text, "black_body", "{warm:?}");
+        // `xy_to_CCT`'s fit, McCamy's, reads 5015 K there.
+        assert!((warm.value.unwrap() - 5000.0).abs() < 20.0, "{warm:?}");
+        assert_eq!(tie.text, "daylight", "{tie:?}");
+        assert!((tie.value.unwrap() - 3000.0).abs() < 1.0, "{tie:?}");
+        let magenta = custom(0.33, 0.25);
+        assert_eq!(magenta.text, "invalid", "{magenta:?}");
+        assert!(magenta.value.is_some());
+        let red = custom(0.64, 0.33);
+        assert_eq!((red.text, red.value), ("undefined", None), "{red:?}");
+        for readout in [d65, warm, tie, magenta, red] {
+            let swatch = readout.swatch.unwrap();
+            assert_eq!(swatch.iter().fold(0.0_f32, |m, c| m.max(*c)), 1.0);
+            assert!(swatch.iter().all(|c| *c >= 0.0));
+        }
+        assert_eq!(
+            custom(0.3127, 0.3290).swatch,
+            Some(illuminants::illuminant_xy_to_rgb([0.3127, 0.3290]))
+        );
+        // As shot in camera reads the camera's light at its reference, as follow does.
+        let image = crate::testing::image();
+        let values = values_of(&[("illuminant", option("illuminant", "camera"))], &image);
+        let shot = ColourCalibration.readout(CCT, &values, &image).unwrap();
+        let xy = camera_light(&image).unwrap();
+        assert_eq!(shot.swatch, Some(illuminants::illuminant_xy_to_rgb(xy)));
+        // Another readout is none.
+        let image = ImageContext::full(8, 8);
+        let values = ColourCalibration.defaults(&image);
+        assert_eq!(ColourCalibration.readout("other", &values, &image), None);
+    }
+
+    /// darktable's `_area_mapping_active`: correction with the target off L 50 or off
+    /// chroma 0; never in measure mode, nor for another group.
+    #[test]
+    fn the_mapping_s_title_is_active_as_darktable_s() {
+        let active =
+            |set: &[(&str, ControlValue)]| ColourCalibration.group_active(MAPPING_GROUP, set);
+        assert!(!active(&[]));
+        assert!(!active(&[(TARGET_HUE, ControlValue::Number(120.0))]));
+        assert!(active(&[(TARGET_LIGHTNESS, ControlValue::Number(60.0))]));
+        assert!(active(&[(TARGET_CHROMA, ControlValue::Number(20.0))]));
+        let measure = (AREA_MODE, ControlValue::Choice(1));
+        assert!(!active(&[
+            measure.clone(),
+            (TARGET_CHROMA, ControlValue::Number(20.0))
+        ]));
+        let chroma = [(TARGET_CHROMA, ControlValue::Number(20.0))];
+        assert!(!ColourCalibration.group_active("colour_checker", &chroma));
+    }
+
+    /// A reading of a flat area of working RGB `rgb`.
+    fn flat(rgb: [f32; 3]) -> Reading {
+        let mean = [rgb[0], rgb[1], rgb[2], 1.0];
+        Reading {
+            input: crate::pick::Stats {
+                mean,
+                min: mean,
+                max: mean,
+            },
+            output: None,
+            input_maximum: [1.0; 3],
+        }
+    }
+
+    fn picked(rgb: [f32; 3], values: &Controls, settings: &[(&str, ControlValue)]) -> Picked {
+        ColourCalibration
+            .pick(
+                PICKER.id,
+                &flat(rgb),
+                values,
+                &ImageContext::full(8, 8),
+                settings,
+                None,
+                None,
+                PickKeys::default(),
+            )
+            .unwrap()
+    }
+
+    type Mat3d = [[f64; 3]; 3];
+
+    fn wide(m: &Mat3) -> Mat3d {
+        m.map(|row| row.map(f64::from))
+    }
+
+    fn times(m: &Mat3d, v: [f64; 3]) -> [f64; 3] {
+        std::array::from_fn(|r| (0..3).map(|c| m[r][c] * v[c]).sum())
+    }
+
+    /// darktable's `dt_Lab_to_XYZ` in f64.
+    fn lab_to_xyz(lab: [f64; 3]) -> [f64; 3] {
+        let f = |t: f64| {
+            if t > 6.0 / 29.0 {
+                t * t * t
+            } else {
+                (116.0 * t - 16.0) * 27.0 / 24389.0
+            }
+        };
+        let fy = (lab[0] + 16.0) / 116.0;
+        let [fx, fz] = [fy + lab[1] / 500.0, fy - lab[2] / 200.0];
+        [0.9642 * f(fx), f(fy), 0.8249 * f(fz)]
+    }
+
+    /// darktable's mixer for the picker, in f64.
+    fn mixer_d(values: &Controls) -> Mat3d {
+        let norm_min = f64::from(NORM_MIN);
+        let row = |ids: [&str; 4]| {
+            let w = [ids[0], ids[1], ids[2]].map(|c| f64::from(values.number(c)));
+            let norm = if values.flag(ids[3]) {
+                (w[0] + w[1] + w[2]).max(norm_min)
+            } else {
+                1.0
+            };
+            w.map(|v| v / norm)
+        };
+        [
+            row(["red_r", "red_g", "red_b", "red_normalise"]),
+            row(["green_r", "green_g", "green_b", "green_normalise"]),
+            row(["blue_r", "blue_g", "blue_b", "blue_normalise"]),
+        ]
+    }
+
+    /// darktable's correction (`_auto_set_illuminant`, `channelmixerrgb.c:4270-4410`)
+    /// restated in f64, the mixer's pseudo-inverse its inverse, since it is invertible:
+    /// the illuminant's x and y for the area `rgb`, the values and the target's L, C, h.
+    fn darktable_correction(
+        rgb: [f32; 3],
+        values: &Controls,
+        [l, c, h]: [f64; 3],
+        mixing: bool,
+    ) -> [f64; 2] {
+        let norm_min = f64::from(NORM_MIN);
+        let adaptation = Adaptation::from_darktable(values.choice("adaptation") as i32).unwrap();
+        let (to_lms, to_xyz) = (
+            wide(&adaptation.xyz_to_lms()),
+            wide(&adaptation.lms_to_xyz()),
+        );
+        let unit = |v: [f64; 3]| v.map(|c| c / v[1].max(norm_min));
+        let turn = std::f64::consts::TAU * (h / 360.0);
+        let target = unit(lab_to_xyz([l, turn.cos() * c, turn.sin() * c]));
+        let mut wanted = times(&to_lms, target);
+        if mixing {
+            let inverse = apertrust_color::inverse_d(&mixer_d(values));
+            wanted = times(&to_lms, unit(times(&to_xyz, times(&inverse, wanted))));
+        }
+        let profile = wide(&WorkingProfile::linear_rec2020().rgb_to_xyz_d50);
+        let input = times(&to_lms, unit(times(&profile, rgb.map(f64::from))));
+        let d50 = adaptation.d50().map(f64::from);
+        let cone: [f64; 3] = std::array::from_fn(|c| d50[c] * input[c] / wanted[c]);
+        let [x, y, z] = times(&to_xyz, cone);
+        let sum = (x + y + z).max(norm_min);
+        [x / sum, y / sum]
+    }
+
+    /// The mixers the correction is held to darktable's on: the identity, a mix, and the
+    /// same mix with Normalise channels on each row.
+    fn mixes() -> Vec<Vec<(&'static str, ControlValue)>> {
+        let mix = vec![
+            ("red_r", ControlValue::Number(1.2)),
+            ("red_g", ControlValue::Number(-0.1)),
+            ("green_g", ControlValue::Number(0.9)),
+            ("green_b", ControlValue::Number(0.15)),
+            ("blue_r", ControlValue::Number(0.05)),
+            ("blue_b", ControlValue::Number(1.1)),
+        ];
+        let mut normalised = mix.clone();
+        for row in ["red_normalise", "green_normalise", "blue_normalise"] {
+            normalised.push((row, ControlValue::Bool(true)));
+        }
+        vec![Vec::new(), mix, normalised]
+    }
+
+    /// Correction against `_auto_set_illuminant` restated in f64, within 1e-5 in `x` and
+    /// `y`: three areas, two targets, three mixers, with channel mixing on and off, under
+    /// each adaptation; it writes the custom illuminant and its temperature, and nothing
+    /// to the settings.
+    #[test]
+    fn a_correction_pick_is_darktable_s_illuminant() {
+        let areas = [[0.18, 0.18, 0.18], [0.3, 0.2, 0.1], [0.08, 0.12, 0.25]];
+        let targets = [[50.0, 0.0, 0.0], [60.0, 20.0, 40.0]];
+        let mut worst = 0.0_f64;
+        for adaptation in ADAPTING {
+            for mix in mixes() {
+                let mut set = mix.clone();
+                set.push(("adaptation", option("adaptation", adaptation)));
+                let values = values_of(&set, &ImageContext::full(8, 8));
+                for mixing in [true, false] {
+                    for target in targets {
+                        let settings = [
+                            (CHANNEL_MIXING, ControlValue::Bool(mixing)),
+                            (TARGET_LIGHTNESS, ControlValue::Number(target[0])),
+                            (TARGET_CHROMA, ControlValue::Number(target[1])),
+                            (TARGET_HUE, ControlValue::Number(target[2])),
+                        ];
+                        for area in areas {
+                            let picked = picked(area, &values, &settings);
+                            let want =
+                                darktable_correction(area, &values, target.map(f64::from), mixing);
+                            let got = [picked.writes.number("x"), picked.writes.number("y")];
+                            for (got, want) in got.iter().zip(want) {
+                                let off = (f64::from(*got) - want).abs();
+                                worst = worst.max(off);
+                                assert!(
+                                    off < 1e-5,
+                                    "{adaptation} {set:?} {mixing} {target:?} {area:?}: {got:?} {want:?}"
+                                );
+                            }
+                            assert_eq!(
+                                picked.writes.get("illuminant"),
+                                Some(&option("illuminant", "custom"))
+                            );
+                            let (temperature, _) = illuminants::closest_cct_model(got[0], got[1]);
+                            assert_eq!(picked.writes.number("temperature"), temperature);
+                            assert!(picked.shown.settings.is_empty());
+                        }
+                    }
+                }
+            }
+        }
+        println!("correction: at most {worst:.2e} off darktable's x and y");
+    }
+
+    /// A neutral area with the default target gives a custom illuminant at the area's own
+    /// chromaticity under the working profile, within 1e-4: not exactly, since darktable's
+    /// constants for D50 differ from its matrices' by up to 4.7e-4.
+    #[test]
+    fn a_neutral_target_gives_the_area_s_own_light() {
+        let profile = WorkingProfile::linear_rec2020();
+        let mut worst = 0.0_f32;
+        for adaptation in ADAPTING {
+            let set = [("adaptation", option("adaptation", adaptation))];
+            let values = values_of(&set, &ImageContext::full(8, 8));
+            for area in [[0.18, 0.18, 0.18], [0.3, 0.2, 0.1], [0.08, 0.12, 0.25]] {
+                let picked = picked(area, &values, &[]);
+                let [x, y, z] = apply(&profile.rgb_to_xyz_d50, area);
+                let own = [x / (x + y + z), y / (x + y + z)];
+                for (got, want) in [picked.writes.number("x"), picked.writes.number("y")]
+                    .iter()
+                    .zip(own)
+                {
+                    worst = worst.max((got - want).abs());
+                }
+            }
+        }
+        println!("a neutral target: at most {worst:.2e} off the area's own x and y");
+        assert!(worst < 1e-4, "{worst}");
+    }
+
+    /// Measure writes no control and hands back the target the area renders at, its
+    /// L, C and h held to their settings' ranges: under the pipeline's own illuminant,
+    /// D50, the area's own LCh but for darktable's constants; under another light, the
+    /// correction's target back; an area past chroma 128 held there.
+    #[test]
+    fn a_measure_pick_hands_back_the_target_the_area_renders_at() {
+        let measure = (AREA_MODE, ControlValue::Choice(1));
+        let image = ImageContext::full(8, 8);
+        let pipeline = values_of(&[("illuminant", option("illuminant", "pipeline"))], &image);
+        let area = [0.3, 0.2, 0.1];
+        let own = picked(area, &pipeline, std::slice::from_ref(&measure));
+        assert!(own.writes.is_empty());
+        let lch = own.shown.patch.unwrap().lch;
+        let got: Vec<f32> = (own.shown.settings.iter())
+            .map(|(_, value)| match value {
+                ControlValue::Number(n) => *n,
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        let ids: Vec<&str> = own.shown.settings.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, [TARGET_LIGHTNESS, TARGET_CHROMA, TARGET_HUE]);
+        for (got, want) in got.iter().zip(lch) {
+            assert!((got - want).abs() < 0.1, "{got:?} {lch:?}");
+        }
+        // The correction's light, then measured with it: the target back.
+        let target = [60.0, 20.0, 40.0];
+        let settings = [
+            (TARGET_LIGHTNESS, ControlValue::Number(target[0])),
+            (TARGET_CHROMA, ControlValue::Number(target[1])),
+            (TARGET_HUE, ControlValue::Number(target[2])),
+        ];
+        let corrected = picked_at_lightness(target[0], &pipeline, &settings);
+        let mut set = Vec::new();
+        for (control, value) in corrected.0.writes.iter() {
+            set.push((control, value.clone()));
+        }
+        let lit = values_of(&set, &image);
+        let measured = picked(corrected.1, &lit, std::slice::from_ref(&measure));
+        for ((_, value), want) in measured.shown.settings.iter().zip(target) {
+            let ControlValue::Number(got) = value else {
+                panic!("{value:?}");
+            };
+            assert!((got - want).abs() < 0.05, "{:?}", measured.shown.settings);
+        }
+        // Past chroma 128, held there, as darktable's slider holds it.
+        let vivid = picked([1.0, 0.0, 0.0], &pipeline, std::slice::from_ref(&measure));
+        assert_eq!(
+            vivid.shown.settings[1],
+            (TARGET_CHROMA, ControlValue::Number(128.0))
+        );
+    }
+
+    /// A correction pick toward `settings` of a colourful area of the target's lightness,
+    /// and that area.
+    fn picked_at_lightness(
+        lightness: f32,
+        values: &Controls,
+        settings: &[(&str, ControlValue)],
+    ) -> (Picked, [f32; 3]) {
+        let profile = WorkingProfile::linear_rec2020();
+        let y = lab_to_xyz_d50([lightness, 0.0, 0.0])[1];
+        let base = [0.3, 0.2, 0.1];
+        let scale = y / apply(&profile.rgb_to_xyz_d50, base)[1];
+        let area = base.map(|c| c * scale);
+        (picked(area, values, settings), area)
+    }
+
+    /// The input patch: the area as sRGB, clamped, with its LCh of Lab D50, h in degrees
+    /// from 0 to 360; and a picker the tool lacks picks nothing.
+    #[test]
+    fn the_input_patch_is_the_area_in_srgb_and_lch() {
+        let image = ImageContext::full(8, 8);
+        let values = ColourCalibration.defaults(&image);
+        let area = [0.3, 0.2, 0.1];
+        let patch = picked(area, &values, &[]).shown.patch.unwrap();
+        let xyz = apply(&WorkingProfile::linear_rec2020().rgb_to_xyz_d50, area);
+        let lab = xyz_to_lab_d50(xyz);
+        assert_eq!(patch.srgb, xyz_d50_to_srgb(xyz).map(|c| c.clamp(0.0, 1.0)));
+        assert_eq!(patch.lch[0], lab[0]);
+        assert!((patch.lch[1] - lab[1].hypot(lab[2])).abs() < 1e-5);
+        let hue = lab[2].atan2(lab[1]).to_degrees().rem_euclid(360.0);
+        assert!((patch.lch[2] - hue).abs() < 1e-3, "{patch:?}");
+        // A blue area's hue, a negative angle, taken from a whole turn.
+        let blue = picked([0.05, 0.1, 0.4], &values, &[]).shown.patch.unwrap();
+        assert!((180.0..360.0).contains(&blue.lch[2]), "{blue:?}");
+        let none = ColourCalibration.pick(
+            "spot",
+            &flat(area),
+            &values,
+            &image,
+            &[],
+            None,
+            None,
+            PickKeys::default(),
+        );
+        assert_eq!(none, None);
     }
 
     #[test]

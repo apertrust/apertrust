@@ -1034,18 +1034,16 @@ mod tests {
     fn the_schema_is_read_and_its_ids_are_unique() {
         let schema = parse(SCHEMA, SCHEMA_PATH).unwrap_or_else(|errors| panic!("{errors:?}"));
         let owned = |owner: &str| schema.settings.iter().filter(|s| s.owner == owner).count();
-        // Exposure is the one tool with settings: Picker target, Lightness and the reference.
-        let tool = "tool:exposure";
+        // Two tools have settings: Exposure's Picker target, Lightness and reference, and
+        // Colour calibration's area colour mapping, generated together as the tools'
+        // crate generates them.
+        let tools = ["tool:exposure", "tool:channelmixerrgb"];
         assert_eq!(
-            owned("app") + owned("engine") + owned("export") + owned(tool),
+            owned("app") + owned("engine") + owned("export") + owned(tools[0]) + owned(tools[1]),
             schema.settings.len()
         );
         let (app, engine) = (schema.generate("app"), schema.generate("engine"));
-        let (export, tool) = (schema.generate("export"), schema.generate(tool));
-        // Several owners' settings generate as one registry; one owner's as `generate`.
-        assert_eq!(schema.generate_all(&["tool:exposure"]), tool);
-        let both = schema.generate_all(&["app", "tool:exposure"]);
-        assert_eq!(both.matches("pub static ALL").count(), 1, "{both}");
+        let (export, tool) = (schema.generate("export"), schema.generate_all(&tools));
         assert_eq!(
             ids(&tool),
             [
@@ -1053,8 +1051,16 @@ mod tests {
                 "tools.exposure.lightness",
                 "tools.exposure.reference_lightness",
                 "tools.exposure.reference_photo",
+                "tools.channelmixerrgb.area_mode",
+                "tools.channelmixerrgb.channel_mixing",
+                "tools.channelmixerrgb.target_lightness",
+                "tools.channelmixerrgb.target_hue",
+                "tools.channelmixerrgb.target_chroma",
             ]
         );
+        // One owner's alone, and both in the one registry.
+        assert_eq!(ids(&schema.generate(tools[0])).len(), 4);
+        assert_eq!(tool.matches("pub static ALL").count(), 1, "{tool}");
         let mut every = [ids(&app), ids(&engine), ids(&export), ids(&tool)].concat();
         assert_eq!(
             (every.first(), every.len()),

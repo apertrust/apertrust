@@ -75,6 +75,11 @@ tool-channelmixerrgb-control-adaptation-promise = How the illuminant is adapted,
 tool-channelmixerrgb-control-illuminant-promise = The light the scene was lit by, which the adaptation turns into white: a standard light, one at a temperature, the camera's own or a custom color.
 tool-channelmixerrgb-control-hue-promise = The color of the light, around the pipeline's white.
 tool-channelmixerrgb-control-gamut-promise = Brings colors outside the pipeline's gamut back inside it, the more the higher. 0 = none.
+tool-channelmixerrgb-readout-cct-daylight-promise = Approximated correlated color temperature. This illuminant can be accurately modeled by a daylight spectrum, so its temperature is relevant and meaningful with a D illuminant.
+tool-channelmixerrgb-readout-cct-black_body-promise = Approximated correlated color temperature. This illuminant can be accurately modeled by a black body spectrum, so its temperature is relevant and meaningful with a Planckian illuminant.
+tool-channelmixerrgb-readout-cct-invalid-promise = Approximated correlated color temperature. This illuminant cannot be accurately modeled by a daylight or black body spectrum, so its temperature is not relevant and meaningful and you need to use a custom illuminant.
+tool-channelmixerrgb-readout-cct-undefined-promise = The approximated correlated color temperature cannot be computed at all, so you need to use a custom illuminant.
+tool-channelmixerrgb-readout-cct-swatch = This is the color of the scene illuminant before chromatic adaptation. This color will be turned into pure white by the adaptation.
 tool-channelmixerrgb-collapsible-area_colour_mapping = Area color mapping
 tool-channelmixerrgb-setting-area_mode-promise = Correction adjusts the illuminant so the input color is mapped to the target. Measure only shows how an input color is mapped by the CAT, and can be used to sample a target.
 tool-channelmixerrgb-setting-target_lightness-promise = The lightness of the desired target color after mapping.

@@ -655,9 +655,23 @@ tool-channelmixerrgb-control-gamut-promise = Brings colours outside the pipeline
 tool-channelmixerrgb-control-clip-label = Clip negative RGB from gamut
 tool-channelmixerrgb-control-clip-full = Clip negative RGB from gamut
 tool-channelmixerrgb-control-clip-promise = Clips the negative RGB values the adaptation leaves outside the gamut.
+# The readout row, darktable's CCT, the illuminant's colour and its picker, on the CAT tab
+# while the adaptation is not none.
+tool-channelmixerrgb-readout-cct-daylight = CCT: { $value } K (daylight)
+tool-channelmixerrgb-readout-cct-daylight-promise = Approximated correlated colour temperature. This illuminant can be accurately modelled by a daylight spectrum, so its temperature is relevant and meaningful with a D illuminant.
+tool-channelmixerrgb-readout-cct-black_body = CCT: { $value } K (black body)
+tool-channelmixerrgb-readout-cct-black_body-promise = Approximated correlated colour temperature. This illuminant can be accurately modelled by a black body spectrum, so its temperature is relevant and meaningful with a Planckian illuminant.
+tool-channelmixerrgb-readout-cct-invalid = CCT: { $value } K (invalid)
+tool-channelmixerrgb-readout-cct-invalid-promise = Approximated correlated colour temperature. This illuminant cannot be accurately modelled by a daylight or black body spectrum, so its temperature is not relevant and meaningful and you need to use a custom illuminant.
+tool-channelmixerrgb-readout-cct-undefined = CCT: undefined
+tool-channelmixerrgb-readout-cct-undefined-promise = The approximated correlated colour temperature cannot be computed at all, so you need to use a custom illuminant.
+tool-channelmixerrgb-readout-cct-swatch = This is the colour of the scene illuminant before chromatic adaptation. This colour will be turned into pure white by the adaptation.
+tool-channelmixerrgb-picker-illuminant-label = Illuminant from area
+tool-channelmixerrgb-picker-illuminant-full = Illuminant from an image area
+tool-channelmixerrgb-picker-illuminant-promise = Set white balance to detected from area
 
-# The area colour mapping's settings, darktable's own and never in an edit, drawn disabled
-# until the picker comes.
+# The area colour mapping's settings, darktable's own, kept in settings and never in an
+# edit, which the picker reads.
 tool-channelmixerrgb-collapsible-area_colour_mapping = Area colour mapping
 tool-channelmixerrgb-setting-area_mode-label = Area mode
 tool-channelmixerrgb-setting-area_mode-full = Area mode
@@ -667,7 +681,6 @@ tool-channelmixerrgb-setting-area_mode-option-measure = Measure
 tool-channelmixerrgb-setting-channel_mixing-label = Take channel mixing into account
 tool-channelmixerrgb-setting-channel_mixing-full = Take channel mixing into account
 tool-channelmixerrgb-setting-channel_mixing-promise = Computes the target taking the channel mixing into account. Off, only the CAT is considered.
-tool-channelmixerrgb-group-target = Target
 tool-channelmixerrgb-setting-target_lightness-label = Lightness
 tool-channelmixerrgb-setting-target_lightness-full = Target lightness
 tool-channelmixerrgb-setting-target_lightness-promise = The lightness of the desired target colour after mapping.

@@ -1476,6 +1476,12 @@ mod tests {
                 settings.set("exposure", "reference_lightness", number);
                 let photo = "/photos/IMG_2041.CR3".to_owned();
                 settings.set_text("exposure", "reference_photo", photo);
+                let mapping = "channelmixerrgb";
+                settings.set(mapping, "area_mode", ControlValue::Choice(1));
+                settings.set(mapping, "channel_mixing", ControlValue::Bool(false));
+                settings.set(mapping, "target_lightness", ControlValue::Number(60.5));
+                settings.set(mapping, "target_hue", ControlValue::Number(40.0));
+                settings.set(mapping, "target_chroma", ControlValue::Number(20.0));
                 settings
             },
             ask_before_overwrite: false,
@@ -1605,11 +1611,26 @@ mod tests {
                 keys: BTreeMap::new(),
                 export: Values::default(),
                 // Exposure's Picker target at Middle grey, Lightness at darktable's 50 %, and no
-                // reference.
+                // reference; Colour calibration's area colour mapping at darktable's
+                // correction toward middle grey, taking the mixing into account.
                 tool_settings: ToolSettings {
                     values: BTreeMap::from([
                         (("exposure", "target"), ControlValue::Choice(0)),
                         (("exposure", "lightness"), ControlValue::Number(50.0)),
+                        (("channelmixerrgb", "area_mode"), ControlValue::Choice(0)),
+                        (
+                            ("channelmixerrgb", "channel_mixing"),
+                            ControlValue::Bool(true)
+                        ),
+                        (
+                            ("channelmixerrgb", "target_lightness"),
+                            ControlValue::Number(50.0),
+                        ),
+                        (("channelmixerrgb", "target_hue"), ControlValue::Number(0.0)),
+                        (
+                            ("channelmixerrgb", "target_chroma"),
+                            ControlValue::Number(0.0)
+                        ),
                     ]),
                     texts: BTreeMap::new(),
                     overridden: BTreeSet::new(),
@@ -1787,6 +1808,13 @@ marker = \"triangle\"
 [toolbar]
 labels = false
 menu_button = \"menu\"
+
+[tools.channelmixerrgb]
+area_mode = \"measure\"
+channel_mixing = false
+target_chroma = 20.0
+target_hue = 40.0
+target_lightness = 60.5
 
 [tools.exposure]
 lightness = 42.5
@@ -2523,6 +2551,43 @@ proof_margin = 0.3
         let written = folder.text();
         assert!(written.contains("area_mode = \"measure\""), "{written}");
         assert!(written.contains("target = \"lightness\""), "{written}");
+        drop(keeper);
+        let (_, again) = Keeper::open(folder.storage());
+        assert_eq!(again.tool_settings, settings.tool_settings);
+    }
+
+    /// Colour calibration's area colour mapping survives a restart: read from
+    /// `[tools.channelmixerrgb]` by each row's kind, and a change written back leaving every
+    /// other line as it was, byte for byte, read back as it was set.
+    #[test]
+    fn the_area_colour_mapping_is_kept_byte_for_byte() {
+        let folder = Folder::new("area-colour-mapping");
+        let text = "# Apertrust's settings. Apertrust writes here only what changes, without \
+                    comments;\n# keys it does not know stay.\n\nversion = 2\n\
+                    [tools.channelmixerrgb]\narea_mode = \"measure\"\nchannel_mixing = false\n\
+                    target_chroma = 20.0\ntarget_hue = 40.0\ntarget_lightness = 60.5\n";
+        std::fs::write(folder.settings(), text).expect("written");
+        let (mut keeper, mut settings) = Keeper::open(folder.storage());
+        assert_eq!(
+            settings.tool_settings.of("channelmixerrgb"),
+            [
+                ("area_mode", ControlValue::Choice(1)),
+                ("channel_mixing", ControlValue::Bool(false)),
+                ("target_chroma", ControlValue::Number(20.0)),
+                ("target_hue", ControlValue::Number(40.0)),
+                ("target_lightness", ControlValue::Number(60.5)),
+            ]
+        );
+        // One changed, every other line as it was.
+        settings
+            .tool_settings
+            .set("channelmixerrgb", "target_hue", ControlValue::Number(120.0));
+        keeper.frame(Instant::now(), &settings);
+        keeper.flush();
+        assert_eq!(
+            folder.text(),
+            text.replace("target_hue = 40.0", "target_hue = 120.0")
+        );
         drop(keeper);
         let (_, again) = Keeper::open(folder.storage());
         assert_eq!(again.tool_settings, settings.tool_settings);
