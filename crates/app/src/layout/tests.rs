@@ -838,7 +838,10 @@ fn a_file_with_no_toolbar_list_takes_its_defaults() {
     std::fs::write(folder.0.join("bare.toml"), format!("toolbar = []\n{tabs}")).unwrap();
     let (workspaces, warnings) = Workspaces::read(Some(&folder.0));
     assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert!(warnings[0].contains("film.toml: toolbar is no list"), "{warnings:?}");
+    assert!(
+        warnings[0].contains("film.toml: toolbar is no list"),
+        "{warnings:?}"
+    );
     for id in [ESSENTIALS, "portraits", "film"] {
         let (workspace, _) = workspaces.open(id);
         assert_eq!(workspace.layout.toolbar, None, "{id}");
@@ -1845,4 +1848,202 @@ fn a_damaged_own_workspace_keeps_its_moves_for_a_file_put_back() {
     let layout = written(&folder, "portraits");
     assert!(layout.hidden.iter().any(|t| t == "grain"));
     assert_eq!(layout.name.as_deref(), Some("Portraits"));
+}
+
+/// The Toolbar's list without `id`, as the toolbar menu's Hide makes it: the list as the
+/// workspace holds it, ids this build does not know in their places (decision 92).
+fn hiding(workspace: &Workspace, id: &str) -> Move {
+    let list = workspace.toolbar().iter().filter(|item| *item != id);
+    Move::Toolbar(list.cloned().collect())
+}
+
+/// A Toolbar change to a built-in workspace writes its file in the user data folder from
+/// its bundled one, the id gone, its tabs as bundled; read back at the next start, the
+/// Toolbar is the same. The bundled list is unchanged, and so is a second write of it.
+#[test]
+fn a_toolbar_change_writes_a_built_in_s_file_from_its_bundled_one() {
+    let folder = Folder::new("workspace-toolbar-built-in");
+    let mut files = Files::new(folder.0.clone());
+    let mut workspace = default_workspace();
+    let hide = hiding(&workspace, "undo");
+    move_in(&mut files, &mut workspace, hide, Instant::now());
+    let without: Vec<&str> = TOOLBAR.into_iter().filter(|id| *id != "undo").collect();
+    assert_eq!(workspace.toolbar(), without);
+    files.flush();
+    assert_eq!(folder.files(), ["default.toml"]);
+    let layout = written(&folder, DEFAULT);
+    assert_eq!(layout.toolbar.as_deref(), Some(&owned(&without)[..]));
+    assert_eq!(layout.tabs, default_layout().tabs);
+    let (read, warnings) = Workspace::open(Some(&folder.0), DEFAULT);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(read.toolbar(), without);
+    assert_eq!(
+        default_layout().toolbar.as_deref(),
+        Some(&owned(&TOOLBAR)[..])
+    );
+    // The same list again moves nothing.
+    let same = Move::Toolbar(read.toolbar().to_vec());
+    assert!(!read.clone().apply(&same));
+}
+
+/// Owned copies of `ids`, as a file holds them.
+fn owned(ids: &[&str]) -> Vec<String> {
+    ids.iter().map(|id| (*id).to_owned()).collect()
+}
+
+/// Two workspaces keep two lists, each in its own file.
+#[test]
+fn two_workspaces_keep_two_toolbars() {
+    let folder = Folder::new("workspace-toolbar-two");
+    let mut files = Files::new(folder.0.clone());
+    let now = Instant::now();
+    let mut default = default_workspace();
+    let mut essentials = Workspaces::builtin().open(ESSENTIALS).0;
+    let hide = hiding(&default, "reset");
+    move_in(&mut files, &mut default, hide, now);
+    let hide = hiding(&essentials, "jobs");
+    move_in(&mut files, &mut essentials, hide, now);
+    files.flush();
+    let (workspaces, _) = Workspaces::read(Some(&folder.0));
+    let default = workspaces.open(DEFAULT).0;
+    let essentials = workspaces.open(ESSENTIALS).0;
+    assert!(!default.toolbar().iter().any(|id| id == "reset"));
+    assert!(default.toolbar().iter().any(|id| id == "jobs"));
+    assert!(!essentials.toolbar().iter().any(|id| id == "jobs"));
+    assert!(essentials.toolbar().iter().any(|id| id == "reset"));
+}
+
+/// A Toolbar change is written over the file as it is on disk then: a hand edit to its
+/// tabs, and a key this build does not know, made while the app runs, stay; ids this build
+/// does not know keep their places in the list written.
+#[test]
+fn a_toolbar_change_keeps_a_hand_edit_and_unknown_ids() {
+    let folder = Folder::new("workspace-toolbar-hand-edit");
+    let file = folder.0.join("default.toml");
+    let first = "toolbar = [\"import\", \"cull\", \"undo\", \"redo\"]\n\
+                 [[tabs]]\nid = \"photos\"\n[order]\nphotos = [\"collections\", \"export\"]\n";
+    std::fs::write(&file, first).unwrap();
+    let (mut workspace, _) = Workspace::open(Some(&folder.0), DEFAULT);
+    let mut files = Files::new(folder.0.clone());
+    let edited = "colour = \"amber\"\ntoolbar = [\"import\", \"cull\", \"undo\", \"redo\"]\n\
+                  [[tabs]]\nid = \"photos\"\n[[tabs]]\nid = \"skin\"\ntitle = \"Skin\"\n\
+                  [order]\nphotos = [\"export\", \"collections\"]\nskin = [\"exposure\"]\n";
+    std::fs::write(&file, edited).unwrap();
+    let hide = hiding(&workspace, "undo");
+    move_in(&mut files, &mut workspace, hide, Instant::now());
+    files.flush();
+    let text = std::fs::read_to_string(&file).unwrap();
+    let layout = parsed(&text);
+    assert_eq!(
+        layout.toolbar.as_deref(),
+        Some(&owned(&["import", "cull", "redo"])[..])
+    );
+    assert_eq!(layout.tabs.len(), 2, "the hand edit's tabs");
+    assert_eq!(layout.order["photos"], ["export", "collections"]);
+    assert_eq!(layout.order["skin"], ["exposure"]);
+    let table: Table = text.parse().unwrap();
+    assert_eq!(table["colour"].as_str(), Some("amber"));
+}
+
+/// Only a Toolbar change writes `toolbar`: a tab move leaves a file's missing list missing,
+/// a built-in's first write from its bundled file included, so each follows its defaults'
+/// list as later builds change it (decision 92).
+#[test]
+fn a_tab_move_leaves_a_file_s_missing_list_missing() {
+    let folder = Folder::new("workspace-toolbar-lacked");
+    let own = "[[tabs]]\nid = \"photos\"\n[order]\nphotos = [\"collections\", \"export\"]\n";
+    std::fs::write(folder.0.join("portraits.toml"), own).unwrap();
+    let (mut portraits, _) = Workspace::open(Some(&folder.0), "portraits");
+    let mut default = default_workspace();
+    let mut files = Files::new(folder.0.clone());
+    let down = Move::Down {
+        tool: "collections",
+        tab: "photos".to_owned(),
+    };
+    move_in(&mut files, &mut portraits, down, Instant::now());
+    let hide = Move::Hide { tool: "grain" };
+    move_in(&mut files, &mut default, hide, Instant::now());
+    files.flush();
+    for id in ["portraits", DEFAULT] {
+        assert_eq!(written(&folder, id).toolbar, None, "{id}");
+        let (read, _) = Workspace::open(Some(&folder.0), id);
+        assert_eq!(read.toolbar(), TOOLBAR, "{id}");
+    }
+}
+
+/// A newer build's file takes no Toolbar change.
+#[test]
+fn a_newer_build_s_toolbar_is_never_written() {
+    let folder = Folder::new("workspace-toolbar-newer");
+    let newer = "version = 2\ntoolbar = [\"undo\"]\n[[tabs]]\nid = \"photos\"\n";
+    let file = folder.0.join("default.toml");
+    std::fs::write(&file, newer).unwrap();
+    let (mut workspace, _) = Workspace::open(Some(&folder.0), DEFAULT);
+    assert!(workspace.newer);
+    let mut files = Files::new(folder.0.clone());
+    move_in(
+        &mut files,
+        &mut workspace,
+        Move::Toolbar(Vec::new()),
+        Instant::now(),
+    );
+    files.flush();
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), newer);
+}
+
+/// A Toolbar change that fails to write is kept and written with the next write.
+#[test]
+fn a_failed_toolbar_write_is_tried_again() {
+    let folder = Folder::new("workspace-toolbar-failed");
+    let mut files = Files::new(folder.0.clone());
+    let mut workspace = default_workspace();
+    let file = folder.0.join("default.toml");
+    files::fail_next_write(&file);
+    let hide = hiding(&workspace, "redo");
+    move_in(&mut files, &mut workspace, hide, Instant::now());
+    files.flush();
+    assert!(
+        !files::FAIL.lock().unwrap().contains(&file),
+        "it failed once"
+    );
+    let toolbar = written(&folder, DEFAULT)
+        .toolbar
+        .expect("a toolbar written");
+    assert!(!toolbar.iter().any(|id| id == "redo"), "{toolbar:?}");
+}
+
+/// Restore Defaults, deleting a built-in's file, brings the default list back with the
+/// default tabs; the list is never a setting of `settings.toml`.
+#[test]
+fn restoring_the_defaults_brings_the_default_toolbar_back() {
+    let folder = Folder::new("workspace-toolbar-restore");
+    let mut files = Files::new(folder.0.clone());
+    let mut workspace = default_workspace();
+    move_in(
+        &mut files,
+        &mut workspace,
+        Move::Toolbar(Vec::new()),
+        Instant::now(),
+    );
+    files.flush();
+    assert!(
+        Workspace::open(Some(&folder.0), DEFAULT)
+            .0
+            .toolbar()
+            .is_empty()
+    );
+    std::fs::remove_file(folder.0.join("default.toml")).unwrap();
+    let (restored, _) = Workspace::open(Some(&folder.0), DEFAULT);
+    assert_eq!(restored.toolbar(), TOOLBAR);
+    assert_eq!(restored.shown, default_workspace().shown);
+    let schema: Table = include_str!("../../../../data/settings.schema.toml")
+        .parse()
+        .unwrap();
+    let toolbar = schema["toolbar"]
+        .as_table()
+        .expect("the toolbar's settings");
+    for (key, setting) in toolbar {
+        let kind = setting.get("kind").and_then(toml::Value::as_str);
+        assert_ne!(kind, Some("list"), "toolbar.{key}");
+    }
 }
