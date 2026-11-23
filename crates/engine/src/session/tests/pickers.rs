@@ -861,6 +861,49 @@ fn a_tool_picker_turns_its_tool_on_and_off_as_the_tool_changes_unless_it_keeps()
     remove(&path);
 }
 
+/// Undo, Redo and a move through the history turn a tool's picker off where they change
+/// its tool, as darktable's `gui_update` does, and leave it on where they change another
+/// tool alone; a keep-active picker stays on through its own tool's.
+#[test]
+fn a_move_through_the_history_turns_off_the_picker_of_the_tool_it_changes() {
+    let path = scratch("picker-history");
+    let mut driven = Driven::new(&[&Sample, &ColourBalanceRgb]);
+    driven.open(&path);
+    driven.writes();
+    driven.run([set("grain", ControlValue::Number(20.0), true)]);
+    driven.run([set("grain", ControlValue::Number(30.0), true)]);
+    // Colour balance RGB's picker on: Undo takes back Sample's change alone.
+    driven.run([on_picker("colorbalancergb", "global_hue", true)]);
+    driven.picked();
+    driven.run([set("grain", ControlValue::Number(40.0), true)]);
+    let events = driven.run([Command::Undo]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(
+        readings(&events).is_empty() && driven.engine.pickers.on(),
+        "{events:?}"
+    );
+    // Sample's own: Undo changes its tool and turns it off, through the Undo.
+    driven.run([on_tool("spread", true)]);
+    driven.picked();
+    let events = driven.run([Command::Undo]);
+    assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    assert_eq!(end(&events), Some(driven.engine.applied));
+    // And so does Redo.
+    driven.run([on_tool("spread", true)]);
+    driven.picked();
+    let events = driven.run([Command::Redo]);
+    assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    // `show` keeps: on through Undo.
+    driven.run([on_tool("show", true)]);
+    driven.picked();
+    let events = driven.run([Command::Undo]);
+    assert!(
+        readings(&events).is_empty() && driven.engine.pickers.on(),
+        "{events:?}"
+    );
+    remove(&path);
+}
+
 #[test]
 fn a_pick_reads_the_channel_and_keys_shown_as_it_reads() {
     let path = scratch("picker-channel");

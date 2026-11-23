@@ -55,6 +55,10 @@ use crate::pipeline::{Instance, Plan, Probe};
 
 use super::{Engine, Event, SessionError};
 
+/// A tool's state in an edit, as [`Engine::picker_tool_state`] compares it: its values and
+/// whether it is left unapplied.
+pub(super) type ToolState = (Option<apertrust_tools::ToolValues>, bool);
+
 /// The pickers' state, which the session keeps for its life.
 #[derive(Default)]
 pub(super) struct Pickers {
@@ -1069,6 +1073,20 @@ impl Engine {
         if !on.picker.keep && tool.is_none_or(|tool| tool == on.tool) {
             self.picker_off(events);
         }
+    }
+
+    /// The tool of a tool's picker on, with its state in the open edit: its values and
+    /// whether it is left unapplied. A move through the history, or a rewrite of it, that
+    /// changes that state turns the picker off ([`Self::picker_tool_changed`]), as
+    /// darktable's `gui_update` resets it as the history moves.
+    pub(super) fn picker_tool_state(&self) -> Option<(&'static str, ToolState)> {
+        let on = self.pickers.active.and_then(|active| active.tool)?;
+        let edit = &self.open.as_ref()?.edit;
+        let state = (
+            edit.tool(on.tool).cloned(),
+            edit.unapplied.contains(on.tool),
+        );
+        Some((on.tool, state))
     }
 
     /// Measures the frame in `buffer`, of `size` pixels, under the active picker, in a
