@@ -24,7 +24,7 @@
 //! answers; their keys are theirs before the frame begins, whatever has the focus.
 //!
 //! Every popup in the app goes through it, as a plain list with no control inside: the
-//! Toolbar's menu button and ⋯ and the Tools panel's » and ⋮ are pull-downs, `Choice`'s
+//! Toolbar's menu button and » and the Tools panel's » and ⋮ are pull-downs, `Choice`'s
 //! list a dropdown.
 //!
 //! Built so far: the pull-down, drawn from the theme's tokens, which the Toolbar's menu

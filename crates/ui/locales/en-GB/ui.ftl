@@ -210,7 +210,7 @@ toolbar = Toolbar
 # The menu button at the Toolbar's start on Windows and Linux, the app's icon or ☰, which opens
 # the menus.
 toolbar-menu = Menu
-# ⋯, holding the common actions a narrow Toolbar has no room for.
+# », holding the actions a narrow Toolbar has no room for.
 toolbar-more = More actions
 # The save state at the Toolbar's end, which shows only when a save goes wrong:
 # Saving… while a write is still unconfirmed about two seconds after it started, as on a

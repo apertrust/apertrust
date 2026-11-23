@@ -205,7 +205,7 @@ fn shown(harness: &Harness<'_, Vec<ToolbarAction>>) -> Vec<(&'static str, f32)> 
 fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
     let mut wide = narrow(1200.0, SaveState::Saved, 0.0, false);
     wide.run();
-    // Import, Export and Reset with their words; no ⋯.
+    // Import, Export and Reset with their words; no ».
     let widths = shown(&wide);
     assert_eq!(widths.len(), 7);
     assert!(
@@ -222,9 +222,39 @@ fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
     assert!(widths.iter().all(|(_, width)| *width == 30.0), "{widths:?}");
     assert!(icons.query_by_label("More actions").is_none());
 
-    // Narrower still, all but Undo and Redo go under ⋯, listed with their keys and
-    // disabled where they can't run.
-    let mut more = narrow(400.0, SaveState::Saved, 0.0, false);
+    // Narrower still, the actions go under » one at a time, a tool's items first from the
+    // end, then Import…, the app's own; the first two together, since » takes the first's
+    // room; Undo and Redo last.
+    let mut narrowing = narrow(700.0, SaveState::Saved, 0.0, false);
+    let mut gone: Vec<Vec<&str>> = Vec::new();
+    let mut last = ACTIONS.to_vec();
+    for width in (150..=700).rev() {
+        narrowing.set_size(egui::vec2(width as f32, 120.0));
+        narrowing.run();
+        let now: Vec<&str> = shown(&narrowing)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        let went: Vec<&str> = last.iter().copied().filter(|n| !now.contains(n)).collect();
+        if !went.is_empty() {
+            gone.push(went);
+        }
+        last = now;
+    }
+    assert_eq!(
+        gone,
+        [
+            vec!["Copy edit", "Apply edit"],
+            vec!["Reset"],
+            vec!["Export…"],
+            vec!["Import…"],
+            vec!["Undo", "Redo"],
+        ]
+    );
+
+    // With all but Undo and Redo under », » lists them with their keys and disabled where
+    // they can't run.
+    let mut more = narrow(370.0, SaveState::Saved, 0.0, false);
     more.run();
     let names: Vec<_> = shown(&more).into_iter().map(|(name, _)| name).collect();
     assert_eq!(names, ["Undo", "Redo"]);
@@ -245,7 +275,7 @@ fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
     more.run();
     assert_eq!(*more.state(), vec![ToolbarAction::Button("export")]);
 
-    // At the narrowest, Undo and Redo join them.
+    // At the narrowest, Undo and Redo go under » too.
     let mut least = narrow(150.0, SaveState::Saved, 0.0, false);
     least.run();
     assert!(shown(&least).is_empty());
@@ -256,11 +286,11 @@ fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
     }
 }
 
-/// ⋯ is a pull-down of the popup service: each folded action an item with its keys as the
+/// » is a pull-down of the popup service: each folded action an item with its keys as the
 /// shortcut, disabled where it cannot run, the focus back on the button after Esc.
 #[test]
 fn the_more_menu_is_a_popup_list_with_keys_and_enabled_states() {
-    let mut harness = narrow(400.0, SaveState::Saved, 0.0, false);
+    let mut harness = narrow(370.0, SaveState::Saved, 0.0, false);
     harness.run();
     // Focused as a key left it, so the list can give the focus back.
     harness.get_by_label("More actions").focus();
@@ -305,7 +335,7 @@ fn the_more_menu_is_a_popup_list_with_keys_and_enabled_states() {
     assert_eq!(*harness.state(), vec![ToolbarAction::Button("import")]);
 }
 
-/// Opened with the pointer, ⋯ gives the focus to its button as it closes, chosen or not:
+/// Opened with the pointer, » gives the focus to its button as it closes, chosen or not:
 /// a press leaves no focus to give back, so the button is the menu's opener.
 #[test]
 fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
@@ -315,7 +345,7 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
             .accesskit_node()
             .label()
     };
-    let mut harness = narrow(400.0, SaveState::Saved, 0.0, false);
+    let mut harness = narrow(370.0, SaveState::Saved, 0.0, false);
     harness.run();
     harness.get_by_label("More actions").click();
     harness.run();
@@ -325,7 +355,7 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
     harness.run();
     assert_eq!(*harness.state(), vec![ToolbarAction::Button("export")]);
     assert_eq!(focused(&harness).as_deref(), Some("More actions"));
-    let mut harness = narrow(400.0, SaveState::Saved, 0.0, false);
+    let mut harness = narrow(370.0, SaveState::Saved, 0.0, false);
     harness.run();
     harness.get_by_label("More actions").click();
     harness.run();
@@ -390,12 +420,15 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
     }
 }
 
-/// Where each of the narrowing's steps starts, in points, in `locale`: as on the Mac,
+/// Where each of the overflow's steps starts, in points, in `locale`: as on the Mac,
 /// with the traffic lights' room, where `menu` is None, else as on Windows and Linux, the
 /// menu button drawn as `menu` says and the caption buttons at the end; with the jobs
-/// spinner's slot and Phase 2's cursors' well, as the app draws them. Each is the widest Toolbar that has taken the step,
-/// plus one: the words folded, the actions under ⋯, Undo and Redo under ⋯.
-fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
+/// spinner's slot and Phase 2's cursors' well, as the app draws them, and a failed write,
+/// whose words show the status step. Each is the widest Toolbar that has taken the step,
+/// plus one: the words folded, the fixed space narrowed, the fixed space gone, the first
+/// action under », every action but Undo and Redo under », the status words folded, and
+/// Undo and Redo under ».
+fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 7] {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 120.0))
         .with_context_setup(move |ctx| {
@@ -406,7 +439,7 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
             let inset = if menu.is_some() { 0.0 } else { 78.0 };
             let bar = Toolbar::new()
                 .entries(toolbar_entries(ui.ctx(), &[]))
-                .saved(SaveState::Saved)
+                .saved(SaveState::Failed("disk full"))
                 .jobs(Jobs::new(&[]))
                 .start_inset(inset)
                 .title_bar(true)
@@ -416,15 +449,32 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
             with_well(0, |well| bar.cursors(well).show(ui));
         });
     let words = Translator::new(locale);
-    let [import, more, undo] =
-        ["action-import", "toolbar-more", "action-undo"].map(|id| words.text(id));
-    let mut starts = [0; 3];
+    let [import, redo, copy, more, undo, failed] = [
+        "action-import",
+        "action-redo",
+        "action-copy-edit",
+        "toolbar-more",
+        "action-undo",
+        "status-not-saved",
+    ]
+    .map(|id| words.text(id));
+    // The room between Redo and Copy edit, the fixed space's, while both show.
+    let space = |harness: &Harness<'_>| {
+        let redo = harness.query_by_label(&redo)?.rect();
+        Some(harness.query_by_label(&copy)?.rect().left() - redo.right())
+    };
+    let sign = 2.0 * Theme::default().spacing.s + Icon::Warning.size();
+    let mut starts = [0; 7];
     for width in (150..=1400).rev() {
         harness.set_size(egui::vec2(width as f32, 120.0));
         harness.run();
         let taken = [
             (harness.query_by_label(&import)).is_none_or(|node| node.rect().width() == 30.0),
+            space(&harness).is_none_or(|room| room < 16.0),
+            space(&harness).is_none_or(|room| room < 8.0),
             harness.query_by_label(&more).is_some(),
+            harness.query_by_label(&import).is_none(),
+            harness.get_by_label(&failed).rect().width() == sign,
             harness.query_by_label(&undo).is_none(),
         ];
         for (start, taken) in starts.iter_mut().zip(taken) {
@@ -436,19 +486,131 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
     starts
 }
 
+/// The default list with every part and many more actions placed (decision 92): a space
+/// and twelve actions more before the first flexible space, Export Again and Orientation's
+/// two a tool's items, as the app marks them, the rest the app's own.
+fn every_part(ctx: &egui::Context) -> Vec<ToolbarEntry> {
+    let mut entries = toolbar_entries(ctx, &[]);
+    let at = (entries.iter())
+        .position(|entry| *entry == ToolbarEntry::FlexibleSpace)
+        .expect("a flexible space");
+    let more = [
+        "open",
+        "open-folder",
+        "settings",
+        "full-screen",
+        "zoom-100",
+        "zoom-fit",
+        "show-jobs",
+        "next-photo",
+        "previous-photo",
+        "export-again",
+        "tool-flip-rotate_ccw",
+        "tool-flip-rotate_cw",
+    ]
+    .map(|id| {
+        let button = ToolbarButton::new(id, Icon::Settings, id);
+        let tool = id == "export-again" || id.starts_with("tool-");
+        ToolbarEntry::Button(button.folds_first(tool))
+    });
+    entries.splice(at..at, [ToolbarEntry::Space].into_iter().chain(more));
+    entries
+}
+
+/// At 500 points, the window's least width, in `locale`, the list `entries` gives, as on
+/// the Mac where `menu` is None, else as on Windows and Linux with the menu button drawn
+/// as `menu` says: every part shows, the menu button, the cursors' well, the jobs spinner
+/// and the save warning, with », and 24 points of the panel are empty, counted on both
+/// sides of the well together.
+fn at_500(
+    locale: Locale,
+    menu: Option<MenuButtonStyle>,
+    entries: fn(&egui::Context) -> Vec<ToolbarEntry>,
+) {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(500.0, 120.0))
+        .with_context_setup(move |ctx| {
+            install(ctx);
+            apertrust_ui::set_locale(ctx, locale);
+        })
+        .build_ui(move |ui| {
+            let jobs = [Job::new(
+                1,
+                JobPhase::Running,
+                JobMessage::new("job-thumbnails"),
+            )];
+            let bar = Toolbar::new()
+                .entries(entries(ui.ctx()))
+                .saved(SaveState::Failed("disk full"))
+                .jobs(Jobs::new(&jobs))
+                .start_inset(if menu.is_some() { 0.0 } else { 78.0 })
+                .title_bar(true)
+                .menu_button(menu.is_some())
+                .menu_button_style(menu.unwrap_or_default())
+                .caption_buttons(menu.is_some());
+            with_well(0, |well| bar.cursors(well).show(ui));
+        });
+    harness.run();
+    let words = Translator::new(locale);
+    let at = format!("{locale:?}, {menu:?}");
+    for id in ["toolbar-more", "jobs-name", "status-not-saved"] {
+        let name = words.text(id);
+        assert!(harness.query_by_label(&name).is_some(), "{at}: {name}");
+    }
+    let menu_name = words.text("toolbar-menu");
+    let menu_button = harness.query_by_role_and_label(Role::Button, &menu_name);
+    assert_eq!(menu_button.is_some(), menu.is_some(), "{at}");
+    let well = harness.get_by_role(Role::RadioGroup).rect();
+    let buttons: Vec<egui::Rect> = (harness.query_all_by_role(Role::Button))
+        .map(|node| node.rect())
+        .filter(|rect| !rect.intersects(well))
+        .collect();
+    let before = (buttons.iter())
+        .filter(|rect| rect.right() <= well.left())
+        .map(|rect| rect.right())
+        .fold(f32::MIN, f32::max);
+    let after = (buttons.iter())
+        .filter(|rect| rect.left() >= well.right())
+        .map(|rect| rect.left())
+        .fold(f32::MAX, f32::min);
+    let empty = (well.left() - before) + (after - well.right());
+    assert!(empty >= 24.0, "{at}: {empty} points empty");
+}
+
 /// The widths `docs/gui.md`'s Narrowing table gives, each step's start as the window
-/// narrows: on the Mac in each language, and on Linux with either menu button.
+/// narrows: on the Mac in each language, and on Linux with either menu button. And at
+/// 500 points, in every language, both platforms' defaults and a list with every part
+/// placed fold no part and keep 24 points empty.
 #[test]
 fn the_toolbar_folds_where_gui_md_says() {
     for (locale, menu, expected) in [
-        (Locale::EnGb, None, [755, 599, 399]),
-        (Locale::EnGb, Some(MenuButtonStyle::Icon), [880, 724, 524]),
-        (Locale::EnGb, Some(MenuButtonStyle::Menu), [869, 713, 513]),
-        (Locale::Uk, None, [809, 626, 399]),
-        (Locale::Pl, None, [808, 614, 399]),
+        (Locale::EnGb, None, [755, 599, 591, 585, 489, 457, 399]),
+        (
+            Locale::EnGb,
+            Some(MenuButtonStyle::Icon),
+            [880, 724, 716, 710, 614, 582, 524],
+        ),
+        (
+            Locale::EnGb,
+            Some(MenuButtonStyle::Menu),
+            [869, 713, 705, 699, 603, 571, 513],
+        ),
+        (Locale::Uk, None, [809, 626, 618, 612, 516, 484, 399]),
+        (Locale::Pl, None, [808, 614, 606, 600, 504, 472, 399]),
     ] {
         let measured = fold_widths(locale, menu);
         assert_eq!(measured, expected, "{locale:?}, {menu:?}");
+    }
+    let defaults: fn(&egui::Context) -> Vec<ToolbarEntry> = |ctx| toolbar_entries(ctx, &[]);
+    for locale in Locale::ALL {
+        for menu in [
+            None,
+            Some(MenuButtonStyle::Icon),
+            Some(MenuButtonStyle::Menu),
+        ] {
+            at_500(locale, menu, defaults);
+            at_500(locale, menu, every_part);
+        }
     }
 }
 
@@ -488,7 +650,7 @@ fn saving_never_moves_the_fold() {
             },
             SaveState::Saved,
         );
-    // Whether Import has its words, whether ⋯ shows, and whether Undo is out of it.
+    // Whether Import has its words, whether » shows, and whether Undo is out of it.
     let fold = |h: &Harness<'_, SaveState<'static>>| {
         (
             h.query_by_label("Import…")
@@ -1317,6 +1479,49 @@ fn the_toolbar_draws_its_entries_in_their_order() {
     harness.get_by_label("Settings…").click();
     harness.run();
     assert_eq!(harness.state().actions, [ToolbarAction::Button("settings")]);
+}
+
+/// A tool's items go under » before the app's own, wherever they stand (decision 92): with
+/// Open, the app's, after Reset, a tool's, Reset still goes first; Copy edit and Reset
+/// together, since » takes the first one's room, then Open, then Import….
+#[test]
+fn a_tool_s_items_fold_before_the_app_s_own() {
+    let button = |id: &'static str, tool: bool| {
+        ToolbarEntry::Button(ToolbarButton::new(id, Icon::Settings, id).folds_first(tool))
+    };
+    let mut harness = listed(vec![
+        button("import", false),
+        button("reset", true),
+        button("open", false),
+        button("copy-edit", true),
+        ToolbarEntry::FlexibleSpace,
+        ToolbarEntry::Cursors,
+        ToolbarEntry::FlexibleSpace,
+        ToolbarEntry::SaveState,
+    ]);
+    let ids = ["import", "reset", "open", "copy-edit"];
+    let mut gone: Vec<Vec<&str>> = Vec::new();
+    let mut last = ids.to_vec();
+    for width in (100..=1000).rev() {
+        harness.set_size(egui::vec2(width as f32, 120.0));
+        harness.run();
+        let now: Vec<&str> = (ids.iter().copied())
+            .filter(|id| harness.query_by_label(id).is_some())
+            .collect();
+        let went: Vec<&str> = last
+            .iter()
+            .copied()
+            .filter(|id| !now.contains(id))
+            .collect();
+        if !went.is_empty() {
+            gone.push(went);
+        }
+        last = now;
+    }
+    assert_eq!(
+        gone,
+        [vec!["reset", "copy-edit"], vec!["open"], vec!["import"]]
+    );
 }
 
 /// With no menu button listed, the menus hang from the panel's start, where it would
