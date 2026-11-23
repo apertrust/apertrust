@@ -1518,10 +1518,12 @@ struct App {
 }
 
 /// What the Toolbar asked for this frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum FromToolbar {
     /// A registry action, from its button.
     Action(ActionId),
+    /// The toolbar menu, asked for anywhere on the Toolbar (decision 92).
+    Menu(ToolbarAsked),
     /// Something of the window's, from the panel's empty areas where it is the title bar.
     Window(TitleBar),
     /// The jobs spinner was pressed: the jobs window opens, or comes to the front.
@@ -1537,13 +1539,23 @@ enum FromToolbar {
     ShowLastPick(bool),
 }
 
+/// Where the toolbar menu was asked for (decision 92): where it hangs from, the pointer or
+/// under the button its keys were pressed on, and that button, which the focus goes back to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ToolbarAsked {
+    at: egui::Pos2,
+    opener: Option<egui::Id>,
+}
+
 /// What the Toolbar's empty areas, and its caption buttons where it draws them, ask of
 /// the window where the panel is its title bar. Close is the Quit action's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TitleBar {
     Move,
     DoubleClick,
-    /// A right-click: the window's menu, where the system has one.
+    /// A right-click on the start window's strip or the Toolbar's menu button: the window's
+    /// menu, where the system has one. The rest of the Toolbar's right-click is the toolbar
+    /// menu's (decision 92).
     Menu,
     Minimise,
     MaximiseOrRestore,
@@ -1698,10 +1710,11 @@ fn reaches_under_modal(input: &egui::RawInput) -> bool {
 
 /// Does what the Toolbar's empty areas or its caption buttons asked of the window, as its
 /// title bar would, after the frame: a drag moves it, a double-click does what the
-/// system's setting says, a right-click opens the window's menu where the pointer is, and
-/// the buttons minimise it, or maximise or restore it. The platform zooms the window from
-/// its run loop, not within the frame, so each step of the animation is drawn
-/// (`apertrust_display::zoom_window`); elsewhere egui's `Maximized` does.
+/// system's setting says, a right-click on the start window's strip or the Toolbar's menu
+/// button opens the window's menu where the pointer is, and the buttons minimise it, or
+/// maximise or restore it. The platform zooms the window from its run loop, not within the
+/// frame, so each step of the animation is drawn (`apertrust_display::zoom_window`);
+/// elsewhere egui's `Maximized` does.
 fn run_title_bar(gesture: TitleBar, ctx: &egui::Context, window: &mut impl WindowControl) {
     let maximise_or_restore = || {
         let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
@@ -3327,6 +3340,7 @@ impl Shell {
             modal: self.about.is_open(),
             dialog_window: false,
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
+            toolbar_labels: self.toolbar_labels,
             panel_tab: self.panel_tab,
             workspace: actions::workspace(&self.workspace.id),
             workspace_given: self.workspace_given,
@@ -3540,6 +3554,10 @@ impl Shell {
             ToolbarAction::MoveWindow => window(TitleBar::Move),
             ToolbarAction::TitleBarDoubleClick => window(TitleBar::DoubleClick),
             ToolbarAction::WindowMenu => window(TitleBar::Menu),
+            ToolbarAction::ContextMenu(menu) => Some(FromToolbar::Menu(ToolbarAsked {
+                at: menu.at,
+                opener: menu.opener,
+            })),
             ToolbarAction::Minimise => window(TitleBar::Minimise),
             ToolbarAction::MaximiseOrRestore => window(TitleBar::MaximiseOrRestore),
             // Closing the window quits, through the app's way out.
@@ -3812,6 +3830,7 @@ impl Shell {
             Intent::DiscardHistory => self.discard_history = true,
             Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
             Intent::Menu => self.menu = true,
+            Intent::ToolbarLabels => self.toolbar_labels = !self.toolbar_labels,
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
             Intent::HiddenTab => {
@@ -7563,6 +7582,31 @@ fn browser_menu(
     context_popup(ctx, id, opened, keymap, state, None)
 }
 
+/// The toolbar menu (decision 92; `menus::Place::Toolbar`), asked for this frame by `asked`
+/// anywhere on the Toolbar, built from `keymap` and `state` and drawn while open; returns the
+/// action of the item chosen in it.
+fn toolbar_menu(
+    ctx: &egui::Context,
+    asked: Option<ToolbarAsked>,
+    keymap: &Keymap,
+    state: &State,
+) -> Option<ActionId> {
+    let opened = asked.map(|asked| Opened {
+        place: menus::Place::Toolbar,
+        target: menus::Target::App,
+        anchor: egui::Rect::from_min_size(asked.at, egui::Vec2::ZERO),
+        opener: asked.opener,
+    });
+    context_popup(
+        ctx,
+        egui::Id::unique("toolbar menu"),
+        opened,
+        keymap,
+        state,
+        None,
+    )
+}
+
 /// What a context menu opened with: its place and target, where it hangs from, and the
 /// control the focus goes back to as it closes, if not what had it.
 #[derive(Clone, Copy, Debug)]
@@ -7732,9 +7776,11 @@ impl eframe::App for App {
         let said_at = toolbar.response.rect.left_bottom();
         cursors::turned_region(ui, said_at, self.shell.cursors.turned());
         let mut window = None;
+        let mut toolbar_asked = None;
         match toolbar.inner {
             Some(FromToolbar::Action(id)) => run.push(id),
             Some(FromToolbar::Window(gesture)) => window = Some(gesture),
+            Some(FromToolbar::Menu(asked)) => toolbar_asked = Some(asked),
             Some(FromToolbar::Jobs) => {
                 let place = self.shell.jobs_window;
                 let view = &self.jobs_view;
@@ -7753,6 +7799,12 @@ impl eframe::App for App {
             Some(FromToolbar::ShowLastPick(on)) => self.shell.cursors.show_last = on,
             None => {}
         }
+        run.extend(toolbar_menu(
+            &ctx,
+            toolbar_asked,
+            &self.shell.keymap,
+            &drawn,
+        ));
         // The Tools panel is as wide as its edge was dragged, a drag in progress included.
         // While the edge moves, the photo's size is held as it is while the window resizes.
         let edge_name = tr(&ctx, "tools-panel-width");
@@ -21776,9 +21828,11 @@ mod tests {
                             .toolbar(ui, &state, SaveState::None, title_bar, caption, &[])
                     });
                     let mut window = None;
+                    let mut asked = None;
                     match top.inner {
                         Some(FromToolbar::Action(id)) => run.push(id),
                         Some(FromToolbar::Window(gesture)) => window = Some(gesture),
+                        Some(FromToolbar::Menu(menu)) => asked = Some(menu),
                         Some(FromToolbar::Cursor(cursor)) => {
                             bench.shell.choose_cursor(cursor, &ctx)
                         }
@@ -21791,6 +21845,7 @@ mod tests {
                         Some(FromToolbar::ShowLastPick(on)) => bench.shell.cursors.show_last = on,
                         Some(FromToolbar::Jobs | FromToolbar::NotSaved) | None => {}
                     }
+                    run.extend(toolbar_menu(&ctx, asked, &bench.shell.keymap, &state));
                     let name = tr(&ctx, "tools-panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
                     let width = edge.width(&ctx);
@@ -22166,7 +22221,7 @@ mod tests {
     }
 
     #[test]
-    fn the_caption_buttons_and_a_right_click_ask_the_window() {
+    fn the_caption_buttons_ask_the_window() {
         let mut harness = bench(OperatingSystem::Nix);
         harness.state_mut().title_bar = Some(0.0);
         harness.state_mut().caption = Some(false);
@@ -22193,9 +22248,82 @@ mod tests {
         harness.run_steps(30);
         assert!(harness.query_by_label("Maximise").is_none());
         harness.get_by_role_and_label(Role::Button, "Restore");
+    }
 
-        // A right-click on an empty area opens the window's menu where it was let go, in
-        // physical pixels.
+    /// Decision 92: a right-click on the Toolbar's empty area opens the toolbar menu, never
+    /// the window's, which stays on the system's own key; its Toolbar Labels turns the
+    /// labels off, and on again, at once, and Customise Toolbar… is drawn disabled.
+    #[test]
+    fn a_right_click_on_the_toolbar_opens_the_toolbar_menu_and_never_the_window_s() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.state_mut().caption = Some(false);
+        harness.run();
+        assert!(harness.state().shell.toolbar_labels);
+        for on in [false, true] {
+            let empty = empty_point(&harness);
+            let right = |pressed| egui::Event::PointerButton {
+                pos: empty,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            };
+            harness.run_steps(30);
+            frame(
+                &mut harness,
+                [egui::Event::PointerMoved(empty), right(true), right(false)],
+            );
+            harness.run();
+            assert!(harness.state().system.menus.is_empty());
+            let customise = harness.get_by_label("Customise toolbar…");
+            assert!(customise.accesskit_node().is_disabled());
+            harness
+                .get_by_role_and_label(Role::MenuItemCheckBox, "Toolbar labels")
+                .click();
+            harness.run();
+            assert_eq!(harness.state().shell.toolbar_labels, on);
+        }
+    }
+
+    /// Decision 92: a right-click on the menu button opens the window's menu where it was
+    /// let go, in physical pixels, as a title bar's icon does, never the toolbar menu.
+    #[test]
+    fn a_right_click_on_the_menu_button_opens_the_window_s_menu() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.run();
+        let menu = harness
+            .get_by_role_and_label(Role::Button, "Menu")
+            .rect()
+            .center();
+        let right = |pressed| egui::Event::PointerButton {
+            pos: menu,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        harness.run_steps(30);
+        frame(
+            &mut harness,
+            [egui::Event::PointerMoved(menu), right(true), right(false)],
+        );
+        harness.run();
+        let ppp = harness.ctx.pixels_per_point();
+        assert_eq!(harness.state().system.menus, vec![menu * ppp]);
+        assert!(harness.query_by_label("Customise toolbar…").is_none());
+    }
+
+    /// The toolbar menu is an open list to Esc while a picker is on (decision 104): the
+    /// first Esc closes the menu and leaves the picker on, the next ends it.
+    #[test]
+    fn esc_closes_the_toolbar_menu_before_it_ends_a_picker() {
+        let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.state_mut().caption = Some(false);
+        harness.run();
+        spot_on(&mut harness);
+        offs(&mut harness);
         let empty = empty_point(&harness);
         let right = |pressed| egui::Event::PointerButton {
             pos: empty,
@@ -22208,8 +22336,17 @@ mod tests {
             &mut harness,
             [egui::Event::PointerMoved(empty), right(true), right(false)],
         );
-        let ppp = harness.ctx.pixels_per_point();
-        assert_eq!(harness.state().system.menus, vec![empty * ppp]);
+        harness.run();
+        assert!(harness.query_by_label("Customise toolbar…").is_some());
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.query_by_label("Customise toolbar…").is_none());
+        assert_eq!(offs(&mut harness), 0);
+        assert_eq!(chosen(&harness), SPOT);
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(offs(&mut harness), 1);
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
     }
 
     #[test]

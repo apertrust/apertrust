@@ -21,8 +21,8 @@
 use apertrust_ui::components::{
     Browser, BrowserAction, CursorWell, CursorWellAction, Job, JobMessage, JobPhase, Jobs, Margin,
     MenuButtonStyle, PanelEdge, PanelEdgeAction, PhotoCaption, PhotoFrame, SaveState, Thumb,
-    Toggle, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ViewerBar, ViewerBarAction,
-    WellCursor, WellGroup, WellSetting, Zoom,
+    Toggle, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ToolbarMenu, ViewerBar,
+    ViewerBarAction, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use apertrust_ui::gallery::toolbar_entries;
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
@@ -1265,6 +1265,17 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
         egui::pos2(well.right() + 40.0, well.center().y),
     );
     assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow]);
+    // A right-click on it, between its faces too, asks for the toolbar menu on the well,
+    // the list's eleventh entry (decision 92).
+    for at in [between, select.center()] {
+        harness.state_mut().clear();
+        right_click(&mut harness, at);
+        let menu = match harness.state()[..] {
+            [ToolbarAction::ContextMenu(menu)] => menu,
+            ref other => panic!("{other:?}"),
+        };
+        assert_eq!(menu.entry, Some(10));
+    }
 }
 
 /// The Toolbar with Phase 2's well, Select chosen, at a full window's width, in the
@@ -1321,26 +1332,110 @@ fn right_click(harness: &mut Harness<'_, Vec<ToolbarAction>>, pos: egui::Pos2) {
     harness.run();
 }
 
+/// The toolbar menu each action of `harness` asked for: the entry it was asked on, where it
+/// hangs from, and the control the focus goes back to.
+fn menus_asked(
+    harness: &Harness<'_, Vec<ToolbarAction>>,
+) -> Vec<(Option<usize>, Pos2, Option<egui::Id>)> {
+    (harness.state().iter())
+        .map(|action| match action {
+            ToolbarAction::ContextMenu(menu) => (menu.entry, menu.at, menu.opener),
+            other => panic!("{other:?} is no toolbar menu"),
+        })
+        .collect()
+}
+
+/// Decision 92: a right-click anywhere on the Toolbar asks for the toolbar menu, title bar
+/// or not: on an empty area with no entry, on a button, enabled or not, with its place in
+/// the list, at the pointer. It presses nothing, and never asks for the window's menu.
 #[test]
-fn a_right_click_on_the_empty_areas_asks_for_the_window_s_menu() {
+fn a_right_click_anywhere_asks_for_the_toolbar_menu_with_what_is_under_it() {
+    for on in [true, false] {
+        let mut harness = title_bar(on, 0.0);
+        harness.run();
+        let empty = empty_point(&harness);
+        right_click(&mut harness, empty);
+        assert_eq!(menus_asked(&harness), vec![(None, empty, None)], "{on}");
+        harness.state_mut().clear();
+        // The list's places, the menu button first.
+        let buttons = [("Import…", 1), ("Reset", 3), ("Undo", 4), ("Apply edit", 8)];
+        for (name, _) in buttons {
+            let control = harness.get_by_label(name).rect().center();
+            right_click(&mut harness, control);
+        }
+        let entries: Vec<Option<usize>> = (menus_asked(&harness).iter())
+            .map(|(entry, _, _)| *entry)
+            .collect();
+        let expected: Vec<Option<usize>> = buttons.iter().map(|(_, at)| Some(*at)).collect();
+        assert_eq!(entries, expected, "{on}");
+    }
+}
+
+/// Decision 92: the menu key or Shift+F10 on a focused button asks for the toolbar menu on
+/// it, under it, the focus going back to it as it closes, as does a screen reader's
+/// ShowContextMenu, which each button offers.
+#[test]
+fn the_menu_keys_on_a_focused_button_ask_for_the_toolbar_menu_on_it() {
     let mut harness = title_bar(true, 0.0);
     harness.run();
-    let empty = empty_point(&harness);
-    right_click(&mut harness, empty);
-    assert_eq!(*harness.state(), vec![ToolbarAction::WindowMenu]);
-    // On a control, enabled or not, it is not the title bar's, and it clicks nothing.
-    harness.state_mut().clear();
-    for name in ["Import…", "Reset", "Undo", "Apply edit"] {
-        let control = harness.get_by_label(name).rect().center();
-        right_click(&mut harness, control);
+    harness.get_by_label("Undo").focus();
+    harness.run();
+    let undo = harness.get_by_label("Undo");
+    let under = undo.rect().left_bottom();
+    let (undo_id, _) = undo.accesskit_node().locate();
+    for (modifiers, key) in [(Modifiers::NONE, Key::Menu), (Modifiers::SHIFT, Key::F10)] {
+        harness.state_mut().clear();
+        harness.key_press_modifiers(modifiers, key);
+        harness.run();
+        let asked = menus_asked(&harness);
+        assert_eq!(asked.len(), 1, "{key:?}");
+        let (entry, at, opener) = asked[0];
+        assert_eq!((entry, at), (Some(4), under), "{key:?}");
+        let opener = opener.map(|id| id.accesskit_id());
+        assert_eq!(
+            opener,
+            Some(undo_id),
+            "{key:?}: the focus goes back to Undo"
+        );
     }
-    assert!(harness.state().is_empty());
-    // Nor where the panel is not the title bar.
-    let mut plain = title_bar(false, 0.0);
-    plain.run();
-    let empty = empty_point(&plain);
-    right_click(&mut plain, empty);
-    assert!(plain.state().is_empty());
+    let node = harness.get_by_label("Reset").accesskit_node();
+    let show = egui::accesskit::Action::ShowContextMenu;
+    assert!(node.data().supports_action(show), "Reset offers its menu");
+}
+
+/// Decision 91: on the Mac a Control-click on a button asks for the toolbar menu, as a
+/// right-click does, and presses nothing.
+#[test]
+fn a_control_click_on_the_mac_asks_for_the_toolbar_menu() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1200.0, 120.0))
+        .with_os(egui::os::OperatingSystem::Mac)
+        .with_context_setup(install)
+        .build_ui_state(
+            |ui, actions: &mut Vec<ToolbarAction>| {
+                let bar = Toolbar::new().entries(toolbar_entries(ui.ctx(), &[]));
+                actions.extend(bar.title_bar(true).show(ui));
+            },
+            Vec::new(),
+        );
+    harness.run();
+    let reset = harness.get_by_label("Reset").rect().center();
+    harness.run_steps(30);
+    harness.hover_at(reset);
+    let control = Modifiers {
+        ctrl: true,
+        ..Modifiers::NONE
+    };
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos: reset,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: control,
+        });
+    }
+    harness.run();
+    assert_eq!(menus_asked(&harness), vec![(Some(3), reset, None)]);
 }
 
 /// The title bar with the window's caption buttons, the window maximised or not.
@@ -1549,8 +1644,18 @@ struct Listed {
 /// The Toolbar 1000 points wide drawn from `entries`, as the title bar and with the menus
 /// drawn, as on Windows and Linux, and Phase 2's cursors' well.
 fn listed(entries: Vec<ToolbarEntry>) -> Harness<'static, Listed> {
+    listed_on(entries, 1000.0, egui::os::OperatingSystem::Nix)
+}
+
+/// [`listed`]'s Toolbar `width` points wide, on `os`.
+fn listed_on(
+    entries: Vec<ToolbarEntry>,
+    width: f32,
+    os: egui::os::OperatingSystem,
+) -> Harness<'static, Listed> {
     Harness::builder()
-        .with_size(egui::vec2(1000.0, 120.0))
+        .with_size(egui::vec2(width, 120.0))
+        .with_os(os)
         .with_step_dt(1.0 / 60.0)
         .with_context_setup(install)
         .build_ui_state(
@@ -1573,6 +1678,57 @@ fn listed(entries: Vec<ToolbarEntry>) -> Harness<'static, Listed> {
                 actions: Vec::new(),
             },
         )
+}
+
+/// Decision 92: a right-click on the menu button asks for the window's menu, never the
+/// toolbar menu; a right-click beside it, and Shift+F10 or the Menu key on it, still ask for
+/// the toolbar menu.
+#[test]
+fn a_right_click_on_the_menu_button_asks_for_the_window_s_menu() {
+    let mut harness = listed(vec![ToolbarEntry::MenuButton, settings()]);
+    harness.run();
+    let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    right_click_listed(&mut harness, menu.center());
+    assert_eq!(harness.state().actions, [ToolbarAction::WindowMenu]);
+    harness.state_mut().actions.clear();
+    right_click_listed(&mut harness, menu.right_center() + egui::vec2(60.0, 0.0));
+    assert!(matches!(
+        harness.state().actions[..],
+        [ToolbarAction::ContextMenu(ToolbarMenu { entry: None, .. })]
+    ));
+    for (modifiers, key) in [(Modifiers::NONE, Key::Menu), (Modifiers::SHIFT, Key::F10)] {
+        harness.get_by_role_and_label(Role::Button, "Menu").focus();
+        harness.run();
+        harness.state_mut().actions.clear();
+        harness.key_press_modifiers(modifiers, key);
+        harness.run();
+        assert!(
+            matches!(
+                harness.state().actions[..],
+                [ToolbarAction::ContextMenu(ToolbarMenu {
+                    entry: Some(0),
+                    ..
+                })]
+            ),
+            "{key:?}: {:?}",
+            harness.state().actions
+        );
+    }
+}
+
+/// A right-click at `pos` on [`listed`]'s Toolbar, as a press and a release.
+fn right_click_listed(harness: &mut Harness<'_, Listed>, pos: egui::Pos2) {
+    harness.run_steps(30);
+    harness.hover_at(pos);
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos,
+            button: PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+    }
+    harness.run();
 }
 
 /// A button of the app's own that is in no default, Settings….
@@ -1728,6 +1884,98 @@ fn with_no_jobs_the_spinner_shows_while_a_failed_job_is_left() {
     harness.get_by_role_and_label(Role::Button, &name).click();
     harness.run();
     assert_eq!(harness.state().actions, [ToolbarAction::Jobs]);
+}
+
+/// Decision 92: the menu keys on the focused spinner, or on a focused face or chevron of the
+/// cursors' well, ask for the toolbar menu on that entry, so Hide reaches them from the keys.
+#[test]
+fn the_menu_keys_on_the_spinner_and_the_well_ask_for_the_toolbar_menu_on_them() {
+    let entries = vec![
+        settings(),
+        ToolbarEntry::Cursors,
+        ToolbarEntry::FlexibleSpace,
+        ToolbarEntry::Jobs,
+    ];
+    let mut harness = listed(entries);
+    let job = Job::new(1, JobPhase::Running, JobMessage::new("job-thumbnails"));
+    harness.state_mut().jobs = vec![job];
+    harness.run();
+    let jobs = Translator::new(Locale::EnGb).text("jobs-name");
+    // Each reached as the keys reach it: the spinner by itself, the well's face by Tab from
+    // Settings…, its chevron by → from the face.
+    let reach = |harness: &mut Harness<'_, Listed>, name: &str| {
+        if name == jobs {
+            harness.get_by_label(name).focus();
+            harness.run();
+            return;
+        }
+        harness.get_by_label("Settings…").focus();
+        harness.run();
+        harness.key_press(Key::Tab);
+        harness.run();
+        for _ in 0..6 {
+            if harness.get_by_label(name).accesskit_node().is_focused() {
+                return;
+            }
+            harness.key_press(Key::ArrowRight);
+            harness.run();
+        }
+        panic!("{name} never takes the focus");
+    };
+    for (name, entry) in [
+        (jobs.as_str(), 3),
+        ("Select, Esc", 1),
+        ("Pick cursors and settings", 1),
+    ] {
+        for (modifiers, key) in [(Modifiers::NONE, Key::Menu), (Modifiers::SHIFT, Key::F10)] {
+            reach(&mut harness, name);
+            harness.state_mut().actions.clear();
+            harness.key_press_modifiers(modifiers, key);
+            harness.run();
+            let menus: Vec<Option<usize>> = (harness.state().actions.iter())
+                .filter_map(|action| match action {
+                    ToolbarAction::ContextMenu(menu) => Some(menu.entry),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(menus, [Some(entry)], "{key:?} on {name}");
+        }
+    }
+}
+
+/// Decision 91: on the Mac a Control-click on » or on a chevron of the well opens its own
+/// menu alone, never the toolbar menu too.
+#[test]
+fn a_control_click_on_more_or_a_chevron_opens_its_own_menu_alone() {
+    let mut harness = listed_on(
+        toolbar_entries(&egui::Context::default(), &[]),
+        500.0,
+        egui::os::OperatingSystem::Mac,
+    );
+    harness.run();
+    let control = Modifiers {
+        ctrl: true,
+        ..Modifiers::NONE
+    };
+    for name in ["More actions", "Pick cursors and settings"] {
+        let at = harness.get_by_label(name).rect().center();
+        harness.run_steps(30);
+        harness.hover_at(at);
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: control,
+            });
+        }
+        harness.run();
+        let toolbar_menu = (harness.state().actions.iter())
+            .any(|action| matches!(action, ToolbarAction::ContextMenu(_)));
+        assert!(!toolbar_menu, "{name}: {:?}", harness.state().actions);
+        harness.key_press(Key::Escape);
+        harness.run();
+    }
 }
 
 /// With nothing listed, the whole panel is empty area: it takes a double-click and a drag
