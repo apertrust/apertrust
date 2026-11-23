@@ -34,22 +34,40 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 | Kind | Ids | How many |
 | --- | --- | --- |
 | Parts | `menu-button` (Windows and Linux, drawn as the app's icon or ☰ as the setting Menu button says, [0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), `jobs`, `save-state`, `assistant` (Phase 6), and `cursors`, the whole well of cursors, every group in it ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | One each |
-| The app's actions | A registry action that is pressed or toggled and has an icon: Import…, Export…, Export Again, Cull, Reset, Undo, Redo, Copy edit, Apply edit, Copy or Apply Parts…, Open…, Open Folder…, Before and After, Clipping Warnings, Zoom to 100%, Zoom to Fit, Full Screen, Jobs, Collections, Show in Folder, Next Photo, Previous Photo, Settings… | One each |
-| Tools' actions | A processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or the registry action a utility names, as History's `reset`, that its tool offers for the toolbar; the item's id is the action's | One each |
+| The app's actions | Only actions that belong to no tool, pressed or toggled, to which the registry gives an icon: Open…, Open Folder…, Settings…, Full Screen, Zoom to 100%, Zoom to Fit, Jobs (`show-jobs`), Next Photo and Previous Photo; Cull, Before and After, Clipping Warnings and Show in Folder as their actions are built. Import… is here until the Import tool, which then declares it | One each |
+| Tools' actions | A tool's own items, which it declares (Tools' items, below): a processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or a utility's registry action, as History's `undo`; the item's id is the action's | One each |
 | Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
 
 - **Never placeable:** hold actions (H), focus moves (F6), the members of a set (the backgrounds, the workspaces), and the platform's own items.
 - **No separator line:** groups are told apart by space alone.
 - **Parts' ids are their own.** A test fails if a part's id is a registry action's id, as `menu-button` is not the `menu` action.
 
-**Tools' items.**
+**Tools' items.** An action that belongs to a tool is offered for the toolbar by that tool, in its definition, so a tool's buttons travel with it, a third-party tool's included; only actions that belong to no tool are the app's.
 
 - A tool offers actions with `ToolDefinition::toolbar: &'static [ToolbarItem]`, in the parent every tool's definition embeds, a processing tool's and a utility's alike ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)), where `ToolbarItem { action, icon }`:
-  - `action` names one of its own actions, as its menu items do, or for a utility a registry action;
-  - `icon` names one of `apertrust-ui`'s icons, or is none for a `Row::Buttons` action, which takes its button's icon.
-- The definition's check refuses an unknown action, a repeat and more than two items for a tool. An app test fails on an icon name `apertrust-ui` does not have.
+  - `action`, for a processing tool, names one of its own actions as its menu items do, `rotate_ccw`, which the registry holds as `tool-<tool>-<action>`; for a utility, the registry action it names, as History's `reset` in its menus;
+  - `icon` names one of `apertrust-ui`'s icons, `export`, or is none for a `Row::Buttons` action, which takes its button's icon.
+- The definition's check refuses an empty action, an action a processing tool does not have, the same action twice, no icon on an action that is no `Row::Buttons` button's, a utility's always, and more than two items on a processing tool; a utility has no limit. App tests fail on a declared action the registry does not hold and on an icon name `apertrust-ui` does not have.
 - Offering an action only makes it a candidate: it is on the toolbar only where a person places it.
-- The first items: Orientation's Rotate 90° anticlockwise and Rotate 90° clockwise.
+- The app lists every candidate in one stable order, the parts, the app's own actions, every tool's items in the tools' order, then `space` and `flexible-space`, each with its id, its kind, its icon and its words' id: the Toolbar draws from that list and the Customise Toolbar window lists it.
+
+The items declared:
+
+| Item | Id | Declared by | Icon |
+| --- | --- | --- | --- |
+| Export… | `export` | Export | `export` |
+| Export Again | `export-again` | Export | `export` |
+| Reset | `reset` | History | `reset` |
+| Undo | `undo` | History | `undo` |
+| Redo | `redo` | History | `redo` |
+| Copy edit | `copy-edit` | History | `copy` |
+| Apply edit | `apply-edit` | History | `apply` |
+| Copy or Apply Parts… | `copy-apply-parts` | History | `copy` |
+| Collections | `show-collections` | Collections | `library` |
+| Rotate 90° anticlockwise | `tool-flip-rotate_ccw` | Orientation | its button's, `rotate-left` |
+| Rotate 90° clockwise | `tool-flip-rotate_cw` | Orientation | its button's, `rotate-right` |
+
+The app's own, with the icons the registry gives them: `import` (`import`, until the Import tool), `open` (`photo`), `open-folder` (`folder-open`), `settings` (`settings`), `full-screen` (`maximise`), `zoom-100` (`zoom-in`), `zoom-fit` (`zoom-out`), `show-jobs` (`process`), `next-photo` (`chevron`) and `previous-photo` (`back`).
 
 **Guards.** A status part can be hidden only in its quiet states, and what it guards still works:
 
@@ -164,7 +182,9 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **The word beside its icon,** 6 points after it at the body's size. Each item is wider, so the bar folds sooner, and it reads unlike the Tools panel's tab names, which sit under their icons.
 - **A setting for the word's place, under or beside.** Two looks double the fold widths, their tests and the snapshots in every language for little gain; the Tools panel's tab names have one look.
 - **Icons alone by default.** The words help a person new to the app, as the Tools panel's tab names, on by default, do; they are the first thing to fold as the window narrows, and the tooltips keep them.
-- **Tools' items without a limit.** The overflow and the bar would fill with one tool's buttons.
+- **Processing tools' items without a limit.** The overflow and the bar would fill with one tool's buttons.
+- **A utility held to two items as well.** History owns six of the actions people use on every photo, Reset, Undo, Redo, Copy edit, Apply edit and Copy or Apply Parts…; a limit would leave some of them the app's, apart from the tool they belong to.
+- **The edit's actions kept the app's own,** Export… and Undo among them. An action would then be offered apart from its tool, and a third-party tool's buttons would work otherwise than a built-in one's.
 - **Separator lines between groups.** The Toolbar parts its groups by space, and a line on a title bar reads as a border.
 
 ## Consequences
@@ -175,17 +195,18 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the menu button may be hidden, never folds while shown, and F6 lands on the toolbar's first control.
 - **Decision 91:** the Toolbar is an app-only place, `Toolbar`, holding the toolbar menu.
 - **Decisions 83 and 96:** a workspace also holds its `toolbar` list, in its file.
-- **Decision 36:** a registry action may carry an icon, which makes it a candidate, and its message a `.toolbar` word.
+- **Decision 36:** a registry action that belongs to no tool may carry an icon, which makes it a candidate, and its message a `.toolbar` word.
 - **`apertrust-ui`:** `Toolbar` draws a list of items, with spaces, the overflow and labels, in place of its fixed parts, and » in place of ⋯ More actions. It knows parts and items only as plain data.
 - **The app:**
+  - the placeable set, the parts, the app's own actions, the tools' items and the spacings, which the Toolbar and the Customise Toolbar window read;
   - the list from the workspace in place of `TOOLBAR`;
   - the guards;
   - the toolbar menu;
   - `toolbar.labels` in the settings schema;
   - Show Menu Button in View › Panels on Windows and Linux;
   - the window's minimum width raised to what the toolbar never folds;
-  - the tests: of the overflow at 500 points, of the parts' ids, of the icon names and of the words' width.
+  - the tests: of the overflow at 500 points, of the parts' ids, of the declared actions and the icon names, and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
 - **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is a part of the list, `cursors`; until the list is built it is a fixed part of the built Toolbar in the same place, and the built narrowing folds the actions before it.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.
-- **The default changes:** Import…, Export…, Cull and Reset lose their words by default, labels being off, and the narrowing's thresholds change with it.
+- **The default changes:** every item shows its word under its icon by default, and the narrowing's thresholds change with it.
