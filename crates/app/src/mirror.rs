@@ -52,8 +52,8 @@ use std::time::{Duration, Instant};
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, OpenPreview,
-    Photo, PresetState, PreviewSource, Selection, SelectionCommand, SessionError, ToolState,
-    Values, ViewState,
+    Photo, PresetState, PreviewSource, ReadoutState, Selection, SelectionCommand, SessionError,
+    ToolState, Values, ViewState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -909,7 +909,8 @@ impl Ask {
 /// applied, and a choice lists every option. A preset row reads the option the defaults
 /// match and a view's coordinates are the tool's view of them, both on the no-photo
 /// image ([`PhotoState::image`]); a row whose tool cannot say reads Custom, and a view
-/// whose tool cannot is left out, as the session leaves it out. Whether each control's
+/// whose tool cannot is left out, as the session leaves it out; a readout is the tool's
+/// for the defaults on that image, none where it cannot say. Whether each control's
 /// row shows, and a value after its label, are the tool's on that image too (decision
 /// 88), so Exposure's camera rows, which no photo gives anything to do, are hidden.
 fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
@@ -966,6 +967,17 @@ fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
                 });
             }
         }
+        // Its readouts for the defaults, as the session will report them, so a row of
+        // pickers shows its text and swatch while the photo opens.
+        let readouts = (definition.readouts())
+            .map(|readout| ReadoutState {
+                id: readout.id,
+                readout: catch_unwind(AssertUnwindSafe(|| {
+                    tool.readout(readout.id, &defaults, &image)
+                }))
+                .unwrap_or_default(),
+            })
+            .collect();
         ToolState {
             tool: definition.tool.id,
             enabled: !definition.switched,
@@ -975,7 +987,7 @@ fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
             presets,
             views,
             computed: Vec::new(),
-            readouts: Vec::new(),
+            readouts,
         }
     });
     Values {

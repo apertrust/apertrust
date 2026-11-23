@@ -108,6 +108,7 @@ choice-option-unavailable = Недоступно для цього знімка
 
 collapsible-group-set = Змінено: { $count }
 collapsible-group-tip = { $group }: змінено { $count }
+collapsible-group-active = { $group } (активне)
 
 ## Рядок пресетів в інструменті, як Режим балансу білого
 

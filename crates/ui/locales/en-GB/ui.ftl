@@ -154,6 +154,9 @@ collapsible-group-set = { $count } set
 # The tooltip of a closed group while controls in it are set; $group is its title and
 # $count how many.
 collapsible-group-tip = { $group }: { $count } set
+# A collapsible group's title while its settings make what it holds act, as darktable's
+# "area color mapping (active)": $group its title.
+collapsible-group-active = { $group } (active)
 
 ## A preset row in a tool, whose options each write several of its controls, as White
 ## balance's Mode
