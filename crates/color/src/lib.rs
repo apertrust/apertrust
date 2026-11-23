@@ -245,16 +245,22 @@ pub fn xyz_to_lab_d50(xyz: [f32; 3]) -> [f32; 3] {
     [116.0 * fy - 16.0, 500.0 * (fx - fy), -200.0 * (fz - fy)]
 }
 
-/// darktable `dt_XYZ_to_sRGB`: XYZ with the D50 white to sRGB, its transfer function
-/// applied, unclipped, through darktable's Bradford-adapted D50 matrix
-/// (`xyz_to_srgb_transposed`), as darktable paints its pickers' patches.
-pub fn xyz_d50_to_srgb(xyz: [f32; 3]) -> [f32; 3] {
-    const XYZ_D50_TO_SRGB: Mat3 = [
+/// darktable `dt_XYZ_to_Rec709_D50`: XYZ with the D50 white to linear Rec709, through
+/// darktable's Bradford-adapted D50 matrix (`xyz_to_srgb_transposed`), unclipped.
+pub fn xyz_to_rec709_d50(xyz: [f32; 3]) -> [f32; 3] {
+    const XYZ_D50_TO_REC709: Mat3 = [
         [3.133_856_1, -1.616_866_7, -0.490_614_6],
         [-0.978_768_4, 1.916_141_5, 0.033_454],
         [0.071_945_3, -0.228_991_4, 1.405_242_7],
     ];
-    apply(&XYZ_D50_TO_SRGB, xyz).map(|c| {
+    apply(&XYZ_D50_TO_REC709, xyz)
+}
+
+/// darktable `dt_XYZ_to_sRGB`: XYZ with the D50 white to sRGB, its transfer function
+/// applied, unclipped, through [`xyz_to_rec709_d50`], as darktable paints its pickers'
+/// patches.
+pub fn xyz_d50_to_srgb(xyz: [f32; 3]) -> [f32; 3] {
+    xyz_to_rec709_d50(xyz).map(|c| {
         if c <= 0.003_130_8 {
             12.92 * c
         } else {
