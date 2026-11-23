@@ -27,7 +27,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - the Tools panel's tab bar, `Place::TabBar`, on a tab's icon or its empty end: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Processing Order and Workspace ▸'s Restore Defaults, the same items in the Tools panel's ⋮ (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md));
   - a layer (Phase 4), the scopes.
 - Another place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.
-- The Toolbar, `Toolbar`, is the app's alone: a right-click anywhere on it, an item or its empty areas, opens the toolbar menu, planned ([0092](0092-the-toolbar.md)), the system's window menu staying on the system's own key ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
+- The Toolbar, `Toolbar`, is the app's alone: a right-click anywhere on it, an item or its empty areas, opens the toolbar menu, built ([0092](0092-the-toolbar.md)), the system's window menu staying on the system's own key and on the menu button's right-click ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
 
 **A tool takes no right-click.**
 

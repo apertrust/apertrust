@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but Show Menu Button and the assistant's, the overflow but the window's minimum width, and the labels with their setting. Planned: Phase 3 builds its menu and that minimum width; the Customise Toolbar window comes much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow but the window's minimum width, the labels with their setting, and the toolbar menu with View › Panels' items. Planned: Phase 3 builds that minimum width; the Customise Toolbar window comes much later.
 
 ### The list and its defaults
 
@@ -90,7 +90,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 ### The toolbar menu
 
-**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, on every platform, as does Shift+F10 or the Menu key on a focused item. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
+**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, the caption buttons and the menu button apart, on every platform, as does Shift+F10 or the Menu key on a focused item, the menu button's included. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
 
 1. Hide "Undo", on an item;
 2. Show Menu Button, while the menu button is hidden;
@@ -100,7 +100,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 **Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens while the menu button is hidden. Show Menu Button is there on Windows and Linux only, the Mac never showing the menu button. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
 
-**The system's window menu** is no longer on a right-click on the toolbar on Windows and Linux. It stays on the system's own key, Alt+Space on Windows and GNOME; X11 still has none, and the Mac's conventions are unchanged.
+**The system's window menu** is no longer on a right-click on the toolbar's empty space on Windows and Linux. It stays on the system's own key, Alt+Space on Windows and GNOME, and on a right-click on the menu button while the toolbar is the title bar, as on a title bar's icon; X11 still has none, and the Mac's conventions are unchanged.
 
 ### Customising
 
@@ -190,7 +190,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 ## Consequences
 
 - **Decision 39:**
-  - a right-click on the Toolbar's empty areas opens the toolbar menu on every platform, and the system's window menu stays on the system's own key;
+  - a right-click on the Toolbar's empty areas opens the toolbar menu on every platform, and the system's window menu stays on the system's own key and on a right-click on the menu button;
   - `Toolbar` reports the right-click with what is under it;
   - the menu button may be hidden, never folds while shown, and F6 lands on the toolbar's first control.
 - **Decision 91:** the Toolbar is an app-only place, `Toolbar`, holding the toolbar menu.

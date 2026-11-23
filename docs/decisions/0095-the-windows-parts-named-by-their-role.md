@@ -122,7 +122,6 @@ Every identifier that names a part's old name follows its new name; "panel" alon
 | `apertrust` | `settings::CentralPanel` | `settings::Viewer` |
 | `apertrust` | `library::Browse`, `fn toggle_browse`, `fn browse_open` | `library::Collections`, `fn toggle_collections`, `fn collections_open` |
 | `apertrust` | `actions::SHOW_BROWSE`, `actions::GRID_POSITION` | `actions::SHOW_COLLECTIONS`, `actions::BROWSER_POSITION` |
-| planned | `Place::TopPanel` ([0091](0091-context-menus-places-and-tools-items-as-actions.md), [0092](0092-the-toolbar.md)) | `Place::Toolbar` |
 
 - **Tests and snapshots** that name a part follow it: `the_grid_panel_draws_only_what_is_visible` becomes `the_browser_draws_only_what_is_visible`, the snapshot `grid-panel-left` `browser-left`.
 - **Left as they are,** naming something else: `apertrust-library`'s `browser_order`, the order a file browser lists names in; `storage::Folders` and `folders::Folders`, folders on disk; `recents::Recents`, the recents' list.
