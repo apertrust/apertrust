@@ -29,11 +29,12 @@ use std::sync::Arc;
 
 use egui::emath::GuiRounding as _;
 use egui::{
-    Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2, pos2, vec2,
+    Align2, Color32, FontId, Galley, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2, pos2,
+    vec2,
 };
 
-use crate::Theme;
 use crate::components::focus_shows;
+use crate::{Icon, Theme};
 
 /// How a mark is drawn (`docs/gui.md`, the three weights).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -167,6 +168,102 @@ impl Mark {
     }
 }
 
+/// A mark a label names ([`Overlay::mark_label`]), in the photo's coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Labelled {
+    /// An area drawn with its corner handles; `focused` while it has the keyboard's focus,
+    /// its ring then round it.
+    Area { area: Rect, focused: bool },
+    /// The active picker's point.
+    Point(Pos2),
+}
+
+/// A labelled mark on screen, in points ([`label_place`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Near {
+    /// An area's rectangle, its corner handles reaching `handle` past it on each side, and
+    /// what is drawn round it, the handles or the focus ring, `clear` past it.
+    Area { rect: Rect, handle: f32, clear: f32 },
+    /// A point whose mark reaches `reach` from it.
+    Point { at: Pos2, reach: f32 },
+}
+
+/// A label's gaps, in points: `apart` from its mark, `inside` past the handle where it goes
+/// inside an area.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Gaps {
+    apart: f32,
+    inside: f32,
+}
+
+/// Where a label `size` points large goes by `near`, inside `shown` (`docs/pickers.md`, On
+/// the photo). An area's: above its top-left handle, left-aligned with the handle's outer
+/// edge, its bottom `apart` over what is drawn round the area; below the bottom-left
+/// handle where there is no room above; right-aligned to the right-hand handles' outer
+/// edge where left-aligned it would leave `shown`; and where neither way fits on an axis,
+/// inside the top-left corner, `inside` past the handle. A point's: `apart` past its reach
+/// to its right, centred on it, or to its left where the right has no room. Either is then
+/// moved inside `shown` where it fits there.
+fn label_place(near: Near, size: Vec2, shown: Rect, gaps: Gaps) -> Rect {
+    let fits_across = |left: f32| left >= shown.left() && left + size.x <= shown.right();
+    let min = match near {
+        Near::Area {
+            rect,
+            handle,
+            clear,
+        } => {
+            let start = rect.left() - handle;
+            let end = rect.right() + handle - size.x;
+            let left = [start, end].into_iter().find(|&left| fits_across(left));
+            let above = rect.top() - clear - gaps.apart - size.y;
+            let below = rect.bottom() + clear + gaps.apart;
+            let top = [above, below]
+                .into_iter()
+                .find(|&top| top >= shown.top() && top + size.y <= shown.bottom());
+            match (left, top) {
+                (Some(left), Some(top)) => pos2(left, top),
+                _ => rect.left_top() + Vec2::splat(handle + gaps.inside),
+            }
+        }
+        Near::Point { at, reach } => {
+            let right = at.x + reach + gaps.apart;
+            let left = if right + size.x <= shown.right() {
+                right
+            } else {
+                at.x - reach - gaps.apart - size.x
+            };
+            pos2(left, at.y - size.y / 2.0)
+        }
+    };
+    // Kept inside the part shown where it fits there: a zoomed area's corner, or a point,
+    // past its edge.
+    let inside = |at: f32, from: f32, to: f32| if from <= to { at.clamp(from, to) } else { at };
+    let max = shown.max - size;
+    let min = pos2(
+        inside(min.x, shown.left(), max.x),
+        inside(min.y, shown.top(), max.y),
+    );
+    Rect::from_min_size(min, size)
+}
+
+/// Where the pointer's badge, `size` points square, goes by `pointer`: `offset` below and
+/// right of it, or on its other side across or down where that would leave `shown`
+/// ([`Overlay::badge`]).
+fn badge_place(pointer: Pos2, size: f32, offset: f32, shown: Rect) -> Rect {
+    let one = |at: f32, end: f32| {
+        if at + offset + size <= end {
+            at + offset
+        } else {
+            at - offset - size
+        }
+    };
+    let min = pos2(
+        one(pointer.x, shown.right()),
+        one(pointer.y, shown.bottom()),
+    );
+    Rect::from_min_size(min, Vec2::splat(size))
+}
+
 /// The photo's overlay for one frame: where the photo is on screen, and the painter and
 /// theme every mark is drawn with.
 pub struct Overlay<'a> {
@@ -267,13 +364,102 @@ impl<'a> Overlay<'a> {
     /// eight do) and is the token's 40 % only at its outer edge: darker than the line's,
     /// which keeps small text readable on a light photo. Returns where it was drawn.
     pub fn label(&self, at: Pos2, offset: Vec2, anchor: Align2, text: &str) -> Rect {
-        let c = &self.t.colors;
-        let font = FontId::proportional(self.t.text.small);
-        let galley = self
-            .painter
-            .layout_no_wrap(text.to_owned(), font, c.overlay_line);
+        let galley = self.label_galley(text);
         let rect = anchor.anchor_size(self.to_screen(at) + offset, galley.size());
-        let min = rect.min.round_to_pixels(self.painter.pixels_per_point());
+        self.paint_label(rect.min, galley)
+    }
+
+    /// The label naming what `mark` is, its tool's name on a picker's area or point
+    /// (`docs/pickers.md`, On the photo), drawn as [`Overlay::label`] is, by the mark and
+    /// inside `shown`, the part of the photo on screen: for an area above its top-left
+    /// corner handle, left-aligned with the handle's outer edge, 4 points over it, or over
+    /// the focus ring while it shows; for a point 4 points past its reach, centred on it.
+    /// Where it would leave `shown`, an area's goes below its bottom-left handle or
+    /// right-aligns to its right-hand handles, a point's goes to its left, and where
+    /// nothing else fits an area's goes inside its top-left corner, 6 points past the
+    /// handle (`label_place`). Nothing is drawn while the mark lies wholly outside
+    /// `shown`. Returns where it was drawn.
+    pub fn mark_label(&self, mark: Labelled, text: &str, shown: Rect) -> Option<Rect> {
+        let t = &self.t;
+        let (line, halo) = self.widths(Weight::Normal);
+        let (near, bounds) = match mark {
+            Labelled::Area { area, focused } => {
+                let rect = Rect::from_min_max(
+                    self.snap(self.to_screen(area.min), line),
+                    self.snap(self.to_screen(area.max), line),
+                );
+                let handle = t.overlay.handle / 2.0;
+                // The focus ring's outer edge past the corners, as `focus_rect` draws it.
+                let ring =
+                    (t.overlay.handle + halo) / 2.0 + t.shape.focus_gap + t.shape.focus_width;
+                let clear = if focused && focus_shows(self.painter.ctx()) {
+                    ring
+                } else {
+                    handle
+                };
+                let near = Near::Area {
+                    rect,
+                    handle,
+                    clear,
+                };
+                (near, rect.expand(clear))
+            }
+            Labelled::Point(at) => {
+                let at = self.snap(self.to_screen(at), line);
+                let reach = self.reach(Point::Active, Weight::Normal);
+                let near = Near::Point { at, reach };
+                (near, Rect::from_center_size(at, Vec2::splat(2.0 * reach)))
+            }
+        };
+        if !bounds.intersects(shown) {
+            return None;
+        }
+        let galley = self.label_galley(text);
+        let gaps = Gaps {
+            apart: t.spacing.xs,
+            inside: t.spacing.s,
+        };
+        let rect = label_place(near, galley.size(), shown, gaps);
+        Some(self.paint_label(rect.min, galley))
+    }
+
+    /// `icon` in `rect`, as large as fits, stroked as the line is: its lines in the line's
+    /// white over the line's black, each as wide as the line's (`docs/gui.md`, On-photo
+    /// overlays).
+    pub fn icon(&self, icon: Icon, rect: Rect) {
+        let (line, halo) = self.widths(Weight::Normal);
+        let c = &self.t.colors;
+        icon.paint_stroked(self.painter, rect, c.overlay_halo, halo);
+        icon.paint_stroked(self.painter, rect, c.overlay_line, line);
+    }
+
+    /// The pointer's badge while a picker is on (`docs/pickers.md`, On the photo): `icon`,
+    /// the picker's cursor's, at the small text's size, a spacing's `l` (12 points) below
+    /// and right of `pointer`, the pointer's hotspot on screen, flipped to its other side
+    /// where it would leave `shown`, the part of the photo on screen, at the right or the
+    /// bottom (`badge_place`). Returns where it was drawn.
+    pub fn badge(&self, icon: Icon, pointer: Pos2, shown: Rect) -> Rect {
+        let rect = badge_place(pointer, self.t.text.small, self.t.spacing.l, shown);
+        let rect = Rect::from_min_size(
+            rect.min.round_to_pixels(self.painter.pixels_per_point()),
+            rect.size(),
+        );
+        self.icon(icon, rect);
+        rect
+    }
+
+    /// `text` laid out in the small text in the line's white.
+    fn label_galley(&self, text: &str) -> Arc<Galley> {
+        let font = FontId::proportional(self.t.text.small);
+        (self.painter).layout_no_wrap(text.to_owned(), font, self.t.colors.overlay_line)
+    }
+
+    /// Paints `galley` from `min`, on the screen's pixels, over its black: `overlay_halo` at
+    /// eight offsets of a point round it ([`Overlay::label`]). Returns where it was drawn.
+    fn paint_label(&self, min: Pos2, galley: Arc<Galley>) -> Rect {
+        let c = &self.t.colors;
+        let size = galley.size();
+        let min = min.round_to_pixels(self.painter.pixels_per_point());
         // The black reaches as far past the text as past the line: a point.
         let reach = (self.t.overlay.halo - self.t.overlay.line) / 2.0;
         for (x, y) in [
@@ -293,7 +479,7 @@ impl<'a> Overlay<'a> {
             );
         }
         self.painter.galley(min, galley, c.overlay_line);
-        Rect::from_min_size(min, rect.size())
+        Rect::from_min_size(min, size)
     }
 
     /// The focus ring round an area drawn at `weight` with its corner handles: the theme's
@@ -541,7 +727,9 @@ fn circle_points(centre: Pos2, radius: f32) -> Vec<Pos2> {
 mod tests {
     use egui::{Color32, Event, Key, Modifiers, PointerButton, Rect, Shape, pos2, vec2};
 
-    use super::{Overlay, Weight, dashes, snap, square_ends};
+    use super::{
+        Gaps, Labelled, Near, Overlay, Weight, badge_place, dashes, label_place, snap, square_ends,
+    };
     use crate::theme::contrast;
     use crate::{Builtin, Theme};
 
@@ -612,6 +800,123 @@ mod tests {
                 assert!(against >= 2.0, "{which:?} over {v}: {against:.2}");
             }
         }
+    }
+
+    /// The part of the photo shown in the placement tests, and a label 60 by 16 points.
+    const SHOWN: Rect = Rect {
+        min: pos2(0.0, 0.0),
+        max: pos2(400.0, 300.0),
+    };
+    const LABEL: egui::Vec2 = vec2(60.0, 16.0);
+    const GAPS: Gaps = Gaps {
+        apart: 4.0,
+        inside: 6.0,
+    };
+
+    /// An area's label by the area from `min` to `max`, its handles 5 points past it and
+    /// nothing else round it.
+    fn by_area(min: egui::Pos2, max: egui::Pos2) -> Rect {
+        let near = Near::Area {
+            rect: Rect::from_min_max(min, max),
+            handle: 5.0,
+            clear: 5.0,
+        };
+        label_place(near, LABEL, SHOWN, GAPS)
+    }
+
+    #[test]
+    fn an_area_s_label_sits_above_its_top_left_handle() {
+        let label = by_area(pos2(100.0, 100.0), pos2(200.0, 200.0));
+        // Left with the handle's outer edge; its bottom 4 over the handle's top.
+        assert_eq!(label.min, pos2(95.0, 100.0 - 5.0 - 4.0 - 16.0));
+        // Focused, 4 over the ring instead.
+        let near = Near::Area {
+            rect: Rect::from_min_max(pos2(100.0, 100.0), pos2(200.0, 200.0)),
+            handle: 5.0,
+            clear: 9.0,
+        };
+        let focused = label_place(near, LABEL, SHOWN, GAPS);
+        assert_eq!(focused.max.y, 100.0 - 9.0 - 4.0);
+    }
+
+    #[test]
+    fn an_area_s_label_goes_below_near_the_top_and_right_aligns_near_the_right() {
+        let below = by_area(pos2(100.0, 10.0), pos2(200.0, 100.0));
+        assert_eq!(below.min, pos2(95.0, 100.0 + 5.0 + 4.0));
+        let right = by_area(pos2(350.0, 100.0), pos2(390.0, 200.0));
+        assert_eq!(right.max.x, 395.0);
+        assert_eq!(right.max.y, 100.0 - 5.0 - 4.0);
+        // Both at the top right corner.
+        let both = by_area(pos2(350.0, 10.0), pos2(390.0, 100.0));
+        assert_eq!((both.max.x, both.min.y), (395.0, 109.0));
+    }
+
+    #[test]
+    fn an_area_s_label_goes_inside_its_corner_where_nothing_else_fits() {
+        // As tall as the part shown: no room above or below.
+        let tall = by_area(pos2(100.0, 10.0), pos2(200.0, 290.0));
+        assert_eq!(tall.min, pos2(100.0 + 5.0 + 6.0, 10.0 + 5.0 + 6.0));
+        // As wide: no room left-aligned or right-aligned.
+        let wide = by_area(pos2(2.0, 100.0), pos2(398.0, 200.0));
+        assert_eq!(wide.min, pos2(2.0 + 11.0, 100.0 + 11.0));
+        // A zoomed area's corner past the part shown: the label inside its edge.
+        let zoomed = by_area(pos2(-100.0, -100.0), pos2(300.0, 290.0));
+        assert_eq!(zoomed.min, pos2(0.0, 0.0));
+    }
+
+    #[test]
+    fn a_point_s_label_sits_past_its_reach_then_flips_left_near_the_edge() {
+        let near = |x: f32| Near::Point {
+            at: pos2(x, 150.0),
+            reach: 16.0,
+        };
+        let right = label_place(near(100.0), LABEL, SHOWN, GAPS);
+        assert_eq!(right.min, pos2(100.0 + 16.0 + 4.0, 150.0 - 8.0));
+        let left = label_place(near(350.0), LABEL, SHOWN, GAPS);
+        assert_eq!(left.max.x, 350.0 - 16.0 - 4.0);
+        assert_eq!(left.center().y, 150.0);
+        // On the top edge, moved down inside it.
+        let top = Near::Point {
+            at: pos2(100.0, 0.0),
+            reach: 16.0,
+        };
+        assert_eq!(label_place(top, LABEL, SHOWN, GAPS).min, pos2(120.0, 0.0));
+    }
+
+    #[test]
+    fn the_badge_sits_below_right_of_the_pointer_and_flips_near_the_edges() {
+        let badge = |x, y| badge_place(pos2(x, y), 12.0, 12.0, SHOWN);
+        assert_eq!(badge(100.0, 100.0).min, pos2(112.0, 112.0));
+        assert_eq!(badge(390.0, 100.0).min, pos2(366.0, 112.0));
+        assert_eq!(badge(100.0, 290.0).min, pos2(112.0, 266.0));
+        assert_eq!(badge(390.0, 290.0).min, pos2(366.0, 266.0));
+    }
+
+    /// A label is drawn by its mark only while the mark shows in the part of the photo shown.
+    #[test]
+    fn a_mark_s_label_is_not_drawn_while_the_mark_is_out_of_view() {
+        let ctx = egui::Context::default();
+        crate::install(&ctx, Theme::builtin(Builtin::Dark));
+        let mut drawn = Vec::new();
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let photo = Rect::from_min_size(pos2(-400.0, 0.0), vec2(800.0, 300.0));
+            let overlay = Overlay::new(ui.painter(), photo, 1.0);
+            let shown = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, 300.0));
+            for area in [
+                Rect::from_min_max(pos2(0.1, 0.3), pos2(0.3, 0.6)),
+                Rect::from_min_max(pos2(0.6, 0.3), pos2(0.8, 0.6)),
+            ] {
+                let mark = Labelled::Area {
+                    area,
+                    focused: false,
+                };
+                drawn.push(overlay.mark_label(mark, "Exposure", shown).is_some());
+            }
+            let point = Labelled::Point(pos2(0.2, 0.5));
+            drawn.push(overlay.mark_label(point, "Exposure", shown).is_some());
+        });
+        output.drop_without_applying_deltas();
+        assert_eq!(drawn, [false, true, false]);
     }
 
     #[test]

@@ -98,6 +98,13 @@ impl Gallery {
         overlays(ui, &t);
     }
 
+    /// Draws the Pickers section's labels and badges alone, as the snapshot tests
+    /// photograph them.
+    pub fn show_picker_labels(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        picker_labels(ui, &t);
+    }
+
     /// Draws the View marks section alone, as the snapshot tests photograph it.
     pub fn show_view_marks(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
@@ -911,6 +918,85 @@ fn pickers(ui: &mut Ui, t: &Theme) {
         }),
     ];
     over_photos(ui, t, &marks);
+    picker_labels(ui, t);
+}
+
+/// The active picker's label naming its tool, by its area or point, and the pointer's
+/// badge (`docs/pickers.md`, On the photo), over a light, a dark and a busy photo: in
+/// place, focused, near each edge and in the corner where nothing else fits. A small
+/// crosshair stands in for the system pointer the badge sits beside.
+fn picker_labels(ui: &mut Ui, t: &Theme) {
+    use crate::overlay::{Labelled, Mark, Weight};
+
+    /// The photo on screen, the part shown.
+    fn shown(o: &Overlay) -> egui::Rect {
+        egui::Rect::from_min_max(o.to_screen(pos2(0.0, 0.0)), o.to_screen(pos2(1.0, 1.0)))
+    }
+    fn area(o: &Overlay, area: egui::Rect, focused: bool, text: &str) {
+        PickerMarks::new(PickerPlace::Area(area))
+            .focused(focused)
+            .paint(o);
+        o.mark_label(Labelled::Area { area, focused }, text, shown(o));
+    }
+    fn point(o: &Overlay, photo: &OverlayPhoto, at: egui::Pos2, text: &str) {
+        let colour = photo.sample(at);
+        PickerMarks::new(PickerPlace::Point { at, colour }).paint(o);
+        o.mark_label(Labelled::Point(at), text, shown(o));
+    }
+    let rows: [(&str, bool, OverPhoto); 5] = [
+        (
+            "The label above the area, and over the ring while focused",
+            false,
+            |o, _, _| {
+                let at = |l, t, r, b| egui::Rect::from_min_max(pos2(l, t), pos2(r, b));
+                area(o, at(0.08, 0.4, 0.4, 0.85), false, "Exposure");
+                area(o, at(0.55, 0.45, 0.9, 0.85), true, "White balance");
+            },
+        ),
+        (
+            "Near the top, below the area; near the right, right-aligned",
+            false,
+            |o, _, _| {
+                let at = |l, t, r, b| egui::Rect::from_min_max(pos2(l, t), pos2(r, b));
+                area(o, at(0.08, 0.06, 0.4, 0.45), false, "Exposure");
+                area(o, at(0.75, 0.5, 0.94, 0.85), false, "White balance");
+            },
+        ),
+        (
+            "Where nothing else fits, inside the corner",
+            false,
+            |o, _, _| {
+                let whole = egui::Rect::from_min_max(pos2(0.06, 0.05), pos2(0.94, 0.95));
+                area(o, whole, false, "Exposure · Reference");
+            },
+        ),
+        (
+            "A point's label to its right, and to its left near the edge",
+            false,
+            |o, photo, _| {
+                point(o, photo, pos2(0.2, 0.3), "Exposure");
+                point(o, photo, pos2(0.86, 0.7), "White balance");
+            },
+        ),
+        (
+            "The pointer's badge, flipped near the right and the bottom",
+            false,
+            |o, _, t| {
+                let pointers = [
+                    (0.25, 0.3, Icon::PickWhiteBalance),
+                    (0.94, 0.3, Icon::PickExposure),
+                ];
+                let corner = (0.6, 0.9, Icon::PickExposure);
+                for (x, y, icon) in pointers.into_iter().chain([corner]) {
+                    let at = pos2(x, y);
+                    let reach = t.overlay.handle / 2.0;
+                    o.stroke(&Mark::new(Weight::Normal).crosshair(at, reach));
+                    o.badge(icon, o.to_screen(at), shown(o));
+                }
+            },
+        ),
+    ];
+    over_photos(ui, t, &rows);
 }
 
 /// The gallery's active area, in the photo's coordinates.
