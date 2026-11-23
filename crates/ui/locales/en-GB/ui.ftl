@@ -807,6 +807,7 @@ setting-sliders-marker-option-square = Square
 setting-toolbar-menu-button-label = Menu button
 setting-toolbar-menu-button-option-icon = { app-name } icon
 setting-toolbar-menu-button-option-menu = Menu
+setting-toolbar-labels-label = Toolbar labels
 setting-library-reopen-last-label = Reopen what was open last
 setting-library-reopen-last-help = Opens the folder you were working in when { app-name } closed, with its photo. A file or folder opened from the file manager or a terminal opens instead.
 setting-export-ask-before-overwrite-label = Ask before overwriting an exported file
