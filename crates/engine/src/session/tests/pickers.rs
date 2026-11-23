@@ -3162,3 +3162,189 @@ fn the_pickers_failing_send_the_step_a_held_one_shot_made() {
     );
     remove(&path);
 }
+
+/// Colour calibration's picker on the CAT tab, with the area colour mapping's settings.
+fn on_illuminant(settings: Vec<(&'static str, ControlValue)>) -> Command {
+    picker(PickerCommand::On {
+        picker: PickerRef::Tool {
+            tool: "channelmixerrgb",
+            picker: "illuminant",
+        },
+        area: true,
+        keys: PickKeys::default(),
+        settings,
+        channel: None,
+    })
+}
+
+/// The area colour mapping in measure mode or correction, toward a target of this
+/// chroma, at L 50 and a hue of 40°.
+fn area_mapping(measure: bool, chroma: f32) -> Vec<(&'static str, ControlValue)> {
+    vec![
+        ("area_mode", ControlValue::Choice(u32::from(measure))),
+        ("target_chroma", ControlValue::Number(chroma)),
+        ("target_hue", ControlValue::Number(40.0)),
+    ]
+}
+
+/// Every control of Colour calibration as `values` report it.
+fn colour_calibration(values: &Values) -> Controls {
+    let tool = (values.tools.iter())
+        .find(|tool| tool.tool == "channelmixerrgb")
+        .unwrap();
+    let mut controls = Controls::new();
+    for control in &tool.controls {
+        controls.set(control.control, control.value.clone());
+    }
+    controls
+}
+
+/// Colour calibration's picker in correction mode writes the custom illuminant, `x`, `y`
+/// and `temperature`, as its pick gives them for the reading, in one step of source Auto;
+/// `Settings` of a new target applies that reading again, one step more; in measure mode
+/// it writes nothing, its `On` handing the target back and its `Settings` none, with no
+/// step.
+#[test]
+fn colour_calibration_s_picker_sets_the_illuminant_in_one_step() {
+    use apertrust_tools::colour_calibration::ColourCalibration;
+
+    use crate::history::StepSource;
+    let path = scratch("picker-colour-calibration");
+    let mut driven = Driven::new(&[&ColourCalibration]);
+    let steps = |driven: &Driven| {
+        let open = driven.engine.open.as_ref().unwrap();
+        (open.history.log().steps().iter())
+            .map(|step| step.source)
+            .collect::<Vec<_>>()
+    };
+    let opened = driven.open(&path);
+    let untouched = colour_calibration(values(&opened));
+    let before = steps(&driven);
+    // What the tool's pick writes for the reading the session measured.
+    let expected = |driven: &Driven, values: &Controls, settings: &[(&str, ControlValue)]| {
+        let reading = driven
+            .engine
+            .pickers
+            .latest_reading("channelmixerrgb")
+            .unwrap();
+        let image = &driven.engine.open.as_ref().unwrap().image;
+        ColourCalibration
+            .pick(
+                "illuminant",
+                reading,
+                values,
+                image,
+                settings,
+                None,
+                None,
+                PickKeys::default(),
+            )
+            .unwrap()
+    };
+    let mut events = driven.run([on_illuminant(area_mapping(false, 0.0))]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let picked = colour_calibration(values(&events));
+    let wanted = expected(&driven, &untouched, &area_mapping(false, 0.0));
+    let written: Vec<&str> = wanted.writes.iter().map(|(id, _)| id).collect();
+    assert_eq!(written.len(), 4, "{written:?}");
+    for (id, value) in wanted.writes.iter() {
+        assert_eq!(picked.get(id), Some(value), "{id}");
+    }
+    assert_ne!(picked.get("x"), untouched.get("x"));
+    let after = steps(&driven);
+    assert_eq!(after.len(), before.len() + 1, "{after:?}");
+    assert_eq!(after.last(), Some(&StepSource::Auto));
+
+    // A target of colour: the latest reading applied again toward it, one step more.
+    let mut events = driven.run([picker(PickerCommand::Settings {
+        tool: "channelmixerrgb",
+        settings: area_mapping(false, 20.0),
+    })]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let again = colour_calibration(values(&events));
+    let wanted = expected(&driven, &picked, &area_mapping(false, 20.0));
+    for (id, value) in wanted.writes.iter() {
+        assert_eq!(again.get(id), Some(value), "{id}");
+    }
+    assert_ne!(again.get("x"), picked.get("x"));
+    assert_eq!(steps(&driven).len(), after.len() + 1);
+
+    // Measure mode: settings sent hand none back and write nothing.
+    let counted = steps(&driven).len();
+    let events = driven.run([picker(PickerCommand::Settings {
+        tool: "channelmixerrgb",
+        settings: area_mapping(true, 20.0),
+    })]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    for reading in readings(&events).into_iter().flatten() {
+        let shown = reading.tool.as_ref().and_then(|part| part.picked.as_ref());
+        assert!(
+            shown.is_none_or(|shown| shown.settings.is_empty()),
+            "{shown:?}"
+        );
+    }
+    for event in &events {
+        if let Event::Values(values) = event {
+            assert_eq!(colour_calibration(values), again);
+        }
+    }
+    // Its `On` hands the target back, with no step.
+    driven.run([picker(PickerCommand::Off)]);
+    let mut events = driven.run([on_illuminant(area_mapping(true, 20.0))]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let shown = readings(&events)
+        .into_iter()
+        .rev()
+        .find_map(|reading| reading.as_ref()?.tool.as_ref()?.picked.clone())
+        .unwrap_or_else(|| panic!("a pick shown in {events:?}"));
+    let ids: Vec<&str> = shown.settings.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, ["target_lightness", "target_chroma", "target_hue"]);
+    assert_eq!(steps(&driven).len(), counted);
+    remove(&path);
+}
+
+/// Colour calibration's readout is reported with its state, the tool's own for the values
+/// and the photo, and follows the illuminant as a `SetControl` changes it.
+#[test]
+fn colour_calibration_s_readout_follows_the_illuminant() {
+    use apertrust_tools::colour_calibration::{ColourCalibration, ILLUMINANTS};
+    let path = scratch("readout-colour-calibration");
+    let mut driven = Driven::new(&[&ColourCalibration]);
+    let readout = |values: &Values| {
+        let tool = (values.tools.iter())
+            .find(|tool| tool.tool == "channelmixerrgb")
+            .unwrap();
+        match &tool.readouts[..] {
+            [
+                ReadoutState {
+                    id: "cct",
+                    readout: Some(readout),
+                },
+            ] => *readout,
+            other => panic!("{other:?}"),
+        }
+    };
+    let own = |driven: &Driven, values: &Values| {
+        let image = &driven.engine.open.as_ref().unwrap().image;
+        ColourCalibration.readout("cct", &colour_calibration(values), image)
+    };
+    let opened = driven.open(&path);
+    let first = readout(values(&opened));
+    assert_eq!(Some(first), own(&driven, values(&opened)));
+    let at = (ILLUMINANTS.iter()).position(|option| *option == "planckian");
+    let planckian = Command::SetControl {
+        tool: "channelmixerrgb".to_owned(),
+        control: "illuminant".to_owned(),
+        value: ControlValue::Choice(at.unwrap() as u32),
+        done: true,
+    };
+    let events = driven.run([planckian]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let then = readout(values(&events));
+    assert_eq!(Some(then), own(&driven, values(&events)));
+    assert_ne!(then, first);
+    remove(&path);
+}

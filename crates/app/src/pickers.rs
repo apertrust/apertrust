@@ -1926,6 +1926,7 @@ mod tests {
                 presets: Vec::new(),
                 views: Vec::new(),
                 computed: Vec::new(),
+                readouts: Vec::new(),
             }],
             settings: Vec::new(),
             edited: false,
