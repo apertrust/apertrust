@@ -86,6 +86,7 @@ mod storage;
 #[cfg(test)]
 mod testing;
 mod thumbnails;
+mod toolbar;
 mod tools;
 mod utility;
 mod viewport;
