@@ -23,9 +23,11 @@
 //! - **The thumb**, a capsule 20 × 12 centred on the value, inside the track's ends, in
 //!   `text_secondary`; `text` under the pointer and while dragged.
 //! - **The value** at the end, in `text_strong`, with its unit, at the number's decimals.
-//! - **Pointer:** a drag sets the value, ending where it is let go, and a click on the
-//!   track jumps there; either end of the travel is the range's end exactly. It takes no
-//!   wheel: the wheel scrolls the page, whatever is under the pointer.
+//! - **Pointer:** a press on the track jumps there and a drag follows the pointer, the
+//!   thumb and the value moving with it; the value is set once, where the button is let
+//!   go, so a setting that applies at once, as Interface size, changes once. Either end of
+//!   the travel is the range's end exactly. It takes no wheel: the wheel scrolls the page,
+//!   whatever is under the pointer.
 //! - **Keys:** ← and → step by its step, Shift ten steps and the finer modifier (Ctrl,
 //!   Option on the Mac) a tenth where its decimals show one; Home and End go to its ends.
 //! - **Typing:** a click on the value makes it a field, the number selected and the unit
@@ -231,17 +233,29 @@ impl<'a> Slider<'a> {
         };
         let response = ui.interact(track, id, sense);
         let mut shown = self.value;
+        // Where the pointer holds the thumb: shown while the button is down, and set only as
+        // it is let go, so a setting that applies at once, as Interface size, applies once.
+        let mut held = None;
         if enabled {
             // A press jumps, a drag follows: held, where the pointer is; let go, where it was
-            // let go, though it moved on in the same pass. The primary button's alone.
-            let at = if super::pressed(&response) {
-                response.interact_pointer_pos()
-            } else if response.clicked() || response.drag_stopped_by(egui::PointerButton::Primary) {
-                ui.input(super::super::steps::released_at)
-            } else {
-                None
-            };
-            if let Some(at) = at {
+            // let go, though it moved on in the same pass. The primary button's alone. A
+            // press let go in the next pass, moved too far for a click and too soon for a
+            // drag, is let go too: the track held it in the pass right before, never in one
+            // further back, as before its page was left.
+            let down_id = id.with("down");
+            let pass = ctx.cumulative_pass_nr();
+            let was_down = ui.data(|d| d.get_temp::<u64>(down_id)) == Some(pass.wrapping_sub(1));
+            let down = super::pressed(&response);
+            if down {
+                ui.data_mut(|d| d.insert_temp(down_id, pass));
+            }
+            if down {
+                held = (response.interact_pointer_pos()).map(|at| self.settle(value_at(at.x)));
+            } else if (was_down
+                || response.clicked()
+                || response.drag_stopped_by(egui::PointerButton::Primary))
+                && let Some(at) = ui.input(super::super::steps::released_at)
+            {
                 shown = self.settle(value_at(at.x));
             }
             if response.has_focus() {
@@ -356,7 +370,7 @@ impl<'a> Slider<'a> {
         } else {
             let value = ui.interact(value_rect, id.with("value"), Sense::click());
             let colour = dimmed(&t, enabled, t.colors.text_strong);
-            let written = self.written(&words, shown);
+            let written = self.written(&words, held.unwrap_or(shown));
             // To screen readers a button named by the row's label, its value as written:
             // "Interface size, 110 %".
             value.widget_info(|| {
@@ -404,15 +418,15 @@ impl<'a> Slider<'a> {
                     t.colors.text_secondary
                 },
             );
-            let at = pos2(x_of(shown), track.center().y);
+            let at = pos2(x_of(held.unwrap_or(shown)), track.center().y);
             painter.rect_filled(Rect::from_center_size(at, THUMB), THUMB.y / 2.0, thumb);
             if response.has_focus() {
                 super::ring(&painter, track, &t);
             }
         }
         // Screen readers hear the value as it is written, with the range.
-        response.widget_info(|| WidgetInfo::slider(enabled, shown, self.name));
-        let heard = self.written(&words, shown);
+        response.widget_info(|| WidgetInfo::slider(enabled, held.unwrap_or(shown), self.name));
+        let heard = self.written(&words, held.unwrap_or(shown));
         let step = self.step;
         ctx.accesskit_node_builder(id, |node| {
             node.set_value(heard);
