@@ -16,7 +16,7 @@ In the well's order, each a group of its own even with one cursor:
 
 | Group | Cursors | A press | When |
 | --- | --- | --- | --- |
-| Select | Select, the default at every start and Esc's target | A click selects a mark on the photo; a drag that starts on a mark moves it, one that starts on empty photo pans a zoomed photo, as darktable's drag does | Phase 2; marks to select come with stored samples and masks |
+| Select | Select, the default at every start and Esc's target | A click selects a mark on the photo; a drag that starts on a mark moves it, one that starts on empty photo does nothing: Select never pans by a drag, Pan does, or A held with any cursor, and the scroll and the trackpad's swipe pan, and Ctrl+scroll and the pinch zoom, with every cursor | Phase 2; marks to select come with stored samples and masks |
 | Pan | Pan | A drag always moves a zoomed photo, even over a mark | Phase 2 |
 | Pick | White balance, Exposure; Colour readout later | A click picks the area darktable's click gives the picker, a drag the area drawn: one `PickerCommand::Once`, one step where it changes the edit | Phase 2; Colour readout with the Colour picker (79.16) |
 | Mask | Brush, Linear gradient, Radial gradient, AI object, Path | The chosen layer's mask, one step a stroke or shape ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)) | Phase 4 |
@@ -74,8 +74,8 @@ Cursors are the app's. The engine, the session protocol, the CLI and MCP never h
 - **A plate behind the chosen cursor:** a filled shape among the Toolbar's plate-free icons; the accent marks what a press on the photo acts with, as amber marks what is chosen elsewhere.
 - **Cursors replacing the picker button,** a press on it choosing its cursor: one concept, but darktable's live picker, which the migration mirrors, would go.
 - **A cursor ending after one use,** as a menu item's pick does: a series would need the cursor chosen again for every photo.
-- **The hand as the default:** a drag over a mark would pan where it should move the mark; Select moves a mark from a drag on it and pans from a drag on empty photo, as darktable's darkroom does.
-- **Select never panning,** a drag on empty photo moving nothing: a departure from darktable's drag-to-pan, and the built pan gone from the default cursor.
+- **The hand as the default:** a drag over a mark would pan where it should move the mark; Select moves a mark from a drag on it, and the pan is Pan's, A held's and the scroll's.
+- **Select panning from a drag on empty photo,** darktable's drag-to-pan: Select and Pan would do the same on empty photo, and a drag meant for a mark that misses it would move the photo. Each cursor keeps one job; Pan, A held with any cursor, the scroll and the trackpad's swipe keep panning, and Ctrl+scroll and the pinch zooming.
 - **Space for a held Pan:** Space is Next Photo; A is darktable's own key to force panning.
 - **`Once` taking a point alone,** the session making the area: a drag could not pick the area drawn. A `Region` carries both, a point read as darktable's click reads it.
 - **Cursors known to the engine:** a mode in the session for what is the interface's; every client already sends the commands a cursor sends.
@@ -88,6 +88,6 @@ Cursors are the app's. The engine, the session protocol, the CLI and MCP never h
 - **[0098](0098-actions-and-shortcuts-after-darktable.md):** the cursor actions' family and kind, and the default keys Esc, A held and K.
 - **[0034](0034-layers-masked-tool-instances-in-a-fixed-order.md):** a mask's parts drawn from the Layers section's buttons or the Mask cursors, one state.
 - **[0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md):** a chosen cursor is shown by its icon in `accent_text`, not its filled form.
-- **The built pan by a drag** stays Select's on empty photo, darktable's drag-to-pan; Pan's drag pans over marks too.
+- **The built pan by a drag** is Pan's and A held's alone, a departure from darktable's drag-to-pan: Select's drag on empty photo does nothing. Pan's drag pans over marks too; the scroll and the trackpad's swipe pan, and Ctrl+scroll and the pinch zoom, with every cursor.
 - **The code:** `apertrust-tools` gains the declarations and their checks, White balance's and Exposure's cursors first; `apertrust-ui` the well, in the gallery; the app the mode, the owners, the Viewer's gestures and pointer shapes, the actions and keys, the well on the Toolbar and the group settings in the settings schema; the engine `Once` alone. No new crate.
 - **The docs:** [cursors.md](../cursors.md) holds the design and its open questions; pickers.md, gui.md, session-protocol.md, history.md, layers.md, crates.md and the roadmap follow it.

@@ -1,6 +1,6 @@
 # Cursors
 
-A cursor decides what a press on the photo does. One is chosen at a time, and it stays chosen until another is chosen: Select, the default, selects and moves marks on the photo and pans a zoomed photo from empty photo; Pan always pans; a picker cursor sets White balance or Exposure from the area clicked or drawn; later, mask cursors paint a layer's mask, retouch cursors heal spots, annotation cursors mark the photo, and Copy and apply copies one photo's edit onto others. This document describes the well on the Toolbar where cursors are chosen, the groups and their settings, the keys, the pointer on the photo, the API every owner of cursors uses, and how the work is built. Pickers themselves are in [pickers.md](pickers.md), the Toolbar in [gui.md](gui.md#the-toolbar), layers and masks in [layers.md](layers.md).
+A cursor decides what a press on the photo does. One is chosen at a time, and it stays chosen until another is chosen: Select, the default, selects and moves marks on the photo and never pans by a drag; Pan always pans; a picker cursor sets White balance or Exposure from the area clicked or drawn; later, mask cursors paint a layer's mask, retouch cursors heal spots, annotation cursors mark the photo, and Copy and apply copies one photo's edit onto others. This document describes the well on the Toolbar where cursors are chosen, the groups and their settings, the keys, the pointer on the photo, the API every owner of cursors uses, and how the work is built. Pickers themselves are in [pickers.md](pickers.md), the Toolbar in [gui.md](gui.md#the-toolbar), layers and masks in [layers.md](layers.md).
 
 **Status.** [Decision 104](decisions/0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md) records the design, with the options considered. Built, 104.1: the one-shot pick a picker cursor sends, `PickerCommand::Once`, and `Region::pressed` (79.17 of [pickers.md](pickers.md#a-one-shot-pick)); 104.2: the declarations in `apertrust-tools` and their checks, with White balance's and Exposure's picker cursors and their words ([The API](#the-api)); 104.3: the well in the design system, `CursorWell`, in the gallery ([The well](#the-well)); 104.4: the app, Select, Pan and Pick with White balance and Exposure on the Toolbar's well, their keys, the gestures and pointers on the photo and Show the last pick. Planned ([The plan](#the-plan)): Copy and apply in Phase 3, the Mask and Retouch cursors with layers in Phase 4, Annotate later with its own decision. Select has no marks to select or move until stored samples (79.14) and masks: its drag pans.
 
@@ -32,8 +32,8 @@ In the well's order. Each group is one button of the well, even a group of one c
 
 | Group | Cursor | Its tooltip, after its name and key | Gestures | Where | When |
 | --- | --- | --- | --- | --- | --- |
-| Select | Select | "Click a mark on the photo to select it, drag to move it; drag elsewhere to pan" | Click, drag | Viewer | Phase 2; marks to select come with stored samples (79.14) and masks |
-| Pan | Pan | "Drag to pan a zoomed photo, over marks too" | Drag | Viewer | Phase 2 |
+| Select | Select | "Click a mark on the photo to select it, drag to move it" | Click, drag | Viewer | Phase 2; marks to select come with stored samples (79.14) and masks |
+| Pan | Pan | "Drag to pan a zoomed photo, over marks too; or hold A with any cursor" | Drag | Viewer | Phase 2 |
 | Pick | White balance picker | "Click a neutral area, or drag one" | Click, area | Viewer | Phase 2 |
 | Pick | Exposure picker | Its picker's own words, which follow Picker target ([Actions and words](#actions-and-words)) | Click, area | Viewer | Phase 2 |
 | Pick | Colour readout | Designed with the Colour picker | | Viewer | With 79.16 |
@@ -48,7 +48,7 @@ In the well's order. Each group is one button of the well, even a group of one c
 | Copy and apply | Copy and apply | "Click a photo to apply the copied edit; Alt-click copies" | Click | Viewer and Browser | Phase 3, with Copy Parts |
 
 - **A group no owner fills is not drawn,** nor a cursor not yet built: Phase 2's well holds Select, Pan and Pick.
-- **Select:** a click on a mark selects it and a drag that starts on one moves it; a drag that starts on empty photo pans a zoomed photo, the built pan by a drag and darktable's; a click on empty photo does nothing. Its pointer is the move pointer over a mark that can be moved, elsewhere the built pan's.
+- **Select:** a click on a mark selects it and a drag that starts on one moves it; a click or a drag on empty photo does nothing, so Select never pans by a drag: Pan does, or A held with any cursor, and the scroll and the trackpad's swipe pan, and Ctrl+scroll and the pinch zoom, with every cursor ([gui.md](gui.md#panning)). Its pointer is the move pointer over a mark that can be moved, elsewhere the arrow.
 - **Pan** pans from any drag, one that starts on a mark too, so a mark is never moved by mistake: the built pan by a drag ([gui.md](gui.md#panning)), the open hand over a photo that can move, the closed hand while dragging, the arrow at Fit, where there is nothing to move.
 - **Copy and apply** acts on the photo clicked, in the Viewer or on a thumbnail: its first click with nothing copied, or an Alt-click, runs Copy edit on it, every other click Apply edit, each one undo record as Apply edit is. While it is chosen a click on a thumbnail applies rather than opening the photo; Select gives the Browser its click back. The Toolbar keeps Copy edit and Apply edit.
 - **Mask and Retouch** act on the chosen layer as the Layers section's buttons do (decision 34). A mask button in the Layers section and its cursor are one state: pressing the button chooses the cursor, which the well shows, and choosing the cursor shows the button on. Clone's source has a visible control too, as decision 94's rule 3 requires, settled with retouch's port in Phase 4; Alt-click is its shortcut.
@@ -149,7 +149,7 @@ Each later group's settings are chosen with that group: Mask's and Retouch's wit
 
 | Cursor | Pointer |
 | --- | --- |
-| Select | The move pointer over a mark it can move; elsewhere as Pan's |
+| Select | The move pointer over a mark it can move; elsewhere the arrow |
 | Pan, or A held | The open hand over a photo that can move, the closed hand while dragging, the arrow at Fit |
 | A picker cursor | The crosshair |
 | A cursor that cannot act | The not-allowed pointer |
@@ -234,10 +234,10 @@ pub trait CursorOwner {
 }
 ```
 
-- **The owners:** the app's own, `AppCursors` (Select and Pan, and the owner of Pick's settings; Copy and apply's with it in Phase 3), and every tool's through one built-in owner, `ready` and `finish`, that turns a click or an area into `Once`; later layers and masks with their group settings (Phase 4), retouch (Phase 4), annotations. Select's and Pan's drags are the built pan, which the Viewer keeps, so the app's own owner finishes no gesture of its own yet. A gesture under way (`preview`) and one given up (`cancel`) join the trait with the first owner that draws one, Phase 4's Brush; until then a picker cursor's area is drawn by the Viewer and Esc gives it up there.
+- **The owners:** the app's own, `AppCursors` (Select and Pan, and the owner of Pick's settings; Copy and apply's with it in Phase 3), and every tool's through one built-in owner, `ready` and `finish`, that turns a click or an area into `Once`; later layers and masks with their group settings (Phase 4), retouch (Phase 4), annotations. Pan's drag, and A held's, is the built pan, which the Viewer keeps, and Select's drag on empty photo does nothing, so the app's own owner finishes no gesture of its own yet. A gesture under way (`preview`) and one given up (`cancel`) join the trait with the first owner that draws one, Phase 4's Brush; until then a picker cursor's area is drawn by the Viewer and Esc gives it up there.
 - **The registry,** `cursors::registry()`, made once as the app starts: every owner's cursors and group settings, refusing one owner's id twice (a tool's cursor known by its tool and its id, as its action is), a key twice among cursors, a group's settings declared twice, and ordering them by group, then `order`.
 - **The mode,** `cursors::Mode`: the chosen `Cursor { owner, id }`, one at a time, Select at every start; each group's active cursor beside it, for the run; A held, borrowing Pan; and the last pick's mark.
-- **The Viewer** reads a press as the chosen cursor's gestures allow (`Mode::press`): a tool's picker first while one is on; Select's and Pan's drag the built pan; a picker cursor's click or area finished (`cursors::on_photo`) and sent as `finish` makes it. The Browser takes cursors with Copy and apply.
+- **The Viewer** reads a press as the chosen cursor's gestures allow (`Mode::press`): a tool's picker first while one is on; Pan's drag, and A held's, the built pan; Select's drag on empty photo nothing; a picker cursor's click or area finished (`cursors::on_photo`) and sent as `finish` makes it. The Browser takes cursors with Copy and apply.
 
 ## Actions and words
 
@@ -255,7 +255,7 @@ Nothing new: a cursor is interface state, and its gestures send the commands the
 | darktable at the reference release | Apertrust | Why |
 | --- | --- | --- |
 | No cursors: each module's picker button, the mask manager's and each module's drawn-mask buttons | A well of cursors on the Toolbar, beside the same buttons | One place to choose what a press does, for every owner, as commercial raw editors offer; the buttons kept as darktable's |
-| A drag on the photo pans it unless a module takes it; A held forces the pan | Select, the default, pans from a drag on empty photo and moves the mark a drag starts on; Pan pans from any drag; A held pans from any cursor; scroll pans | darktable's drag-to-pan kept; A keeps darktable's meaning |
+| A drag on the photo pans it unless a module takes it; A held forces the pan | Select, the default, never pans by a drag and moves the mark a drag starts on; Pan pans from any drag; A held pans from any cursor; scroll pans | One job per cursor, so a drag that misses a mark never moves the photo; A keeps darktable's meaning |
 | A pick only through the picker's button, live while on | Also a picker cursor's click or drag, one reading as one step where it changes the edit | Quick repeated picks, a series picked with one key |
 
 ## Where the code lives
@@ -301,4 +301,4 @@ Phase 2, one pull request each, each reviewed before the next that needs it:
 - **Scroll over the photo with a mask or retouch cursor:** it pans, as with every cursor; whether it changes the brush's size instead, as `[` and `]` do, is settled with masks in Phase 4. Meanwhile there are no such cursors.
 - **A mask cursor with no layer to draw on:** whether a press makes a new layer or the cursor cannot act, saying so, is settled with layers. Meanwhile there is none.
 - **The Colour readout's commands:** whether a click moves the Colour picker's live sample or adds a stored sample, settled with the Colour picker section (79.16). Meanwhile it is not drawn.
-- **What Select selects:** stored samples' marks (79.14) and a mask's shapes (Phase 4) are its first; whether the last pick's mark or a picker's area become selectable is settled with them. Meanwhile Select's drag pans and its click does nothing.
+- **What Select selects:** stored samples' marks (79.14) and a mask's shapes (Phase 4) are its first; whether the last pick's mark or a picker's area become selectable is settled with them. Meanwhile Select's click and drag do nothing on empty photo.
