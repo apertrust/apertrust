@@ -6253,13 +6253,21 @@ impl App {
             return;
         };
         let words = translator(ui.ctx());
-        let name = match picker {
+        let declared = match picker {
             PickerRef::Tool { tool, picker } => (self.mirror.tools().iter())
                 .find(|m| m.definition().tool.id == tool)
-                .map(|m| pickers::name(&words, m.definition(), picker))
-                .unwrap_or_default(),
-            PickerRef::ColourPicker => String::new(),
+                .map(|m| (m.definition(), picker)),
+            PickerRef::ColourPicker => None,
         };
+        let name = (declared.map(|(definition, picker)| pickers::name(&words, definition, picker)))
+            .unwrap_or_default();
+        // The Colour picker's label comes with its tool.
+        let label = (declared
+            .map(|(definition, picker)| pickers::label(&words, definition, picker)))
+        .unwrap_or_default();
+        let badge = declared.map_or(apertrust_ui::Icon::Pick, |(definition, picker)| {
+            pickers::badge(definition, picker)
+        });
         let on = pickers::OnPhoto {
             picker,
             area,
@@ -6269,6 +6277,8 @@ impl App {
             switched: mirror.switched(region),
             colour: pickers::sampled(mirror.reading()),
             name: &name,
+            label: &label,
+            badge,
         };
         let picked = pickers::on_photo(ui, &on);
         for command in picked.commands {
@@ -21383,6 +21393,8 @@ mod tests {
                         switched: Region::Area([0.02, 0.02, 0.98, 0.98]),
                         colour: egui::Color32::GRAY,
                         name: "",
+                        label: "",
+                        badge: apertrust_ui::Icon::Pick,
                     };
                     picking.sent.extend(pickers::on_photo(ui, &on).commands);
                 },

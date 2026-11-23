@@ -1093,6 +1093,7 @@ picker-tip-area-quad =
 ## піпетки
 
 picker-bar-name = { $tool } · { $picker }
+picker-area-label = { $tool } · { $picker }
 picker-bar-area = Перетягніть область на знімку. { $command }+клацання перемикає на точку. Esc завершує.
 picker-bar-point = { $what } { $command }+клацання перемикає на область. Esc завершує.
 picker-bar-point-what = Клацніть або перетягніть точку на знімку.

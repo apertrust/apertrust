@@ -719,7 +719,7 @@ fn words_of(entry: &Entry, cx: &Context) -> (String, Option<String>) {
 }
 
 /// The design system's icon of `name`, a cursor's `CursorDef::icon`.
-fn icon(name: &str) -> Icon {
+pub fn icon(name: &str) -> Icon {
     (Icon::ALL.iter().copied())
         .find(|icon| icon.name() == name)
         .unwrap_or(Icon::Pick)
