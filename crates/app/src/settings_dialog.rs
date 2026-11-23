@@ -67,11 +67,11 @@ use apertrust_ui::components::settings::{
     TextArea,
 };
 use apertrust_ui::popup;
-use apertrust_ui::{Builtin, Locale, Theme, Translator, theme, tr, translator};
+use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator, fonts, theme, tr, translator};
 use eframe::egui::os::OperatingSystem;
 use eframe::egui::{
-    self, Align, FontId, Key, Layout, Modifiers, Rect, Role, ScrollArea, Sense, Stroke, Ui,
-    UiBuilder, WidgetInfo, pos2, vec2,
+    self, Align, FontFamily, FontId, Key, Layout, Modifiers, Rect, Role, ScrollArea, Sense, Stroke,
+    Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 use toml::Value;
 
@@ -96,10 +96,15 @@ const GROUP_GAP: f32 = 14.0;
 /// The page list's padding above Find a setting and between it and the pages, the
 /// artboard's.
 const LIST_PADDING: f32 = 10.0;
-/// A page's line in the list: a row's 26 points (`sizes.row`) and 2 more above and below.
-const PAGE_LINE: f32 = 30.0;
-/// How far a page's name sits in from its line's start, the artboard's.
+/// A page's line in the list: a row's 26 points (`sizes.row`) and 5 more above and below,
+/// so the icons and names breathe.
+const PAGE_LINE: f32 = 36.0;
+/// How far a page's icon sits in from its line's start, the artboard's.
 const PAGE_INSET: f32 = 10.0;
+/// A page's icon, before its name.
+const PAGE_ICON: f32 = 16.0;
+/// Between a page's icon and its name.
+const PAGE_ICON_GAP: f32 = 8.0;
 /// Find a setting's id, as Ctrl+F (Cmd+F) gives it the focus.
 const FIND: &str = "settings find";
 
@@ -610,11 +615,12 @@ impl Settings {
         }
     }
 
-    /// The page list: Find a setting at its top, then each page a line, the shown one on a
-    /// `raised` plate, those that hold nothing yet dimmed, saying they come later, and never
-    /// chosen; while Find a setting holds something, those with no row that matches it
-    /// dimmed too, but chosen still. A click, or ↑ and ↓ while a line has the focus, chooses
-    /// one. Returns the page chosen.
+    /// The page list: Find a setting at its top, then each page a line, its icon and its
+    /// name in a tool title's type, the shown one on a `raised` plate with its icon filled,
+    /// those that hold nothing yet dimmed, saying they come later, and never chosen; while
+    /// Find a setting holds something, those with no row that matches it dimmed too, but
+    /// chosen still. A click, or ↑ and ↓ while a line has the focus, chooses one. Returns
+    /// the page chosen.
     fn pages(&mut self, ui: &mut Ui, t: &Theme) -> Option<Page> {
         let ctx = ui.ctx().clone();
         let (column, _) = ui.allocate_exact_size(vec2(PAGES, BODY), Sense::hover());
@@ -640,7 +646,8 @@ impl Settings {
         }
         let words = translator(&ctx);
         let later = tr(&ctx, "settings-page-later");
-        let font = FontId::proportional(t.text.title);
+        // A tool title's type: its size in the Medium face.
+        let font = FontId::new(t.text.section_title, FontFamily::Name(fonts::MEDIUM.into()));
         let mut chosen = None;
         let mut moved = None;
         let top = search.bottom() + LIST_PADDING;
@@ -673,10 +680,18 @@ impl Settings {
             if shown {
                 painter.rect_filled(rect, t.shape.radius_small, t.colors.raised);
             }
+            let icon = page_icon(page);
+            let icon = if shown { icon.filled() } else { icon };
+            let at = pos2(rect.left() + PAGE_INSET, rect.center().y - PAGE_ICON / 2.0);
+            icon.paint(
+                &painter,
+                Rect::from_min_size(at, vec2(PAGE_ICON, PAGE_ICON)),
+                colour,
+            );
             let text = painter.layout_no_wrap(name, font.clone(), colour);
             painter.galley(
                 pos2(
-                    rect.left() + PAGE_INSET,
+                    rect.left() + PAGE_INSET + PAGE_ICON + PAGE_ICON_GAP,
                     rect.center().y - text.size().y / 2.0,
                 ),
                 text,
@@ -854,6 +869,22 @@ fn group_title(ui: &mut Ui, t: &Theme, name: &str, content: f32) {
 /// The id of `page`'s line in the list.
 fn page_id(page: Page) -> egui::Id {
     egui::Id::unique(("settings page", page.id()))
+}
+
+/// The icon before a page's name, drawn filled on the page shown (`Icon::filled`), as the
+/// Tools panel's tabs draw theirs.
+fn page_icon(page: Page) -> Icon {
+    match page {
+        Page::General => Icon::Settings,
+        Page::Import => Icon::Import,
+        Page::Photos => Icon::Photo,
+        Page::Editing => Icon::Adjust,
+        Page::Processing => Icon::Cpu,
+        Page::Storage => Icon::HardDrive,
+        Page::Shortcuts => Icon::Keyboard,
+        Page::Presets => Icon::Presets,
+        Page::Ai => Icon::Sparkles,
+    }
 }
 
 /// The words of `row`'s label.
@@ -1250,6 +1281,19 @@ mod tests {
 
     use super::*;
     use crate::dialog_host;
+
+    /// Each page has an icon of its own, drawn filled on the page shown as the Tools panel's
+    /// tabs are: every page but Presets, whose lines have no filled form.
+    #[test]
+    fn each_page_has_its_own_icon_and_its_filled_form() {
+        let icons: Vec<Icon> = Page::ALL.into_iter().map(page_icon).collect();
+        let distinct: std::collections::BTreeSet<&str> = icons.iter().map(|i| i.name()).collect();
+        assert_eq!(distinct.len(), Page::ALL.len());
+        for (page, icon) in Page::ALL.into_iter().zip(icons) {
+            let filled = icon.filled() != icon;
+            assert_eq!(filled, page != Page::Presets, "{page:?}");
+        }
+    }
 
     /// The dialog as the host draws it in its window, and what each frame asked: every
     /// change, and those of each frame that asked any.
