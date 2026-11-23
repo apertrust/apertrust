@@ -22,16 +22,17 @@
 //! ([`ToolbarButton`]); fixed and flexible spaces; the cursors' well
 //! ([`Toolbar::cursors`]); the jobs spinner ([`Toolbar::jobs`]); and the edit's save state
 //! ([`SaveState`]), which shows only when a save goes wrong. Its buttons show their words
-//! under their icons while labels are on ([`Toolbar::labels`]). The entries before the first
+//! under their icons while labels are on ([`Toolbar::labels`]), in a taller panel
+//! ([`Toolbar::height`]), the rest centred in it. The entries before the first
 //! flexible space stand at the start, those after the last at the end, and those between
 //! two in the middle of the room the flexible spaces share. The spinner and the save state
 //! each sit in a slot of its own, as wide as its widest form at the fold, kept whether it
 //! shows anything or not, so neither ever moves anything. Each tooltip carries its
 //! action's keys, which the app's actions registry gives. As it narrows it gives way one
-//! step at a time ([`Fold`]), its labels first, then its buttons going under »
-//! (`toolbar-more`), and its parts never, always keeping empty panel to move the window by;
-//! it records how wide that leaves it at least, for the app to keep the window so wide
-//! ([`Toolbar::least_width`]).
+//! step at a time ([`Fold`]), the same with labels or without, its buttons going under »
+//! (`toolbar-more`), words and all, and its parts never, always keeping empty panel to
+//! move the window by; it records how wide that leaves it at least, for the app to keep
+//! the window so wide ([`Toolbar::least_width`]).
 //!
 //! **Guards** (decision 92): with no menu button in the list, the menus hang from the
 //! Toolbar's start ([`Toolbar::menu_anchor`]); with no save state, a failed write still
@@ -153,9 +154,9 @@ pub enum ToolbarEntry {
     SaveState,
 }
 
-/// A button of the Toolbar that runs an action: its icon, its translated name, its word
-/// under its icon while labels are on, and whether it can run now, drawn disabled where it
-/// cannot.
+/// A button of the Toolbar that runs an action: its icon, drawn at 22 points with labels
+/// on or off, its translated name, its word under its icon while labels are on, and
+/// whether it can run now, drawn disabled where it cannot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolbarButton {
     id: &'static str,
@@ -286,7 +287,12 @@ pub struct Toolbar<'a> {
     maximised: bool,
 }
 
+/// The side of the parts' buttons: », the spinner and the ☰ menu button.
 const BUTTON: f32 = 30.0;
+/// An action's button with labels off, its icon [`ACTION_ICON`] at its centre.
+const ACTION: f32 = 32.0;
+/// The side an action's icon is drawn at, labelled or not, as the Tools panel's tabs'.
+const ACTION_ICON: f32 = 22.0;
 /// The room each side of the menu button's app icon and caret.
 const ICON_PADDING: f32 = 5.0;
 /// Between the menu button's app icon and its caret.
@@ -299,19 +305,26 @@ const ELLIPSIS: &str = "…";
 const EMPTY: f32 = 24.0;
 /// The room beyond its own width a step needs to be undone, so a resize never flickers.
 const SPARE: f32 = 16.0;
-/// A labelled button's icon's square below the panel's top, its side, and its word below
-/// it.
-const LABEL_TOP: f32 = 6.0;
-const LABEL_ICON: f32 = 16.0;
-const LABEL_GAP: f32 = 3.0;
+/// A labelled button's icon's square, [`ACTION_ICON`] wide, below the panel's top, and its
+/// word below it, in the panel [`Toolbar::height`] makes taller for them.
+const LABEL_TOP: f32 = 8.0;
+const LABEL_GAP: f32 = 4.0;
+
+/// The side `icon` is drawn at as an action: [`ACTION_ICON`], but for an icon that keeps a
+/// box of its own, as Full Screen's, drawn at its own size.
+fn action_icon(icon: Icon) -> f32 {
+    if icon.keeps_its_box() {
+        icon.size()
+    } else {
+        ACTION_ICON
+    }
+}
 
 /// How far the panel gives way to its width (decision 92; `docs/gui.md`, The Toolbar,
 /// Narrowing): the overflow's steps, taken in this order, one at a time
 /// ([`Toolbar::steps`]). The parts never fold, the menu button among them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Fold {
-    /// The buttons' labels fold, all at once.
-    labels: bool,
     /// The fixed spaces narrow to 8 points.
     narrow: bool,
     /// How many fixed spaces have gone, from the list's end.
@@ -359,11 +372,24 @@ impl<'a> Toolbar<'a> {
     }
 
     /// Draws each button's word under its icon (decision 92, Toolbar Labels): the item as
-    /// wide as its word or its icon, the wider, with 8 points at each side, the panel as
-    /// tall as without. The overflow's first step folds them all at once. Off by default.
+    /// wide as its word or its icon, the wider, with 8 points at each side, the panel
+    /// [`Toolbar::height`] tall. The words never fold: a button that does not fit goes
+    /// under » with them, as without. Off by default.
     pub fn labels(mut self, on: bool) -> Self {
         self.labels = on;
         self
+    }
+
+    /// The panel's height in theme `t` with labels `on` or off ([`Toolbar::labels`]): the
+    /// theme's `toolbar_labelled` or `toolbar`. It follows the setting alone, never the
+    /// width. The app sizes the panel it draws
+    /// the Toolbar in, and the window's own buttons placed in it, by this.
+    pub fn height(t: &crate::Theme, on: bool) -> f32 {
+        if on {
+            t.sizes.toolbar_labelled
+        } else {
+            t.sizes.toolbar
+        }
     }
 
     /// Keeps `points` clear at the panel's start, in place of its margin there: room for
@@ -485,9 +511,9 @@ impl<'a> Toolbar<'a> {
         self.entries.contains(entry)
     }
 
-    /// The overflow's steps, from nothing folded to all that folds (decision 92): the
-    /// labels fold, where they show; the fixed spaces narrow to 8 points, then go one at a
-    /// time from the end; the buttons go under » one at a time ([`Toolbar::fold_order`]);
+    /// The overflow's steps, from nothing folded to all that folds (decision 92), the same
+    /// with labels or without: the fixed spaces narrow to 8 points, then go one at a time
+    /// from the end; the buttons go under » one at a time ([`Toolbar::fold_order`]);
     /// the status words fold; and last the buttons that fold last, Undo and Redo,
     /// together.
     fn steps(&self) -> Vec<Fold> {
@@ -496,10 +522,6 @@ impl<'a> Toolbar<'a> {
             .count();
         let mut fold = Fold::default();
         let mut steps = vec![fold];
-        if self.labels {
-            fold.labels = true;
-            steps.push(fold);
-        }
         fold.narrow = true;
         steps.push(fold);
         for _ in 0..spaces {
@@ -605,8 +627,10 @@ impl<'a> Toolbar<'a> {
         let mut well = self.cursors.take();
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
-        let (bar, response) =
-            ui.allocate_exact_size(vec2(ui.available_width(), t.sizes.toolbar), Sense::hover());
+        let (bar, response) = ui.allocate_exact_size(
+            vec2(ui.available_width(), Toolbar::height(&t, self.labels)),
+            Sense::hover(),
+        );
         let toolbar_name = tr(&ctx, "toolbar");
         response.widget_info(|| WidgetInfo::labeled(Role::Toolbar, true, &toolbar_name));
         ui.painter().rect_filled(bar, 0.0, t.colors.surface);
@@ -673,11 +697,12 @@ impl<'a> Toolbar<'a> {
         let list_end = |fold: Fold| inner.max.x - guards(guard_save(fold), guard_jobs);
 
         let gap = t.spacing.xxs;
-        let labelled = |fold: Fold| self.labels && !fold.labels;
+        let labelled = self.labels;
         let width = |drawn: Drawn, fold: Fold| match drawn {
             Drawn::Menu => self.menu_style.width(),
-            Drawn::Button(button) if labelled(fold) => Labelled::of(ui, button).width,
-            Drawn::Button(_) | Drawn::Jobs | Drawn::More => BUTTON,
+            Drawn::Button(button) if labelled => Labelled::of(ui, button).width,
+            Drawn::Button(_) => ACTION,
+            Drawn::Jobs | Drawn::More => BUTTON,
             Drawn::Space if fold.narrow => t.spacing.m,
             Drawn::Space => t.spacing.xl,
             Drawn::Flexible => 0.0,
@@ -817,11 +842,12 @@ impl<'a> Toolbar<'a> {
                     let done = ToolbarAction::Button(button.id);
                     let response = ui
                         .scope_builder(left(button.id), |ui| {
-                            if labelled(fold) {
+                            if labelled {
                                 Labelled::of(ui, button).show(ui, bar, keys(done))
                             } else {
                                 icon_button(button.icon, &button.name, keys(done))
-                                    .size(BUTTON)
+                                    .size(ACTION)
+                                    .icon_size(action_icon(button.icon))
                                     .enabled(button.enabled)
                                     .show(ui)
                             }
@@ -1425,9 +1451,10 @@ pub fn caption_button(
 }
 
 /// A button with its word under its icon (decision 92, Labels), as the Tools panel's tab
-/// names are set: in the panel, 6 points below its top, the icon in `text_secondary` in a
-/// 16-point square, so every word stands on one line, 3 points, then the word, centred, at
-/// the caption size, Regular, in `text`. Otherwise an
+/// names are set: in the taller panel, 8 points below its top, the icon in
+/// `text_secondary` in a 22-point square, as the tabs' icons, so every word stands on one
+/// line, 4 points, then the word, centred, at the caption size, Regular, in `text`, the
+/// rest of the panel below it. Otherwise an
 /// icon button (decision 81): no plate, the icon `text_strong` under the pointer and
 /// `accent_text` held down, high contrast's `button_edge` round it under the pointer, the
 /// focus ring after a key.
@@ -1445,7 +1472,7 @@ impl<'b> Labelled<'b> {
         let text = button.word().to_owned();
         // Its colour given as it is drawn.
         let word = (ui.painter()).layout_no_wrap(text, font, egui::Color32::PLACEHOLDER);
-        let width = word.size().x.max(LABEL_ICON) + 2.0 * t.spacing.m;
+        let width = word.size().x.max(ACTION_ICON) + 2.0 * t.spacing.m;
         Labelled {
             button,
             word,
@@ -1483,10 +1510,11 @@ impl<'b> Labelled<'b> {
                 );
             }
             let square = Rect::from_min_size(
-                pos2(rect.center().x - LABEL_ICON / 2.0, bar.top() + LABEL_TOP),
-                Vec2::splat(LABEL_ICON),
+                pos2(rect.center().x - ACTION_ICON / 2.0, bar.top() + LABEL_TOP),
+                Vec2::splat(ACTION_ICON),
             );
-            let icon = Rect::from_center_size(square.center(), Vec2::splat(button.icon.size()));
+            let icon =
+                Rect::from_center_size(square.center(), Vec2::splat(action_icon(button.icon)));
             button.icon.paint(painter, icon, colour(&t, touch, false));
             let word = pos2(
                 rect.center().x - self.word.size().x / 2.0,

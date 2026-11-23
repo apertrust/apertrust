@@ -386,7 +386,7 @@ impl Icon {
     /// Whether the icon keeps a design box and stroke of its own rather than Lucide's: the
     /// app's icon and its caret, and the window's caption buttons, drawn as the systems
     /// draw theirs.
-    fn keeps_its_box(self) -> bool {
+    pub(crate) fn keeps_its_box(self) -> bool {
         matches!(
             self,
             Icon::AppIcon

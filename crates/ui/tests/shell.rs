@@ -203,15 +203,17 @@ fn images<T>(harness: &Harness<'_, T>) -> Vec<egui::Rect> {
 }
 
 /// Toolbar Labels (decision 92): each button's `.toolbar` word under its icon, centred,
-/// the icon 6 points below the panel's top and the word 3 points below the icon, the
-/// button as wide as its word or its icon, the wider, with 8 points at each side; the
-/// panel 44 points tall with labels or without, its buttons a gap apart, as without.
+/// the icon in a 22-point square 8 points below the panel's top and the word 4 points
+/// below the square, the button as wide as its word or its icon, the wider, with 8 points
+/// at each side; the panel 56 points tall with labels, 44 without, its buttons a gap
+/// apart, as without, each 32 points wide with its 22-point icon.
 #[test]
-fn labels_stand_under_their_icons_and_keep_the_toolbar_s_height() {
+fn labels_stand_under_their_icons_in_a_taller_toolbar() {
     let mut harness = toolbar(&[], true);
     harness.run();
     let bar = harness.get_by_role(Role::Toolbar).rect();
-    assert_eq!(bar.height(), 44.0);
+    assert_eq!(bar.height(), 56.0);
+    assert_eq!(Toolbar::height(&Theme::default(), true), 56.0);
     let words = Translator::new(Locale::EnGb);
     let drawn = texts(&harness);
     let icons = images(&harness);
@@ -233,45 +235,87 @@ fn labels_stand_under_their_icons_and_keep_the_toolbar_s_height() {
         let icon = (icons.iter())
             .find(|icon| button.contains_rect(**icon))
             .unwrap_or_else(|| panic!("{name}: no icon"));
-        // In a 16-point square 6 points below the panel's top, the word 3 points below it.
-        assert!(icon.width() <= 16.0, "{name}: {icon:?}");
-        assert!((icon.center().y - bar.top() - 14.0).abs() < 0.51, "{name}");
-        assert_eq!(text.top() - bar.top(), 6.0 + 16.0 + 3.0, "{name}");
-        assert!(text.bottom() <= bar.bottom(), "{name}");
+        // In a 22-point square 8 points below the panel's top, the word 4 points below it,
+        // and 8 points of the panel left under the word.
+        assert_eq!(icon.width(), 22.0, "{name}: {icon:?}");
+        assert!((icon.center().y - bar.top() - 19.0).abs() < 0.51, "{name}");
+        assert_eq!(text.top() - bar.top(), 8.0 + 22.0 + 4.0, "{name}");
+        assert_eq!(bar.bottom() - text.bottom(), 8.0, "{name}: under the word");
         assert!((text.center().x - button.center().x).abs() < 0.01, "{name}");
         assert!((icon.center().x - button.center().x).abs() < 0.51, "{name}");
         assert!(text.height() < caption * 1.5, "{name}: one line");
-        assert_eq!(button.width(), text.width().max(16.0) + 16.0, "{name}");
+        assert_eq!(button.width(), text.width().max(22.0) + 16.0, "{name}");
     }
     let rect = |name: &str| harness.get_by_label(name).rect();
     assert_eq!(rect("Export…").left() - rect("Import…").right(), 2.0);
     assert_eq!(rect("Copy edit").left() - rect("Redo").right(), 16.0);
     // Off, each button is its icon alone, Import…, Export… and Reset too, and no word
-    // shows; the panel keeps its height.
+    // shows; the panel is 44 points.
     let mut off = toolbar(&[], false);
     off.run();
     assert_eq!(off.get_by_role(Role::Toolbar).rect().height(), 44.0);
+    assert_eq!(Toolbar::height(&Theme::default(), false), 44.0);
+    let icons = images(&off);
     for name in ACTIONS {
-        assert_eq!(off.get_by_label(name).rect().width(), 30.0, "{name}");
+        let button = off.get_by_label(name).rect();
+        assert_eq!(button.size(), egui::vec2(32.0, 32.0), "{name}");
+        let icon = (icons.iter())
+            .find(|icon| button.contains_rect(**icon))
+            .unwrap_or_else(|| panic!("{name}: no icon"));
+        assert_eq!(icon.width(), 22.0, "{name}: {icon:?}");
+        assert!((icon.center() - button.center()).length() < 0.71, "{name}");
     }
     assert!(texts(&off).is_empty(), "{:?}", texts(&off));
 }
 
-/// The Toolbar `width` points wide, with the save state `saved`, and as on the Mac, the
-/// window's buttons' room at its start, or as on Windows and Linux, the menu button at its
-/// start and the caption buttons at its end; and Export's keys.
+/// With labels on, what has no label stays centred in the taller panel, as on Windows and
+/// Linux: the menu button, the cursors' well and the caption buttons, which run its whole
+/// height; and with actions under » as it narrows, the panel keeps its 56 points, » centred
+/// in it too.
+#[test]
+fn what_has_no_label_stays_centred_in_the_taller_toolbar() {
+    for width in [1400.0, 600.0] {
+        let mut harness = narrow(width, SaveState::Saved, 0.0, true);
+        harness.run();
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        assert_eq!(bar.height(), 56.0, "at {width}");
+        let centred = |name: &str, rect: egui::Rect| {
+            assert!(
+                (rect.center().y - bar.center().y).abs() < 0.51,
+                "{name} at {width}: {rect:?} in {bar:?}"
+            );
+            rect
+        };
+        let named = |name: &str| centred(name, harness.get_by_label(name).rect());
+        named("Menu");
+        centred("the well", harness.get_by_role(Role::RadioGroup).rect());
+        for name in ["Minimise", "Close"] {
+            assert_eq!(named(name).height(), bar.height(), "{name} at {width}");
+        }
+        if width < 1000.0 {
+            named("More actions");
+            let undo = harness.get_by_label("Undo").rect();
+            assert!(undo.width() > 32.0, "its word kept: {undo:?}");
+        }
+    }
+}
+
+/// The Toolbar `width` points wide, with its labels, with the save state `saved`, and as
+/// on the Mac, the window's buttons' room at its start, or as on Windows and Linux, the
+/// menu button at its start and the caption buttons at its end; and Export's keys.
 fn narrow(
     width: f32,
     saved: SaveState<'static>,
     inset: f32,
     caption: bool,
 ) -> Harness<'static, Vec<ToolbarAction>> {
-    narrow_in(Locale::EnGb, width, saved, inset, caption)
+    narrow_in(Locale::EnGb, true, width, saved, inset, caption)
 }
 
-/// [`narrow`] in `locale`.
+/// [`narrow`] in `locale`, with labels where `labels`.
 fn narrow_in(
     locale: Locale,
+    labels: bool,
     width: f32,
     saved: SaveState<'static>,
     inset: f32,
@@ -287,7 +331,7 @@ fn narrow_in(
             move |ui, actions: &mut Vec<ToolbarAction>| {
                 let bar = Toolbar::new()
                     .entries(toolbar_entries(ui.ctx(), &["redo", "apply-edit"]))
-                    .labels(true)
+                    .labels(labels)
                     .saved(saved)
                     .start_inset(inset)
                     .title_bar(true)
@@ -310,37 +354,44 @@ fn shown(harness: &Harness<'_, Vec<ToolbarAction>>) -> Vec<(&'static str, f32)> 
         .collect()
 }
 
+/// The same with labels or without (decision 92): every action shows, with its word where
+/// labels are on, until it does not fit; then the actions go under » one at a time, words
+/// and all, the shown ones keeping their words.
 #[test]
-fn a_narrowing_toolbar_folds_its_labels_then_its_actions_into_more() {
-    let mut wide = narrow(1200.0, SaveState::Saved, 0.0, false);
+fn a_narrowing_toolbar_folds_its_actions_into_more() {
+    for labels in [true, false] {
+        a_narrowing_toolbar_folds_its_actions_into_more_with(labels);
+    }
+    a_narrowing_toolbar_s_more_lists_what_it_holds();
+}
+
+/// [`a_narrowing_toolbar_folds_its_actions_into_more`], with labels or without.
+fn a_narrowing_toolbar_folds_its_actions_into_more_with(labels: bool) {
+    let saved = SaveState::Saved;
+    let mut wide = narrow_in(Locale::EnGb, labels, 1400.0, saved, 0.0, false);
     wide.run();
-    // Every action with its label; no ».
-    let widths = shown(&wide);
-    assert_eq!(widths.len(), 7);
-    assert!(widths.iter().all(|(_, width)| *width > 30.0), "{widths:?}");
+    // Every action, with its word where labels are on; no ».
+    let full = shown(&wide);
+    assert_eq!(full.len(), 7);
+    let labelled = |width: f32| if labels { width > 32.0 } else { width == 32.0 };
+    assert!(full.iter().all(|(_, w)| labelled(*w)), "{labels}: {full:?}");
     assert!(wide.query_by_label("More actions").is_none());
 
-    // Narrower, the labels fold all at once: the actions are icons.
-    let mut icons = narrow(600.0, SaveState::Saved, 0.0, false);
-    icons.run();
-    let widths = shown(&icons);
-    assert_eq!(widths.len(), 7);
-    assert!(widths.iter().all(|(_, width)| *width == 30.0), "{widths:?}");
-    assert!(icons.query_by_label("More actions").is_none());
-
-    // Narrower still, the actions go under » one at a time, a tool's items first from the
-    // end, then Import…, the app's own; the first two together, since » takes the first's
-    // room; Undo and Redo last.
-    let mut narrowing = narrow(700.0, SaveState::Saved, 0.0, false);
+    // Narrower, the actions go under » one at a time, a tool's items first from the end,
+    // then Import…, the app's own, » fitting in the first's room; Undo and Redo last. The
+    // ones still shown keep their widths, words and all.
+    let mut narrowing = narrow_in(Locale::EnGb, labels, 1400.0, saved, 0.0, false);
     let mut gone: Vec<Vec<&str>> = Vec::new();
     let mut last = ACTIONS.to_vec();
-    for width in (150..=700).rev() {
+    for width in (150..=1400).rev() {
         narrowing.set_size(egui::vec2(width as f32, 120.0));
         narrowing.run();
-        let now: Vec<&str> = shown(&narrowing)
-            .into_iter()
-            .map(|(name, _)| name)
-            .collect();
+        let now = shown(&narrowing);
+        for (name, w) in &now {
+            let was = full.iter().find(|(n, _)| n == name).map(|(_, w)| *w);
+            assert_eq!(Some(*w), was, "{labels}, {width}: {name}");
+        }
+        let now: Vec<&str> = now.into_iter().map(|(name, _)| name).collect();
         let went: Vec<&str> = last.iter().copied().filter(|n| !now.contains(n)).collect();
         if !went.is_empty() {
             gone.push(went);
@@ -350,14 +401,20 @@ fn a_narrowing_toolbar_folds_its_labels_then_its_actions_into_more() {
     assert_eq!(
         gone,
         [
-            vec!["Copy edit", "Apply edit"],
+            vec!["Apply edit"],
+            vec!["Copy edit"],
             vec!["Reset"],
             vec!["Export…"],
             vec!["Import…"],
             vec!["Undo", "Redo"],
-        ]
+        ],
+        "{labels}"
     );
+}
 
+/// » lists what it holds with their keys, disabled where they can't run, and at the
+/// narrowest Undo and Redo too.
+fn a_narrowing_toolbar_s_more_lists_what_it_holds() {
     // With all but Undo and Redo under », » lists them with their keys and disabled where
     // they can't run.
     let mut more = narrow(370.0, SaveState::Saved, 0.0, false);
@@ -491,9 +548,14 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
         ]
         .map(|id| words.text(id));
         let minimise = words.text("window-minimise");
-        for (inset, caption) in [(78.0, false), (0.0, true)] {
+        for (inset, caption, labels) in [
+            (78.0, false, true),
+            (0.0, true, true),
+            (78.0, false, false),
+            (0.0, true, false),
+        ] {
             for saved in [SaveState::Saving, SaveState::Failed("disk full")] {
-                let mut harness = narrow_in(locale, 1400.0, saved, inset, caption);
+                let mut harness = narrow_in(locale, labels, 1400.0, saved, inset, caption);
                 for width in (500..=1400).rev().step_by(5) {
                     harness.set_size(egui::vec2(width as f32, 120.0));
                     harness.run();
@@ -531,13 +593,12 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
 /// on Windows and Linux, the menu button drawn as `menu` says and the caption buttons at
 /// the end; with the jobs spinner's slot and Phase 2's cursors' well, as the app draws
 /// them, and a failed write, whose words show the status step. Each is the widest Toolbar
-/// that has taken the step, plus one, 1401 for one taken at the widest: the labels
-/// folded, the fixed space narrowed, the fixed space gone, the first action under »,
-/// every action but Undo and Redo under », the status words folded, and Undo and Redo
-/// under ».
-fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [u32; 7] {
+/// that has taken the step, plus one, 1601 for one taken at the widest: the fixed space
+/// narrowed, the fixed space gone, the first action under », every action but Undo and
+/// Redo under », the status words folded, and Undo and Redo under ».
+fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [u32; 6] {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1400.0, 120.0))
+        .with_size(egui::vec2(1600.0, 120.0))
         .with_context_setup(move |ctx| {
             install(ctx);
             apertrust_ui::set_locale(ctx, locale);
@@ -572,12 +633,11 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [
         Some(harness.query_by_label(&copy)?.rect().left() - redo.right())
     };
     let sign = 2.0 * Theme::default().spacing.s + Icon::Warning.size();
-    let mut starts = [0; 7];
-    for width in (150..=1400).rev() {
+    let mut starts = [0; 6];
+    for width in (150..=1600).rev() {
         harness.set_size(egui::vec2(width as f32, 120.0));
         harness.run();
         let taken = [
-            (harness.query_by_label(&import)).is_none_or(|node| node.rect().width() == 30.0),
             space(&harness).is_none_or(|room| room < 16.0),
             space(&harness).is_none_or(|room| room < 8.0),
             harness.query_by_label(&more).is_some(),
@@ -718,32 +778,49 @@ fn keeps_every_part<T>(harness: &Harness<'_, T>, locale: Locale, menu: Option<Me
 }
 
 /// The widths `docs/gui.md`'s Narrowing table gives, each step's start as the window
-/// narrows: on the Mac in each language, and on Linux with either menu button, with
-/// labels; without them, icons from the widest and every other step where it starts with
-/// them. And at 500 points, in every language, both platforms' defaults and a list with
+/// narrows: on the Mac in each language, and on Linux with either menu button, with labels
+/// and without, the same steps either way. And at 500 points, in every language, both platforms' defaults and a list with
 /// every part placed fold no part and keep 24 points empty.
 #[test]
 fn the_toolbar_folds_where_gui_md_says() {
-    for (locale, menu, expected) in [
-        (Locale::EnGb, None, [744, 599, 591, 585, 489, 457, 399]),
+    type Case = (Locale, Option<MenuButtonStyle>, [u32; 6], [u32; 6]);
+    let cases: [Case; 5] = [
+        (
+            Locale::EnGb,
+            None,
+            [744, 736, 730, 533, 481, 423],
+            [613, 605, 599, 495, 461, 403],
+        ),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Icon),
-            [869, 724, 716, 710, 614, 582, 524],
+            [869, 861, 855, 658, 606, 548],
+            [738, 730, 724, 620, 586, 528],
         ),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Menu),
-            [858, 713, 705, 699, 603, 571, 513],
+            [858, 850, 844, 647, 595, 537],
+            [727, 719, 713, 609, 575, 517],
         ),
-        (Locale::Uk, None, [875, 626, 618, 612, 516, 484, 399]),
-        (Locale::Pl, None, [848, 614, 606, 600, 504, 472, 399]),
-    ] {
+        (
+            Locale::Uk,
+            None,
+            [875, 867, 861, 618, 564, 480],
+            [640, 632, 626, 522, 488, 403],
+        ),
+        (
+            Locale::Pl,
+            None,
+            [848, 840, 834, 567, 506, 433],
+            [628, 620, 614, 510, 476, 403],
+        ),
+    ];
+    for (locale, menu, on, off) in cases {
         let measured = fold_widths(locale, menu, true);
-        assert_eq!(measured, expected, "{locale:?}, {menu:?}");
-        let off = fold_widths(locale, menu, false);
-        assert_eq!(off[0], 1401, "{locale:?}, {menu:?}: icons from the widest");
-        assert_eq!(off[1..], expected[1..], "{locale:?}, {menu:?}, labels off");
+        assert_eq!(measured, on, "{locale:?}, {menu:?}, labels on");
+        let measured = fold_widths(locale, menu, false);
+        assert_eq!(measured, off, "{locale:?}, {menu:?}, labels off");
     }
     let defaults: fn(&egui::Context) -> Vec<ToolbarEntry> = |ctx| toolbar_entries(ctx, &[]);
     for locale in Locale::ALL {
@@ -870,7 +947,7 @@ fn saving_never_moves_the_fold() {
     let fold = |h: &Harness<'_, SaveState<'static>>| {
         (
             h.query_by_label("Import…")
-                .is_some_and(|node| node.rect().width() > 30.0),
+                .is_some_and(|node| node.rect().width() > 32.0),
             h.query_by_label("More actions").is_some(),
             h.query_by_label("Undo").is_some(),
         )
@@ -1054,7 +1131,7 @@ fn screen_readers_hear_a_failed_write_and_saving_working_again_and_nothing_else(
 #[test]
 fn the_save_warning_and_saving() {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(700.0, 100.0))
+        .with_size(egui::vec2(700.0, 124.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
         .build_ui(|ui| {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
@@ -1082,24 +1159,23 @@ fn the_save_warning_and_saving() {
 
 #[test]
 fn a_widening_toolbar_unfolds_only_with_room_to_spare() {
-    let mut width = 700.0;
+    let mut width = 1400.0;
     let mut harness = narrow(width, SaveState::Saved, 0.0, false);
     harness.run();
-    let words =
-        |h: &Harness<'_, Vec<ToolbarAction>>| h.get_by_label("Import…").rect().width() > 30.0;
-    // Narrowed a point at a time until the words go.
-    while words(&harness) {
+    let all = |h: &Harness<'_, Vec<ToolbarAction>>| h.query_by_label("More actions").is_none();
+    // Narrowed a point at a time until » shows, the first action under it.
+    while all(&harness) {
         width -= 1.0;
         harness.set_size(egui::vec2(width, 120.0));
         harness.run();
     }
-    // Widened by less than 16 points, the words stay folded; by 16 more, they come back.
+    // Widened by less than 16 points, » stays; by 16 more, the action comes back.
     harness.set_size(egui::vec2(width + 10.0, 120.0));
     harness.run();
-    assert!(!words(&harness));
+    assert!(!all(&harness));
     harness.set_size(egui::vec2(width + 18.0, 120.0));
     harness.run();
-    assert!(words(&harness));
+    assert!(all(&harness));
 }
 
 #[test]
@@ -1383,10 +1459,11 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
 
 /// The Toolbar with Phase 2's well, Select chosen, at a full window's width, in the
 /// theme `which`, with labels where `labels` (`docs/gui.md`, The Toolbar; `docs/cursors.md`,
-/// The well).
+/// The well). The picture is the panel and 8 points round it.
 fn photograph_the_well(which: Builtin, labels: bool, name: &'static str) {
+    let height = Toolbar::height(&Theme::builtin(which), labels) + 16.0;
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1000.0, 60.0))
+        .with_size(egui::vec2(1000.0, height))
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
         .build_ui(move |ui| {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
@@ -1626,10 +1703,11 @@ fn without_the_option_there_are_no_caption_buttons() {
     }
 }
 
-/// The end of a Toolbar with caption buttons, in the dark theme, for its snapshots.
+/// The end of a Toolbar with caption buttons, in the dark theme, for its snapshots, with
+/// room under it for a tooltip.
 fn caption_snapshot() -> Harness<'static> {
     Harness::builder()
-        .with_size(egui::vec2(700.0, 90.0))
+        .with_size(egui::vec2(700.0, 102.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
         .build_ui(|ui| {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
@@ -1865,8 +1943,8 @@ fn the_toolbar_draws_its_entries_in_their_order() {
 }
 
 /// A tool's items go under » before the app's own, wherever they stand (decision 92): with
-/// Open, the app's, after Reset, a tool's, Reset still goes first; Copy edit and Reset
-/// together, since » takes the first one's room, then Open, then Import….
+/// Open, the app's, after Reset, a tool's, Reset still goes first after Copy edit, » taking
+/// the first one's room, then Open, then Import….
 #[test]
 fn a_tool_s_items_fold_before_the_app_s_own() {
     let button = |id: &'static str, tool: bool| {
@@ -1903,7 +1981,12 @@ fn a_tool_s_items_fold_before_the_app_s_own() {
     }
     assert_eq!(
         gone,
-        [vec!["reset", "copy-edit"], vec!["open"], vec!["import"]]
+        [
+            vec!["copy-edit"],
+            vec!["reset"],
+            vec!["open"],
+            vec!["import"]
+        ]
     );
 }
 

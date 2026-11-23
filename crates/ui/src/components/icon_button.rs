@@ -44,6 +44,7 @@ pub struct IconButton<'a> {
     enabled: bool,
     shortcut: Option<&'a str>,
     size: Option<f32>,
+    icon_size: Option<f32>,
     width: Option<f32>,
     tip: Option<&'a str>,
     state: Option<ButtonState>,
@@ -79,6 +80,7 @@ impl<'a> IconButton<'a> {
             enabled: true,
             shortcut: None,
             size: None,
+            icon_size: None,
             width: None,
             tip: None,
             state: None,
@@ -134,6 +136,13 @@ impl<'a> IconButton<'a> {
         self
     }
 
+    /// The side of the square its icon is drawn in, in points, in place of the icon's own
+    /// size: the Toolbar's actions at 22.
+    pub fn icon_size(mut self, side: f32) -> Self {
+        self.icon_size = Some(side);
+        self
+    }
+
     /// The button's width alone, in points, its height staying its side: a section
     /// header's buttons, as narrow as their icon and a control high.
     pub fn width(mut self, width: f32) -> Self {
@@ -146,8 +155,9 @@ impl<'a> IconButton<'a> {
     /// it, at least a control's height.
     pub fn side(&self, ui: &Ui) -> f32 {
         let t = theme(ui.ctx());
-        self.size
-            .unwrap_or_else(|| (self.icon.size() + 8.0).max(t.sizes.control))
+        self.size.unwrap_or_else(|| {
+            (self.icon_size.unwrap_or(self.icon.size()) + 8.0).max(t.sizes.control)
+        })
     }
 
     pub fn show(self, ui: &mut Ui) -> Response {
@@ -179,7 +189,7 @@ impl<'a> IconButton<'a> {
                     StrokeKind::Inside,
                 );
             }
-            let size = self.icon.size();
+            let size = self.icon_size.unwrap_or(self.icon.size());
             let icon = if on { self.icon.filled() } else { self.icon };
             let icon_rect = Rect::from_center_size(rect.center(), vec2(size, size));
             icon.paint(painter, icon_rect, colour(&t, touch, on));

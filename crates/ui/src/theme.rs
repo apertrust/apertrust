@@ -463,9 +463,13 @@ pub struct Sizes {
     /// The width of a section header's buttons, each around an icon as wide: 14 points,
     /// a control high.
     pub section_button: f32,
-    /// The Toolbar's height; a theme file may still name it `top_bar` ([`OLD_SIZES`]).
+    /// The Toolbar's height with Toolbar Labels off; a theme file may still name it
+    /// `top_bar` ([`OLD_SIZES`]).
     #[serde(alias = "top_bar")]
     pub toolbar: f32,
+    /// The Toolbar's height with Toolbar Labels on, each word on its line under its icon
+    /// (decision 92).
+    pub toolbar_labelled: f32,
     /// A slider row's height, its padding included, and the strip the track runs in,
     /// under a top line a field high (`docs/gui.md`, How the rows are laid out).
     pub slider_row: f32,

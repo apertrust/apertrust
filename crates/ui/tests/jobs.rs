@@ -534,7 +534,7 @@ fn fold(harness: &Harness<'_, Run>) -> (bool, bool, bool) {
     (
         harness
             .query_by_label("Import…")
-            .is_some_and(|n| n.rect().width() > 30.0),
+            .is_some_and(|n| n.rect().width() > 32.0),
         harness.query_by_label("More actions").is_some(),
         harness.query_by_label("Undo").is_some(),
     )
