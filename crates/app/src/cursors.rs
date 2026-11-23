@@ -417,16 +417,17 @@ impl Mode {
 
     /// What takes a press on the photo this frame (`docs/cursors.md`, A cursor): a tool's
     /// picker while one is on, `picker`, as darktable's button has it, the cursor chosen
-    /// waiting underneath; else the cursor acting, Select's and Pan's drags panning as the
-    /// built drag does, Select's marks coming with stored samples and masks, and a picker
-    /// cursor picking.
+    /// waiting underneath; else the cursor acting: Select's marks, which come with stored
+    /// samples and masks, and never a pan; Pan's drag, and A held's, panning as the built
+    /// drag does; and a picker cursor picking.
     pub fn press(&self, picker: bool) -> Press {
         let Some(entry) = registry().entry(self.acting()) else {
             return Press::Pan;
         };
         match entry.def.group {
             _ if picker => Press::Picker,
-            CursorGroup::Select | CursorGroup::Pan => Press::Pan,
+            CursorGroup::Select => Press::Select,
+            CursorGroup::Pan => Press::Pan,
             _ => Press::Pick(*entry),
         }
     }
@@ -455,6 +456,9 @@ impl Mode {
 pub enum Press {
     /// The tool's picker on takes it.
     Picker,
+    /// Select's: a click or a drag on a mark, once marks come; a drag on empty photo does
+    /// nothing, never a pan.
+    Select,
     /// A drag pans a zoomed photo.
     Pan,
     /// A picker cursor picks with a click or a drag.
@@ -1042,7 +1046,8 @@ mod tests {
             id: "spot",
         };
         let cases = [
-            (Cursor::SELECT, false, false, "pan"),
+            (Cursor::SELECT, false, false, "select"),
+            (Cursor::SELECT, true, false, "pan"),
             (Cursor::PAN, false, false, "pan"),
             (spot, false, false, "pick"),
             (spot, true, false, "pan"),
@@ -1056,6 +1061,7 @@ mod tests {
             mode.hold_pan(held);
             let found = match mode.press(picker) {
                 Press::Picker => "picker",
+                Press::Select => "select",
                 Press::Pan => "pan",
                 Press::Pick(entry) => {
                     assert_eq!(entry.cursor, chosen);
