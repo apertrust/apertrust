@@ -607,6 +607,13 @@ impl Mode {
         })
     }
 
+    /// Whether a tool's picker is on, as the well last followed it: Esc then ends it
+    /// wherever the focus is ([`crate::Shell::find_keys`]).
+    pub fn picking(&self) -> bool {
+        self.following
+            .is_some_and(|f| matches!(f.picker, PickerRef::Tool { .. }))
+    }
+
     /// What screen readers hear of a picker turning on or off: `text`, said politely.
     pub fn say_turned(&mut self, text: String) {
         self.turned = text;
@@ -637,16 +644,18 @@ impl Mode {
         Some(*number)
     }
 
-    /// What takes a press on the photo this frame (`docs/cursors.md`, A cursor): a tool's
-    /// picker while one is on, `picker`, as darktable's button has it, the cursor chosen
-    /// waiting underneath; else the cursor acting: Select's marks, which come with stored
-    /// samples and masks, and never a pan; Pan's drag, and A held's, panning as the built
-    /// drag does; and a picker cursor picking.
+    /// What takes a press on the photo this frame (`docs/cursors.md`, A cursor): Pan while
+    /// A is held, over a picker too; a tool's picker while one is on, `picker`, as
+    /// darktable's button has it, the cursor chosen waiting underneath; else the cursor
+    /// chosen: Select's marks, which come with stored samples and masks, and never a pan;
+    /// Pan's drag panning as the built drag does; and a picker cursor picking.
     pub fn press(&self, picker: bool) -> Press {
         let Some(entry) = registry().entry(self.acting()) else {
             return Press::Pan;
         };
         match entry.def.group {
+            // A held pans over a picker too, darktable's force-pan.
+            _ if self.pan_held => Press::Pan,
             _ if picker => Press::Picker,
             CursorGroup::Select => Press::Select,
             CursorGroup::Pan => Press::Pan,
@@ -1369,8 +1378,8 @@ mod tests {
         assert_eq!(mode.chosen(), exposure);
     }
 
-    /// Who takes a press on the photo: a picker on, from every cursor; Select and Pan,
-    /// and A held, pan; a picker cursor picks.
+    /// Who takes a press on the photo: A held pans, over a picker too; a picker on, from
+    /// every cursor; Pan pans; a picker cursor picks.
     #[test]
     fn a_picker_on_takes_the_photo_then_the_cursor_acting_does() {
         let spot = Cursor {
@@ -1385,7 +1394,8 @@ mod tests {
             (spot, true, false, "pan"),
             (Cursor::SELECT, false, true, "picker"),
             (spot, false, true, "picker"),
-            (spot, true, true, "picker"),
+            (spot, true, true, "pan"),
+            (Cursor::PAN, false, true, "picker"),
         ];
         for (chosen, held, picker, takes) in cases {
             let mut mode = Mode::new(true);
@@ -1700,6 +1710,7 @@ mod tests {
         );
         assert_eq!(mode.chosen(), spot());
         assert_eq!(mode.active(CursorGroup::Pick), Some(spot()));
+        assert!(mode.picking());
         assert_eq!(mode.follow(Some(SPOT_PICKER), Some(1)), None, "no turn");
         // Its own key again leaves it on; its face again ends it.
         mode.choose(spot());
@@ -1713,6 +1724,7 @@ mod tests {
             Some((SPOT_PICKER, Some(Ended::Asked)))
         );
         assert_eq!(mode.chosen(), Cursor::SELECT);
+        assert!(!mode.picking());
         // Another picker's cursor, then one with none: Select.
         mode.follow(Some(SPOT_PICKER), Some(1));
         mode.follow(Some(EXPOSURE_PICKER), Some(1));
@@ -1734,6 +1746,7 @@ mod tests {
         mode.follow(Some(PickerRef::ColourPicker), Some(1));
         mode.choose(Cursor::SELECT);
         assert!(!mode.ends(Some(PickerRef::ColourPicker)));
+        assert!(!mode.picking());
     }
 
     /// What screen readers hear as a picker turns on and off: its name and on; off with

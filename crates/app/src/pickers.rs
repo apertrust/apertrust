@@ -942,7 +942,7 @@ pub fn bar_words(
 }
 
 /// The id of the picker's node on the photo, whatever draws it.
-fn photo_id() -> egui::Id {
+pub fn photo_id() -> egui::Id {
     egui::Id::unique("picker on the photo")
 }
 
@@ -1007,6 +1007,10 @@ pub struct OnPhoto<'a> {
     pub label: &'a str,
     /// Its icon beside the pointer ([`badge`]).
     pub badge: Icon,
+    /// Whether A is held, which borrows Pan over the picker (darktable's force-pan): its
+    /// marks stay and its node keeps the focus, but a press is the pan's, and a drag under
+    /// way ends where it was.
+    pub panning: bool,
 }
 
 /// A drag of the picker on the photo, between its press and its release.
@@ -1042,11 +1046,18 @@ pub struct PhotoPicked {
 
 /// Draws the picker's marks over the photo and returns what the pointer and the keys did
 /// this frame. Its node takes the focus where asked ([`focus_photo`]); Esc's `Off` gives
-/// it back to the picker's button.
+/// it back to the picker's button. The pointer over it is the crosshair, the move pointer
+/// while an area is dragged.
 pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     let ctx = ui.ctx().clone();
     let id = photo_id();
-    let response = ui.interact(on.area, id, Sense::click_and_drag());
+    // While A is held the pan takes the pointer, the node keeping its focus.
+    let sense = if on.panning {
+        Sense::focusable_noninteractive()
+    } else {
+        Sense::click_and_drag()
+    };
+    let response = ui.interact(on.area, id, sense);
     if ctx.data_mut(|d| d.remove_temp::<bool>(id.with("focus"))) == Some(true) {
         response.request_focus();
     }
@@ -1087,7 +1098,8 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     // A touch screen's pinch zooms the photo: a drag its first finger began ends where it
     // was, and the fingers pick nothing more until they lift.
     let pinching = ui.input(|i| i.multi_touch().is_some());
-    let released = released || (pinching && drag.is_some());
+    let released = released || ((pinching || on.panning) && drag.is_some());
+    let pinching = pinching || on.panning;
     // A drag lasts while the button is held: one whose release this never saw, as the
     // picker turned off under it, is over.
     if !(down || released) {
@@ -1157,8 +1169,13 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     if response.secondary_clicked() && matches!(on.region, Region::Area(_)) {
         commands.push(PickerCommand::Reset);
     }
-    if matches!(drag, Some(Drag::Area { .. })) {
+    // The crosshair, the move pointer over a corner a press would take and while an area
+    // is dragged.
+    let corner = pos.is_some_and(|pos| on_corner(on, pos));
+    if matches!(drag, Some(Drag::Area { .. })) || (!on.panning && response.hovered() && corner) {
         ctx.set_cursor_icon(CursorIcon::Move);
+    } else if !on.panning && (response.hovered() || drag.is_some()) {
+        ctx.set_cursor_icon(CursorIcon::Crosshair);
     }
     // The keys and screen readers' actions, while the node has the focus.
     let (mut region, mut switched) = (on.region, on.switched);
@@ -1255,7 +1272,8 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
         .focused(response.has_focus())
         .paint(&overlay);
     paint_label(&overlay, on, place, response.has_focus());
-    let pointer = pos.filter(|_| response.contains_pointer());
+    // None while A held gives the pointer to the pan.
+    let pointer = pos.filter(|_| !on.panning && response.contains_pointer());
     paint_badge(
         &overlay,
         on,
@@ -1408,6 +1426,17 @@ fn pressed_on(
         held: at,
         last: Some((from, to)),
     })
+}
+
+/// Whether a press at `pos` would take a corner of the area on the photo, strictly within
+/// [`CORNER`] of an edge on each axis, as [`pressed_on`] takes it.
+fn on_corner(on: &OnPhoto, pos: Pos2) -> bool {
+    let Region::Area(area) = on.region else {
+        return false;
+    };
+    let rect = to_screen(on.photo, area);
+    let near = |a: f32, b: f32, at: f32| (at - a).abs().min((at - b).abs()) < CORNER;
+    near(rect.left(), rect.right(), pos.x) && near(rect.top(), rect.bottom(), pos.y)
 }
 
 /// The picker's place after `command`, at `region` with `switched` its other kind's, and
@@ -1988,6 +2017,7 @@ mod tests {
                         name: &name,
                         label: &label,
                         badge: badge(Sample.definition(), id),
+                        panning: false,
                     };
                     for command in on_photo(ui, &on).commands {
                         scene.send(command, &ctx);
@@ -2774,7 +2804,9 @@ mod tests {
             bar(BRIGHTNESS, true, false),
             (
                 "tool-sample-title · tool-sample-control-brightness-label".to_owned(),
-                "Drag an area on the photo. Ctrl-click switches to a point. Esc ends.".to_owned()
+                "Drag an area on the photo. Ctrl-click switches to a point. Right-click resets the \
+                 area. Esc ends."
+                    .to_owned()
             )
         );
         assert_eq!(
@@ -3026,6 +3058,7 @@ mod tests {
                         name: "",
                         label: LABEL,
                         badge: Icon::PickExposure,
+                        panning: false,
                     };
                     let now = on_photo(ui, &on);
                     picked.commands.extend(now.commands);
@@ -3046,6 +3079,78 @@ mod tests {
         harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowRight);
         harness.run();
         harness.state().1.reveal
+    }
+
+    /// Whether A is held, the commands sent and the picker's region.
+    type Pointing = (bool, Vec<PickerCommand>, Region);
+
+    /// The crosshair over the photo while a picker is on, from either door, the move
+    /// pointer over an area's corner; while A is held the pan has the pointer: a drag under
+    /// way ends where it was, as its release would, no crosshair shows and a press sends
+    /// nothing (`docs/cursors.md`, On the photo).
+    #[test]
+    fn the_crosshair_shows_and_a_held_gives_the_pointer_to_the_pan() {
+        let mut harness = Harness::builder()
+            .with_size(vec2(760.0, 400.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, (panning, sent, region): &mut Pointing| {
+                    let on = OnPhoto {
+                        picker: PickerRef::ColourPicker,
+                        area: PHOTO,
+                        photo: PHOTO,
+                        pixels: PIXELS,
+                        region: *region,
+                        switched: DEFAULT_AREA,
+                        colour: Color32::RED,
+                        name: "",
+                        label: "",
+                        badge: Icon::Pick,
+                        panning: *panning,
+                    };
+                    sent.extend(on_photo(ui, &on).commands);
+                },
+                (false, Vec::new(), Region::Point([0.5, 0.5])),
+            );
+        let pointer =
+            |harness: &Harness<'_, Pointing>| harness.output().platform_output.cursor_icon;
+        let at = PHOTO.center();
+        harness.hover_at(at);
+        harness.run();
+        assert_eq!(pointer(&harness), CursorIcon::Crosshair);
+        harness.drag_at(at);
+        harness.run();
+        harness.hover_at(at + vec2(40.0, 0.0));
+        harness.run();
+        harness.state_mut().1.clear();
+        // A goes down mid-drag: the point's move ends, done, where it was.
+        harness.state_mut().0 = true;
+        harness.run();
+        let ended = std::mem::take(&mut harness.state_mut().1);
+        assert!(
+            matches!(ended[..], [PickerCommand::Point { done: true, .. }]),
+            "{ended:?}"
+        );
+        harness.drop_at(at + vec2(40.0, 0.0));
+        harness.run();
+        assert_ne!(pointer(&harness), CursorIcon::Crosshair);
+        harness.drag_at(at);
+        harness.run();
+        harness.hover_at(at + vec2(-40.0, 20.0));
+        harness.run();
+        harness.drop_at(at + vec2(-40.0, 20.0));
+        harness.run();
+        assert_eq!(harness.state().1, []);
+        // An area: the move pointer over a corner a press would take.
+        harness.state_mut().0 = false;
+        harness.state_mut().2 = Region::Area([0.25, 0.25, 0.75, 0.75]);
+        let corner = PHOTO.min + PHOTO.size() * 0.25 + vec2(2.0, 2.0);
+        harness.hover_at(corner);
+        harness.run();
+        assert_eq!(pointer(&harness), CursorIcon::Move);
+        harness.hover_at(at);
+        harness.run();
+        assert_eq!(pointer(&harness), CursorIcon::Crosshair);
     }
 
     #[test]

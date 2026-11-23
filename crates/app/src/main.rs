@@ -3728,14 +3728,22 @@ impl Shell {
     /// Find Tool…'s field or a widget outside the panel has the keys, for the next frame's
     /// Escape ([`Shell::find_escape`]); and whether any widget has the focus but the zoomed
     /// photo's stop, a list is open or Find Tool…'s search, whose Escape the next frame's is
-    /// then, left in the input for them, never the Select cursor's (decision 104).
+    /// then, left in the input for them, never the Select cursor's (decision 104). While a
+    /// tool's picker is on, Esc ends it wherever the focus is: only a field being typed in,
+    /// an open list, Find Tool…'s search and the picker's own place on the photo, whose Esc
+    /// ends it there, keep the first.
     fn find_keys(&mut self, ctx: &egui::Context, panel: egui::Rect) {
         if let Some(search) = &mut self.find {
             search.inner = inner_keys(ctx, panel);
         }
         let focused = ctx.memory(|m| m.focused());
         let focused = focused.filter(|id| *id != zoom::photo_view_id());
-        self.escape_kept = focused.is_some() || popup::any_open(ctx) || self.find.is_some();
+        let typing = ctx.text_edit_focused() || popup::any_open(ctx) || self.find.is_some();
+        self.escape_kept = if self.cursors.picking() {
+            typing || focused == Some(pickers::photo_id())
+        } else {
+            focused.is_some() || typing
+        };
     }
 
     /// Runs `id` if it can run where it is in `state`: applies its intent, or returns its
@@ -6372,6 +6380,8 @@ impl App {
             name: &name,
             label: &label,
             badge,
+            // A held pans over the picker, which has the photo again on release.
+            panning: matches!(self.shell.cursors.press(true), cursors::Press::Pan),
         };
         let picked = pickers::on_photo(ui, &on);
         for command in picked.commands {
@@ -18350,8 +18360,8 @@ mod tests {
 
     /// Pan's drag pans a zoomed photo as the built drag does; Select's never does, and
     /// picks nothing; a picker cursor's drag picks and pans nothing; with A held, which
-    /// borrows Pan, Select's and a picker cursor's drags pan; a picker on takes the photo
-    /// from every cursor.
+    /// borrows Pan, Select's and a picker cursor's drags pan, over a picker on too; a picker
+    /// on takes the photo from every cursor otherwise.
     #[test]
     fn only_pan_and_a_held_pan_by_a_drag() {
         let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
@@ -18373,7 +18383,7 @@ mod tests {
             (SPOT, false, false, false, true),
             (SPOT, true, false, true, false),
             (cursors::Cursor::SELECT, false, true, false, false),
-            (SPOT, true, true, false, false),
+            (SPOT, true, true, true, false),
         ];
         for (chosen, held, picker, pans, picks) in cases {
             let mut harness = pointing(hundred, chosen);
@@ -21546,6 +21556,7 @@ mod tests {
                         name: "",
                         label: "",
                         badge: apertrust_ui::Icon::Pick,
+                        panning: false,
                     };
                     picking.sent.extend(pickers::on_photo(ui, &on).commands);
                 },
@@ -25674,6 +25685,59 @@ mod tests {
         harness.run();
         assert_eq!(chosen(&harness), cursors::Cursor::PAN);
         assert_eq!(harness.state().mirror.pickers.active(), None);
+    }
+
+    /// Esc ends a picker on wherever the focus is and chooses Select: from a slider of
+    /// another tool at once; from a value being typed in, the first Esc the field's, which
+    /// puts the value back, the next the picker's (`docs/cursors.md`, Keys).
+    #[test]
+    fn esc_ends_a_picker_from_any_focus_but_a_field_being_typed_in() {
+        let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        spot_on(&mut harness);
+        offs(&mut harness);
+        (harness.get_by_role_and_label(Role::Slider, "Brightness")).focus();
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(offs(&mut harness), 1);
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+        spot_on(&mut harness);
+        (harness.get_by_role_and_label(Role::Slider, "Brightness")).focus();
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert!(harness.ctx.text_edit_focused());
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(offs(&mut harness), 0);
+        assert_eq!(chosen(&harness), SPOT);
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(offs(&mut harness), 1);
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+    }
+
+    /// A held over a picker borrows Pan, the picker staying on and its cursor chosen, and
+    /// the photo goes back to the picker on release (`docs/cursors.md`, On the photo).
+    #[test]
+    fn a_held_pans_over_a_picker_and_gives_it_back() {
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        spot_on(&mut harness);
+        harness.key_down(Key::A);
+        harness.run();
+        let mode = &harness.state().shell.cursors;
+        assert!(matches!(mode.press(true), cursors::Press::Pan));
+        assert_eq!((mode.acting(), mode.chosen()), (cursors::Cursor::PAN, SPOT));
+        assert_eq!(offs(&mut harness), 0);
+        harness.key_up(Key::A);
+        harness.run();
+        assert!(matches!(
+            harness.state().shell.cursors.press(true),
+            cursors::Press::Picker
+        ));
     }
 
     /// A picker cursor that cannot act now is never chosen, by its key either: its face is

@@ -6215,6 +6215,7 @@ mod tests {
                     name: &name,
                     label: &picker_label(&words, Sample.definition(), "brightness"),
                     badge: apertrust_ui::Icon::Pick,
+                    panning: false,
                 };
                 on_photo(ui, &on);
             });
