@@ -12,7 +12,7 @@ Each file arrives with its first consumer, never before. It is embedded at build
 | --- | --- | --- | --- |
 | `settings.schema.toml` | Apertrust's own: every setting declared once (decision 43) | GPL-3.0-or-later | `apertrust-base`'s generator, `settings::codegen`, through the app's, the engine's and `apertrust-export`'s `build.rs` |
 | `themes/dark.toml`, `grey.toml`, `light.toml`, `high-contrast.toml` | Apertrust's own: the built-in themes' tokens (decision 36) | GPL-3.0-or-later | `apertrust-ui`'s `theme.rs`, with `include_str!` |
-| `workspaces/default.toml` | Apertrust's own: the Default workspace, built in, from decision 38's tabs and lists (decision 96); a test holds it to them | GPL-3.0-or-later | The app's `layout.rs`, embedded with `include_str!` |
-| `workspaces/essentials.toml` | Apertrust's own: the Essentials workspace, built in: Photos, Adjust with the tools most edits need, History, every other tool hidden (decision 96); a test holds it to them | GPL-3.0-or-later | The app's `layout.rs`, embedded with `include_str!` |
+| `workspaces/default.toml` | Apertrust's own: the Default workspace, built in, from decision 38's tabs and lists (decision 96), and the Toolbar's default list (decision 92); a test holds it to them | GPL-3.0-or-later | The app's `layout.rs`, embedded with `include_str!` |
+| `workspaces/essentials.toml` | Apertrust's own: the Essentials workspace, built in: Photos, Adjust with the tools most edits need, History, every other tool hidden (decision 96), and the Toolbar's default list (decision 92); a test holds it to them | GPL-3.0-or-later | The app's `layout.rs`, embedded with `include_str!` |
 
 A darktable file's row gives the darktable tag it was copied from, its git blob, its size in bytes and its SHA-256, which a test in the crate that embeds it holds, so a later release's file is a deliberate change.

@@ -1835,24 +1835,6 @@ fn resize_hover(ctx: &egui::Context, band: f32) {
     }
 }
 
-/// The Toolbar's list (decision 92): today's order, which each workspace's file will hold.
-const TOOLBAR: [&str; 14] = [
-    "menu-button",
-    "import",
-    "export",
-    "reset",
-    "undo",
-    "redo",
-    "space",
-    "copy-edit",
-    "apply-edit",
-    "flexible-space",
-    "cursors",
-    "flexible-space",
-    "jobs",
-    "save-state",
-];
-
 /// The Toolbar's actions that show their words beside their icons while there is room.
 const TOOLBAR_WORDS: [ActionId; 3] = [ActionId::IMPORT, ActionId::EXPORT, ActionId::RESET];
 
@@ -3486,7 +3468,8 @@ impl Shell {
             ActionId::REDO => state.redo && action.enabled(state),
             _ => action.enabled(state),
         };
-        let listed = toolbar::listed(TOOLBAR);
+        // The workspace's list (decision 92), what this build lacks skipped.
+        let listed = toolbar::listed(self.workspace.toolbar().iter().map(String::as_str));
         let mut tips: Vec<(ToolbarAction, String)> = Vec::new();
         tips.extend(
             self.keymap
@@ -25166,6 +25149,146 @@ mod tests {
             assert_eq!(chosen(&harness), cursors::Cursor::SELECT, "{os:?}");
             assert!(checked(&harness, "Select, Esc"));
         }
+    }
+
+    /// Shows a person's own workspace, `listed`, whose Toolbar is `list` (decision 92), read
+    /// from its file in `folder` as the app reads it at its start.
+    fn show_toolbar(
+        harness: &mut Harness<'_, Bench>,
+        folder: &settings::testing::Folder,
+        list: &[&str],
+    ) {
+        let files = folder.0.join("workspaces");
+        std::fs::create_dir_all(&files).expect("made");
+        let list: Vec<String> = list.iter().map(|id| format!("\"{id}\"")).collect();
+        let own = format!(
+            "toolbar = [{}]\n[[tabs]]\nid = \"photos\"\n[order]\nphotos = [\"collections\", \"export\"]\n",
+            list.join(", ")
+        );
+        std::fs::write(files.join("listed.toml"), own).expect("written");
+        let (workspaces, warnings) = layout::Workspaces::read(Some(&files));
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let shell = &mut harness.state_mut().shell;
+        shell.workspaces = workspaces;
+        shell.switch_workspace("listed");
+        harness.run();
+    }
+
+    /// The Toolbar draws the workspace's list, what this build lacks skipped, and switching
+    /// workspace switches it (decision 92).
+    #[test]
+    fn the_toolbar_is_the_workspace_s_list_and_switches_with_it() {
+        let folder = settings::testing::Folder::new("toolbar-switching");
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        assert!(harness.query_by_label("Import…").is_some());
+        let list = [
+            "settings",
+            "a-newer-build-s",
+            "undo",
+            "flexible-space",
+            "save-state",
+        ];
+        show_toolbar(&mut harness, &folder, &list);
+        for gone in ["Import…", "Export…", "Copy edit"] {
+            assert!(harness.query_by_label(gone).is_none(), "{gone}");
+        }
+        assert!(harness.query_by_role(Role::RadioGroup).is_none(), "no well");
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        let settings = harness
+            .get_by_role_and_label(Role::Button, "Settings")
+            .rect();
+        assert!(settings.left() < harness.get_by_label("Undo").rect().left());
+        assert!(bar.contains(settings.center()));
+        // The list as the file holds it, the id this build lacks kept.
+        assert_eq!(harness.state().shell.workspace.toolbar(), list);
+        (harness.get_by_role_and_label(Role::Button, "Settings")).click();
+        harness.run();
+        let opened = harness.state().host.0.borrow().settings.len();
+        assert_eq!(opened, 1, "Settings runs its action");
+        harness.state_mut().shell.switch_workspace(layout::DEFAULT);
+        harness.run();
+        assert!(harness.query_by_label("Import…").is_some());
+        assert!((harness.query_by_role_and_label(Role::Button, "Settings")).is_none());
+        assert!(harness.query_by_role(Role::RadioGroup).is_some());
+    }
+
+    /// F6 into the Toolbar lands on its list's first control; with nothing focusable in it,
+    /// F6 skips it for the next region (decision 92).
+    #[test]
+    fn f6_lands_on_the_list_s_first_control_or_skips_an_empty_toolbar() {
+        let folder = settings::testing::Folder::new("toolbar-f6");
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        show_toolbar(&mut harness, &folder, &["settings", "undo"]);
+        harness.key_press(Key::F6);
+        harness.run();
+        assert_eq!(focused_name(&harness), "Settings");
+        let folder = settings::testing::Folder::new("toolbar-f6-empty");
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        show_toolbar(&mut harness, &folder, &[]);
+        harness.key_press(Key::F6);
+        harness.run();
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        let focused = harness.get_by(|node| node.is_focused()).rect();
+        assert!(focused.top() >= bar.bottom(), "{focused:?} in {bar:?}");
+    }
+
+    /// With the menu button out of the list, F10 and Alt with an access key still open the
+    /// menus, hung from the Toolbar's start (decision 92).
+    #[test]
+    fn with_no_menu_button_the_keys_still_open_the_menus() {
+        let folder = settings::testing::Folder::new("toolbar-no-menu-button");
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.run();
+        show_toolbar(&mut harness, &folder, &["import", "undo"]);
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, "Menu")
+                .is_none()
+        );
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        harness.key_press(Key::F10);
+        harness.run();
+        assert!(menu_open(&harness, "Menu"));
+        // Where the button would stand: Import… there now.
+        let anchor = Toolbar::menu_anchor(&harness.ctx).expect("an anchor");
+        assert_eq!(anchor.left(), bar.left() + 8.0);
+        assert_eq!(anchor.left(), harness.get_by_label("Import…").rect().left());
+        harness.key_press(Key::F10);
+        harness.run();
+        assert!(!menu_open(&harness, "Menu"));
+        alt(&mut harness, Key::F, Some("f"));
+        assert!(menu_open(&harness, "Menu"));
+        assert!(menu_open(&harness, "File"));
+    }
+
+    /// With the cursors' well out of the list, every cursor's key still chooses it
+    /// (decision 92).
+    #[test]
+    fn with_no_cursors_listed_every_cursor_s_key_still_chooses_it() {
+        let folder = settings::testing::Folder::new("toolbar-no-cursors");
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        show_toolbar(
+            &mut harness,
+            &folder,
+            &["import", "flexible-space", "save-state"],
+        );
+        assert!(harness.query_by_role(Role::RadioGroup).is_none());
+        let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
+        harness.key_press(Key::K);
+        harness.run();
+        assert_eq!(chosen(&harness), SPOT);
+        harness.key_down(Key::A);
+        harness.run();
+        assert_eq!(harness.state().shell.cursors.acting(), cursors::Cursor::PAN);
+        harness.key_up(Key::A);
+        harness.run();
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
     }
 
     /// Esc chooses Select only where nothing focused keeps it: a focused control takes it

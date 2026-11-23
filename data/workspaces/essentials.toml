@@ -14,6 +14,25 @@
 version = 1
 hidden = []
 
+# The Toolbar's items in order (decision 92): the default list. The Mac never draws the menu
+# button, and keeps it in the list.
+toolbar = [
+    "menu-button",
+    "import",
+    "export",
+    "reset",
+    "undo",
+    "redo",
+    "space",
+    "copy-edit",
+    "apply-edit",
+    "flexible-space",
+    "cursors",
+    "flexible-space",
+    "jobs",
+    "save-state",
+]
+
 [[tabs]]
 id = "photos"
 icon = "folder"
