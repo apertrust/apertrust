@@ -263,11 +263,17 @@ mod tests {
     #[test]
     fn the_best_come_first() {
         let colour = found(Locale::EnGb, "colour");
-        // Colour calibration and Colour balance RGB start with it, in pipeline order;
-        // Input and Output colour profile have a word starting with it.
+        // Colour calibration, Colour equalizer and Colour balance RGB start with it, in
+        // pipeline order; Input and Output colour profile have a word starting with it.
         assert_eq!(
             colour,
-            ["channelmixerrgb", "colorbalancergb", "colorin", "colorout"]
+            [
+                "channelmixerrgb",
+                "colorequal",
+                "colorbalancergb",
+                "colorin",
+                "colorout"
+            ]
         );
         // White balance by its name, Colour calibration by darktable's alias after it.
         assert_eq!(

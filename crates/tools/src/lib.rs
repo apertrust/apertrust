@@ -46,6 +46,7 @@ pub mod agx;
 pub mod check;
 pub mod colour_balance_rgb;
 pub mod colour_calibration;
+pub mod colour_equalizer;
 mod definition;
 pub mod demosaic;
 pub mod exposure;
@@ -110,6 +111,7 @@ pub const TOOLS: &[&dyn ProcessingTool] = &[
     &colour_calibration::ColourCalibration,
     &tone_equalizer::ToneEqualizer,
     &colour_balance_rgb::ColourBalanceRgb,
+    &colour_equalizer::ColourEqualizer,
     &tone_curve::ToneCurve,
     &haze_removal::HazeRemoval,
     &rgb_primaries::RgbPrimaries,

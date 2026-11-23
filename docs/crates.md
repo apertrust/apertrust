@@ -1484,6 +1484,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 | Colour calibration | `colour_calibration` | color calibration | channelmixerrgb | C0–C8 |
 | Tone equalizer | `tone_equalizer` | tone equalizer | toneequal | Q0–Q4 |
 | Colour balance RGB | `colour_balance_rgb` | color balance rgb | colorbalancergb | B0–B4, B6–B8 |
+| Colour equalizer | `colour_equalizer` | color equalizer | colorequal | H0–H4, H6 |
 | Tone curve | `tone_curve` | rgb curve (its Luma curve) | rgbcurve | T0, T1, T4–T8, T11, T16, T17 |
 | Haze removal | `haze_removal` | haze removal | hazeremoval | Z0–Z4, Z6 |
 | RGB primaries | `rgb_primaries` | rgb primaries | primaries | P0–P4, P6 |
@@ -1491,7 +1492,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 | Soften | `soften` | soften | soften | S0–S4, S6 |
 | Vignetting | `vignetting` | vignetting | vignette | V0–V4, V6 |
 
-Raw black/white point, Highlight reconstruction, Orientation, Input colour profile, Output colour profile, AgX and Grain work on the background only, never on a layer (decision 34). Where a tool's row is the first step (B1, G1, P1, Q1, S1, Z1), it is measured without a bound; V1 is exact.
+Raw black/white point, Highlight reconstruction, Orientation, Input colour profile, Output colour profile, AgX and Grain work on the background only, never on a layer (decision 34). Where a tool's row is the first step (B1, G1, H1, P1, Q1, S1, Z1), it is measured without a bound; V1 is exact.
 
 #### Raw black/white point
 
@@ -1606,6 +1607,14 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 - Switched (decision 32), version 2, at the defaults it had: it plans `colorbalancergb` while it is on, as in darktable.
 - Its six pickers pick as darktable's do, the four hues with cursors in the well ([pickers.md](pickers.md), decisions 79 and 104); the luminance ranges graph and the mask display wait for the renderer.
 - B4 holds the tool's values to darktable's golden cases' parameters; B6 and B7 hold it on at darktable's defaults and version 1's edits; B8 holds a pick to darktable's Ych.
+
+#### Colour equalizer
+
+- darktable's page with its sliders shown: the Hue, Saturation and Brightness tabs, each its eight nodes, Hue curve ending the Hue tab; Node placement over every tab (`before`); Options under every tab (`after`), collapsible, the guided filter's four rows shown only while it is in use (`Row::When`).
+- Each control is one `colorequal` parameter; a saturation or brightness node is 100 times its gain less 100, Saturation threshold 100 times its parameter.
+- Switched (decision 32), version 1: no value of its is an identity, so it plans `colorequal` only while it is on, as in darktable.
+- The curve graph, with Node placement's picker, the nodes' painted tracks and the show-mask quads wait for the renderer; White level's picker, in the definition, for its pick ([pickers.md](pickers.md), decision 79).
+- H4 holds the tool's values to darktable's two golden cases' parameters; H6 holds it on at darktable's defaults.
 
 #### Tone curve
 

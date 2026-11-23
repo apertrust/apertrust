@@ -52,7 +52,7 @@ Light and colour together, since a scene-referred edit interleaves them. The tab
 | RGB curve | rgb curve | `rgbcurve`, working 42 | Yes | Operation ported; built as the Tone curve's Luma curve, to be reshaped into RGB curve | [page](tone-curve.md), [port](../ports/rgbcurve.md) |
 | RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; tool planned (Phase 3), switched | [port](../ports/rgblevels.md) |
 | Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, switched (decision 32), with its six pickers; the graph and mask display to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
-| Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Operation ported; tool planned (Phase 2), switched | [port](../ports/colorequal.md) |
+| Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Built, switched (decision 32), darktable's page with its sliders; the graph, the painted tracks, the mask displays and presets to come | [page](colour-equalizer.md), [port](../ports/colorequal.md) |
 | RGB primaries | rgb primaries | `primaries`, working 28.9 | Yes | Built, switched (decision 32); the painted tracks to come | [page](rgb-primaries.md), [port](../ports/primaries.md) |
 
 - **Colour calibration's** grey tab is darktable's black and white: any grey weight off 0 makes the photo grey.
@@ -307,7 +307,7 @@ Every tool also has the CPU tests the `tool-bindings` skill lists under "Testing
 
 ### Row ids
 
-A letter per tool and a number: A for AgX, D for Demosaic, O for Output colour profile, E for Exposure, C for Colour calibration, Q for the Tone equalizer, B for Colour balance RGB, P for RGB primaries, Z for Haze removal, G for Grain, S for Soften, V for Vignetting, R for Raw black/white point, K for Highlight reconstruction, T for Tone curve, W for White balance. A test's name starts with its row's id, such as `e4_exposure_scales_every_pixel_alike`. Ids are permanent: a dropped row leaves its number unused.
+A letter per tool and a number: H for the Colour equalizer, A for AgX, D for Demosaic, O for Output colour profile, E for Exposure, C for Colour calibration, Q for the Tone equalizer, B for Colour balance RGB, P for RGB primaries, Z for Haze removal, G for Grain, S for Soften, V for Vignetting, R for Raw black/white point, K for Highlight reconstruction, T for Tone curve, W for White balance. A test's name starts with its row's id, such as `e4_exposure_scales_every_pixel_alike`. Ids are permanent: a dropped row leaves its number unused.
 
 ## Sliders against darktable
 

@@ -18879,7 +18879,7 @@ mod tests {
         assert!(header(&harness, "Colour calibration"));
         harness.key_press(Key::ArrowDown);
         harness.run();
-        assert!(header(&harness, "Colour balance RGB"));
+        assert!(header(&harness, "Colour equalizer"));
         harness.key_press(Key::ArrowUp);
         harness.run();
         assert!(header(&harness, "Colour calibration"));
