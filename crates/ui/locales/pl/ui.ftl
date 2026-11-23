@@ -1127,6 +1127,19 @@ picker-photo-down = Przesuń w dół
 picker-said-control = { $control } { $value }
 picker-said-rgb = średnie RGB { $red }, { $green }, { $blue }
 
+picker-turned-on = { $picker }: włączony
+picker-turned-off = { $picker }: wyłączony
+picker-turned-off-why = { $picker }: wyłączony, { $why }
+picker-turned-replaced = { $before }: wyłączony, włączono inny próbnik. { $picker }: włączony
+picker-off-photo = inne zdjęcie
+picker-off-closed = zdjęcie zamknięte
+picker-off-control = zmieniono { $control }
+picker-off-tool = zmieniono { $tool }
+picker-off-tool-off = { $tool } wyłączone
+picker-off-section = { $tool } zwinięte
+picker-off-history = zmieniono historię
+picker-off-reset = edycja zresetowana
+
 ## Studnia kursorów (docs/cursors.md, The well).
 cursor-well = Kursory
 cursor-name-key = { $name }, { $key }

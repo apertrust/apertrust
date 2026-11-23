@@ -23,7 +23,11 @@
 //!   settings, Pick's Show the last pick among them.
 //! - **The mode** ([`Mode`]): the cursor chosen, Select at every start and never saved;
 //!   each group's active cursor, the one its face shows, kept for the run; A held, which
-//!   borrows Pan while it is down; the last pick's mark.
+//!   borrows Pan while it is down; the last pick's mark. It follows the picker on
+//!   ([`Mode::follow`]): a picker with a cursor, whichever door turned it on, chooses that
+//!   cursor, and its turning off chooses Select, or keeps the cursor the person chose;
+//!   screen readers hear it turn on and off, with the reason where the person did not ask
+//!   ([`turned_words`]).
 //! - **The well's words** ([`Well`]): each group's cursors with their names, keys, what
 //!   they do and why one cannot act now, which the Toolbar draws as `CursorWell`.
 //! - **On the photo** ([`on_photo`]): a picker cursor's click or drag, in the photo's
@@ -36,7 +40,9 @@
 
 use std::collections::BTreeMap;
 
-use apertrust_engine::session::{ControlValue, PickKeys, PickerCommand, PickerRef, Region};
+use apertrust_engine::session::{
+    Command, ControlValue, PickKeys, PickerCommand, PickerRef, Region, Values,
+};
 use apertrust_tools::{
     ControlKind, CursorDef, CursorGroup, CursorGroupDef, Gesture, ProcessingTool, Row, SettingRow,
     SettingWords, Surface, Track,
@@ -44,6 +50,7 @@ use apertrust_tools::{
 use apertrust_ui::components::{
     CursorWell, CursorWellAction, PickerMarks, PickerPlace, WellCursor, WellGroup, WellSetting,
 };
+use apertrust_ui::i18n::Args;
 use apertrust_ui::overlay::{Mark, Overlay, Point, Weight};
 use apertrust_ui::{Icon, Translator};
 use eframe::egui::{self, CursorIcon, Key, Modifiers, Pos2, Rect, Sense, Vec2, pos2};
@@ -342,6 +349,130 @@ pub struct Mode {
     /// whether it has been said.
     told: String,
     said: bool,
+    /// The picker on as the well last followed it.
+    following: Option<Following>,
+    /// Why the picker on is to turn off, as the app knows from the command it sent last
+    /// that may end it, by that command's number: until the session's answer to it shows
+    /// the picker still on ([`Mode::answered`]).
+    ending: Option<(u64, Ended)>,
+    /// Whether the person chose a cursor since [`Mode::ends`] last looked.
+    chose: bool,
+    /// What screen readers last heard of a picker turning on or off.
+    turned: String,
+}
+
+/// A picker on as the well follows it: its cursor, if it has one, and the open of the
+/// photo it was turned on for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Following {
+    pub picker: PickerRef,
+    pub cursor: Option<Cursor>,
+    pub open: Option<u64>,
+}
+
+/// A picker turning on or off, as the well follows it ([`Mode::follow`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Turned {
+    /// The picker on now.
+    pub on: Option<PickerRef>,
+    /// The picker on before, and why it turned off, where the app knows.
+    pub off: Option<(Following, Option<Ended>)>,
+}
+
+/// Why a picker turned off, as the app knows it from what it sent (`docs/cursors.md`,
+/// Keyboard and screen readers). Another photo, a photo closed and a tool turned off are
+/// read from the mirror as it turns off ([`turned_words`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Ended {
+    /// The person asked: Esc, another cursor, its picker button or its face pressed again.
+    Asked,
+    /// One of its tool's controls changed.
+    Control { tool: String, control: String },
+    /// A tool changed otherwise: its own reset or a preset, or another tool's control.
+    Tool(String),
+    /// Its tool's section closed in the Tools panel.
+    Closed(String),
+    /// Undo, Redo, a move through the history or a rewrite of it.
+    History,
+    /// The whole edit reset.
+    Reset,
+}
+
+/// Why `command`, sent while a picker of `tool` is on, turns it off in the session, where
+/// it does: a change of `tool`, a move through the history or the edit's reset.
+pub fn ending_of(command: &Command, tool: &str) -> Option<Ended> {
+    match command {
+        Command::SetControl {
+            tool: t, control, ..
+        }
+        | Command::ResetControl { tool: t, control }
+        | Command::Keep {
+            tool: t, control, ..
+        } if t == tool => Some(Ended::Control {
+            tool: t.clone(),
+            control: control.clone(),
+        }),
+        Command::ResetTool { tool: t } | Command::ApplyPreset { tool: t, .. } if t == tool => {
+            Some(Ended::Tool(t.clone()))
+        }
+        Command::Undo
+        | Command::Redo
+        | Command::GoTo { .. }
+        | Command::Compress { .. }
+        | Command::Truncate { .. }
+        | Command::DiscardHistory => Some(Ended::History),
+        Command::Reset => Some(Ended::Reset),
+        Command::Step { commands, .. } => commands.iter().find_map(|c| ending_of(c, tool)),
+        _ => None,
+    }
+}
+
+/// Why `change` of the Tools panel's, made while `active` is on, turns a tool's picker off
+/// before it is made (`docs/pickers.md`, Turning off): Apertrust has no focused tool, so
+/// darktable's module losing focus is another tool's control changing, or the picker's own
+/// tool's section closing, `open` saying whether a tool's section is open as it is
+/// toggled. The Colour picker's stays on as built.
+pub fn ended_by(
+    change: &crate::tools::Change,
+    active: Option<PickerRef>,
+    open: impl Fn(&str) -> bool,
+) -> Option<Ended> {
+    let Some(PickerRef::Tool { tool: on, .. }) = active else {
+        return None;
+    };
+    match change {
+        crate::tools::Change::Toggle { tool } if *tool == on && open(tool) => {
+            Some(Ended::Closed(on.to_owned()))
+        }
+        change => changed_by(change)
+            .filter(|tool| *tool != on)
+            .map(|tool| Ended::Tool(tool.to_owned())),
+    }
+}
+
+/// The tool whose control `change` changes.
+fn changed_by(change: &crate::tools::Change) -> Option<&'static str> {
+    use crate::tools::Change;
+    match change {
+        Change::Set { tool, .. }
+        | Change::Reset { tool, .. }
+        | Change::Keep { tool, .. }
+        | Change::ResetTool { tool }
+        | Change::Action { tool, .. }
+        | Change::ApplyPreset { tool, .. } => Some(tool),
+        Change::Step(changes) => changes.iter().find_map(changed_by),
+        _ => None,
+    }
+}
+
+/// The cursor of `picker`, a tool's picker with one in the registry.
+pub fn cursor_of(picker: PickerRef) -> Option<Cursor> {
+    let PickerRef::Tool { tool, picker } = picker else {
+        return None;
+    };
+    (registry().entries())
+        .find(|e| e.cursor.owner == Owner::Tool(tool) && e.picker == Some(picker))
+        .map(|e| e.cursor)
 }
 
 impl Mode {
@@ -359,6 +490,10 @@ impl Mode {
             last: None,
             told: String::new(),
             said: false,
+            following: None,
+            ending: None,
+            chose: false,
+            turned: String::new(),
         }
     }
 
@@ -385,14 +520,101 @@ impl Mode {
     /// Chooses `cursor`, which becomes its group's active one; another cursor than the one
     /// chosen takes the last pick's mark away.
     pub fn choose(&mut self, cursor: Cursor) {
+        if self.show(cursor) {
+            self.chose = true;
+        }
+    }
+
+    /// Shows `cursor` chosen, the person's choice or the picker's; whether the registry has
+    /// it.
+    fn show(&mut self, cursor: Cursor) -> bool {
         let Some(entry) = registry().entry(cursor) else {
-            return;
+            return false;
         };
         if cursor != self.chosen {
             self.last = None;
         }
         self.chosen = cursor;
         self.active.insert(entry.def.group, cursor);
+        true
+    }
+
+    /// Whether the person's choice of a cursor since this was last asked ends the tool's
+    /// picker on, `active`: one other than its own cursor, Select by Esc among them
+    /// (`docs/cursors.md`, A cursor). The Colour picker's stays on as built.
+    pub fn ends(&mut self, active: Option<PickerRef>) -> bool {
+        let chose = std::mem::take(&mut self.chose);
+        chose
+            && matches!(active, Some(PickerRef::Tool { .. }))
+            && active.and_then(cursor_of) != Some(self.chosen)
+    }
+
+    /// Whether `cursor`'s face pressed again ends the picker on, `active`: its own picker's
+    /// cursor, as a second press on its picker button does (`docs/cursors.md`, The well).
+    pub fn again(&self, cursor: Cursor, active: Option<PickerRef>) -> bool {
+        active.and_then(cursor_of) == Some(cursor)
+    }
+
+    /// The picker on is to turn off for `why` by the command numbered `number`, which
+    /// screen readers hear as it does.
+    pub fn ending(&mut self, number: u64, why: Ended) {
+        self.ending = Some((number, why));
+    }
+
+    /// The session has answered the first `through` commands: a reason noted for one of
+    /// them that left the picker on, as a change to a keep-active picker's tool does, is
+    /// dropped, so a later turn-off never says it.
+    pub fn answered(&mut self, through: u64) {
+        if self
+            .ending
+            .as_ref()
+            .is_some_and(|(number, _)| *number <= through)
+        {
+            self.ending = None;
+        }
+    }
+
+    /// Follows the picker on as the mirror shows it, `on`, on the photo opened by `open`
+    /// (`docs/cursors.md`, A cursor): a picker with a cursor, whichever door turned it on,
+    /// chooses that cursor; as it turns off its cursor still chosen goes back to Select,
+    /// while a cursor the person chose stays. What turned, if anything did, with why the
+    /// picker before turned off where the app knows.
+    pub fn follow(&mut self, on: Option<PickerRef>, open: Option<u64>) -> Option<Turned> {
+        if on == self.following.map(|f| f.picker) {
+            return None;
+        }
+        let before = self.following.take();
+        // What ends the picker before, never one turned on after it.
+        let ending = self.ending.take().map(|(_, why)| why);
+        let cursor = on.and_then(cursor_of);
+        match cursor {
+            Some(cursor) => {
+                self.show(cursor);
+            }
+            None if before.is_some_and(|b| b.cursor == Some(self.chosen)) => {
+                self.show(Cursor::SELECT);
+            }
+            None => {}
+        }
+        self.following = on.map(|picker| Following {
+            picker,
+            cursor,
+            open,
+        });
+        Some(Turned {
+            on,
+            off: before.map(|before| (before, ending)),
+        })
+    }
+
+    /// What screen readers hear of a picker turning on or off: `text`, said politely.
+    pub fn say_turned(&mut self, text: String) {
+        self.turned = text;
+    }
+
+    /// What screen readers last heard of a picker turning on or off.
+    pub fn turned(&self) -> &str {
+        &self.turned
     }
 
     /// A held, or let go, this frame.
@@ -534,6 +756,110 @@ pub fn finish(entry: &Entry, input: CursorInput, settings: &ToolSettings) -> Opt
     })
 }
 
+/// What screen readers hear of `turned` (`docs/cursors.md`, Keyboard and screen readers):
+/// "White balance picker on" as a picker turns on, from either door; as a tool's turns off
+/// with none on after it, where the person did not ask, why: another photo, or the photo
+/// closed, against `open`, the photo open now; its tool turned off, as `values` show; else
+/// what the app sent, "White balance picker off: Temperature changed", or no reason where
+/// it knows none. Nothing where the person asked, so the next turn is said again.
+pub fn turned_words(
+    words: &Translator,
+    tools: &[&dyn ProcessingTool],
+    turned: &Turned,
+    open: Option<u64>,
+    values: &Values,
+) -> String {
+    let mut args = Args::new();
+    // The one turning off, a tool's, where the person did not ask.
+    let before = (turned.off.as_ref())
+        .filter(|(_, why)| *why != Some(Ended::Asked))
+        .and_then(|(before, why)| match before.picker {
+            PickerRef::Tool { tool, .. } => {
+                Some((before, why, tool, picker_name(words, tools, before.picker)?))
+            }
+            PickerRef::ColourPicker => None,
+        });
+    if let Some(on) = turned.on {
+        let Some(name) = picker_name(words, tools, on) else {
+            return String::new();
+        };
+        args.set("picker", name);
+        // Another picker replacing it: both, in one announcement.
+        if let Some((_, _, _, before)) = before {
+            args.set("before", before);
+            return words.text_with("picker-turned-replaced", Some(&args));
+        }
+        return words.text_with("picker-turned-on", Some(&args));
+    }
+    let Some((before, why, tool, name)) = before else {
+        return String::new();
+    };
+    args.set("picker", name);
+    let title = |tool: &str| words.text(&apertrust_tools::messages::title(tool));
+    let with = |id: &str, name: &str, value: String| {
+        let mut args = Args::new();
+        args.set(name, value);
+        words.text_with(id, Some(&args))
+    };
+    let off = (values.tools.iter()).any(|state| state.tool == tool && !state.enabled);
+    let why = match why {
+        _ if open != before.open && open.is_none() => Some(words.text("picker-off-closed")),
+        _ if open != before.open => Some(words.text("picker-off-photo")),
+        _ if off => Some(with("picker-off-tool-off", "tool", title(tool))),
+        Some(Ended::Control { tool, control }) => {
+            let label = words.text(&apertrust_tools::messages::label(tool, control));
+            Some(with("picker-off-control", "control", label))
+        }
+        Some(Ended::Tool(tool)) => Some(with("picker-off-tool", "tool", title(tool))),
+        Some(Ended::Closed(tool)) => Some(with("picker-off-section", "tool", title(tool))),
+        Some(Ended::History) => Some(words.text("picker-off-history")),
+        Some(Ended::Reset) => Some(words.text("picker-off-reset")),
+        Some(Ended::Asked) | None => None,
+    };
+    match why {
+        Some(why) => {
+            args.set("why", why);
+            words.text_with("picker-turned-off-why", Some(&args))
+        }
+        None => words.text_with("picker-turned-off", Some(&args)),
+    }
+}
+
+/// A tool's picker's name as screen readers hear it turn on and off: its cursor's,
+/// "White balance picker", else its tool's title and its own, as the viewer bar gives
+/// them; none for the Colour picker's, whose words come with its section.
+fn picker_name(
+    words: &Translator,
+    tools: &[&dyn ProcessingTool],
+    picker: PickerRef,
+) -> Option<String> {
+    let PickerRef::Tool { tool, picker: id } = picker else {
+        return None;
+    };
+    if let Some(cursor) = cursor_of(picker) {
+        return Some(words.text(&apertrust_tools::messages::cursor(tool, cursor.id)));
+    }
+    let found = tools.iter().find(|t| t.definition().tool.id == tool)?;
+    let mut args = Args::new();
+    args.set("tool", words.text(&apertrust_tools::messages::title(tool)));
+    args.set("picker", pickers::name(words, found.definition(), id));
+    Some(words.text_with("picker-bar-name", Some(&args)))
+}
+
+/// The polite live region at `at` that says a picker turning on and off, `text`: a status
+/// that takes no room.
+pub fn turned_region(ui: &mut egui::Ui, at: Pos2, text: &str) {
+    let response = ui.interact(
+        Rect::from_min_size(at, Vec2::ZERO),
+        egui::Id::unique("apertrust picker turned"),
+        Sense::hover(),
+    );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::Status, true, text));
+    (ui.ctx()).accesskit_node_builder(response.id, |node| {
+        node.set_live(egui::accesskit::Live::Polite);
+    });
+}
+
 /// A cursor's words and state as its face and its group's list show them.
 struct Shown {
     cursor: Cursor,
@@ -670,6 +996,10 @@ impl Well {
                 let shown = self.groups.get(group)?.cursors.get(cursor)?;
                 Some(Answer::Choose(shown.cursor))
             }
+            CursorWellAction::Again { group } => {
+                let shown = self.groups.get(group)?;
+                Some(Answer::Again(shown.cursors.get(shown.active)?.cursor))
+            }
             // Pick's one setting, Show the last pick.
             CursorWellAction::Toggle { on, .. } => Some(Answer::ShowLast(on)),
             CursorWellAction::Amounts { .. } | CursorWellAction::Choice { .. } => None,
@@ -682,6 +1012,8 @@ impl Well {
 pub enum Answer {
     /// The cursor's action, which chooses it.
     Choose(Cursor),
+    /// The chosen cursor's face pressed again: a picker cursor's turns its picker off.
+    Again(Cursor),
     /// Pick's Show the last pick turned on or off.
     ShowLast(bool),
 }
@@ -1327,5 +1659,271 @@ mod tests {
             assert_eq!(finish(entry, click, &settings), None);
             assert_eq!(finish(entry, area, &settings), None);
         }
+    }
+
+    const SPOT_PICKER: PickerRef = PickerRef::Tool {
+        tool: "temperature",
+        picker: "spot",
+    };
+    const EXPOSURE_PICKER: PickerRef = PickerRef::Tool {
+        tool: "exposure",
+        picker: "exposure",
+    };
+    const REFERENCE_PICKER: PickerRef = PickerRef::Tool {
+        tool: "exposure",
+        picker: "reference",
+    };
+
+    fn spot() -> Cursor {
+        Cursor {
+            owner: Owner::Tool("temperature"),
+            id: "spot",
+        }
+    }
+
+    /// The well follows the picker on, whichever door turned it on: its cursor chosen while
+    /// it is on, Select as it turns off; another picker's cursor as that one turns on, Select
+    /// for one with no cursor; a cursor the person chose stays as the picker turns off, and
+    /// it ends the picker, but its own cursor chosen again does not, nor the Colour picker's.
+    #[test]
+    fn the_mode_follows_the_picker_on() {
+        let mut mode = Mode::new(true);
+        mode.choose(Cursor::PAN);
+        assert!(!mode.ends(None), "no picker on");
+        let turned = mode.follow(Some(SPOT_PICKER), Some(1));
+        assert_eq!(
+            turned,
+            Some(Turned {
+                on: Some(SPOT_PICKER),
+                off: None
+            })
+        );
+        assert_eq!(mode.chosen(), spot());
+        assert_eq!(mode.active(CursorGroup::Pick), Some(spot()));
+        assert_eq!(mode.follow(Some(SPOT_PICKER), Some(1)), None, "no turn");
+        // Its own key again leaves it on; its face again ends it.
+        mode.choose(spot());
+        assert!(!mode.ends(Some(SPOT_PICKER)));
+        assert!(mode.again(spot(), Some(SPOT_PICKER)));
+        assert!(!mode.again(Cursor::PAN, Some(SPOT_PICKER)));
+        mode.ending(9, Ended::Asked);
+        let turned = mode.follow(None, Some(1)).unwrap();
+        assert_eq!(
+            turned.off.map(|(f, why)| (f.picker, why)),
+            Some((SPOT_PICKER, Some(Ended::Asked)))
+        );
+        assert_eq!(mode.chosen(), Cursor::SELECT);
+        // Another picker's cursor, then one with none: Select.
+        mode.follow(Some(SPOT_PICKER), Some(1));
+        mode.follow(Some(EXPOSURE_PICKER), Some(1));
+        let exposure = Cursor {
+            owner: Owner::Tool("exposure"),
+            id: "exposure",
+        };
+        assert_eq!(mode.chosen(), exposure);
+        mode.follow(Some(REFERENCE_PICKER), Some(1));
+        assert_eq!(mode.chosen(), Cursor::SELECT);
+        // Pan chosen by the person ends it, and stays as it turns off.
+        mode.follow(Some(SPOT_PICKER), Some(1));
+        mode.choose(Cursor::PAN);
+        assert!(mode.ends(Some(SPOT_PICKER)));
+        assert!(!mode.ends(Some(SPOT_PICKER)), "asked once");
+        mode.follow(None, Some(1));
+        assert_eq!(mode.chosen(), Cursor::PAN);
+        // The Colour picker's stays on as built.
+        mode.follow(Some(PickerRef::ColourPicker), Some(1));
+        mode.choose(Cursor::SELECT);
+        assert!(!mode.ends(Some(PickerRef::ColourPicker)));
+    }
+
+    /// What screen readers hear as a picker turns on and off: its name and on; off with
+    /// why where the person did not ask, another photo and the photo closed read from the
+    /// open, its tool turned off from the values, the rest from what the app sent; nothing
+    /// where the person asked.
+    #[test]
+    fn a_picker_turning_on_and_off_is_said_with_why() {
+        let words = Translator::new(apertrust_ui::Locale::EnGb);
+        let tools = apertrust_tools::TOOLS;
+        let mut values = crate::mirror::tests::mirror().values;
+        let on = Turned {
+            on: Some(SPOT_PICKER),
+            off: None,
+        };
+        assert_eq!(
+            turned_words(&words, tools, &on, Some(1), &values),
+            "White balance picker on"
+        );
+        let reference = Turned {
+            on: Some(REFERENCE_PICKER),
+            off: None,
+        };
+        assert_eq!(
+            turned_words(&words, tools, &reference, Some(1), &values),
+            "Exposure · Reference on"
+        );
+        let off = |why: Option<Ended>| Turned {
+            on: None,
+            off: Some((
+                Following {
+                    picker: SPOT_PICKER,
+                    cursor: Some(spot()),
+                    open: Some(1),
+                },
+                why,
+            )),
+        };
+        let said =
+            |why, open, values: &Values| turned_words(&words, tools, &off(why), open, values);
+        let control = Ended::Control {
+            tool: "temperature".to_owned(),
+            control: "temperature".to_owned(),
+        };
+        let cases = [
+            (Some(Ended::Asked), Some(1), ""),
+            (None, Some(1), "White balance picker off"),
+            (None, Some(2), "White balance picker off: another photo"),
+            (
+                Some(control.clone()),
+                None,
+                "White balance picker off: photo closed",
+            ),
+            (
+                Some(control),
+                Some(1),
+                "White balance picker off: Temperature changed",
+            ),
+            (
+                Some(Ended::Tool("exposure".to_owned())),
+                Some(1),
+                "White balance picker off: Exposure changed",
+            ),
+            (
+                Some(Ended::Closed("temperature".to_owned())),
+                Some(1),
+                "White balance picker off: White balance closed",
+            ),
+            (
+                Some(Ended::History),
+                Some(1),
+                "White balance picker off: history changed",
+            ),
+            (
+                Some(Ended::Reset),
+                Some(1),
+                "White balance picker off: edit reset",
+            ),
+        ];
+        for (why, open, text) in cases {
+            assert_eq!(said(why.clone(), open, &values), text, "{why:?}, {open:?}");
+        }
+        for state in &mut values.tools {
+            state.enabled &= state.tool != "temperature";
+        }
+        assert_eq!(
+            said(Some(Ended::History), Some(1), &values),
+            "White balance picker off: White balance turned off"
+        );
+        // Another picker replacing it: both said in one announcement; where the person
+        // ended it, the new one alone.
+        let both = |why| Turned {
+            on: Some(EXPOSURE_PICKER),
+            ..off(why)
+        };
+        assert_eq!(
+            turned_words(&words, tools, &both(None), Some(1), &values),
+            "White balance picker off: another picker turned on. Exposure picker on"
+        );
+        assert_eq!(
+            turned_words(&words, tools, &both(Some(Ended::Asked)), Some(1), &values),
+            "Exposure picker on"
+        );
+    }
+
+    /// A reason noted for a command that left the picker on, as a change to a keep-active
+    /// picker's tool does, is dropped once the session answers it, so a later turn-off says
+    /// no reason of its; one noted for a later command stays until it is answered, and a
+    /// picker turned on starts with none.
+    #[test]
+    fn a_reason_lasts_only_until_its_command_is_answered() {
+        let mut mode = Mode::new(true);
+        mode.follow(Some(SPOT_PICKER), Some(1));
+        mode.ending(4, Ended::History);
+        mode.answered(3);
+        assert_eq!(mode.follow(Some(SPOT_PICKER), Some(1)), None);
+        mode.answered(4);
+        let turned = mode.follow(None, Some(1)).unwrap();
+        assert_eq!(turned.off.map(|(_, why)| why), Some(None));
+        mode.ending(7, Ended::Reset);
+        mode.answered(6);
+        let turned = mode.follow(Some(SPOT_PICKER), Some(1)).unwrap();
+        assert_eq!(turned.off, None);
+        let turned = mode.follow(None, Some(1)).unwrap();
+        assert_eq!(
+            turned.off.map(|(_, why)| why),
+            Some(None),
+            "not the earlier one's"
+        );
+    }
+
+    /// Why a command turns a tool's picker off in the session, and why a change of the
+    /// Tools panel's turns it off in the app: another tool's control, its own section
+    /// closed; never its own tool's change, which the session ends, nor the Colour picker's.
+    #[test]
+    fn what_ends_a_picker_is_named() {
+        let set = |tool: &str| Command::SetControl {
+            tool: tool.to_owned(),
+            control: "exposure".to_owned(),
+            value: ControlValue::Number(1.0),
+            done: true,
+        };
+        assert_eq!(
+            ending_of(&set("exposure"), "exposure"),
+            Some(Ended::Control {
+                tool: "exposure".to_owned(),
+                control: "exposure".to_owned()
+            })
+        );
+        assert_eq!(ending_of(&set("temperature"), "exposure"), None);
+        assert_eq!(ending_of(&Command::Undo, "exposure"), Some(Ended::History));
+        assert_eq!(ending_of(&Command::Reset, "exposure"), Some(Ended::Reset));
+        let step = Command::Step {
+            source: apertrust_engine::history::StepSource::You,
+            note: None,
+            commands: vec![set("exposure")],
+        };
+        assert!(matches!(
+            ending_of(&step, "exposure"),
+            Some(Ended::Control { .. })
+        ));
+
+        use crate::tools::Change;
+        let change = |tool| Change::Reset {
+            tool,
+            control: "exposure",
+        };
+        let open = |_: &str| true;
+        assert_eq!(
+            ended_by(&change("exposure"), Some(SPOT_PICKER), open),
+            Some(Ended::Tool("exposure".to_owned()))
+        );
+        assert_eq!(
+            ended_by(&change("temperature"), Some(SPOT_PICKER), open),
+            None
+        );
+        assert_eq!(
+            ended_by(&change("exposure"), Some(PickerRef::ColourPicker), open),
+            None
+        );
+        assert_eq!(ended_by(&change("exposure"), None, open), None);
+        let toggle = |tool| Change::Toggle { tool };
+        assert_eq!(
+            ended_by(&toggle("temperature"), Some(SPOT_PICKER), open),
+            Some(Ended::Closed("temperature".to_owned()))
+        );
+        assert_eq!(
+            ended_by(&toggle("temperature"), Some(SPOT_PICKER), |_| false),
+            None
+        );
+        assert_eq!(ended_by(&toggle("exposure"), Some(SPOT_PICKER), open), None);
     }
 }

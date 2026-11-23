@@ -1531,6 +1531,8 @@ enum FromToolbar {
     /// A cursor chosen in the cursors' well, by its face or its line in its group's list,
     /// as its action's `on` chooses it.
     Cursor(cursors::Cursor),
+    /// The chosen cursor's face pressed again: a picker cursor's turns its picker off.
+    CursorAgain(cursors::Cursor),
     /// Pick's Show the last pick turned on or off in its list in the cursors' well.
     ShowLastPick(bool),
 }
@@ -3532,6 +3534,7 @@ impl Shell {
         match shown? {
             ToolbarAction::Cursors(action) => match well.answer(action)? {
                 cursors::Answer::Choose(cursor) => Some(FromToolbar::Cursor(cursor)),
+                cursors::Answer::Again(cursor) => Some(FromToolbar::CursorAgain(cursor)),
                 cursors::Answer::ShowLast(on) => Some(FromToolbar::ShowLastPick(on)),
             },
             ToolbarAction::MoveWindow => window(TitleBar::Move),
@@ -3548,6 +3551,41 @@ impl Shell {
                 actions::named(id).map(|action| FromToolbar::Action(action.id))
             }
         }
+    }
+
+    /// Chooses `cursor`, as its face, its line in its group's list or its key asks, unless
+    /// it is a picker cursor that cannot act now, which is never chosen (`docs/cursors.md`,
+    /// A cursor). Its tool's section is neither opened nor scrolled to.
+    fn choose_cursor(&mut self, cursor: cursors::Cursor, ctx: &egui::Context) {
+        let words = translator(ctx);
+        let cx = cursors::Context {
+            why: self.pick_why.as_deref(),
+            hidden: self.peeking,
+            settings: &self.tool_settings,
+            photo: self.pick_photo.as_deref(),
+            words: &words,
+        };
+        if cursors::registry()
+            .entry(cursor)
+            .is_some_and(|entry| cursors::ready(entry, &cx).is_err())
+        {
+            return;
+        }
+        self.cursors.choose(cursor);
+    }
+
+    /// Follows the picker on as `mirror` shows it (decision 104; `docs/cursors.md`, A
+    /// cursor): its cursor chosen while it is on, whichever door turned it on, and Select,
+    /// or the cursor the person chose, as it turns off; screen readers hear it turn on and
+    /// off, with why where the person did not ask. A reason noted for a command the session
+    /// has answered with the picker still on goes.
+    fn follow_picker(&mut self, mirror: &Mirror, words: &Translator) {
+        let open = mirror.photo.open();
+        if let Some(turned) = self.cursors.follow(mirror.pickers.active(), open) {
+            let text = cursors::turned_words(words, mirror.tools(), &turned, open, &mirror.values);
+            self.cursors.say_turned(text);
+        }
+        self.cursors.answered(mirror.values.through);
     }
 
     /// The cursors' well as this frame draws it (decision 104): the mode's cursors with
@@ -3826,7 +3864,7 @@ impl Shell {
             }
             // Read while held, by the sections.
             Intent::Peek => {}
-            Intent::Cursor(cursor) => self.cursors.choose(cursor),
+            Intent::Cursor(cursor) => self.choose_cursor(cursor, ctx),
             Intent::BrowserBar(chosen) => self.browser.apply(chosen),
             Intent::ToolsPanelPosition(position) => self.panel_position = position,
             Intent::Background(background) => {
@@ -5053,6 +5091,17 @@ impl App {
         if edits && !self.mirror.takes_edits() {
             return;
         }
+        // No focused tool: a tool's picker on turns off as another tool's control changes
+        // or its own section closes (decision 104), before that change.
+        let open = |tool: &str| {
+            let mut tools = self.mirror.tools().iter().map(|t| &t.definition().tool);
+            tools
+                .find(|declared| declared.id == tool)
+                .is_some_and(|declared| self.shell.section_open(declared))
+        };
+        if let Some(why) = cursors::ended_by(&change, self.mirror.pickers.active(), open) {
+            self.picker_off(why, ctx);
+        }
         match change {
             change @ (Change::Set { .. }
             | Change::Reset { .. }
@@ -5176,12 +5225,18 @@ impl App {
     /// live region waits for the reading of a command that applies one, and the save
     /// state, for a command that completes a change, for the values its pick reports.
     fn send_picker(&mut self, command: PickerCommand, ctx: &egui::Context) -> u64 {
+        // The person's own `Off`, from the picker's button or its keys on the photo, is
+        // said by nothing more (decision 104).
+        let off = command == PickerCommand::Off;
         let showing = pickers::Showing::of(&command, self.mirror.tools());
         // A tool's pick is a change on the edit, which the session answers with a
         // write, or the edit reported held where it wrote nothing; the Colour picker's
         // writes nothing.
         let completes = pickers::completes_edit(&command, self.mirror.pickers.active());
         let number = self.session.send(Command::Picker(command));
+        if off {
+            self.shell.cursors.ending(number, cursors::Ended::Asked);
+        }
         let mirror = &mut self.mirror;
         if completes {
             mirror.saving.sent(number, true, Instant::now());
@@ -5199,9 +5254,17 @@ impl App {
     /// Sends a command that changes the edit: the Toolbar's save state waits for the
     /// session to report a write that includes it, one that completes a change at once.
     fn send_edit(&mut self, command: Command) -> u64 {
+        // Why a tool's picker on turns off in the session, said as it does.
+        let ending = match self.mirror.pickers.active() {
+            Some(PickerRef::Tool { tool, .. }) => cursors::ending_of(&command, tool),
+            _ => None,
+        };
         let completes = completes(&command);
         let clears = pickers::Picked::clears(&command);
         let number = self.session.send(command);
+        if let Some(why) = ending {
+            self.shell.cursors.ending(number, why);
+        }
         self.mirror.picked.sent(number, clears);
         self.mirror.saving.sent(number, completes, Instant::now());
         number
@@ -5348,6 +5411,32 @@ impl App {
         let why = controls_opening(&self.mirror, &words);
         self.shell.pick_why = why.or_else(|| view_only_words(&self.mirror, &words));
         self.shell.pick_photo = self.mirror.photo.asked().map(Path::to_owned);
+    }
+
+    /// Turns a tool's picker on off where the person chose a cursor other than its own this
+    /// frame, Select by Esc among them, as the well's choice ends it (decision 104).
+    fn end_unchosen_picker(&mut self, ctx: &egui::Context) {
+        if self.shell.cursors.ends(self.mirror.pickers.active()) {
+            self.picker_off(cursors::Ended::Asked, ctx);
+        }
+    }
+
+    /// The chosen cursor's face pressed again: a picker cursor's turns its picker off, as a
+    /// second press on its picker button does (`docs/cursors.md`, The well).
+    fn cursor_again(&mut self, cursor: cursors::Cursor, ctx: &egui::Context) {
+        if self
+            .shell
+            .cursors
+            .again(cursor, self.mirror.pickers.active())
+        {
+            self.picker_off(cursors::Ended::Asked, ctx);
+        }
+    }
+
+    /// Turns the picker on off, screen readers hearing `why` as it does.
+    fn picker_off(&mut self, why: cursors::Ended, ctx: &egui::Context) {
+        let number = self.send_picker(PickerCommand::Off, ctx);
+        self.shell.cursors.ending(number, why);
     }
 
     /// Whether the photo open is open for viewing only: a newer Apertrust wrote its edit,
@@ -6604,6 +6693,8 @@ impl App {
             version: apertrust_base::program!().version,
         };
         let asked = start::show(ui, &recents, &mut self.start.list, shown);
+        // A picker turning off as the photo closes, said here too (decision 104).
+        cursors::turned_region(ui, ui.max_rect().left_top(), self.shell.cursors.turned());
         let mut gesture = None;
         let mut library = Vec::new();
         for asked in asked {
@@ -7627,6 +7718,9 @@ impl eframe::App for App {
                 self.shell
                     .toolbar(ui, &drawn, saved, title_bar, caption, &self.jobs_view)
             });
+        // A picker turning on and off, said politely (decision 104).
+        let said_at = toolbar.response.rect.left_bottom();
+        cursors::turned_region(ui, said_at, self.shell.cursors.turned());
         let mut window = None;
         match toolbar.inner {
             Some(FromToolbar::Action(id)) => run.push(id),
@@ -7644,7 +7738,8 @@ impl eframe::App for App {
                 );
             }
             Some(FromToolbar::NotSaved) => self.ask_why_not_saved(&ctx),
-            Some(FromToolbar::Cursor(cursor)) => self.shell.cursors.choose(cursor),
+            Some(FromToolbar::Cursor(cursor)) => self.shell.choose_cursor(cursor, &ctx),
+            Some(FromToolbar::CursorAgain(cursor)) => self.cursor_again(cursor, &ctx),
             Some(FromToolbar::ShowLastPick(on)) => self.shell.cursors.show_last = on,
             None => {}
         }
@@ -7708,6 +7803,7 @@ impl eframe::App for App {
         let pointed = self.shell.pointed.take();
         self.run_actions(run, &ctx, &regions);
         self.shell.pointed = pointed;
+        self.end_unchosen_picker(&ctx);
         // The scopes count what the section now shows: its tab, whether it is open, the
         // graph.
         if let Some(command) = self.mirror.scopes.ask(self.shell.scopes_wanted()) {
@@ -7740,6 +7836,9 @@ impl eframe::App for App {
         self.take_hand_offs(ctx, frame.winit_window().map(|window| &**window));
         // What the engine reported first, so the actions and the frame see it.
         self.drain(ctx);
+        // The picker on as the cursors' well follows it, observed before any frame, the
+        // start window's after File › Close included (decision 104).
+        self.shell.follow_picker(&self.mirror, &translator(ctx));
         // The recents checked again as the window gains the focus, a folder that came back
         // no longer shown missing; what their checks have found, without waiting.
         // The start window closed on the Mac comes back with a click on the Dock icon.
@@ -13244,6 +13343,54 @@ mod tests {
         let small = centred(&monitor, [400.0, 300.0]);
         let least = centred(&monitor, WINDOW_MIN);
         assert_eq!(small, least);
+    }
+
+    /// File › Close with a picker on: the start window shows, and the picker's turning off
+    /// is still followed and said there, as `App::logic` follows it before any frame and
+    /// `App::start_frame` draws its live region (decision 104).
+    #[test]
+    fn a_picker_ending_as_the_photo_closes_is_said_in_the_start_window() {
+        let mut mirror = crate::mirror::tests::mirror();
+        mirror.apply(Event::Opened(crate::mirror::tests::photo(1)));
+        let picker = PickerRef::Tool {
+            tool: "temperature",
+            picker: "spot",
+        };
+        mirror.pickers.asked(5, Some((picker, true)));
+        let shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        let mut harness = Harness::builder()
+            .with_size(start::SIZE)
+            .with_os(OperatingSystem::Mac)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                |ui, (shell, mirror): &mut (Shell, Mirror)| {
+                    shell.follow_picker(mirror, &translator(ui.ctx()));
+                    let shown = start::Shown {
+                        home: None,
+                        close: false,
+                        keys: true,
+                        version: "0.1.0",
+                    };
+                    start::show(ui, &[], &mut start::List::shown(), shown);
+                    let said = shell.cursors.turned();
+                    cursors::turned_region(ui, ui.max_rect().left_top(), said);
+                },
+                (shell, mirror),
+            );
+        harness.run();
+        assert_eq!(harness.state().0.cursors.chosen(), SPOT);
+        let (_, mirror) = harness.state_mut();
+        mirror.closing();
+        mirror.pickers.forget();
+        harness.run();
+        let status = |harness: &Harness<'_, (Shell, Mirror)>| {
+            harness.get_by(|node| {
+                node.role() == Role::Status
+                    && node.label().as_deref() == Some("White balance picker off: photo closed")
+            });
+        };
+        status(&harness);
+        assert_eq!(harness.state().0.cursors.chosen(), cursors::Cursor::SELECT);
     }
 
     /// The start window's keys after the app's: the keymap takes Cmd+O and leaves ↓, Enter
@@ -21607,6 +21754,8 @@ mod tests {
                     bench.held.clone_from(&keys.held);
                     // A held borrows Pan, as `App::ui` reads it.
                     (bench.shell.cursors).hold_pan(keys.held.contains(&ActionId::CURSOR_PAN));
+                    // The well follows the picker on, as `App::logic` has it.
+                    bench.shell.follow_picker(&bench.mirror, &words);
                     let keyed = keys.pressed.len();
                     let mut run = keys.pressed;
                     let top = ui.scope(|ui| {
@@ -21619,7 +21768,15 @@ mod tests {
                     match top.inner {
                         Some(FromToolbar::Action(id)) => run.push(id),
                         Some(FromToolbar::Window(gesture)) => window = Some(gesture),
-                        Some(FromToolbar::Cursor(cursor)) => bench.shell.cursors.choose(cursor),
+                        Some(FromToolbar::Cursor(cursor)) => {
+                            bench.shell.choose_cursor(cursor, &ctx)
+                        }
+                        Some(FromToolbar::CursorAgain(cursor)) => {
+                            let active = bench.mirror.pickers.active();
+                            if bench.shell.cursors.again(cursor, active) {
+                                bench.picker_off();
+                            }
+                        }
                         Some(FromToolbar::ShowLastPick(on)) => bench.shell.cursors.show_last = on,
                         Some(FromToolbar::Jobs | FromToolbar::NotSaved) | None => {}
                     }
@@ -21721,6 +21878,10 @@ mod tests {
                         bench.commands.extend(command);
                     }
                     bench.shell.pointed = pointed;
+                    // Another cursor chosen ends a tool's picker, as `App::ui` has it.
+                    if bench.shell.cursors.ends(bench.mirror.pickers.active()) {
+                        bench.picker_off();
+                    }
                     // Settings asked for goes to the host, as `run_action` hands it on.
                     if std::mem::take(&mut bench.shell.settings) {
                         let (keeper, _) = Keeper::nowhere();
@@ -21827,6 +21988,14 @@ mod tests {
     }
 
     impl Bench {
+        /// Sends `Off` for the picker on, shown at once as `App::send_picker` shows it.
+        fn picker_off(&mut self) {
+            self.commands.push(Command::Picker(PickerCommand::Off));
+            let number = self.commands.len() as u64;
+            self.mirror.pickers.asked(number, None);
+            self.shell.cursors.ending(number, cursors::Ended::Asked);
+        }
+
         /// The actions' availability, the shell's with the host's dialog, as the app has it.
         fn state(&self, ctx: &egui::Context) -> State {
             let history = self.history.as_ref();
@@ -25415,6 +25584,116 @@ mod tests {
         assert_eq!(
             harness.state().shell.cursors.chosen(),
             cursors::Cursor::SELECT
+        );
+    }
+
+    /// White balance's picker, as the mirror shows it on and off.
+    const SPOT_PICKER: PickerRef = PickerRef::Tool {
+        tool: "temperature",
+        picker: "spot",
+    };
+
+    /// The picker turned on as its button or Settings' from image area turns it on, shown
+    /// at once, then a frame drawn.
+    fn spot_on(harness: &mut Harness<'_, Bench>) {
+        let number = harness.state().commands.len() as u64 + 100;
+        harness
+            .state_mut()
+            .mirror
+            .pickers
+            .asked(number, Some((SPOT_PICKER, true)));
+        harness.run();
+    }
+
+    /// The `Off`s sent since the last look.
+    fn offs(harness: &mut Harness<'_, Bench>) -> usize {
+        let commands = std::mem::take(&mut harness.state_mut().commands);
+        let off = Command::Picker(PickerCommand::Off);
+        commands.iter().filter(|c| **c == off).count()
+    }
+
+    /// The well follows the picker on whichever door turned it on (decision 104;
+    /// `docs/cursors.md`, A cursor): White balance's cursor chosen while its picker is on,
+    /// said politely; Select in the same frame as it turns off, its button pressed again or
+    /// its face; the reason said where the person did not ask; Pan chosen in the well
+    /// ending it and staying; neither its tool's section opened nor scrolled to.
+    #[test]
+    fn the_well_follows_the_picker_whichever_door_turned_it_on() {
+        let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
+        let turned =
+            |harness: &Harness<'_, Bench>| harness.state().shell.cursors.turned().to_owned();
+        let checked = |harness: &Harness<'_, Bench>, name: &str| {
+            let face = harness.get_by_role_and_label(Role::RadioButton, name);
+            face.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+        };
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        let sections = harness.state().shell.sections.clone();
+        spot_on(&mut harness);
+        assert_eq!(chosen(&harness), SPOT);
+        assert!(checked(&harness, "White balance picker, K"));
+        assert_eq!(turned(&harness), "White balance picker on");
+        assert_eq!(harness.state().shell.reveal, None);
+        assert_eq!(harness.state().shell.sections, sections);
+        // Its button pressed again: `Off`, which says nothing more.
+        harness
+            .state_mut()
+            .shell
+            .cursors
+            .ending(200, cursors::Ended::Asked);
+        harness.state_mut().mirror.pickers.asked(200, None);
+        harness.run();
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+        assert!(checked(&harness, "Select, Esc"));
+        assert_eq!(turned(&harness), "");
+        // Its face pressed again.
+        spot_on(&mut harness);
+        offs(&mut harness);
+        (harness.get_by_role_and_label(Role::RadioButton, "White balance picker, K")).click();
+        harness.run();
+        assert_eq!(offs(&mut harness), 1);
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+        // Turned off by the session as Undo moves its tool: said with why.
+        spot_on(&mut harness);
+        (harness.state_mut().shell.cursors).ending(300, cursors::Ended::History);
+        harness.state_mut().mirror.pickers.apply(300, None);
+        harness.run();
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+        assert_eq!(
+            turned(&harness),
+            "White balance picker off: history changed"
+        );
+        // Pan chosen in the well ends it, and stays.
+        spot_on(&mut harness);
+        offs(&mut harness);
+        harness
+            .get_by_role_and_label(Role::RadioButton, "Pan, A")
+            .click();
+        harness.run();
+        assert_eq!(offs(&mut harness), 1);
+        harness.run();
+        assert_eq!(chosen(&harness), cursors::Cursor::PAN);
+        assert_eq!(harness.state().mirror.pickers.active(), None);
+    }
+
+    /// A picker cursor that cannot act now is never chosen, by its key either: its face is
+    /// disabled, saying why (`docs/cursors.md`, A cursor).
+    #[test]
+    fn a_picker_cursor_that_cannot_act_is_never_chosen() {
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.state_mut().shell.pick_why = Some("Opening IMG_2041…".to_owned());
+        harness.run();
+        harness.key_press(Key::K);
+        harness.run();
+        assert_eq!(
+            harness.state().shell.cursors.chosen(),
+            cursors::Cursor::SELECT
+        );
+        let face = harness.get_by_role_and_label(Role::RadioButton, "White balance picker, K");
+        assert!(face.accesskit_node().is_disabled());
+        assert_eq!(
+            face.accesskit_node().description().as_deref(),
+            Some("Opening IMG_2041…")
         );
     }
 

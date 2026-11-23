@@ -115,7 +115,8 @@ fn well(state: State, which: Builtin) -> Harness<'static, State> {
                                 }
                                 CursorWellAction::Toggle { on, .. } => state.show_last = on,
                                 CursorWellAction::Choice { option, .. } => state.applies = option,
-                                CursorWellAction::Amounts { .. } => {}
+                                CursorWellAction::Amounts { .. }
+                                | CursorWellAction::Again { .. } => {}
                             }
                             state.reported.push(action);
                         }
@@ -166,7 +167,7 @@ fn phase_2_s_three_groups_are_101_points_and_a_fourth_adds_its_button() {
 }
 
 #[test]
-fn a_face_chooses_its_group_s_active_cursor_and_the_chosen_face_does_nothing_more() {
+fn a_face_chooses_its_group_s_active_cursor_and_the_chosen_face_is_pressed_again() {
     let mut harness = well(State::default(), Builtin::Dark);
     harness
         .get_by_role_and_label(Role::RadioButton, "Pan")
@@ -178,11 +179,15 @@ fn a_face_chooses_its_group_s_active_cursor_and_the_chosen_face_does_nothing_mor
             cursor: 0
         }]
     );
-    // Pan is chosen now: a click on it again asks for nothing, as it has no amounts.
+    // Pan is chosen now: a click on it again, with no amounts, is a press again, which a
+    // picker cursor's face turns its picker off with.
     harness
         .get_by_role_and_label(Role::RadioButton, "Pan")
         .click();
-    assert_eq!(reported(&mut harness), vec![]);
+    assert_eq!(
+        reported(&mut harness),
+        vec![CursorWellAction::Again { group: 1 }]
+    );
     harness
         .get_by_role_and_label(Role::RadioButton, "White balance picker, K")
         .click();

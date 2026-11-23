@@ -1476,6 +1476,26 @@ picker-photo-down = Move down
 picker-said-control = { $control } { $value }
 picker-said-rgb = mean RGB { $red }, { $green }, { $blue }
 
+# Said politely as a picker turns on, from its button or its cursor, and as it turns off
+# where the person did not ask, with why where the app knows (docs/cursors.md, Keyboard and
+# screen readers). $picker is its name, "White balance picker".
+picker-turned-on = { $picker } on
+picker-turned-off = { $picker } off
+picker-turned-off-why = { $picker } off: { $why }
+# Said as another picker replaces the one on, $before the one turning off.
+picker-turned-replaced = { $before } off: another picker turned on. { $picker } on
+# Why a picker turned off: another photo opened; the photo closed; a control of its tool
+# changed, $control its label; a tool changed, $tool its name; its tool turned off; its
+# tool's section closed; Undo, Redo or a move through the history; the edit reset.
+picker-off-photo = another photo
+picker-off-closed = photo closed
+picker-off-control = { $control } changed
+picker-off-tool = { $tool } changed
+picker-off-tool-off = { $tool } turned off
+picker-off-section = { $tool } closed
+picker-off-history = history changed
+picker-off-reset = edit reset
+
 ## The cursors' well (docs/cursors.md, The well; decision 104). $name is a cursor's name,
 ## $key its key as shortcuts spell it, $how what a press with it does, $group a group's name
 
