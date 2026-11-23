@@ -2497,10 +2497,11 @@ impl Shell {
 
     /// What screen readers hear of `change`, made (decisions 83 and 96): "Exposure moved to
     /// 3 of 12 in Adjust", "Exposure pinned in Adjust", "Exposure moved to Raw", "Vignetting
-    /// hidden", "Vignetting shown in Effects".
+    /// hidden", "Vignetting shown in Effects". Nothing for the Toolbar's list, which moves
+    /// no tool.
     fn announcement(&self, change: &layout::Move, ctx: &egui::Context) -> String {
         let words = translator(ctx);
-        let tool = change.tool();
+        let tool = change.tool().unwrap_or_default();
         let mut args = apertrust_ui::i18n::Args::new();
         args.set("tool", tools::title(&words, tool));
         let at = |id: &str| self.workspace.position(id);
@@ -2533,6 +2534,7 @@ impl Shell {
                 }
             }
             layout::Move::Hide { .. } => "section-hidden",
+            layout::Move::Toolbar(_) => return String::new(),
         };
         words.text_with(message, Some(&args))
     }

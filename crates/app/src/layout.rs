@@ -42,8 +42,9 @@
 //!   what this build knows and never overwritten.
 //! - **The moves,** [`Move`] (decision 96, step 4): a tool one place up or down in its
 //!   list, pinned or unpinned, moved to another tab, hidden or shown in a tab, display
-//!   order only, applied to the layout as its file will be written ([`Layout::settled`],
-//!   [`Layout::apply`], [`Workspace::apply`]), never per frame.
+//!   order only, and the Toolbar's list as it now is (decision 92), applied to the layout
+//!   as its file will be written ([`Layout::settled`], [`Layout::apply`],
+//!   [`Workspace::apply`]), never per frame.
 //! - **Writing** a workspace's file, [`files`]: the moves written whole through the safe
 //!   write once the layout has stood still for a second, at once on a switch and on exit,
 //!   each write applying them to the file as it is on disk then.
@@ -593,18 +594,30 @@ pub enum Move {
     },
     /// Out of every tab into `hidden`, its edit staying and still processed; never Export.
     Hide { tool: &'static str },
+    /// The Toolbar's list as it now is (decision 92), the whole list, ids this build does
+    /// not know in their places, written over the file's `toolbar`; its tabs and every
+    /// other key stay as the file has them.
+    #[cfg_attr(
+        not(test),
+        allow(
+            dead_code,
+            reason = "the toolbar menu's Hide and Show Menu Button make it once built"
+        )
+    )]
+    Toolbar(Vec<String>),
 }
 
 impl Move {
-    /// The tool it moves.
-    pub fn tool(&self) -> &'static str {
+    /// The tool it moves; none for the Toolbar's list.
+    pub fn tool(&self) -> Option<&'static str> {
         match self {
             Move::Up { tool, .. }
             | Move::Down { tool, .. }
             | Move::Pin { tool, .. }
             | Move::Unpin { tool, .. }
             | Move::ToTab { tool, .. }
-            | Move::Hide { tool } => tool,
+            | Move::Hide { tool } => Some(tool),
+            Move::Toolbar(_) => None,
         }
     }
 }
@@ -884,11 +897,17 @@ impl Layout {
                 }
                 moved
             }
+            Move::Toolbar(list) => {
+                let moved = self.toolbar.as_ref() != Some(list);
+                self.toolbar = Some(list.clone());
+                moved
+            }
         }
     }
 
     /// Writes what a move changes into `table`, a workspace's file as read, the rest of it
-    /// kept as it is: `version`, `hidden`, `seen`, `[pinned]` and `[order]` (decision 96).
+    /// kept as it is: `version`, `hidden`, `seen`, `[pinned]` and `[order]` (decision 96),
+    /// and `toolbar` where the layout has a list (decision 92).
     /// A list for a tab id it lacks, which no move changes, stays as the file has it, an
     /// item this build skips included.
     pub fn write_into(&self, table: &mut Table) {
@@ -906,6 +925,9 @@ impl Layout {
         table.insert("version".into(), VERSION.into());
         table.insert("hidden".into(), ids(&self.hidden));
         table.insert("seen".into(), ids(&self.seen));
+        if let Some(toolbar) = &self.toolbar {
+            table.insert("toolbar".into(), ids(toolbar));
+        }
         if self.pinned.is_empty() {
             table.remove("pinned");
         } else {
