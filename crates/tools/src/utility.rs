@@ -30,7 +30,7 @@ use crate::about::WorksOn;
 use crate::definition::{is_id, shows_setting};
 use crate::{
     ControlKind, DefinitionError, GroupKind, MenuEntry, MenuItem, Place, Reset, Row, Section, Tab,
-    ToolDefinition, Widget, check_menus,
+    ToolDefinition, ToolbarItem, Widget, check_menus, check_toolbar,
 };
 
 /// A utility tool, which edits nothing (decision 93): the [`ToolDefinition`] every tool
@@ -43,7 +43,8 @@ pub struct UtilityDefinition {
     /// and its ⋯ (decision 91), each the registry action that runs it, by its id, at a
     /// place, held to a tool's limits ([`crate::check_menus`]); none for a utility with
     /// nothing to add. The app builds the menus, every item where its section and order put
-    /// it ([`Section`]).
+    /// it ([`Section`]). The actions it offers for the Toolbar are registry actions too, by
+    /// their ids, any number of them (decision 92).
     pub tool: ToolDefinition,
     pub measures: Option<WorksOn>,
     /// Its groups' titles where it declares its own, by their ids, as Export's
@@ -68,7 +69,8 @@ impl UtilityDefinition {
     /// following a choice setting of its own, shown outside them and wherever they show,
     /// for options it has, with rows of their own; what it titles a group of its page, and
     /// what opens at first a collapsible group with rows; no cursors, until the Colour
-    /// readout's design; and its context menu items held to a tool's limits
+    /// readout's design; its toolbar items each naming an action, once, with an icon, any
+    /// number of them ([`check_toolbar`]); and its context menu items held to a tool's limits
     /// ([`check_menus`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
         let tool = &self.tool;
@@ -110,6 +112,8 @@ impl UtilityDefinition {
         if !tool.cursors.is_empty() {
             return Err(DefinitionError::UtilityCursors);
         }
+        // Its toolbar items have no limit: History offers the edit's six (decision 92).
+        check_toolbar(tool.toolbar, None, &[])?;
         check_menus(tool.menus)
     }
 
@@ -217,6 +221,15 @@ fn once(
     Ok(())
 }
 
+/// A utility's toolbar item, the registry action `action` with `apertrust-ui`'s icon `icon`
+/// (decision 92).
+pub(crate) const fn item(action: &'static str, icon: &'static str) -> ToolbarItem {
+    ToolbarItem {
+        action,
+        icon: Some(icon),
+    }
+}
+
 /// History's ⋯ item `action` at `order` in `section` (decision 93).
 const fn option(section: Section, order: u32, action: &'static str) -> MenuItem {
     MenuItem {
@@ -253,6 +266,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             presets: false,
             open_at_first: true,
             menus: &[],
+            toolbar: &[],
             cursors: &[],
         },
         measures: Some(WorksOn::Display),
@@ -294,6 +308,15 @@ pub const UTILITIES: &[UtilityDefinition] = &[
                 option(Section::HISTORY, 300, "create-style"),
                 option(Section(5000), 100, "discard-history"),
             ],
+            // The edit's actions for the Toolbar, the default's among them (decision 92).
+            toolbar: &[
+                item("reset", "reset"),
+                item("undo", "undo"),
+                item("redo", "redo"),
+                item("copy-edit", "copy"),
+                item("apply-edit", "apply"),
+                item("copy-apply-parts", "copy"),
+            ],
             cursors: &[],
         },
         measures: None,
@@ -322,6 +345,8 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             presets: false,
             open_at_first: true,
             menus: &[],
+            // View › Collections, its tab chosen (decision 92).
+            toolbar: &[item("show-collections", "library")],
             cursors: &[],
         },
         measures: None,
@@ -382,6 +407,7 @@ mod tests {
                 presets: false,
                 open_at_first: false,
                 menus: &[],
+                toolbar: &[],
                 cursors: &[],
             },
             measures: None,
@@ -520,6 +546,39 @@ mod tests {
             .tool
             .cursors;
         assert_eq!(picking.check(), Err(DefinitionError::UtilityCursors));
+    }
+
+    /// Decision 92: a utility offers any number of registry actions for the Toolbar,
+    /// each once, none empty, each with an icon.
+    #[test]
+    fn a_utility_offers_any_number_of_toolbar_items_each_once() {
+        const THREE: &[ToolbarItem] = &[
+            item("undo", "undo"),
+            item("redo", "redo"),
+            item("reset", "reset"),
+        ];
+        const TWICE: &[ToolbarItem] = &[item("undo", "undo"), item("undo", "redo")];
+        const EMPTY: &[ToolbarItem] = &[item("", "undo")];
+        const NO_ICON: &[ToolbarItem] = &[ToolbarItem {
+            action: "undo",
+            icon: None,
+        }];
+        let mut offering = with(&[]);
+        offering.tool.toolbar = THREE;
+        assert_eq!(offering.check(), Ok(()));
+        offering.tool.toolbar = TWICE;
+        assert_eq!(
+            offering.check(),
+            Err(DefinitionError::DuplicateToolbarItem("undo"))
+        );
+        offering.tool.toolbar = EMPTY;
+        assert_eq!(
+            offering.check(),
+            Err(DefinitionError::UnknownToolbarAction(""))
+        );
+        // A utility has no button to take an icon from.
+        offering.tool.toolbar = NO_ICON;
+        assert_eq!(offering.check(), Err(DefinitionError::ToolbarIcon("undo")));
     }
 
     /// Every row that edits is refused, by what edits in it, inside a group too.

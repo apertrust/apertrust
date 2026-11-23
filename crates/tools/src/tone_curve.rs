@@ -122,6 +122,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        toolbar: &[],
         cursors: &[],
     },
     version: 1,

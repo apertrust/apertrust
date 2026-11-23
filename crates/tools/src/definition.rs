@@ -79,6 +79,11 @@ pub struct ToolDefinition {
     /// builds the menus, every item, the app's included, where its section and order put
     /// it ([`Section`]).
     pub menus: &'static [MenuItem],
+    /// The actions it offers for the Toolbar (decision 92; `docs/gui.md`, Customising the
+    /// Toolbar), each one of its own, on the toolbar only where a person places it;
+    /// none for a tool with nothing to offer. A processing tool offers two at most
+    /// ([`MOST_ON_TOOLBAR`]), a utility any number.
+    pub toolbar: &'static [ToolbarItem],
     /// Its picker cursors (decision 104; `docs/cursors.md`, The API), each picking once with
     /// one of its pickers, which the app's well offers in Pick; none for a tool with none,
     /// and for every utility until the Colour readout's design.
@@ -88,9 +93,10 @@ pub struct ToolDefinition {
 impl ToolDefinition {
     /// A processing tool's declaration with a processing tool's defaults: its page `tabs`
     /// and no rows before or after them, its own reset, the presets button, no context menu
-    /// items or cursors, and closed at first, as every processing tool is unless it sets
-    /// `open_at_first` (decision 93). A tool that differs writes the fields it changes
-    /// over it, `ToolDefinition { menus: MENUS, ..ToolDefinition::processing(id, TABS) }`.
+    /// items, toolbar items or cursors, and closed at first, as every processing tool is
+    /// unless it sets `open_at_first` (decision 93). A tool that differs writes the fields
+    /// it changes over it,
+    /// `ToolDefinition { menus: MENUS, ..ToolDefinition::processing(id, TABS) }`.
     pub const fn processing(id: &'static str, tabs: &'static [Tab]) -> ToolDefinition {
         ToolDefinition {
             id,
@@ -101,6 +107,7 @@ impl ToolDefinition {
             presets: true,
             open_at_first: false,
             menus: &[],
+            toolbar: &[],
             cursors: &[],
         }
     }
@@ -407,6 +414,51 @@ pub fn check_section(item: &MenuItem) -> Result<(), DefinitionError> {
     }
     if item.section == Section::EDIT && item.order < 200 {
         return Err(DefinitionError::MenuOrder(item.entry.name()));
+    }
+    Ok(())
+}
+
+/// An action a tool offers for the Toolbar (decision 92; `docs/gui.md`, Customising the
+/// Toolbar): a candidate the app lists, on the toolbar only where a person places it. The
+/// app runs it as it runs the action from a menu; the tool runs no code there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ToolbarItem {
+    /// A processing tool's own action as its menu items name it, a [`Row::Action`]'s or a
+    /// [`Row::Buttons`] button's id, as Orientation's `rotate_ccw`, which the app's registry
+    /// holds as `tool-<tool>-<action>`; a utility's, the registry action it names, as
+    /// History's `undo`.
+    pub action: &'static str,
+    /// One of `apertrust-ui`'s icons by its name, as `export`; none for a [`Row::Buttons`]
+    /// button's action, which takes its button's icon.
+    pub icon: Option<&'static str>,
+}
+
+/// The most items a processing tool offers for the Toolbar (decision 92). A utility's have
+/// no limit, as History offers the edit's six.
+pub const MOST_ON_TOOLBAR: usize = 2;
+
+/// Whether `items`, one tool's toolbar items, hold together: no action empty or offered
+/// twice, none with no icon but the actions of `buttons`, its [`Row::Buttons`] buttons',
+/// which take their buttons' (none for a utility), and no more items than `most`, a
+/// processing tool's [`MOST_ON_TOOLBAR`], where there is a limit.
+pub fn check_toolbar(
+    items: &[ToolbarItem],
+    most: Option<usize>,
+    buttons: &[&str],
+) -> Result<(), DefinitionError> {
+    for (i, item) in items.iter().enumerate() {
+        if item.action.is_empty() {
+            return Err(DefinitionError::UnknownToolbarAction(item.action));
+        }
+        if items[..i].iter().any(|other| other.action == item.action) {
+            return Err(DefinitionError::DuplicateToolbarItem(item.action));
+        }
+        if item.icon.is_none() && !buttons.contains(&item.action) {
+            return Err(DefinitionError::ToolbarIcon(item.action));
+        }
+    }
+    if most.is_some_and(|most| items.len() > most) {
+        return Err(DefinitionError::ToolbarItems);
     }
     Ok(())
 }
@@ -1384,6 +1436,16 @@ pub enum DefinitionError {
         "the context menu item {0} comes before Reset: a tool's in EDIT take order 200 or more"
     )]
     MenuOrder(&'static str),
+    #[error("a toolbar item names {0:?}, an empty action or one the tool lacks")]
+    UnknownToolbarAction(&'static str),
+    #[error("the toolbar item {0} is offered twice")]
+    DuplicateToolbarItem(&'static str),
+    #[error(
+        "the toolbar item {0} names no icon, which only a button's action leaves to its button"
+    )]
+    ToolbarIcon(&'static str),
+    #[error("more than {MOST_ON_TOOLBAR} toolbar items on a processing tool")]
+    ToolbarItems,
     #[error("two cursors are called {0}")]
     DuplicateCursor(&'static str),
     #[error("the cursor {0} names no picker of the tool that writes controls")]
@@ -1554,7 +1616,8 @@ impl ProcessingDefinition {
     /// each once. A last
     /// pick row names a picker of the tool that writes controls, once. Each context menu
     /// item names one of its actions, once in its place, and no place holds more of
-    /// them than it takes ([`check_menus`]). Each cursor has an id of its own and picks
+    /// them than it takes ([`check_menus`]). Each toolbar item names one of its actions,
+    /// once, with an icon unless it is a button's, two at most ([`check_toolbar`]). Each cursor has an id of its own and picks
     /// in Pick with a picker of the tool that writes controls, no picker with two, by a
     /// click, an area or both, an area only where its picker takes one, on the Viewer
     /// alone, with no amounts ([`ToolCursor`]).
@@ -1977,6 +2040,18 @@ impl ProcessingDefinition {
             check_section(item)?;
         }
         check_menus(self.tool.menus)?;
+        let unknown = (self.tool.toolbar.iter()).find(|item| !actions.contains(item.action));
+        if let Some(item) = unknown {
+            return Err(DefinitionError::UnknownToolbarAction(item.action));
+        }
+        let buttons: Vec<&str> = (self.rows())
+            .filter_map(|row| match row {
+                Row::Buttons { buttons, .. } => Some(buttons.iter().map(|button| button.id)),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        check_toolbar(self.tool.toolbar, Some(MOST_ON_TOOLBAR), &buttons)?;
         self.check_cursors()
     }
 
@@ -2542,6 +2617,7 @@ mod tests {
             presets: true,
             open_at_first: false,
             menus: &[],
+            toolbar: &[],
             cursors: &[],
         },
         version: 1,
@@ -2676,6 +2752,7 @@ mod tests {
             presets: true,
             open_at_first: false,
             menus: &[],
+            toolbar: &[],
             cursors: &[],
         },
         version: 1,
@@ -3471,6 +3548,67 @@ mod tests {
         );
     }
 
+    /// [`with_menus`]'s page, its five actions offering `items` for the Toolbar.
+    fn with_toolbar(items: &[ToolbarItem]) -> ProcessingDefinition {
+        let page = with_menus(&[]);
+        ProcessingDefinition {
+            tool: ToolDefinition {
+                toolbar: Box::leak(items.to_vec().into_boxed_slice()),
+                ..page.tool
+            },
+            ..page
+        }
+    }
+
+    /// The toolbar item offering `action`, with no icon of its own.
+    const fn offered(action: &'static str) -> ToolbarItem {
+        ToolbarItem { action, icon: None }
+    }
+
+    /// Decision 92: a processing tool's toolbar items name its own actions, a row's or a
+    /// button's, each once, with an icon unless a button's, two at most; an empty action,
+    /// one of the app's, a repeat, an action row's with no icon and a third item are
+    /// refused.
+    #[test]
+    fn a_tool_s_toolbar_items_name_its_actions_once_each_two_at_most() {
+        assert_eq!(with_toolbar(&[]).check(), Ok(()));
+        let with_icon = |action| ToolbarItem {
+            icon: Some("wand"),
+            ..offered(action)
+        };
+        let both = [offered("rotate"), with_icon("auto_tune")];
+        assert_eq!(with_toolbar(&both).check(), Ok(()));
+        assert_eq!(with_toolbar(&[with_icon("rotate")]).check(), Ok(()));
+        for (items, why) in [
+            (
+                vec![offered("spin")],
+                DefinitionError::UnknownToolbarAction("spin"),
+            ),
+            // A registry action of the app's, which only a utility names.
+            (
+                vec![offered("undo")],
+                DefinitionError::UnknownToolbarAction("undo"),
+            ),
+            (vec![offered("")], DefinitionError::UnknownToolbarAction("")),
+            (
+                vec![offered("rotate"), with_icon("rotate")],
+                DefinitionError::DuplicateToolbarItem("rotate"),
+            ),
+            // An action row's, which has no button to take an icon from.
+            (
+                vec![offered("auto_tune")],
+                DefinitionError::ToolbarIcon("auto_tune"),
+            ),
+            (
+                vec![offered("rotate"), with_icon("pick"), with_icon("clear")],
+                DefinitionError::ToolbarItems,
+            ),
+        ] {
+            assert_eq!(with_toolbar(&items).check(), Err(why), "{items:?}");
+        }
+        assert_eq!(MOST_ON_TOOLBAR, 2);
+    }
+
     /// Decision 91: a tool's item stands from Edit's section up to, not including, the
     /// layout's, and in Edit's after Reset, at order 200 or more.
     #[test]
@@ -3573,6 +3711,7 @@ mod tests {
         let page = page(with_mode(&rows));
         ProcessingDefinition {
             tool: ToolDefinition {
+                toolbar: &[],
                 cursors: Box::leak(cursors.into()),
                 ..page.tool
             },
@@ -4532,6 +4671,7 @@ mod tests {
                 presets: true,
                 open_at_first: false,
                 menus: &[],
+                toolbar: &[],
                 cursors: &[],
             },
             version: 1,
@@ -4608,6 +4748,7 @@ mod tests {
                 presets: true,
                 open_at_first: false,
                 menus: &[],
+                toolbar: &[],
                 cursors: &[],
             },
             version: 1,
