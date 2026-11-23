@@ -18,7 +18,7 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 | **The footer** | 52 points across the sheet, a hairline above | A Help button at its start, as Settings' footer has, opening the topic `import` ([0097](0097-help-topics-and-the-apertrust-guide.md)); the summary on two lines; Keep open, Close and the primary button at its end |
 
 - **The column sits on the Tools panel's side,** the right today, the left when the Tools panel moves there, and the grid on the Browser's: opening a sheet, thumbnails appear where thumbnails were and a tool where tools were, and reading down the column ends above the primary button.
-- **Narrow windows:** the column gives way only once the grid is down to two cells at its Zoom, then down to 296, and never below it: in the least window, 500 points wide, the column is 296 and the grid the 204 left, two Small cells; the Select buttons fold into one Select ▾ below about 520 points of grid; the summary's path is cut first. The bar and the footer always stay in view, and Close and the primary button are never cut.
+- **Narrow windows:** the column gives way only once the grid is down to two cells at its Zoom, then down to 296, and never below it: in the least window, the planned 500 points wide (decision 39; today 960 logical pixels, 960 points at the default interface size and fewer at a larger one), the column is 296 and the grid the 204 left, two Small cells; the Select buttons fold into one Select ▾ below about 520 points of grid; the summary's path is cut first. The bar and the footer always stay in view, and Close and the primary button are never cut.
 
 ### The grid and the checks
 

@@ -191,7 +191,7 @@ Phase 3:
 - **Floating panels,** 83's step 5.
 - **A visual editor for workspaces:** adding, naming and removing tabs, hiding and showing tools, a new workspace; it replaces the Customise tabs dialog, which is not built on fixed lists in Phase 2. Save as Workspace…, Rename Workspace… and Delete Workspace… come with it.
 - **The Photos workspace** for culling (37; [gui.md](../gui.md#workspaces)).
-- **Each workspace's own toolbar** (92), kept in the workspace's file: the list, the overflow and the labels built; its menu and the window's minimum width with Phase 3.
+- **Each workspace's own toolbar** (92), kept in the workspace's file: the list, the overflow with the window's minimum width, the labels and its menu built.
 
 ## Options considered
 
