@@ -369,7 +369,7 @@ Its kernel evaluates the same map per pixel in Slang, and a test holds the two t
 
 - **`ImageDesc`** carries its stage's `extent`, the buffer's `origin` in that image at the pipe's scale, and that stage at the pipe's scale, `scaled_extent` (decision 15). So `prepare` sees its input region; it is told its output region once regions backward after demosaic are built ([Regions](#regions)). A geometry kernel takes both origins in its own uniforms.
 - **The pass header** keeps its 48 bytes, its origin and full size the instance's own: its output region's origin and its stage's extent. So a position-dependent operation after a crop, such as vignette, sees the cropped image, as darktable's does.
-- **`ImageContext`** has the pipe's kind (`ImageContext::pipe`, `PipeKind`; crop aligns an export's size, as darktable's does). Planned: the focused tool, a view state the session sets for the viewport only, since crop and rotate and perspective show the uncropped image while focused, as darktable's `dt_iop_has_focus` makes them.
+- **`ImageContext`** has the pipe's kind (`ImageContext::pipe`, `PipeKind`; crop aligns an export's size, as darktable's does). Planned: the tool whose Show on photo is on, a view state the session sets for the viewport only, since crop and rotate and perspective show the uncropped image while theirs is on, where darktable's `dt_iop_has_focus` makes them do so while focused; Apertrust has no focused tool, and one tool's Show on photo is on at a time (planned, with Rotate and perspective's port).
 - **A translation** of its input region, crop or any geometry at its identity, returns no passes: its output is its input's buffer, the origin moved.
 
 ### Planning with geometry
@@ -429,7 +429,7 @@ A whole-image pass covers the region the untiled whole output needs at the pipe'
 
 A geometry control's drag re-plans, since its extent, and so the scale and the regions upstream, can change. It restarts from demosaic's full-resolution cache point through the downscale.
 
-- While Crop or Rotate and perspective has focus the viewport shows the uncropped image, so a crop drag never changes the scale.
+- While Crop's or Rotate and perspective's Show on photo is on (planned) the viewport shows the uncropped image, so a crop drag never changes the scale.
 - Spike G1 measures a rotation drag on the Sony 7R V on the M4 and WARP. If a step takes longer than a frame, the downscale's region grows by a margin snapped to a grid, so small changes keep it.
 - Editing an operation after the geometry, as Exposure, restarts at its input as now: the warps do not rerun.
 
@@ -438,7 +438,7 @@ A geometry control's drag re-plans, since its extent, and so the scale and the r
 The engine maps them, composing each geometry instance's maps between any two places in the plan, as darktable's `dt_dev_distort_transform_plus` does: the original image (demosaic's output at full resolution), any instance's input or output, and the frame. Planned:
 
 - `Command::MapPoints` answers a query.
-- Each frame carries the output extent, its region and scale, and, while the chain after the focused tool is affine, that tool's input-to-frame map.
+- Each frame carries the output extent, its region and scale, and, while the chain after the tool whose Show on photo is on is affine, that tool's input-to-frame map.
 - A picked area is kept in the original image's coordinates and mapped to its operation's input by its four corners, sorted, the two lowest and the two highest averaged on each axis, as darktable's `dt_color_picker_box` does (decision 79, [pickers.md](pickers.md#regions)). Built for the frame: `picker::Geometries` composes every geometry's `forward` and `backward` from the original image to the photo, `pipeline::geometries` listing them with their inputs' extents.
 - The crop frame is drawn in crop's input coordinates through the frame's affine map.
 - Layers' masks and retouch's shapes are kept in the original image's coordinates and mapped forward to their slot, a raster mask warped by the operation's own kernel on one channel, as darktable's `distort_mask` does.
@@ -474,7 +474,7 @@ Then:
   - an RGBA input whose extent is not set, as one described from a mosaic's description is;
   - whole-image passes before a geometry that keeps only part of their stage, crop's window, which decision 16 has them cover (crop, below).
 - **An identity leaves the plan:** an operation that moves no pixel and runs no pass, keeping its input as it is, is not planned, as darktable's `commit_params` disables a piece with nothing to do. Orientation at no rotation is one, so a photo the right way up plans as it did before orientation.
-- **Not yet:** `Command::MapPoints` and the frame's map, `ImageContext`'s focused tool, the interpolators, and every warp. Orientation (`flip`) is the first real geometry; the session reports the output extent with the values (`Values::extent`), which the viewport fits (`Values::viewport_size`).
+- **Not yet:** `Command::MapPoints` and the frame's map, `ImageContext`'s tool with Show on photo on, the interpolators, and every warp. Orientation (`flip`) is the first real geometry; the session reports the output extent with the values (`Values::extent`), which the viewport fits (`Values::viewport_size`).
 
 ### Still to build
 
