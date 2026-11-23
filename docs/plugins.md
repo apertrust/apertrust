@@ -10,7 +10,7 @@ Every operation, built-in or third-party, is a native plugin behind one interfac
 
 | Part | Purpose |
 | --- | --- |
-| Manifest | ID, version, domain (scene or display), slot (a stage and an order number, darktable's where Apertrust keeps darktable's place; decision 22), layer support, differentiable flag, neighbourhood radius at full resolution (a fixed reach, the default of `Operation::reach`, decision 13), and `default_enabled`: whether an unedited photo runs it, or only a tool's binding adds it (decision 28) |
+| Manifest | ID, version, domain (scene or display), slot (a stage and an order number, darktable's where Apertrust keeps darktable's place; decision 22), layer support, differentiable flag, neighbourhood radius at full resolution (`radius`, by which a tile's region grows; the default of the planned `Operation::reach`, decision 13), and `default_enabled`: whether an unedited photo runs it, or only a tool's binding adds it (decision 28) |
 | Parameter schema | Operation parameters with ranges, units and meaning; versioned, with migrations |
 | Kernels | Slang source, with one entry point per pass and, outside the raw stage, the derivative entry points (decision 21), and its generated WGSL |
 | Setup | `prepare`: from the parameters and the image's context to uniforms and tables, as darktable's `commit_params` does |
@@ -61,7 +61,7 @@ Parameters cross the interface as data (decision 21): names mapped to numbers, w
 Three kinds of pass:
 
 - **per-pixel,** which the engine can fuse unless it binds scratch (decision 13);
-- **spatial,** with its radius, its operation's reach deciding regions (below);
+- **spatial** (`PassKind::Spatial`), with its radius, informational; its operation's reach is planned to decide regions (below);
 - **whole-image** (`PassKind::WholeImage`, decision 15): passes that compute a result from the whole image at the pipe's scale, its stage at that scale as `ImageContext::whole_image` gives it (`ImageDesc::scaled_extent`), into the operation's scratch buffers, which its later passes read with no readback, whatever its size. Highlight reconstruction's statistic writes partial results per workgroup, then combines them; the tone equalizer's mask grid is another.
 
 After demosaic, whole-image passes form runs: the passes that read the operation's input, then those that read only its scratch. Each run is one first round of an export's tiles. Their uniforms hold only what they read, so their result's key, apart from the operation's other passes, ignores parameters only the later passes use (the band curve). A pass may also declare `Strips`, how it runs in row strips where its image is larger than the GPU binds at once; a statistic's strips keep whole workgroup rows, so it stays the whole image's (decision 14).
@@ -83,7 +83,10 @@ Decision 87. An operation that needs the raw's histogram, exposure's automatic m
 
 ## The reach
 
-Decision 13. `Operation::reach(params, image)`, the pixels beyond its output region at the pipe's scale that an operation's output reads, all its passes together, as darktable's `tiling_callback` overlap. By default it is the manifest's fixed radius times the scale; non-local means' comes from its patch size, search radius, scattering and the scale. The planner calls it before `prepare` as it works regions backwards, and each `prepare` is told its output region and sees its input region through `ImageDesc`'s extent and origin (decision 16).
+Decision 13.
+
+- **Built:** the manifest's `radius`, a fixed neighbourhood at full resolution of the passes a tile runs, 0 for a per-pixel operation (demosaic's 12, highlights' 1). Whole-image passes are left out, since they cover the whole image in rounds of their own: soften's and the colour equalizer's blurs are whole-image passes, so their radius is 0. A tile's region grows by the sum of its operations' radii ([engine.md](engine.md#regions), What is built). A pass's `PassKind::Spatial` radius is its own, informational.
+- **Planned:** `Operation::reach(params, image)`, the pixels beyond its output region at the pipe's scale that an operation's output reads, all its passes but its whole-image ones together, as darktable's `tiling_callback` overlap. By default it is the manifest's fixed radius times the scale; non-local means' comes from its patch size, search radius, scattering and the scale, so the [Denoise port](ports/denoiseprofile.md) needs it. The planner is to call it before `prepare` as it works regions backwards, and each `prepare` to be told its output region, seeing its input region through `ImageDesc`'s extent and origin (decision 16).
 
 ## Slots
 

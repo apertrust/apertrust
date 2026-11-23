@@ -68,7 +68,7 @@ flowchart TB
 | Fused group | Consecutive per-pixel passes compiled into one dispatch (Phase 2, decision 8) |
 | Stage | A stretch of the pipeline with one data format; an operation's slot names the stage it reads |
 | Region | A rectangle in a stage's coordinates, at a scale |
-| Reach | The pixels beyond its output region, at the pipe's scale, that an operation's output reads, all its passes together: darktable's tiling overlap, from the parameters and the scale (`Operation::reach`, decision 13) |
+| Reach | The pixels beyond its output region, at the pipe's scale, that an operation's output reads, all its passes but its whole-image ones together, since those cover the whole image in rounds of their own (soften's blur, so its reach is 0): darktable's tiling overlap, from the parameters and the scale (`Operation::reach`, decision 13, planned); built, the manifest's fixed `radius` |
 | Extent | A stage's image at full resolution; geometry changes it, so stages differ in size (decision 16) |
 | Pipe | One kind of render with its own size and plan: the viewport pipe and the export pipe |
 | Plan | A pipe's instances, passes, regions and buffers, worked out before it renders |
@@ -277,7 +277,7 @@ flowchart LR
 - **Two resolutions:** full, for export and the 100% view's detail pipeline (decision 99), and viewport, downscaled right after demosaic (decision 12), tile by tile where full resolution does not fit (decision 14).
 - **Exports at a size** are resampled as darktable resamples them, with lanczos3 after demosaic, or with high quality resampling before colorout (decision 56; [Export jobs](#export-jobs)). Without high quality, the operations after the resample cover the stage at the export's scale; haze removal is planned to come before the resample, at full resolution (decision 15).
 - **Caches:** the demosaiced image, which only raw-stage settings invalidate; its viewport version; and the input of the operation being edited. The full-resolution cache is optional under a memory budget: a viewport in tiles keeps the raw stage's output instead (decision 14).
-- **Tiles:** an export tiles when an image exceeds the memory budget or the adapter's buffer limits (decision 13). Regions propagate backwards from each tile, so tiles overlap by the downstream operations' reaches, each from its parameters and the pipe's scale; demosaic writes the region the operations after it need; the operations up to one run whole where no tile takes its reach. Whole-image passes run over the whole image first: in the raw stage before the tiles and, after demosaic, in a first round of tiles of their own, the tiles sized without the scratch the export holds for them (decisions 12, 13 and 15).
+- **Tiles:** an export tiles when an image exceeds the memory budget or the adapter's buffer limits (decision 13). A tile's region grows by the sum of its operations' manifest radii. Planned, regions propagate backwards from each tile, so tiles overlap by the downstream operations' reaches, each from its parameters and the pipe's scale; demosaic writes the region the operations after it need; the operations up to one run whole where no tile takes its reach. Whole-image passes run over the whole image first: in the raw stage before the tiles and, after demosaic, in a first round of tiles of their own, the tiles sized without the scratch the export holds for them (decisions 12, 13 and 15).
 - **Strips:** where an image is larger than the GPU binds at once, the passes before the tiles run in row strips, each binding a window of the whole buffer, and a statistic stays the whole image's (decision 14).
 - **Orientation:** export will apply the image's orientation with the flip operation, on by default with the EXIF orientation, as darktable's is, once orientation is ported (decision 16).
 
@@ -318,7 +318,7 @@ Regions propagate backwards at planning, as darktable's `modify_roi_in` does (de
 
 - **Per-pixel:** the same region.
 - **Spatial:** the region grown by the operation's reach on every side and clipped to its stage's image (decision 13).
-  - The reach is `Operation::reach(params, image)`: the pixels beyond its output region that its output reads, all its passes together, at the pipe's scale, as darktable's `tiling_callback` gives its overlap from the parameters and `roi->scale`. By default it is the manifest's fixed radius times the scale, rounded up (demosaic's 12, highlights' 1).
+  - The reach is to be `Operation::reach(params, image)` (planned): the pixels beyond its output region that its output reads, all its passes but its whole-image ones together, at the pipe's scale, as darktable's `tiling_callback` gives its overlap from the parameters and `roi->scale`. By default it is the manifest's fixed radius times the scale, rounded up (demosaic's 12, highlights' 1).
   - Non-local means' reach is P + R, its patch radius and its offset table's largest offset after darktable's `scatter`: 16 for test 0027, about 4,700 at darktable's soft limits.
   - A pass's `PassKind::Spatial` radius is its own reach, informational: a sum of passes' radii would overstate a separable filter's.
   - Raw-stage regions are aligned to the CFA pattern: 2×2 for Bayer, 6×6 for X-Trans.

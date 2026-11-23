@@ -273,7 +273,7 @@ Each is separate work.
 
 Each tool's page holds its invariants table (decision 28; the `tool-bindings` skill). It says what each control changes, what stays fixed, what zero means, and the control's range and response.
 
-It then lists one row per invariant, and each row is a test in `crates/tools/tests/<id>.rs`. A control whose rows cannot be tested is not yet defined.
+It then lists one row per invariant, and each row is a test in `crates/tools/tests/<file>.rs`, named, as the tool's source `crates/tools/src/<file>.rs` is, after its English name in snake case, not its id: White balance's (`temperature`) in `white_balance.rs`, Vignetting's (`vignette`) in `vignetting.rs`. A control whose rows cannot be tested is not yet defined.
 
 The tables come before the bindings. A tolerance or a choice that a page marks as proposed is still open. A page with open questions ends with them and their options.
 
