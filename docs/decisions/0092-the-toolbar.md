@@ -2,7 +2,7 @@
 
 ## Context
 
-The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the cursors' well, the jobs spinner and the save state. As it narrows it folds the actions into ⋯ More actions.
+The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the cursors' well, the jobs spinner and the save state. As it narrows it folds the actions into » one at a time.
 
 People want the actions they use on every photo within reach, and tools want buttons of their own there, such as Orientation's rotations. Several things constrain how:
 
@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but Show Menu Button. Planned: Phase 3 builds its menu, the overflow and labels; the Customise Toolbar window comes much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but Show Menu Button and the assistant's, and the overflow but its labels and the window's minimum width. Planned: Phase 3 builds its menu, labels and that minimum width; the Customise Toolbar window comes much later.
 
 ### The list and its defaults
 
@@ -139,7 +139,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 4. The status words fold to their signs.
 5. Undo and Redo go into ».
 
-- » lists its items in the toolbar's order, with their keys, check marks and disabled states. It replaces the built ⋯ More actions and matches the Tools panel's ».
+- » lists its items in the toolbar's order, with their keys, check marks and disabled states. It matches the Tools panel's ».
 - **Never folded:** the parts placed, the cursors' well among them, », the caption buttons and 24 points of empty area, counted on both sides of the well together.
 - **When even those do not fit,** at a large interface size, the window's minimum width grows to their width, so the bar never overlaps itself or the caption buttons and keeps its 24 points to move the window.
 - A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
