@@ -5,6 +5,7 @@ Thank you for your interest. Apertrust is in early development, so the way to co
 ## Before you start
 
 - **Open an issue or a discussion first** for a feature, a darktable port or any large change. It lets us agree on the scope before you spend time on code. A small fix or a typo needs no issue.
+- **A new tool or a port:** [docs/contributing/new-processing-tool.md](docs/contributing/new-processing-tool.md) walks through one, from the operation's crate to the pull request.
 - **Read the rules.** [AGENTS.md](AGENTS.md) holds the engineering rules and the commands. [docs/principles.md](docs/principles.md) says what Apertrust is for.
 - **Design decisions** are recorded in [docs/decisions/](docs/decisions/README.md), a file each with its number. They are settled. To change one, open an issue that says which decision and why.
 
