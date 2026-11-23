@@ -164,6 +164,14 @@ pub fn listed<'a>(list: impl IntoIterator<Item = &'a str>) -> Vec<&'static Place
     drawn
 }
 
+impl Placeable {
+    /// Whether it goes under » before the app's own actions as the Toolbar narrows: a
+    /// tool's item does (decision 92).
+    pub fn folds_first(&self) -> bool {
+        matches!(self.kind, Kind::Tool(_))
+    }
+}
+
 /// `apertrust-ui`'s icon called `name`, if it has one.
 fn named(name: &str) -> Option<Icon> {
     Icon::ALL.into_iter().find(|icon| icon.name() == name)
@@ -289,6 +297,24 @@ mod tests {
         assert_eq!(icon("tool-flip-rotate_ccw"), Some(Icon::RotateLeft));
         assert_eq!(icon("tool-flip-rotate_cw"), Some(Icon::RotateRight));
         assert_eq!(icon("show-collections"), Some(Icon::Library));
+    }
+
+    /// A tool's item folds under » before the app's own actions; nothing else is marked.
+    #[test]
+    fn a_tool_s_items_fold_first() {
+        let set = placeable(&tools(), UTILITIES);
+        let first = |id: &str| {
+            set.iter()
+                .find(|placed| placed.id == id)
+                .unwrap()
+                .folds_first()
+        };
+        for id in ["reset", "export", "tool-flip-rotate_cw", "show-collections"] {
+            assert!(first(id), "{id}");
+        }
+        for id in ["import", "open", "settings", "menu-button", "space"] {
+            assert!(!first(id), "{id}");
+        }
     }
 
     /// Parts' and spacings' ids are their own: none is a registry action's, as
