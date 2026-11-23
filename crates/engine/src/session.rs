@@ -631,6 +631,20 @@ fn changed_tool(command: &Command) -> Option<Option<String>> {
     }
 }
 
+/// Whether `command` moves through the history or rewrites it: Undo, Redo, `GoTo`,
+/// Compress, Truncate or Discard History.
+fn history_move(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Undo
+            | Command::Redo
+            | Command::GoTo { .. }
+            | Command::Compress { .. }
+            | Command::Truncate { .. }
+            | Command::DiscardHistory
+    )
+}
+
 /// What reaches the engine thread, in the order sent: the client's commands, the GPU
 /// tasks its jobs' bodies hand it ([`crate::jobs::Tasks`]), what an open's job read
 /// ([`open::Stage`]), a worker's ask for the cache's eviction ([`cache::Upkeep::check`]),
@@ -3372,6 +3386,11 @@ impl Engine {
             // The tool a command changes: a tool's colour picker on turns off as its
             // tool changes.
             let changes = changed_tool(&command);
+            // A tool's picker on, and its tool's state, before a move through the history
+            // or a rewrite of it: one that changes the tool turns its picker off.
+            let moved_from = history_move(&command)
+                .then(|| self.picker_tool_state())
+                .flatten();
             let result = match command {
                 Command::Open(path) => {
                     // Its number, which its `Opened` or its failure carries. What was
@@ -3537,15 +3556,7 @@ impl Engine {
                 command => {
                     // A move through the history, or a rewrite of it, ends a one-shot pick
                     // still waiting.
-                    if matches!(
-                        command,
-                        Command::Undo
-                            | Command::Redo
-                            | Command::GoTo { .. }
-                            | Command::Compress { .. }
-                            | Command::Truncate { .. }
-                            | Command::DiscardHistory
-                    ) {
+                    if history_move(&command) {
                         self.once_off(&mut events);
                     }
                     let viewing = self.open.as_ref().is_some_and(|o| o.view_only.is_some());
@@ -3569,6 +3580,13 @@ impl Engine {
                 Ok(()) => {
                     if let Some(tool) = changes {
                         self.picker_tool_changed(tool.as_deref(), &mut events);
+                    }
+                    if let Some((tool, before)) = moved_from
+                        && self
+                            .picker_tool_state()
+                            .is_some_and(|(_, now)| now != before)
+                    {
+                        self.picker_tool_changed(Some(tool), &mut events);
                     }
                 }
                 // An open's failure names its open already.
