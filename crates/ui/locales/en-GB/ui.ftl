@@ -1473,9 +1473,9 @@ cursor-list =
 # The app's own cursors and the groups, their names and what a press with each does; a
 # group's name says what its chevron's list holds.
 cursor-select = Select
-cursor-select-how = Click a mark on the photo to select it, drag to move it; drag elsewhere to pan
+cursor-select-how = Click a mark on the photo to select it, drag to move it
 cursor-pan = Pan
-cursor-pan-how = Drag to pan a zoomed photo, over marks too
+cursor-pan-how = Drag to pan a zoomed photo, over marks too; or hold A with any cursor
 cursor-group-select = Select
 cursor-group-pan = Pan
 cursor-group-pick = Pick

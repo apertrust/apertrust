@@ -1119,9 +1119,9 @@ cursor-list =
        *[both] Kursory i ustawienia: { $group }
     }
 cursor-select = Zaznaczanie
-cursor-select-how = Kliknij znacznik na zdjęciu, aby go zaznaczyć, przeciągnij, aby go przesunąć; przeciągnij gdzie indziej, aby przesunąć widok
+cursor-select-how = Kliknij znacznik na zdjęciu, aby go zaznaczyć, przeciągnij, aby go przesunąć
 cursor-pan = Przesuwanie
-cursor-pan-how = Przeciągnij, aby przesunąć powiększone zdjęcie, także nad znacznikami
+cursor-pan-how = Przeciągnij, aby przesunąć powiększone zdjęcie, także nad znacznikami; albo przytrzymaj A przy dowolnym kursorze
 cursor-group-select = Zaznaczanie
 cursor-group-pan = Przesuwanie
 cursor-group-pick = Próbniki

@@ -18161,12 +18161,12 @@ mod tests {
         }
     }
 
-    /// Select's drag and Pan's pan a zoomed photo as the built drag does, Select's on empty
-    /// photo since no marks are drawn yet (stored samples, 79.14); a picker cursor's drag
-    /// picks and pans nothing, but with A held, which borrows Pan, it pans; a picker on
-    /// takes the photo from every cursor.
+    /// Pan's drag pans a zoomed photo as the built drag does; Select's never does, and
+    /// picks nothing; a picker cursor's drag picks and pans nothing; with A held, which
+    /// borrows Pan, Select's and a picker cursor's drags pan; a picker on takes the photo
+    /// from every cursor.
     #[test]
-    fn select_and_pan_pan_and_a_held_pans_from_a_picker_cursor() {
+    fn only_pan_and_a_held_pan_by_a_drag() {
         let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
         let drag_on = |harness: &mut Harness<'_, Pointing>| {
             let from = PAN_AREA.center();
@@ -18178,15 +18178,17 @@ mod tests {
             harness.drop_at(from + egui::vec2(120.0, 0.0));
             harness.run();
         };
+        // The cursor chosen, A held, a picker on; whether the drag pans and whether it picks.
         let cases = [
-            (cursors::Cursor::SELECT, false, false, true),
-            (cursors::Cursor::PAN, false, false, true),
-            (SPOT, false, false, false),
-            (SPOT, true, false, true),
-            (cursors::Cursor::SELECT, false, true, false),
-            (SPOT, true, true, false),
+            (cursors::Cursor::SELECT, false, false, false, false),
+            (cursors::Cursor::SELECT, true, false, true, false),
+            (cursors::Cursor::PAN, false, false, true, false),
+            (SPOT, false, false, false, true),
+            (SPOT, true, false, true, false),
+            (cursors::Cursor::SELECT, false, true, false, false),
+            (SPOT, true, true, false, false),
         ];
-        for (chosen, held, picker, pans) in cases {
+        for (chosen, held, picker, pans, picks) in cases {
             let mut harness = pointing(hundred, chosen);
             harness.state_mut().mode.hold_pan(held);
             harness.state_mut().picker = picker;
@@ -18196,7 +18198,7 @@ mod tests {
             let moved = state.zoomed != hundred;
             assert_eq!(moved, pans, "{chosen:?}, A held {held}, picker {picker}");
             let picked = !state.sent.is_empty();
-            assert_eq!(picked, !pans && !picker, "{chosen:?}: {:?}", state.sent);
+            assert_eq!(picked, picks, "{chosen:?}: {:?}", state.sent);
             // A held gives the picker cursor back as it is let go.
             assert_eq!(state.mode.chosen(), chosen);
         }
