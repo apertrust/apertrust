@@ -68,7 +68,7 @@ flowchart TD
 
 There is no index file. Sizes come from a walk of each limited kind: one listing per subfolder, with each file's size and time.
 
-- **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s. Measured again with thumbnails written by the session's own path: 153 to 185 ms for 100,000 entries, the first walk of each process the slowest ([below](#timing-the-walk)).
+- **Its cost:** 0.2 s for 100,000 files on the M4's internal SSD, warm; 10,000 removed in 0.56 s. Measured again with thumbnails written by the session's own path: 153 to 185 ms for 100,000 entries, the first walk of each process the slowest. On a Windows NVMe SSD with Defender's real-time protection on, 72 to 77 ms warm and 0.66 to 0.67 s cold ([below](#timing-the-walk)).
 - **When:** once as the session starts, then before each eviction, each time a client asks for the sizes (`CacheCommand::Sizes`, which Settings › Storage sends each time it is shown) and each time `apertrust-cli cache info` runs. In between, the session counts its own writes and removals, so the size shows at once; another process's writes are counted at the next walk.
 - **Tidying:** temporaries more than a day old are removed by name, as a folder's listing does, by a tidy of their own as the session starts, with the write checks `Cache::create` left in the cache folder; a walk writes nothing.
 - **Stopping:** the walk, the tidy and eviction's listing ask their cancel before each subfolder, and eviction before each removal, so a program that quits never waits for a cold walk; a walk stopped keeps no sizes.
@@ -154,7 +154,7 @@ APERTRUST_CACHE_TIMING=DIR cargo test --release -p apertrust-engine --lib \
     time_the_walk -- --ignored --nocapture
 ```
 
-On its first run in `DIR`, on the disk to time, it writes the thumbnails of every raw of the corpus (`APERTRUST_RAW_CORPUS` or `test-images/raw.pixls.us`) at 256, 512 and 1024 through the session's own path, reads them back as hits, and tells their sizes; then it fills the thumbnails kind to 100,000 entries. Every run then walks it five times. For a cold first walk, flush the file system's cache first: `sudo purge` on a Mac, a restart or a fresh mount elsewhere.
+On its first run in `DIR`, on the disk to time, it writes the thumbnails of every raw of the corpus (`APERTRUST_RAW_CORPUS` or `test-images/raw.pixls.us`) at 256, 512 and 1024 through the session's own path, reads them back as hits, and tells their sizes; then it fills the thumbnails kind to 100,000 entries. Every run then walks it five times. For a cold first walk, flush the file system's cache first: `sudo purge` on a Mac; on Windows, from an administrator's PowerShell, the modified list written out and the standby list purged (`NtSetSystemInformation` with `SystemMemoryListInformation`, as RAMMap's Empty Standby List does), or a restart; a fresh mount elsewhere.
 
 On the M4's internal SSD, 40 raws of the corpus, 33 with an embedded picture rawler reads:
 
@@ -165,6 +165,24 @@ On the M4's internal SSD, 40 raws of the corpus, 33 with an embedded picture raw
 | 1024 | 2.15 s | 0.16 s, 33 hits | 199.9 kB |
 
 The walk of 100,000 entries, warm, three processes of five walks each: 161.4 to 184.8 ms for the first walk of a process, 153.4 to 163.5 ms for the rest.
+
+On an AMD Ryzen 7 8845HS with Windows 11 Pro, a WD_BLACK SN7100 NVMe SSD with NTFS, Microsoft Defender's real-time protection on and no exclusion, the same 33 of 40:
+
+| Size | Written, 40 asked | Read back | Each entry |
+| --- | --- | --- | --- |
+| 256 | 3.12 s | 0.08 s, 33 hits | 25.3 kB |
+| 512 | 2.94 s | 0.18 s, 33 hits | 65.8 kB |
+| 1024 | 3.65 s | 0.26 s, 33 hits | 199.9 kB |
+
+The walk of 100,000 entries:
+
+| Machine, system, disk, file system | Virus scanner | Walk 1, cold | Walks 2 to 5, warm |
+| --- | --- | --- | --- |
+| Apple M4, macOS, internal SSD, APFS | none | not timed cold | 153.4 to 184.8 ms |
+| AMD Ryzen 7 8845HS, Windows 11 Pro, WD_BLACK SN7100 NVMe SSD, NTFS | Defender, real-time on | 656.4 to 674.6 ms, five runs | 71.5 to 76.6 ms |
+| A hard disk | | not timed | |
+
+Windows' cold walks followed the standby list's purge, not a restart.
 
 ## Two processes at once
 
@@ -303,6 +321,6 @@ Owners name their slots and versions: the library its thumbnails, indexes and of
 
 ## Open questions
 
-- **The walk cold, on Windows and on hard disks:** the 153 to 185 ms for 100,000 entries are the M4's SSD with the file system's cache warm; a cold walk needs `sudo purge` first, which is the maintainer's to run. A cold walk on Windows, with its virus scanner, and on a hard disk are still to time, by the method [above](#timing-the-walk); a walk too slow for the start's background job brings in the per-kind index of entries decision 76 keeps as its next step.
+- **The walk cold, on a hard disk:** on a Windows NVMe SSD with Defender on, a cold walk of 100,000 entries takes 0.66 to 0.67 s, far under 5 s, the bar for keeping the walk ([above](#timing-the-walk)). A cold walk on a hard disk is still to time, by the same method; one over 5 s brings in the per-kind index of entries decision 76 keeps as its next step.
 
 - **Free space:** whether the cache also stops writing when its disk is nearly full, below the limit.
