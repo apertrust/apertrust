@@ -7,21 +7,31 @@ app-name = Apertrust
 ## Загальні дії на смузі інструментів
 
 action-import = Імпорт…
+    .toolbar = Імпорт
 action-export = Експорт…
+    .toolbar = Експорт
 action-export-again = Експортувати ще раз
+    .toolbar = Експорт ще раз
 action-reset = Скинути
+    .toolbar = Скинути
 action-discard-history = Відкинути історію…
 action-undo = Скасувати
+    .toolbar = Скасувати
 action-redo = Повторити
+    .toolbar = Повторити
 action-copy-edit = Копіювати обробку
+    .toolbar = Копіювати
 action-apply-edit = Застосувати обробку
+    .toolbar = Застосувати
 action-copy-apply-parts = Копіювати або застосувати частину
+    .toolbar = Частини обробки
 action-select-all = Вибрати все
 action-select-none = Зняти вибір
 action-invert-selection = Інвертувати вибір
 action-select-unedited = Вибрати необроблені
 action-previous-selection = Попередній вибір
 action-settings = Налаштування
+    .toolbar = Налаштування
 status-saved = Збережено
 
 ## Вкладки панелі інструментів
@@ -172,6 +182,7 @@ window-close = Закрити
 
 jobs-name = Завдання
 action-show-jobs = Завдання
+    .toolbar = Завдання
 jobs-tip = Завдання: { $value }
 jobs-value-running = Виконується: { $running }
 jobs-value-waiting = Очікують: { $waiting }
@@ -470,6 +481,7 @@ open-kind-folder = Тека: { $name }
 ## Режим теки: Файл › Відкрити теку…, розділ «Теки» вкладки «Бібліотека» та порожні стани
 
 action-open-folder = Відкрити теку…
+    .toolbar = Відкрити теку
 open-folder-title = Відкрити теку
 section-collections = Колекції
     .search = Колекції
@@ -749,8 +761,10 @@ about-back = Назад
 ## Дії, як їх називає карта клавіш
 
 action-open = Відкрити…
+    .toolbar = Відкрити
 action-view-edit = Перейти до обробки
 action-show-collections = Колекції
+    .toolbar = Колекції
 action-panel-tab-1 = Вкладка панелі інструментів 1
 action-panel-tab-2 = Вкладка панелі інструментів 2
 action-panel-tab-3 = Вкладка панелі інструментів 3
@@ -793,6 +807,7 @@ action-scale-reset = Звичайний розмір інтерфейсу
 action-next-region = Наступна панель
 action-previous-region = Попередня панель
 action-full-screen = На весь екран
+    .toolbar = На весь екран
 action-close-window = Закрити вікно
 action-close = Закрити
 action-open-recent-1 = Відкрити недавнє 1
@@ -810,11 +825,15 @@ action-quit = Вийти
 action-restart = Перезапустити
 action-peek = Показати знімок без розділу під вказівником
 action-next-photo = Наступний знімок
+    .toolbar = Наступний
 action-previous-photo = Попередній знімок
+    .toolbar = Попередній
 action-zoom-in = Збільшити
 action-zoom-out = Зменшити
 action-zoom-fit = За розміром
+    .toolbar = За розміром
 action-zoom-100 = Масштаб 100%
+    .toolbar = 100%
 action-zoom-small = Масштаб: малий
 action-zoom-fill = Масштаб: заповнити
 action-zoom-50 = Масштаб 50%

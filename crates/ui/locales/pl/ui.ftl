@@ -7,21 +7,31 @@ app-name = Apertrust
 ## Wspólne działania na pasku narzędzi
 
 action-import = Importuj…
+    .toolbar = Importuj
 action-export = Eksportuj…
+    .toolbar = Eksportuj
 action-export-again = Eksportuj ponownie
+    .toolbar = Ponów eksport
 action-reset = Resetuj
+    .toolbar = Resetuj
 action-discard-history = Odrzuć historię…
 action-undo = Cofnij
+    .toolbar = Cofnij
 action-redo = Ponów
+    .toolbar = Ponów
 action-copy-edit = Kopiuj edycję
+    .toolbar = Kopiuj edycję
 action-apply-edit = Zastosuj edycję
+    .toolbar = Zastosuj edycję
 action-copy-apply-parts = Kopiuj lub zastosuj część
+    .toolbar = Części edycji
 action-select-all = Zaznacz wszystko
 action-select-none = Odznacz wszystko
 action-invert-selection = Odwróć zaznaczenie
 action-select-unedited = Zaznacz nieedytowane
 action-previous-selection = Poprzednie zaznaczenie
 action-settings = Ustawienia
+    .toolbar = Ustawienia
 status-saved = Zapisano
 
 ## Karty panelu narzędzi
@@ -172,6 +182,7 @@ window-close = Zamknij
 
 jobs-name = Zadania
 action-show-jobs = Zadania
+    .toolbar = Zadania
 jobs-tip = Zadania: { $value }
 jobs-value-running = Uruchomione: { $running }
 jobs-value-waiting = Oczekujące: { $waiting }
@@ -472,6 +483,7 @@ open-kind-folder = Folder: { $name }
 ## Tryb folderu: Plik › Otwórz folder…, sekcja Foldery karty Biblioteka i puste stany
 
 action-open-folder = Otwórz folder…
+    .toolbar = Otwórz folder
 open-folder-title = Otwórz folder
 section-collections = Kolekcje
     .search = kolekcje
@@ -751,8 +763,10 @@ about-back = Wstecz
 ## Działania, jak nazywa je mapa klawiszy
 
 action-open = Otwórz…
+    .toolbar = Otwórz
 action-view-edit = Przejdź do edycji
 action-show-collections = Kolekcje
+    .toolbar = Kolekcje
 action-panel-tab-1 = Karta panelu narzędzi 1
 action-panel-tab-2 = Karta panelu narzędzi 2
 action-panel-tab-3 = Karta panelu narzędzi 3
@@ -795,6 +809,7 @@ action-scale-reset = Normalny rozmiar interfejsu
 action-next-region = Następny panel
 action-previous-region = Poprzedni panel
 action-full-screen = Pełny ekran
+    .toolbar = Pełny ekran
 action-close-window = Zamknij okno
 action-close = Zamknij
 action-open-recent-1 = Otwórz ostatnie 1
@@ -812,11 +827,15 @@ action-quit = Zakończ
 action-restart = Uruchom ponownie
 action-peek = Pokaż zdjęcie bez sekcji pod wskaźnikiem
 action-next-photo = Następne zdjęcie
+    .toolbar = Następne
 action-previous-photo = Poprzednie zdjęcie
+    .toolbar = Poprzednie
 action-zoom-in = Powiększ
 action-zoom-out = Pomniejsz
 action-zoom-fit = Dopasuj
+    .toolbar = Dopasuj
 action-zoom-100 = Powiększenie 100%
+    .toolbar = 100%
 action-zoom-small = Powiększenie: małe
 action-zoom-fill = Powiększenie: wypełnij
 action-zoom-50 = Powiększenie 50%

@@ -56,7 +56,12 @@ fn with_well<R>(chosen: usize, draw: impl FnOnce(CursorWell<'_>) -> R) -> R {
     draw(CursorWell::new(&groups).chosen(chosen))
 }
 
-fn toolbar(disabled: &'static [&'static str]) -> Harness<'static, Vec<ToolbarAction>> {
+/// The default Toolbar at a full window's width, those `disabled` drawn disabled, with
+/// its labels where `labels`.
+fn toolbar(
+    disabled: &'static [&'static str],
+    labels: bool,
+) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(1200.0, 60.0))
         .with_context_setup(install)
@@ -64,6 +69,7 @@ fn toolbar(disabled: &'static [&'static str]) -> Harness<'static, Vec<ToolbarAct
             move |ui, actions: &mut Vec<ToolbarAction>| {
                 if let Some(action) = Toolbar::new()
                     .entries(toolbar_entries(ui.ctx(), disabled))
+                    .labels(labels)
                     .saved(SaveState::Saved)
                     .show(ui)
                 {
@@ -87,7 +93,14 @@ const ACTIONS: [&str; 7] = [
 
 #[test]
 fn the_toolbar_reports_its_actions() {
-    let mut harness = toolbar(&[]);
+    for labels in [true, false] {
+        the_toolbar_reports_its_actions_with(labels);
+    }
+}
+
+/// [`the_toolbar_reports_its_actions`], with labels or without.
+fn the_toolbar_reports_its_actions_with(labels: bool) {
+    let mut harness = toolbar(&[], labels);
     harness.run();
     for name in ACTIONS {
         harness.get_by_label(name).click();
@@ -113,7 +126,7 @@ fn the_toolbar_reports_its_actions() {
 
 #[test]
 fn the_actions_come_first_in_order_and_saved_last() {
-    let mut harness = toolbar(&[]);
+    let mut harness = toolbar(&[], false);
     harness.run();
     let rect = |name: &str| harness.get_by_label(name).rect();
     for pair in ACTIONS.windows(2) {
@@ -141,12 +154,107 @@ fn the_actions_come_first_in_order_and_saved_last() {
 
 #[test]
 fn unavailable_actions_do_nothing() {
-    let mut harness = toolbar(&["undo", "export"]);
+    for labels in [true, false] {
+        let mut harness = toolbar(&["undo", "export"], labels);
+        harness.run();
+        harness.get_by_label("Undo").click();
+        harness.get_by_label("Export…").click();
+        harness.run();
+        assert!(harness.state().is_empty(), "labels {labels}");
+        assert!(harness.get_by_label("Undo").accesskit_node().is_disabled());
+    }
+}
+
+/// Every text the panel drew, with where it stands.
+fn texts<T>(harness: &Harness<'_, T>) -> Vec<(String, egui::Rect)> {
+    fn walk(shape: &egui::Shape, found: &mut Vec<(String, egui::Rect)>) {
+        match shape {
+            egui::Shape::Text(text) => {
+                let rect = text.galley.rect.translate(text.pos.to_vec2());
+                found.push((text.galley.text().to_owned(), rect));
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, found)),
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for clipped in &harness.output().shapes {
+        walk(&clipped.shape, &mut found);
+    }
+    found
+}
+
+/// Every image the panel drew, the icons among them, by where it stands.
+fn images<T>(harness: &Harness<'_, T>) -> Vec<egui::Rect> {
+    fn walk(shape: &egui::Shape, found: &mut Vec<egui::Rect>) {
+        match shape {
+            egui::Shape::Mesh(mesh) if mesh.texture_id != egui::TextureId::default() => {
+                found.push(mesh.calc_bounds());
+            }
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, found)),
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    for clipped in &harness.output().shapes {
+        walk(&clipped.shape, &mut found);
+    }
+    found
+}
+
+/// Toolbar Labels (decision 92): each button's `.toolbar` word under its icon, centred,
+/// the icon 6 points below the panel's top and the word 3 points below the icon, the
+/// button as wide as its word or its icon, the wider, with 8 points at each side; the
+/// panel 44 points tall with labels or without, its buttons a gap apart, as without.
+#[test]
+fn labels_stand_under_their_icons_and_keep_the_toolbar_s_height() {
+    let mut harness = toolbar(&[], true);
     harness.run();
-    harness.get_by_label("Undo").click();
-    harness.get_by_label("Export…").click();
-    harness.run();
-    assert!(harness.state().is_empty());
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    assert_eq!(bar.height(), 44.0);
+    let words = Translator::new(Locale::EnGb);
+    let drawn = texts(&harness);
+    let icons = images(&harness);
+    let caption = Theme::default().text.caption;
+    for (name, id) in ACTIONS.iter().zip([
+        "action-import",
+        "action-export",
+        "action-reset",
+        "action-undo",
+        "action-redo",
+        "action-copy-edit",
+        "action-apply-edit",
+    ]) {
+        let button = harness.get_by_label(name).rect();
+        let word = words.attribute(id, "toolbar").expect("a .toolbar word");
+        let (_, text) = (drawn.iter())
+            .find(|(text, _)| *text == word)
+            .unwrap_or_else(|| panic!("{word}: not drawn"));
+        let icon = (icons.iter())
+            .find(|icon| button.contains_rect(**icon))
+            .unwrap_or_else(|| panic!("{name}: no icon"));
+        // In a 16-point square 6 points below the panel's top, the word 3 points below it.
+        assert!(icon.width() <= 16.0, "{name}: {icon:?}");
+        assert!((icon.center().y - bar.top() - 14.0).abs() < 0.51, "{name}");
+        assert_eq!(text.top() - bar.top(), 6.0 + 16.0 + 3.0, "{name}");
+        assert!(text.bottom() <= bar.bottom(), "{name}");
+        assert!((text.center().x - button.center().x).abs() < 0.01, "{name}");
+        assert!((icon.center().x - button.center().x).abs() < 0.51, "{name}");
+        assert!(text.height() < caption * 1.5, "{name}: one line");
+        assert_eq!(button.width(), text.width().max(16.0) + 16.0, "{name}");
+    }
+    let rect = |name: &str| harness.get_by_label(name).rect();
+    assert_eq!(rect("Export…").left() - rect("Import…").right(), 2.0);
+    assert_eq!(rect("Copy edit").left() - rect("Redo").right(), 16.0);
+    // Off, each button is its icon alone, Import…, Export… and Reset too, and no word
+    // shows; the panel keeps its height.
+    let mut off = toolbar(&[], false);
+    off.run();
+    assert_eq!(off.get_by_role(Role::Toolbar).rect().height(), 44.0);
+    for name in ACTIONS {
+        assert_eq!(off.get_by_label(name).rect().width(), 30.0, "{name}");
+    }
+    assert!(texts(&off).is_empty(), "{:?}", texts(&off));
 }
 
 /// The Toolbar `width` points wide, with the save state `saved`, and as on the Mac, the
@@ -179,6 +287,7 @@ fn narrow_in(
             move |ui, actions: &mut Vec<ToolbarAction>| {
                 let bar = Toolbar::new()
                     .entries(toolbar_entries(ui.ctx(), &["redo", "apply-edit"]))
+                    .labels(true)
                     .saved(saved)
                     .start_inset(inset)
                     .title_bar(true)
@@ -202,19 +311,16 @@ fn shown(harness: &Harness<'_, Vec<ToolbarAction>>) -> Vec<(&'static str, f32)> 
 }
 
 #[test]
-fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
+fn a_narrowing_toolbar_folds_its_labels_then_its_actions_into_more() {
     let mut wide = narrow(1200.0, SaveState::Saved, 0.0, false);
     wide.run();
-    // Import, Export and Reset with their words; no ».
+    // Every action with its label; no ».
     let widths = shown(&wide);
     assert_eq!(widths.len(), 7);
-    assert!(
-        widths[..3].iter().all(|(_, width)| *width > 30.0),
-        "{widths:?}"
-    );
+    assert!(widths.iter().all(|(_, width)| *width > 30.0), "{widths:?}");
     assert!(wide.query_by_label("More actions").is_none());
 
-    // Narrower, the actions are icons.
+    // Narrower, the labels fold all at once: the actions are icons.
     let mut icons = narrow(600.0, SaveState::Saved, 0.0, false);
     icons.run();
     let widths = shown(&icons);
@@ -420,15 +526,16 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
     }
 }
 
-/// Where each of the overflow's steps starts, in points, in `locale`: as on the Mac,
-/// with the traffic lights' room, where `menu` is None, else as on Windows and Linux, the
-/// menu button drawn as `menu` says and the caption buttons at the end; with the jobs
-/// spinner's slot and Phase 2's cursors' well, as the app draws them, and a failed write,
-/// whose words show the status step. Each is the widest Toolbar that has taken the step,
-/// plus one: the words folded, the fixed space narrowed, the fixed space gone, the first
-/// action under », every action but Undo and Redo under », the status words folded, and
-/// Undo and Redo under ».
-fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 7] {
+/// Where each of the overflow's steps starts, in points, in `locale`, with labels where
+/// `labels`: as on the Mac, with the traffic lights' room, where `menu` is None, else as
+/// on Windows and Linux, the menu button drawn as `menu` says and the caption buttons at
+/// the end; with the jobs spinner's slot and Phase 2's cursors' well, as the app draws
+/// them, and a failed write, whose words show the status step. Each is the widest Toolbar
+/// that has taken the step, plus one, 1401 for one taken at the widest: the labels
+/// folded, the fixed space narrowed, the fixed space gone, the first action under »,
+/// every action but Undo and Redo under », the status words folded, and Undo and Redo
+/// under ».
+fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [u32; 7] {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1400.0, 120.0))
         .with_context_setup(move |ctx| {
@@ -439,6 +546,7 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 7] {
             let inset = if menu.is_some() { 0.0 } else { 78.0 };
             let bar = Toolbar::new()
                 .entries(toolbar_entries(ui.ctx(), &[]))
+                .labels(labels)
                 .saved(SaveState::Failed("disk full"))
                 .jobs(Jobs::new(&[]))
                 .start_inset(inset)
@@ -541,6 +649,7 @@ fn at_500(
             )];
             let bar = Toolbar::new()
                 .entries(entries(ui.ctx()))
+                .labels(true)
                 .saved(SaveState::Failed("disk full"))
                 .jobs(Jobs::new(&jobs))
                 .start_inset(if menu.is_some() { 0.0 } else { 78.0 })
@@ -578,28 +687,32 @@ fn at_500(
 }
 
 /// The widths `docs/gui.md`'s Narrowing table gives, each step's start as the window
-/// narrows: on the Mac in each language, and on Linux with either menu button. And at
-/// 500 points, in every language, both platforms' defaults and a list with every part
-/// placed fold no part and keep 24 points empty.
+/// narrows: on the Mac in each language, and on Linux with either menu button, with
+/// labels; without them, icons from the widest and every other step where it starts with
+/// them. And at 500 points, in every language, both platforms' defaults and a list with
+/// every part placed fold no part and keep 24 points empty.
 #[test]
 fn the_toolbar_folds_where_gui_md_says() {
     for (locale, menu, expected) in [
-        (Locale::EnGb, None, [755, 599, 591, 585, 489, 457, 399]),
+        (Locale::EnGb, None, [744, 599, 591, 585, 489, 457, 399]),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Icon),
-            [880, 724, 716, 710, 614, 582, 524],
+            [869, 724, 716, 710, 614, 582, 524],
         ),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Menu),
-            [869, 713, 705, 699, 603, 571, 513],
+            [858, 713, 705, 699, 603, 571, 513],
         ),
-        (Locale::Uk, None, [809, 626, 618, 612, 516, 484, 399]),
-        (Locale::Pl, None, [808, 614, 606, 600, 504, 472, 399]),
+        (Locale::Uk, None, [875, 626, 618, 612, 516, 484, 399]),
+        (Locale::Pl, None, [848, 614, 606, 600, 504, 472, 399]),
     ] {
-        let measured = fold_widths(locale, menu);
+        let measured = fold_widths(locale, menu, true);
         assert_eq!(measured, expected, "{locale:?}, {menu:?}");
+        let off = fold_widths(locale, menu, false);
+        assert_eq!(off[0], 1401, "{locale:?}, {menu:?}: icons from the widest");
+        assert_eq!(off[1..], expected[1..], "{locale:?}, {menu:?}, labels off");
     }
     let defaults: fn(&egui::Context) -> Vec<ToolbarEntry> = |ctx| toolbar_entries(ctx, &[]);
     for locale in Locale::ALL {
@@ -848,12 +961,14 @@ fn the_save_warning_and_saving() {
             ui.push_id("failed", |ui| {
                 Toolbar::new()
                     .entries(toolbar_entries(ui.ctx(), &[]))
+                    .labels(true)
                     .saved(SaveState::Failed("Permission denied"))
                     .show(ui);
             });
             ui.push_id("saving", |ui| {
                 Toolbar::new()
                     .entries(toolbar_entries(ui.ctx(), &[]))
+                    .labels(true)
                     .saved(SaveState::Saving)
                     .show(ui);
             });
@@ -1153,34 +1268,42 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
 }
 
 /// The Toolbar with Phase 2's well, Select chosen, at a full window's width, in the
-/// theme `which` (`docs/gui.md`, The Toolbar; `docs/cursors.md`, The well).
-fn photograph_the_well(which: Builtin, name: &str) {
+/// theme `which`, with labels where `labels` (`docs/gui.md`, The Toolbar; `docs/cursors.md`,
+/// The well).
+fn photograph_the_well(which: Builtin, labels: bool, name: &'static str) {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1000.0, 60.0))
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
-        .build_ui(|ui| {
+        .build_ui(move |ui| {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
             ui.painter()
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
             let bar = Toolbar::new()
                 .entries(toolbar_entries(ui.ctx(), &[]))
+                .labels(labels)
                 .saved(SaveState::Saved)
                 .jobs(Jobs::new(&[]))
                 .title_bar(true);
             with_well(0, |well| bar.cursors(well).show(ui));
         });
     harness.run();
-    harness.snapshot(format!("toolbar-cursors-{name}"));
+    harness.snapshot(name);
 }
 
 #[test]
 fn the_toolbar_with_the_cursors_well_is_photographed_in_the_dark_theme() {
-    photograph_the_well(Builtin::Dark, "dark");
+    photograph_the_well(Builtin::Dark, true, "toolbar-cursors-dark");
 }
 
 #[test]
 fn the_toolbar_with_the_cursors_well_is_photographed_in_the_light_theme() {
-    photograph_the_well(Builtin::Light, "light");
+    photograph_the_well(Builtin::Light, true, "toolbar-cursors-light");
+}
+
+/// Toolbar Labels off: every action its icon alone (decision 92).
+#[test]
+fn the_toolbar_without_labels_is_photographed_in_the_dark_theme() {
+    photograph_the_well(Builtin::Dark, false, "toolbar-labels-off-dark");
 }
 
 /// A right-click at `pos`, as a press and a release.
@@ -1316,6 +1439,7 @@ fn caption_snapshot() -> Harness<'static> {
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
             Toolbar::new()
                 .entries(toolbar_entries(ui.ctx(), &[]))
+                .labels(true)
                 .title_bar(true)
                 .caption_buttons(true)
                 .show(ui);
@@ -2350,6 +2474,7 @@ fn the_shell_at_full_width() {
             ui.spacing_mut().item_spacing.y = 0.0;
             Toolbar::new()
                 .entries(toolbar_entries(ui.ctx(), &["redo"]))
+                .labels(true)
                 .saved(SaveState::Saved)
                 .show(ui);
             ViewerBar::new("Image", Zoom::Fit)

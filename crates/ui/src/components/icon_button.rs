@@ -207,8 +207,10 @@ impl<'a> IconButton<'a> {
     }
 }
 
-/// A button with a word, and an icon before it, on a bar: Import…, Export…, Reset. Quiet,
-/// a plate only while touched, since plates in a row of words would make a wall of boxes.
+/// A button with a word, and an icon before it where it has one, as the Export tool's
+/// Show jobs after a failed export. Quiet, a plate only while touched, since plates in a row of words would make a
+/// wall of boxes. The Toolbar's labelled items are no `ToolButton`: they are icon buttons
+/// with their word under the icon, with no plate.
 pub struct ToolButton<'a> {
     icon: Option<Icon>,
     text: &'a str,

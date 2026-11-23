@@ -218,6 +218,12 @@ impl Translator {
         self.bundle.has_message(id)
     }
 
+    /// Whether this locale's own message `id` has the attribute `name`, without falling
+    /// back to English, as [`has`](Self::has) does for messages.
+    pub fn has_attribute(&self, id: &str, name: &str) -> bool {
+        (self.bundle.get_message(id)).is_some_and(|message| message.get_attribute(name).is_some())
+    }
+
     /// The message `id`, translated.
     pub fn text(&self, id: &str) -> String {
         self.text_with(id, None)

@@ -21,14 +21,15 @@
 //! the app's icon with a caret or as ☰ ([`MenuButtonStyle`]); buttons that run actions
 //! ([`ToolbarButton`]); fixed and flexible spaces; the cursors' well
 //! ([`Toolbar::cursors`]); the jobs spinner ([`Toolbar::jobs`]); and the edit's save state
-//! ([`SaveState`]), which shows only when a save goes wrong. The entries before the first
+//! ([`SaveState`]), which shows only when a save goes wrong. Its buttons show their words
+//! under their icons while labels are on ([`Toolbar::labels`]). The entries before the first
 //! flexible space stand at the start, those after the last at the end, and those between
 //! two in the middle of the room the flexible spaces share. The spinner and the save state
 //! each sit in a slot of its own, as wide as its widest form at the fold, kept whether it
 //! shows anything or not, so neither ever moves anything. Each tooltip carries its
 //! action's keys, which the app's actions registry gives. As it narrows it gives way one
-//! step at a time ([`Fold`]), its buttons going under » (`toolbar-more`), and its parts
-//! never, always keeping empty panel to move the window by.
+//! step at a time ([`Fold`]), its labels first, then its buttons going under »
+//! (`toolbar-more`), and its parts never, always keeping empty panel to move the window by.
 //!
 //! **Guards** (decision 92): with no menu button in the list, the menus hang from the
 //! Toolbar's start ([`Toolbar::menu_anchor`]); with no save state, a failed write still
@@ -57,8 +58,7 @@ use egui::{
 use super::icon_button::colour;
 use super::plate::{Touch, paint_focus, undimmed_painter};
 use super::{
-    CursorWell, CursorWellAction, IconButton, Jobs, ToolButton, focus_ring, pull_down,
-    report_shortcut,
+    CursorWell, CursorWellAction, IconButton, Jobs, focus_ring, pull_down, report_shortcut,
 };
 use crate::i18n::Args;
 use crate::{Icon, popup, theme, tr, translator};
@@ -121,15 +121,16 @@ pub enum ToolbarEntry {
     SaveState,
 }
 
-/// A button of the Toolbar that runs an action: its icon, its translated name and whether
-/// it can run now, drawn disabled where it cannot.
+/// A button of the Toolbar that runs an action: its icon, its translated name, its word
+/// under its icon while labels are on, and whether it can run now, drawn disabled where it
+/// cannot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolbarButton {
     id: &'static str,
     icon: Icon,
     name: String,
+    label: Option<String>,
     enabled: bool,
-    words: bool,
     first: bool,
     last: bool,
 }
@@ -142,8 +143,8 @@ impl ToolbarButton {
             id,
             icon,
             name: name.into(),
+            label: None,
             enabled: true,
-            words: false,
             first: false,
             last: false,
         }
@@ -159,11 +160,17 @@ impl ToolbarButton {
         self
     }
 
-    /// Shows its name beside its icon while there is room, as Import…, Export… and Reset
-    /// do: the narrowing's first step folds it.
-    pub fn words(mut self, words: bool) -> Self {
-        self.words = words;
+    /// Its word under its icon while the Toolbar shows labels ([`Toolbar::labels`]),
+    /// translated, short and on one line: the action's `.toolbar` word (decision 92). Its
+    /// name where none is given.
+    pub fn label(mut self, word: impl Into<String>) -> Self {
+        self.label = Some(word.into());
         self
+    }
+
+    /// The word under its icon.
+    fn word(&self) -> &str {
+        self.label.as_deref().unwrap_or(&self.name)
     }
 
     /// Goes under » before the buttons that do not, as a tool's items do (decision 92).
@@ -233,6 +240,7 @@ impl MenuButtonStyle {
 #[derive(Default)]
 pub struct Toolbar<'a> {
     entries: Vec<ToolbarEntry>,
+    labels: bool,
     cursors: Option<CursorWell<'a>>,
     saved: SaveState<'a>,
     jobs: Option<Jobs<'a>>,
@@ -258,14 +266,19 @@ const ELLIPSIS: &str = "…";
 const EMPTY: f32 = 24.0;
 /// The room beyond its own width a step needs to be undone, so a resize never flickers.
 const SPARE: f32 = 16.0;
+/// A labelled button's icon's square below the panel's top, its side, and its word below
+/// it.
+const LABEL_TOP: f32 = 6.0;
+const LABEL_ICON: f32 = 16.0;
+const LABEL_GAP: f32 = 3.0;
 
 /// How far the panel gives way to its width (decision 92; `docs/gui.md`, The Toolbar,
 /// Narrowing): the overflow's steps, taken in this order, one at a time
 /// ([`Toolbar::steps`]). The parts never fold, the menu button among them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Fold {
-    /// The buttons' words fold, Import's, Export's and Reset's.
-    words: bool,
+    /// The buttons' labels fold, all at once.
+    labels: bool,
     /// The fixed spaces narrow to 8 points.
     narrow: bool,
     /// How many fixed spaces have gone, from the list's end.
@@ -301,6 +314,14 @@ impl<'a> Toolbar<'a> {
     /// empty area, the guards apart.
     pub fn entries(mut self, entries: Vec<ToolbarEntry>) -> Self {
         self.entries = entries;
+        self
+    }
+
+    /// Draws each button's word under its icon (decision 92, Toolbar Labels): the item as
+    /// wide as its word or its icon, the wider, with 8 points at each side, the panel as
+    /// tall as without. The overflow's first step folds them all at once. Off by default.
+    pub fn labels(mut self, on: bool) -> Self {
+        self.labels = on;
         self
     }
 
@@ -416,17 +437,20 @@ impl<'a> Toolbar<'a> {
     }
 
     /// The overflow's steps, from nothing folded to all that folds (decision 92): the
-    /// words fold; the fixed spaces narrow to 8 points, then go one at a time from the
-    /// end; the buttons go under » one at a time ([`Toolbar::fold_order`]); the status
-    /// words fold; and last the buttons that fold last, Undo and Redo, together.
+    /// labels fold, where they show; the fixed spaces narrow to 8 points, then go one at a
+    /// time from the end; the buttons go under » one at a time ([`Toolbar::fold_order`]);
+    /// the status words fold; and last the buttons that fold last, Undo and Redo,
+    /// together.
     fn steps(&self) -> Vec<Fold> {
         let spaces = (self.entries.iter())
             .filter(|entry| **entry == ToolbarEntry::Space)
             .count();
         let mut fold = Fold::default();
         let mut steps = vec![fold];
-        fold.words = true;
-        steps.push(fold);
+        if self.labels {
+            fold.labels = true;
+            steps.push(fold);
+        }
         fold.narrow = true;
         steps.push(fold);
         for _ in 0..spaces {
@@ -605,11 +629,10 @@ impl<'a> Toolbar<'a> {
         };
 
         let gap = t.spacing.xxs;
+        let labelled = |fold: Fold| self.labels && !fold.labels;
         let width = |drawn: Drawn, fold: Fold| match drawn {
             Drawn::Menu => self.menu_style.width(),
-            Drawn::Button(button) if button.words && !fold.words => {
-                word_button(button, keys(ToolbarAction::Button(button.id))).width(ui)
-            }
+            Drawn::Button(button) if labelled(fold) => Labelled::of(ui, button).width,
             Drawn::Button(_) | Drawn::Jobs | Drawn::More => BUTTON,
             Drawn::Space if fold.narrow => t.spacing.m,
             Drawn::Space => t.spacing.xl,
@@ -709,8 +732,8 @@ impl<'a> Toolbar<'a> {
                     let done = ToolbarAction::Button(button.id);
                     let response = ui
                         .scope_builder(left(button.id), |ui| {
-                            if button.words && !fold.words {
-                                word_button(button, keys(done)).show(ui)
+                            if labelled(fold) {
+                                Labelled::of(ui, button).show(ui, bar, keys(done))
                             } else {
                                 icon_button(button.icon, &button.name, keys(done))
                                     .size(BUTTON)
@@ -1197,12 +1220,92 @@ pub fn caption_button(
     response.on_hover_text(name)
 }
 
-/// A button with its words beside its icon, with `keys` in its tooltip when it has any.
-fn word_button<'a>(button: &'a ToolbarButton, keys: Option<&'a str>) -> ToolButton<'a> {
-    let button = (ToolButton::new(&button.name).icon(button.icon)).enabled(button.enabled);
-    match keys {
-        Some(keys) => button.shortcut(keys),
-        None => button,
+/// A button with its word under its icon (decision 92, Labels), as the Tools panel's tab
+/// names are set: in the panel, 6 points below its top, the icon in `text_secondary` in a
+/// 16-point square, so every word stands on one line, 3 points, then the word, centred, at
+/// the caption size, Regular, in `text`. Otherwise an
+/// icon button (decision 81): no plate, the icon `text_strong` under the pointer and
+/// `accent_text` held down, high contrast's `button_edge` round it under the pointer, the
+/// focus ring after a key.
+struct Labelled<'b> {
+    button: &'b ToolbarButton,
+    word: std::sync::Arc<egui::Galley>,
+    /// As wide as its word or its icon, the wider, with 8 points at each side.
+    width: f32,
+}
+
+impl<'b> Labelled<'b> {
+    fn of(ui: &Ui, button: &'b ToolbarButton) -> Self {
+        let t = theme(ui.ctx());
+        let font = FontId::proportional(t.text.caption);
+        let text = button.word().to_owned();
+        // Its colour given as it is drawn.
+        let word = (ui.painter()).layout_no_wrap(text, font, egui::Color32::PLACEHOLDER);
+        let width = word.size().x.max(LABEL_ICON) + 2.0 * t.spacing.m;
+        Labelled {
+            button,
+            word,
+            width,
+        }
+    }
+
+    /// Draws it at the start of `ui`, the panel being `bar`, with `keys` in its tooltip.
+    fn show(self, ui: &mut Ui, bar: Rect, keys: Option<&str>) -> egui::Response {
+        let t = theme(ui.ctx());
+        let button = self.button;
+        let enabled = button.enabled && ui.is_enabled();
+        let sense = if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
+        // The panel's height but for a margin above and below, so the focus ring shows.
+        let at = ui.available_rect_before_wrap().left();
+        let edge = t.spacing.xxs;
+        let rect = Rect::from_x_y_ranges(
+            at..=at + self.width,
+            bar.top() + edge..=bar.bottom() - t.shape.separator_width - edge,
+        );
+        let response = ui.allocate_rect(rect, sense);
+        if ui.is_rect_visible(rect) {
+            let painter = &undimmed_painter(ui);
+            let touch = Touch::of(ui.ctx(), &response, enabled, None);
+            if touch.enabled && (touch.hovered || touch.pressed) && t.colors.button_edge.a() > 0 {
+                painter.rect_stroke(
+                    rect,
+                    t.shape.radius,
+                    Stroke::new(t.shape.hairline, t.colors.button_edge),
+                    StrokeKind::Inside,
+                );
+            }
+            let square = Rect::from_min_size(
+                pos2(rect.center().x - LABEL_ICON / 2.0, bar.top() + LABEL_TOP),
+                Vec2::splat(LABEL_ICON),
+            );
+            let icon = Rect::from_center_size(square.center(), Vec2::splat(button.icon.size()));
+            button.icon.paint(painter, icon, colour(&t, touch, false));
+            let word = pos2(
+                rect.center().x - self.word.size().x / 2.0,
+                square.bottom() + LABEL_GAP,
+            );
+            let text = if enabled {
+                t.colors.text
+            } else {
+                t.colors.text_disabled
+            };
+            painter.galley(word, self.word, text);
+            paint_focus(painter, rect, t.shape.radius, touch, &t);
+        }
+        let name = button.name.as_str();
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, name));
+        let tip = match keys {
+            Some(keys) => {
+                report_shortcut(ui, response.id, keys);
+                format!("{name} ({keys})")
+            }
+            None => name.to_owned(),
+        };
+        response.on_hover_text(tip)
     }
 }
 
