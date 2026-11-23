@@ -122,7 +122,9 @@ pub use switch::Switch;
 pub use tabs::Tabs;
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
-pub use toolbar::{Available, MenuButtonStyle, SaveState, Toolbar, ToolbarAction, caption_button};
+pub use toolbar::{
+    MenuButtonStyle, SaveState, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, caption_button,
+};
 pub use tools_panel::{
     FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,
     ToolsPanelPosition, quiet_scroll, quiet_scroll_rows,

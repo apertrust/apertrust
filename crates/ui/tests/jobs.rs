@@ -21,9 +21,10 @@
 use std::time::SystemTime;
 
 use apertrust_ui::components::{
-    ActivityAction, Available, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, SaveState,
-    Toolbar, ToolbarAction, kind_icon,
+    ActivityAction, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, SaveState, Toolbar,
+    ToolbarAction, kind_icon,
 };
+use apertrust_ui::gallery::toolbar_entries;
 use apertrust_ui::{Icon, Locale, Theme, Translator};
 use egui::accesskit::{Live, Role};
 use egui::{Key, vec2};
@@ -122,11 +123,7 @@ fn panel_in(locale: Locale, width: f32, jobs: Vec<Job>) -> Harness<'static, Run>
             |ui, run: &mut Run| {
                 let jobs = run.jobs.clone();
                 let action = Toolbar::new()
-                    .available(Available {
-                        redo: false,
-                        apply: false,
-                        ..Available::default()
-                    })
+                    .entries(toolbar_entries(ui.ctx(), &["redo", "apply-edit"]))
                     .saved(run.saved)
                     .title_bar(true)
                     .jobs(Jobs::new(&jobs).file_manager(FileManager::Finder))

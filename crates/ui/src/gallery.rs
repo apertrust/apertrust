@@ -25,8 +25,8 @@ use egui::emath::GuiRounding as _;
 use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::components::{
-    About, ActionRow, Available, Axis, Browser, BrowserAction, Button, ButtonState, CellPicture,
-    CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
+    About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CellPicture, CellRating,
+    CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, CursorWell, CursorWellAction, Curve, CurveAction, Equalizer,
     EqualizerAction, FileManager, FindBar, FindBarAction, GridCell, Histogram, HistogramBins,
     IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram,
@@ -34,9 +34,9 @@ use crate::components::{
     PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine,
     RailNode, ReadoutRow, Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView, Section,
     SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch,
-    TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, Track,
-    VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor,
-    WellGroup, WellSetting, Zoom,
+    TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction,
+    ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction,
+    WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -3010,23 +3010,58 @@ fn sample_jobs() -> Vec<Job> {
     ]
 }
 
+/// The Toolbar's entries as the app draws the default workspace's list (decision 92), each
+/// button named in `ctx`'s language, those `disabled` names drawn disabled: the menu
+/// button, Import…, Export… and Reset with their words, Undo and Redo, which fold last, a
+/// space, Copy edit and Apply edit, the cursors' well between two flexible spaces, the
+/// jobs and the save state. The gallery and the design system's tests draw it.
+pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEntry> {
+    let button = |id: &'static str, icon: Icon| {
+        let name = crate::tr(ctx, &format!("action-{id}"));
+        let button = ToolbarButton::new(id, icon, name).enabled(!disabled.contains(&id));
+        let button = button.words(["import", "export", "reset"].contains(&id));
+        ToolbarEntry::Button(button.folds_last(["undo", "redo"].contains(&id)))
+    };
+    vec![
+        ToolbarEntry::MenuButton,
+        button("import", Icon::Import),
+        button("export", Icon::Export),
+        button("reset", Icon::Reset),
+        button("undo", Icon::Undo),
+        button("redo", Icon::Redo),
+        ToolbarEntry::Space,
+        button("copy-edit", Icon::Copy),
+        button("apply-edit", Icon::Apply),
+        ToolbarEntry::FlexibleSpace,
+        ToolbarEntry::Cursors,
+        ToolbarEntry::FlexibleSpace,
+        ToolbarEntry::Jobs,
+        ToolbarEntry::SaveState,
+    ]
+}
+
 /// The shell's parts, with sample state: the Toolbar, the viewer bar, the caption and
 /// the Browser.
 fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     let ctx = ui.ctx().clone();
-    let available = Available {
-        redo: false,
-        apply: false,
-        ..Available::default()
-    };
+    let disabled = ["redo", "apply-edit"];
+    // Undo says what it would undo.
+    let undo = ToolbarButton::new("undo", Icon::Undo, "Undo Exposure: Brightness +8");
+    let entries = toolbar_entries(&ctx, &disabled)
+        .into_iter()
+        .map(|entry| match entry {
+            ToolbarEntry::Button(button) if button.id() == "undo" => {
+                ToolbarEntry::Button(undo.clone().folds_last(true))
+            }
+            entry => entry,
+        });
     let jobs = sample_jobs();
     if let Some(action) = Toolbar::new()
-        .available(available)
+        .entries(entries.collect())
         .saved(SaveState::Saved)
         .jobs(Jobs::new(&jobs).file_manager(FileManager::Finder))
-        .undo_tip("Undo Exposure: Brightness +8")
-        .shortcut(ToolbarAction::Export, "Ctrl+E")
-        .shortcut(ToolbarAction::Undo, "Ctrl+Z")
+        .shortcut(ToolbarAction::Button("export"), "Ctrl+E")
+        .shortcut(ToolbarAction::Button("undo"), "Ctrl+Z")
         .show(ui)
     {
         demo.last = format!("Toolbar: {action:?}");
@@ -3044,7 +3079,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
             MenuButtonStyle::Icon
         };
         let action = Toolbar::new()
-            .available(available)
+            .entries(toolbar_entries(&ctx, &disabled))
             .menu_button(true)
             .menu_button_style(style)
             .title_bar(true)

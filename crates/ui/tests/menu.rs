@@ -19,6 +19,7 @@
 //! pointer and the keys and read through AccessKit, as a screen reader reads them.
 
 use apertrust_ui::components::{MenuButtonStyle, Toolbar, ToolbarAction};
+use apertrust_ui::gallery::toolbar_entries;
 use apertrust_ui::popup::{self, Answer, Entry, Item, Request, Submenu};
 use apertrust_ui::{Builtin, Locale, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -134,6 +135,7 @@ fn app_in(locale: Locale, menu_button: bool) -> Harness<'static, App> {
                         .collect::<Vec<_>>()
                 }));
                 let action = Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
                     .menu_button(app.menu_button)
                     .menu_button_style(app.style)
                     .title_bar(true)
@@ -910,6 +912,7 @@ fn menu_buttons(which: Builtin) -> Harness<'static> {
             for style in [MenuButtonStyle::Icon, MenuButtonStyle::Menu] {
                 ui.push_id(style, |ui| {
                     Toolbar::new()
+                        .entries(toolbar_entries(ui.ctx(), &[]))
                         .menu_button(true)
                         .menu_button_style(style)
                         .show(ui);

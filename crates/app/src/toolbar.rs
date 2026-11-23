@@ -18,19 +18,12 @@
 //! the parts, the app's own actions, every tool's items and the two spacings, each once,
 //! in one stable order ([`placeable`]). An action that belongs to a tool is offered by that
 //! tool (`ToolDefinition::toolbar`); only actions that belong to no tool are the app's,
-//! those the registry gives an icon ([`actions::ICONS`]). The Toolbar drawn from a
-//! workspace's list and the Customise Toolbar window read it.
+//! those the registry gives an icon ([`actions::ICONS`]). The Toolbar draws a list from it
+//! ([`listed`]), and the Customise Toolbar window will list it.
 
-// Nothing draws from it until the Toolbar is drawn from a workspace's list.
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the Toolbar and the Customise Toolbar window read it once they are built"
-    )
-)]
+use std::sync::OnceLock;
 
-use apertrust_tools::utility::UtilityDefinition;
+use apertrust_tools::utility::{UTILITIES, UtilityDefinition};
 use apertrust_tools::{ProcessingDefinition, Row, ToolbarItem};
 use apertrust_ui::Icon;
 
@@ -143,6 +136,34 @@ fn offered(
     })
 }
 
+/// Everything that can be placed on the Toolbar, as [`placeable`] lists it for the tools
+/// this build has, worked out once.
+pub fn set() -> &'static [Placeable] {
+    static SET: OnceLock<Vec<Placeable>> = OnceLock::new();
+    SET.get_or_init(|| {
+        let tools = apertrust_tools::TOOLS.iter();
+        let tools: Vec<&'static ProcessingDefinition> =
+            tools.map(|tool| tool.definition()).collect();
+        placeable(&tools, UTILITIES)
+    })
+}
+
+/// What a list of item ids draws, in its order (decision 92): each id [`set`] holds, a part
+/// or an action once, at its first place, the spacings as often as listed. An id the set
+/// lacks, a removed tool's or a newer build's, is skipped, never taken out of the list.
+pub fn listed<'a>(list: impl IntoIterator<Item = &'a str>) -> Vec<&'static Placeable> {
+    let mut drawn: Vec<&'static Placeable> = Vec::new();
+    for id in list {
+        let Some(placed) = set().iter().find(|placed| placed.id == id) else {
+            continue;
+        };
+        if placed.kind == Kind::Spacing || !drawn.iter().any(|d| d.id == id) {
+            drawn.push(placed);
+        }
+    }
+    drawn
+}
+
 /// `apertrust-ui`'s icon called `name`, if it has one.
 fn named(name: &str) -> Option<Icon> {
     Icon::ALL.into_iter().find(|icon| icon.name() == name)
@@ -163,7 +184,6 @@ fn button_icon(tool: &ProcessingDefinition, action: &str) -> Option<Icon> {
 mod tests {
     use std::collections::BTreeSet;
 
-    use apertrust_tools::utility::UTILITIES;
     use apertrust_ui::{Locale, Translator};
 
     use super::*;
