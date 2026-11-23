@@ -32,10 +32,27 @@ pub fn photograph_section(
     name: &str,
     show: fn(&mut Gallery, &mut egui::Ui),
 ) -> SnapshotResults {
+    photograph_section_at(which, size, 2.0, 1.0, name, show)
+}
+
+/// Photographs it as [`photograph_section`] does, on a screen of `scale` physical pixels a
+/// point, at the interface size `zoom`, egui's zoom factor as Settings' Interface size sets
+/// it, in a window `size` points large.
+pub fn photograph_section_at(
+    which: Builtin,
+    size: egui::Vec2,
+    scale: f32,
+    zoom: f32,
+    name: &str,
+    show: fn(&mut Gallery, &mut egui::Ui),
+) -> SnapshotResults {
     let mut harness = Harness::builder()
         .with_size(size)
-        .with_pixels_per_point(2.0)
-        .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+        .with_pixels_per_point(scale)
+        .with_context_setup(move |ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(which));
+            ctx.set_zoom_factor(zoom);
+        })
         .build_ui_state(
             move |ui, gallery: &mut Gallery| {
                 let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
