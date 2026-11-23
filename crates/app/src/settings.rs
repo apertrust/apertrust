@@ -56,6 +56,7 @@
 //!
 //! [toolbar]
 //! menu_button = "menu"
+//! labels = false
 //!
 //! [tools_panel]
 //! tab_names = false
@@ -202,6 +203,9 @@ pub struct Settings {
     pub marker: Marker,
     /// How the Toolbar's menu button is drawn on Windows and Linux, `toolbar.menu_button`.
     pub menu_button: MenuButtonStyle,
+    /// Whether the Toolbar's actions show their words under their icons, `toolbar.labels`
+    /// (decision 92).
+    pub toolbar_labels: bool,
     pub window: Window,
     /// Where Settings' own window was last left, on the Mac; None opens it centred over
     /// the main window.
@@ -264,6 +268,7 @@ impl Default for Settings {
             scale: SCALE.default(),
             marker: SLIDERS_MARKER.default(),
             menu_button: TOOLBAR_MENU_BUTTON.default(),
+            toolbar_labels: TOOLBAR_LABELS.default(),
             window: Window {
                 size: None,
                 position: None,
@@ -329,6 +334,7 @@ impl Settings {
             scale: store.get(&SCALE),
             marker: store.get(&SLIDERS_MARKER),
             menu_button: store.get(&TOOLBAR_MENU_BUTTON),
+            toolbar_labels: store.get(&TOOLBAR_LABELS),
             window: Window {
                 size: store.kept(&WINDOW_SIZE),
                 position: window,
@@ -406,6 +412,9 @@ impl Settings {
         }
         if s.menu_button != was.menu_button {
             store.set(&TOOLBAR_MENU_BUTTON, s.menu_button);
+        }
+        if s.toolbar_labels != was.toolbar_labels {
+            store.set(&TOOLBAR_LABELS, s.toolbar_labels);
         }
         if s.window.size != was.window.size {
             keep(store, &WINDOW_SIZE, s.window.size);
@@ -1365,6 +1374,7 @@ mod tests {
             scale: 1.3,
             marker: Marker::Triangle,
             menu_button: MenuButtonStyle::Menu,
+            toolbar_labels: false,
             window: Window {
                 size: Some([1280.0, 800.0]),
                 position: Some(Position {
@@ -1546,6 +1556,8 @@ mod tests {
                 scale: 1.0,
                 marker: Marker::Square,
                 menu_button: MenuButtonStyle::Icon,
+                // A new user's Toolbar shows its labels (decision 92).
+                toolbar_labels: true,
                 window: Window {
                     size: None,
                     position: None,
@@ -1773,6 +1785,7 @@ scale_factor = 2.0
 marker = \"triangle\"
 
 [toolbar]
+labels = false
 menu_button = \"menu\"
 
 [tools.exposure]

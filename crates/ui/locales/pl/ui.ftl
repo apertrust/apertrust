@@ -597,6 +597,7 @@ setting-sliders-marker-option-square = Kwadrat
 setting-toolbar-menu-button-label = Przycisk menu
 setting-toolbar-menu-button-option-icon = Ikona { app-name }
 setting-toolbar-menu-button-option-menu = Menu
+setting-toolbar-labels-label = Podpisy na pasku narzędzi
 setting-library-reopen-last-label = Otwieraj ponownie to, co było otwarte ostatnio
 setting-library-reopen-last-help = Otwiera folder, w którym pracowano, gdy { app-name } został zamknięty, wraz z jego zdjęciem. Plik lub folder otwarty z menedżera plików lub terminala otwiera się zamiast niego.
 setting-export-ask-before-overwrite-label = Pytaj przed nadpisaniem wyeksportowanego pliku

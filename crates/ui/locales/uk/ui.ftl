@@ -595,6 +595,7 @@ setting-sliders-marker-option-square = Квадрат
 setting-toolbar-menu-button-label = Кнопка меню
 setting-toolbar-menu-button-option-icon = Значок { app-name }
 setting-toolbar-menu-button-option-menu = Меню
+setting-toolbar-labels-label = Підписи на смузі інструментів
 setting-library-reopen-last-label = Відкривати те, що було відкрито востаннє
 setting-library-reopen-last-help = Відкриває теку, з якою ви працювали, коли { app-name } закрився, разом з її фото. Файл або тека, відкриті з файлового менеджера чи термінала, відкриваються замість неї.
 setting-export-ask-before-overwrite-label = Питати перед перезаписом експортованого файлу

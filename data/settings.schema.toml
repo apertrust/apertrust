@@ -120,6 +120,17 @@ group = "interface"
 platforms = ["windows", "linux"]
 control = "segmented"
 
+# Whether the Toolbar's actions show their words under their icons (decision 92, Toolbar
+# Labels): one setting for the app, never a workspace's. The labels are the first thing
+# the Toolbar folds as it narrows.
+[toolbar.labels]
+owner = "app"
+kind = "boolean"
+default = true
+applies = "at-once"
+page = "general"
+group = "interface"
+
 # The window's inner size in logical pixels, as it last stood while neither maximised nor
 # full screen, kept in whole pixels; each part more than 0, and never under the shell's
 # smallest, 960 by 600. The default is the size at the first start.

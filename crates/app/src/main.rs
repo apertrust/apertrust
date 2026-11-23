@@ -2031,6 +2031,9 @@ struct Shell {
     /// How the Toolbar's menu button is drawn where the menus are drawn, on Windows and
     /// Linux: the app's icon or ☰, as `toolbar.menu_button` says.
     menu_button: MenuButtonStyle,
+    /// Whether the Toolbar's actions show their words under their icons, as
+    /// `toolbar.labels` says (decision 92).
+    toolbar_labels: bool,
     /// The interface's language: the user's choice, or the system's.
     locale: Locale,
     /// The language settings keep: none until the user chooses one, so the interface
@@ -2167,6 +2170,7 @@ impl Shell {
             theme: settings.theme,
             marker: settings.marker,
             menu_button: settings.menu_button,
+            toolbar_labels: settings.toolbar_labels,
             locale,
             kept_locale: settings.locale,
             system_locale: system,
@@ -2671,6 +2675,7 @@ impl Shell {
             scale: ctx.zoom_factor(),
             marker: self.marker,
             menu_button: self.menu_button,
+            toolbar_labels: self.toolbar_labels,
             window: self.window,
             settings_window: self.settings_window,
             jobs_window: self.jobs_window,
@@ -3506,7 +3511,7 @@ impl Shell {
         let entries: Vec<ToolbarEntry> = entries.collect();
         let mut bar = Toolbar::new()
             .entries(entries)
-            .labels(true)
+            .labels(self.toolbar_labels)
             .menu_button(self.drawn_menus)
             .menu_button_style(self.menu_button)
             .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))
@@ -4011,6 +4016,7 @@ impl Shell {
         self.marker = settings.marker;
         apertrust_ui::components::set_marker(ctx, self.marker);
         self.menu_button = settings.menu_button;
+        self.toolbar_labels = settings.toolbar_labels;
         self.tab_names = settings.tab_names;
         self.wheel_scrolls_panel = settings.wheel_scrolls_panel;
         apertrust_ui::components::set_wheel_scrolls_panel(ctx, self.wheel_scrolls_panel);
@@ -23232,8 +23238,8 @@ mod tests {
         assert_eq!(shell.settings_window, Some(left));
     }
 
-    /// The theme, the language, the sliders' marker and the menu button reach the main
-    /// window at once.
+    /// The theme, the language, the sliders' marker, the menu button and Toolbar Labels
+    /// reach the main window at once.
     #[test]
     fn what_the_settings_window_changes_reaches_the_shell_and_the_main_window() {
         use settings_dialog::Change;
@@ -23246,12 +23252,15 @@ mod tests {
             dialog_host::Output::Settings(Change::Set("locale", "uk".into())),
             dialog_host::Output::Settings(Change::Set("sliders.marker", "circle".into())),
             dialog_host::Output::Settings(Change::Set("toolbar.menu_button", "menu".into())),
+            dialog_host::Output::Settings(Change::Set("toolbar.labels", false.into())),
         ];
+        assert!(harness.state().shell.toolbar_labels);
         harness.step();
         let shell = &harness.state().shell;
         assert_eq!(shell.theme, Builtin::Light);
         assert_eq!(shell.marker, Marker::Circle);
         assert_eq!(shell.menu_button, MenuButtonStyle::Menu);
+        assert!(!shell.toolbar_labels);
         assert_eq!(
             apertrust_ui::components::marker(&harness.ctx),
             Marker::Circle
