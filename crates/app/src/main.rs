@@ -920,8 +920,23 @@ const APP_NAME: &str = apertrust_base::program!().app_name();
 const APP_ID: &str = apertrust_base::program!().app_id();
 
 /// The smallest size the shell takes, in logical pixels; its size at first start is
-/// `window.size`'s default.
+/// `window.size`'s default. The width grows where the Toolbar needs more ([`window_min`]).
 const WINDOW_MIN: [f32; 2] = [960.0, 600.0];
+
+/// The main window's least inner size, in logical pixels: [`WINDOW_MIN`], wider where the
+/// Toolbar's least width, `least` points at the interface size `zoom`, needs more, so it
+/// never folds a part or loses its empty panel (decision 92, `Toolbar::least_width`).
+fn window_min(least: Option<f32>, zoom: f32) -> [f32; 2] {
+    let width = least.map_or(0.0, |least| (least * zoom).ceil());
+    [WINDOW_MIN[0].max(width), WINDOW_MIN[1]]
+}
+
+/// The inner size, in logical pixels, a main window `inner` large is given as its least
+/// size becomes `least`: as wide as that where it is narrower, its height kept; None where
+/// it is wide enough, so it is never made smaller.
+fn widened(inner: [f32; 2], least: [f32; 2]) -> Option<[f32; 2]> {
+    (inner[0] < least[0]).then_some([least[0], inner[1]])
+}
 
 /// On macOS and Windows the window is moved where it was once it exists ([`place`]), and
 /// only then maximised, since moving resets it, as egui-winit's `WindowSettings` does for
@@ -1512,6 +1527,9 @@ struct App {
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
+    /// The main window's least size as last set, in logical pixels ([`window_min`]); None
+    /// until set, and again once the start window has set its own.
+    window_min: Option<[f32; 2]>,
     /// The extent of the photo last live, which places the next photo's picture at a zoom
     /// carried past Fit until that photo's values come ([`photo_room`]).
     extent_before: Option<[u32; 2]>,
@@ -4579,6 +4597,7 @@ impl App {
             remembered: Remembered::default(),
             opening_first: None,
             start: start::Window::new(false, settings.scale),
+            window_min: None,
             extent_before: None,
         };
         // The command line's paths, Finder's files at the launch, which macOS hands over as
@@ -6660,6 +6679,7 @@ impl App {
         let window = frame.winit_window();
         if wanted != self.start.shown {
             self.start.shown = wanted;
+            self.window_min = None;
             if wanted {
                 self.start.list = start::List::shown();
                 self.start.reshape = true;
@@ -6700,6 +6720,37 @@ impl App {
                 self.start.reshape = false;
                 self.start.zoom = zoom;
             }
+        }
+    }
+
+    /// Keeps the main window at least as wide as what the Toolbar just drawn never folds
+    /// ([`window_min`]), set again only as that changes: with the list, the interface size
+    /// or the language. A window left narrower as it rises is widened to it ([`widened`]),
+    /// as X11 and Wayland do not do themselves, unless maximised or full screen.
+    fn follow_window_min(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        use egui_winit::winit::dpi::LogicalSize;
+        let zoom = ctx.zoom_factor();
+        let least = window_min(Toolbar::least_width(ctx), zoom);
+        if self.window_min == Some(least) {
+            return;
+        }
+        let Some(window) = frame.winit_window() else {
+            return;
+        };
+        let [width, height] = least.map(f64::from);
+        window.set_min_inner_size(Some(LogicalSize::new(width, height)));
+        // Only as it rises in the main window: the first set, after the start window, comes
+        // with `reshape`'s size, which this frame's size, the start window's, would undo.
+        let rose = self.window_min.replace(least).is_some();
+        let (inner, viewport) =
+            ctx.input(|i| (i.viewport_rect().size() * zoom, i.viewport().clone()));
+        let whole = viewport.maximized == Some(true) || viewport.fullscreen == Some(true);
+        if rose
+            && !whole
+            && let Some(size) = widened(inner.into(), least)
+        {
+            let points = egui::Vec2::from(size) / zoom;
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(points));
         }
     }
 
@@ -7871,6 +7922,7 @@ impl eframe::App for App {
         // A picker turning on and off, said politely (decision 104).
         let said_at = toolbar.response.rect.left_bottom();
         cursors::turned_region(ui, said_at, self.shell.cursors.turned());
+        self.follow_window_min(&ctx, frame);
         let mut window = None;
         let mut toolbar_asked = None;
         match toolbar.inner {
@@ -13478,6 +13530,32 @@ mod tests {
         assert_eq!(shape(true, true, false, false, false), centred);
         let in_place = StartShape::Resize { centred: false };
         assert_eq!(shape(true, false, true, false, false), in_place);
+    }
+
+    /// The main window's least width is never under [`WINDOW_MIN`] and grows to what the
+    /// Toolbar never folds at the interface size, in logical pixels (decision 92): at the
+    /// largest size, Windows' and Linux's 444 points with the app's icon need 1332, the
+    /// Mac's 267, the traffic lights' room shrinking with the size, fit in 960.
+    #[test]
+    fn the_window_is_as_wide_as_what_the_toolbar_never_folds() {
+        let largest = *actions::SCALES.end();
+        assert_eq!(window_min(None, largest), WINDOW_MIN);
+        assert_eq!(window_min(Some(444.0), 1.0), WINDOW_MIN);
+        assert_eq!(window_min(Some(444.0), largest), [1332.0, 600.0]);
+        assert_eq!(window_min(Some(267.0), largest), WINDOW_MIN);
+        // Whole pixels, rounded up.
+        assert_eq!(window_min(Some(433.0), 2.25), [975.0, 600.0]);
+    }
+
+    /// A window narrower than its new least width is widened to it, its height kept; one
+    /// as wide or wider is left as it is, never made smaller.
+    #[test]
+    fn a_window_under_its_least_width_is_widened() {
+        let least = [1332.0, 600.0];
+        assert_eq!(widened([1000.0, 700.0], least), Some([1332.0, 700.0]));
+        assert_eq!(widened([1331.5, 800.0], least), Some([1332.0, 800.0]));
+        assert_eq!(widened([1332.0, 700.0], least), None);
+        assert_eq!(widened([1600.0, 500.0], least), None);
     }
 
     /// With no place kept, as on the first run, the main window is centred on its monitor,
