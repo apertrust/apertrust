@@ -59,7 +59,7 @@ In the well's order. Each group is one button of the well, even a group of one c
 
 `import, export, cull, reset, undo, redo, space, copy-edit, apply-edit, flexible-space, cursors, flexible-space, jobs, assistant, save-state`
 
-Until decision 92's list is built (Phase 3), the well is a fixed part of the built Toolbar in the same place. It is client area: a press on it never moves the window, and a double-click never maximises it (`HTCLIENT` on Windows).
+The well stands where the workspace's list places `cursors` (built), and is drawn nowhere where the list leaves it out. It is client area: a press on it never moves the window, and a double-click never maximises it (`HTCLIENT` on Windows).
 
 **Measures:**
 
@@ -95,7 +95,7 @@ Until decision 92's list is built (Phase 3), the well is a fixed part of the bui
   3. the group's settings: a toggle as an item with a check, a choice as a heading with its options under it, the one in use marked.
 - **A group of one with settings,** Copy and apply, has the chevron for its settings alone.
 - **The well never folds.** The actions fold before it, so the built narrowing's steps start wider by the well and the 16 points before it, and the window keeps 24 points of drag strip, counted on both sides of the well together. Under decision 92's overflow it is a part, never folded; where the parts no longer fit, at a large interface size, the window's minimum width grows to them. The test that holds the Toolbar's fold widths (`the_toolbar_folds_where_gui_md_says`) gains the well, in every language.
-- **Hidden** (decision 92's toolbar, Phase 3): every cursor with a key stays reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker cursor's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
+- **Hidden** (decision 92's toolbar, built): every cursor with a key stays reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker cursor's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
 
 **Amounts,** a cursor's continuous values (a brush's size, hardness and flow), are no list items, since a list holds choices: a click on the chosen face opens them as slider rows under it, drawn as tool rows on `raised` with `menu_radius`, `menu_edge` and `menu_shadow`, 240 points wide, values kept as app settings. A face whose cursor has amounts shows, while chosen, a 4-point triangle at its bottom end corner in `text_secondary`. It closes on Esc, a second click on the face or a press elsewhere; a press on the photo closes it and still acts, so a stroke is never lost to a click. `[` and `]` change the size without it, by darktable's step. The first cursor with amounts is Phase 4's Brush.
 
@@ -294,7 +294,7 @@ Phase 2, one pull request each, each reviewed before the next that needs it:
 | 104.3 | Built: the well in the design system, faces, chevrons, states, the list with its settings, keys and AccessKit, in the gallery with snapshots | ui | amounts, the app |
 | 104.4 | Built: the app: the mode, the registry, `CursorOwner`, Select and Pan, the tools' owner; the gestures and pointers over the photo; the well on the Toolbar between two flexible spaces and the narrowing with it; the cursor actions with Esc, K and A held; Pick's Show the last pick in the settings schema | app, ui's Toolbar, settings schema | the toolbar's list, holds on one key, Copy and apply |
 
-**Later, with their features:** Phase 3, the `cursors` item in decision 92's toolbar, a key's tap and hold with decision 98's dispatcher, and Copy and apply with Copy Parts and the Browser's selection; the Colour readout with the Colour picker section (79.16); Phase 4, the Mask and Retouch groups with layers, their settings, amounts with `[` and `]`, their keys and the Layers section's buttons sharing their state; Annotate with its own decision.
+**Later, with their features:** Phase 3, a key's tap and hold with decision 98's dispatcher, and Copy and apply with Copy Parts and the Browser's selection; the Colour readout with the Colour picker section (79.16); Phase 4, the Mask and Retouch groups with layers, their settings, amounts with `[` and `]`, their keys and the Layers section's buttons sharing their state; Annotate with its own decision.
 
 ## Open questions
 

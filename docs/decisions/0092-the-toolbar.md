@@ -2,7 +2,7 @@
 
 ## Context
 
-The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). Today it holds a fixed set of parts, from a constant in the app (`TOOLBAR`): the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the jobs spinner and the save state. Under 960 points it folds them into ⋯ More actions.
+The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the cursors' well, the jobs spinner and the save state. As it narrows it folds the actions into ⋯ More actions.
 
 People want the actions they use on every photo within reach, and tools want buttons of their own there, such as Orientation's rotations. Several things constrain how:
 
@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items and the set of what can be placed, which nothing draws from yet. Planned: Phase 3 builds the toolbar from the list, its menu, the overflow and labels; the Customise Toolbar window comes much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but Show Menu Button. Planned: Phase 3 builds its menu, the overflow and labels; the Customise Toolbar window comes much later.
 
 ### The list and its defaults
 
@@ -122,7 +122,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   labels = true
   ```
 
-- A built-in workspace nobody changed has no file and follows each build's default toolbar; once its file is written, whole, its `toolbar` is the list as it then was.
+- A workspace whose file has no `toolbar`, a built-in nobody changed among them, follows each build's default toolbar, so later default items reach anyone who never changed theirs. Only a change to the toolbar writes `toolbar`, the whole list as it then is; a write for a change to the tabs leaves a missing list missing.
 - An id this build does not know, a tool or an action removed or from a newer build, is skipped and kept in the file.
 - A new workspace from the visual editor copies the list, and Workspace ▸'s Restore Defaults, deleting a built-in's file, puts the default back.
 - **Customise Toolbar…**, from the toolbar menu and View › Panels, opens a dedicated window of the dialog host ([0041](0041-dialogs-as-native-modal-windows.md)), built much later; its design is settled when it is built. There is no palette inside the main window.
@@ -207,6 +207,6 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the declared actions and the icon names, and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
-- **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is a part of the list, `cursors`; until the list is built it is a fixed part of the built Toolbar in the same place, and the built narrowing folds the actions before it.
+- **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is a part of the list, `cursors`, by default between two flexible spaces; the built narrowing folds the actions before it.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.
 - **The default changes:** every item shows its word under its icon by default, and the narrowing's thresholds change with it.

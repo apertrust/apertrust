@@ -24,7 +24,7 @@ A workspace is interface state, never the edit's ([0037](0037-one-view-the-photo
 | Its tabs | In order, each an id, a title and an icon |
 | Each tab's tools | Its pinned tools, top first, then the rest, top first (83) |
 | The tools it hides | Tools in no tab of it, shown only in the Hidden tab |
-| Its toolbar | The Toolbar's items in order ([0092](0092-the-toolbar.md), Phase 3) |
+| Its toolbar | The Toolbar's items in order ([0092](0092-the-toolbar.md), built) |
 | The tools that float | Each with the tab it left (83, Phase 3) |
 
 Not the Tools panel's width, a floating panel's place, a section's open state, the theme or the keys: they suit a screen or a person, not a task, and stay app-wide in `settings.toml`. Never a photo or an edit.
@@ -46,7 +46,7 @@ version = 1
 name = "Portraits"                      # a person's own; a built-in's name is Fluent's
 hidden = ["vignette", "grain"]
 seen = ["collections", "export", "scopes", "history", "temperature", "exposure", "…"]
-toolbar = ["mark", "import", "export", "undo", "redo"]   # decision 92, Phase 3
+toolbar = ["import", "export", "undo", "redo", "flexible-space", "cursors"]   # decision 92
 
 [[tabs]]
 id = "photos"
@@ -167,7 +167,7 @@ The layout's items, last in ⋯ in `LAYOUT` (91), for a tool and a utility alike
 
 ### Switching
 
-View › Workspace ▸ and the tab bar's menu's Workspace ▸. A switch changes the Tools panel and, from Phase 3, the Toolbar: the Viewer, the selection, the keys and what they act on stay. The tab shown is the one last shown in that workspace; a section's open state is the same in every workspace.
+View › Workspace ▸ and the tab bar's menu's Workspace ▸. A switch changes the Tools panel and the Toolbar: the Viewer, the selection, the keys and what they act on stay. The tab shown is the one last shown in that workspace; a section's open state is the same in every workspace.
 
 ### Where the rest is kept
 
@@ -191,7 +191,7 @@ Phase 3:
 - **Floating panels,** 83's step 5.
 - **A visual editor for workspaces:** adding, naming and removing tabs, hiding and showing tools, a new workspace; it replaces the Customise tabs dialog, which is not built on fixed lists in Phase 2. Save as Workspace…, Rename Workspace… and Delete Workspace… come with it.
 - **The Photos workspace** for culling (37; [gui.md](../gui.md#workspaces)).
-- **Each workspace's own toolbar** (92), kept in the workspace's file.
+- **Each workspace's own toolbar** (92), kept in the workspace's file: the list built; its menu, the overflow and labels with Phase 3.
 
 ## Options considered
 
