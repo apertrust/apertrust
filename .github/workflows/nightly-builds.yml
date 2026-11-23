@@ -210,7 +210,10 @@ jobs:
       # The AppImage under its published name, its `+` a `.` as publish names the other
       # files, extracted and packed again by appimagetool with the update information,
       # which also writes the .zsync beside it, naming that file: AppImageUpdate then
-      # fetches only what changed (docs/packaging.md, Nightly builds). The same step in
+      # fetches only what changed (docs/packaging.md, Nightly builds). It names the
+      # latest pre-release, `latest-pre` in the update-information spec, not the tag
+      # `nightly`: Gear Lever ignores a fixed tag, and AppImageUpdate honours `latest-pre`
+      # from 2.0.0-alpha-1-20251018 (earlier ones read it as `latest`). The same step in
       # linux-arm, with Arm's files.
       - name: Give the AppImage its update information
         env:
@@ -240,7 +243,7 @@ jobs:
           rm -- "${built[0]}"
           "$tools/appimagetool" --appimage-extract-and-run --no-appstream \
             --runtime-file "$tools/runtime" \
-            -u "gh-releases-zsync|apertrust|apertrust|nightly|apertrust-nightly-*-linux-$ARCH.AppImage.zsync" \
+            -u "gh-releases-zsync|apertrust|apertrust|latest-pre|apertrust-nightly-*-linux-$ARCH.AppImage.zsync" \
             squashfs-root "$name"
           rm -rf squashfs-root
           ls -l "$name" "$name.zsync"
