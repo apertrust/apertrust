@@ -19,8 +19,9 @@
 //!
 //! - **A workspace's file,** [`Layout`]: its `version`, its `name`, its tabs in order,
 //!   each an id with a title and an icon, each tab's pinned tools and the rest by tab id
-//!   (`[pinned]`, `[order]`), the tools it hides (`hidden`) and every tool the build that
-//!   wrote it knew (`seen`). A person's own is `<user data>/workspaces/<id>.toml`.
+//!   (`[pinned]`, `[order]`), the tools it hides (`hidden`), every tool the build that
+//!   wrote it knew (`seen`), and the Toolbar's item ids in order (`toolbar`, decision 92).
+//!   A person's own is `<user data>/workspaces/<id>.toml`.
 //! - **Built in:** the Default workspace, `data/workspaces/default.toml`, and Essentials,
 //!   `data/workspaces/essentials.toml`, embedded and read as a person's own is
 //!   ([`Layout::defaults`]); a person's changed copy of one, in the user data folder, takes
@@ -30,8 +31,8 @@
 //!   Workspace lists; switching works out the layout shown from them ([`Workspaces::open`]).
 //! - **The layout shown,** [`Shown`], worked out from the file and the defaults when the
 //!   workspace is read ([`resolve`]), never per frame: each tab's lists, the tools hidden,
-//!   a new build's new tools placed by `seen`, the first twelve tabs, and Export always in
-//!   one of them.
+//!   a new build's new tools placed by `seen`, the first twelve tabs, Export always in
+//!   one of them, and the Toolbar's list, the defaults' where the file has none.
 //! - **The Hidden tab,** [`Workspace::hidden_tab`], worked out with the layout shown: the
 //!   tools in no tab shown, processing tools in pipeline order, then utilities, never
 //!   pinned or reordered there.
@@ -134,6 +135,9 @@ pub struct Layout {
     /// Every tool the build that wrote it knew; empty in a bundled file, whose lists are
     /// its defaults.
     pub seen: Vec<String>,
+    /// The Toolbar's item ids in order (decision 92), those this build does not know
+    /// included; none where the file has no `toolbar` list, the defaults' then drawn.
+    pub toolbar: Option<Vec<String>>,
 }
 
 /// Why a file cannot be a workspace.
@@ -226,6 +230,13 @@ impl Layout {
             None => Vec::new(),
         };
         let (hidden, seen) = (list("hidden"), list("seen"));
+        let toolbar = table.get("toolbar").and_then(|value| {
+            let listed = value.as_array().is_some();
+            if !listed {
+                warnings.push("toolbar is no list; the default drawn".to_owned());
+            }
+            listed.then(|| ids(value, "toolbar", &mut warnings))
+        });
         let layout = Layout {
             version,
             name,
@@ -234,6 +245,7 @@ impl Layout {
             order,
             hidden,
             seen,
+            toolbar,
         };
         Ok((layout, warnings))
     }
@@ -330,6 +342,9 @@ pub struct Shown {
     /// Those of `hidden` that only a tab past the twelfth holds, never written into the
     /// file's `hidden`.
     pub beyond: Vec<&'static str>,
+    /// The Toolbar's item ids in order (decision 92): the file's, else its defaults',
+    /// those this build does not know kept, for the app to skip as it draws them.
+    pub toolbar: Vec<String>,
 }
 
 /// The tools of the Tools panel this build has, processing tools then utilities: every
@@ -398,6 +413,8 @@ pub fn icon(name: &str) -> Option<Icon> {
 ///    pipeline order ([`Shown::hidden`]);
 /// 5. Export in no tab shown goes to the end of the Photos tab where it is shown, else of
 ///    the first tab shown that can be chosen, else of the first tab.
+///
+/// The Toolbar's list is the file's, else that of the first of `defaults` with one.
 pub fn resolve(
     layout: &Layout,
     defaults: &[&Layout],
@@ -538,10 +555,16 @@ pub fn resolve(
             only_past && !layout.hidden.iter().any(|t| t == tool)
         })
         .collect();
+    let toolbar = (layout.toolbar.iter())
+        .chain(defaults.iter().filter_map(|d| d.toolbar.as_ref()))
+        .next()
+        .cloned()
+        .unwrap_or_default();
     let shown = Shown {
         tabs,
         hidden,
         beyond,
+        toolbar,
     };
     (shown, warnings)
 }
@@ -1196,6 +1219,11 @@ impl Workspace {
     /// Whether `tool` is hidden: in no tab shown, so only the Hidden tab holds it.
     pub fn hides(&self, tool: &str) -> bool {
         self.shown.hidden.contains(&tool)
+    }
+
+    /// The Toolbar's item ids in order (decision 92), as [`Shown::toolbar`] has them.
+    pub fn toolbar(&self) -> &[String] {
+        &self.shown.toolbar
     }
 
     /// The tabs shown.

@@ -793,6 +793,89 @@ fn what_cannot_be_read_is_skipped() {
     assert!(matches!(Layout::parse("[["), Err(Refused::Damaged(_))));
 }
 
+/// The Toolbar's default list (decision 92), in both built-in workspaces.
+const TOOLBAR: [&str; 14] = [
+    "menu-button",
+    "import",
+    "export",
+    "reset",
+    "undo",
+    "redo",
+    "space",
+    "copy-edit",
+    "apply-edit",
+    "flexible-space",
+    "cursors",
+    "flexible-space",
+    "jobs",
+    "save-state",
+];
+
+/// Both built-in workspaces hold the default list as their Toolbar, every id one this build
+/// can place, each drawn.
+#[test]
+fn the_built_in_workspaces_hold_the_default_toolbar() {
+    for id in builtin_ids() {
+        let (workspace, _) = Workspaces::builtin().open(id);
+        assert_eq!(workspace.toolbar(), TOOLBAR, "{id}");
+        let drawn = crate::toolbar::listed(TOOLBAR);
+        let ids: Vec<&str> = drawn.iter().map(|placed| placed.id).collect();
+        assert_eq!(ids, TOOLBAR, "{id}");
+    }
+}
+
+/// A file with no `toolbar` takes its defaults': a built-in's changed copy its bundled
+/// list, a person's own Default's. One that is no list does too, with a warning; an empty
+/// list is a Toolbar with nothing on it.
+#[test]
+fn a_file_with_no_toolbar_list_takes_its_defaults() {
+    let folder = Folder::new("workspace-no-toolbar");
+    let tabs = "[[tabs]]\nid = \"photos\"\n[order]\nphotos = [\"export\"]\n";
+    std::fs::write(folder.0.join("essentials.toml"), tabs).unwrap();
+    std::fs::write(folder.0.join("portraits.toml"), tabs).unwrap();
+    let no_list = format!("toolbar = \"undo\"\n{tabs}");
+    std::fs::write(folder.0.join("film.toml"), no_list).unwrap();
+    std::fs::write(folder.0.join("bare.toml"), format!("toolbar = []\n{tabs}")).unwrap();
+    let (workspaces, warnings) = Workspaces::read(Some(&folder.0));
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("film.toml: toolbar is no list"), "{warnings:?}");
+    for id in [ESSENTIALS, "portraits", "film"] {
+        let (workspace, _) = workspaces.open(id);
+        assert_eq!(workspace.layout.toolbar, None, "{id}");
+        assert_eq!(workspace.toolbar(), TOOLBAR, "{id}");
+    }
+    assert!(workspaces.open("bare").0.toolbar().is_empty());
+}
+
+/// The file's list is read as it is, ids this build does not know kept in their places and
+/// skipped as it is drawn, a part listed twice drawn once (decision 92).
+#[test]
+fn an_unknown_toolbar_id_is_kept_and_skipped_as_drawn() {
+    let (shown, warnings) = layout_of(
+        "toolbar = [\"import\", \"cull\", \"space\", \"undo\", \"space\", \"import\"]\n\
+         [[tabs]]\nid = \"photos\"\n",
+    );
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert_eq!(
+        shown.toolbar,
+        ["import", "cull", "space", "undo", "space", "import"]
+    );
+    let drawn = crate::toolbar::listed(shown.toolbar.iter().map(String::as_str));
+    let ids: Vec<&str> = drawn.iter().map(|placed| placed.id).collect();
+    assert_eq!(ids, ["import", "space", "undo", "space"]);
+}
+
+/// Switching workspace switches the Toolbar: each keeps its own list.
+#[test]
+fn each_workspace_has_its_own_toolbar() {
+    let folder = Folder::new("workspace-toolbars");
+    let own = "toolbar = [\"undo\", \"redo\"]\n[[tabs]]\nid = \"photos\"\n";
+    std::fs::write(folder.0.join("portraits.toml"), own).unwrap();
+    let (workspaces, _) = Workspaces::read(Some(&folder.0));
+    assert_eq!(workspaces.open("portraits").0.toolbar(), ["undo", "redo"]);
+    assert_eq!(workspaces.open(DEFAULT).0.toolbar(), TOOLBAR);
+}
+
 /// The Default workspace as built, with no file.
 fn default_workspace() -> Workspace {
     Workspaces::builtin().open(DEFAULT).0
