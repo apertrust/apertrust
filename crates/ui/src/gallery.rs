@@ -27,16 +27,16 @@ use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, 
 use crate::components::{
     About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CellPicture, CellRating,
     CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
-    ColourLabel, ColourLabels, CursorWell, CursorWellAction, Curve, CurveAction, Equalizer,
-    EqualizerAction, FileManager, FindBar, FindBarAction, GridCell, Histogram, HistogramBins,
-    IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker, MaskHistogram,
-    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption,
-    PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine,
-    RailNode, ReadoutRow, Reference, ReferenceRow, SaveState, Scale, Scope, ScopeView, Section,
-    SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch,
-    TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction,
-    ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction,
-    WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
+    ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
+    Equalizer, EqualizerAction, FileManager, FindBar, FindBarAction, GridCell, Histogram,
+    HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker,
+    MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
+    Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup,
+    Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, SaveState, Scale, Scope,
+    ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
+    Swatches, Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar,
+    ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar,
+    ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -809,6 +809,10 @@ fn pickers(ui: &mut Ui, t: &Theme) {
         for (colour, readout) in [
             (None, "L: N/A"),
             (Some(Color32::from_gray(108)), "L: 45.2%"),
+            (
+                Some(Color32::from_rgb(132, 104, 82)),
+                "L: 45.2%\nh: 62.0 °\nc: 18.4",
+            ),
         ] {
             Patches::new(
                 Patch {
@@ -824,7 +828,30 @@ fn pickers(ui: &mut Ui, t: &Theme) {
     });
     ui.label(
         RichText::new(
-            "Patches: the input before a pick, outlined, and after one, beside the target.",
+            "Patches: the input before a pick, outlined, and after one, beside the target; \
+             with an L, h and c a line each, as Colour calibration's.",
+        )
+        .color(t.colors.text_secondary),
+    );
+    // Colour calibration's readout row: the CCT, the light's colour filling the row, and
+    // the picker at its end.
+    ui.push_id("swatch", |ui| {
+        ui.horizontal(|ui| {
+            ui.set_min_height(t.sizes.panel_line);
+            ui.add(egui::Label::new("CCT: 3200 K (black body)").selectable(false));
+            let gap = ui.spacing().item_spacing.x;
+            let width = ui.available_width() - t.sizes.field - gap;
+            let tip = "This is the colour of the scene illuminant before chromatic adaptation.";
+            ColourSwatch::new(Color32::from_rgb(255, 190, 120), tip)
+                .width(width)
+                .show(ui);
+            PickerButton::new("Set white balance to detected from area", false).show(ui);
+        });
+    });
+    ui.label(
+        RichText::new(
+            "Colour swatch: a colour the tool computes, at least two quads wide, filling \
+             the row up to its buttons.",
         )
         .color(t.colors.text_secondary),
     );

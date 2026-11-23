@@ -17,8 +17,9 @@
 //! A picker's patches (`docs/pickers.md`, Declaring pickers): darktable's input and target
 //! patches under an area mapping, as Exposure's area exposure mapping shows them
 //! (`exposure.c:1288-1326` at the reference release), side by side, each under its heading:
-//! the input's colour, the area its picker last read, with its readout under it, and the
-//! target's. The colours are data the renderer hands it, never a theme's.
+//! the input's colour, the area its picker last read, with its readout under it, its L or,
+//! as Colour calibration's, its L, h and c a line each, and the target's. The colours are
+//! data the renderer hands it, never a theme's.
 
 use egui::{Color32, Rect, Role, Sense, Stroke, StrokeKind, Ui, WidgetInfo, vec2};
 
@@ -35,7 +36,8 @@ pub struct Patch<'a> {
     pub colour: Option<Color32>,
     /// Its tooltip, translated.
     pub tip: &'a str,
-    /// The line under it, translated, with its own tooltip: the input's L readout.
+    /// The lines under it, translated, with their own tooltip: the input's L readout, or
+    /// its L, h and c, one a line.
     pub readout: Option<(&'a str, &'a str)>,
 }
 
@@ -95,8 +97,9 @@ impl<'a> Patches<'a> {
             ui.allocate_exact_size(vec2(width, galley.size().y + t.spacing.xxs), Sense::hover());
         ui.painter().galley(rect.min, galley, words);
         let (rect, response) = ui.allocate_exact_size(vec2(width, t.sizes.field), Sense::hover());
+        // Its lines as one name, a comma between them.
         let name = match patch.readout {
-            Some((readout, _)) => format!("{}, {readout}", patch.heading),
+            Some((readout, _)) => format!("{}, {}", patch.heading, readout.replace('\n', ", ")),
             None => patch.heading.to_owned(),
         };
         response.widget_info(|| WidgetInfo::labeled(Role::Image, enabled, &name));
