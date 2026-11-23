@@ -42,6 +42,7 @@ pub mod adaptation;
 pub mod agx_curve;
 pub mod bilinear;
 pub mod box_filter;
+pub mod colour_equalizer;
 pub mod curve;
 mod dng;
 pub mod gaussian;
