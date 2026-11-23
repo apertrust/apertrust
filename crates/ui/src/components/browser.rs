@@ -31,12 +31,12 @@
 //! plain click on the panel's empty space selects nothing
 //! ([`BrowserAction::ClearSelection`]): between the cells, after the last, round a fitted
 //! picture or on a caption outside its first line and its name; with Ctrl, Cmd or Shift
-//! it does nothing. A right-click on a cell, a Control-click on the Mac, or the menu key,
-//! Shift+F10 or AccessKit's ShowContextMenu on the one focused, asks for its photo's
-//! menu, which the caller builds ([`BrowserOutput::menu`]), a cell's own empty space
-//! included. Between and after the cells, or from the keys on the browser bar's buttons
-//! or a screen reader on the list, they ask for the Browser's own menu, which the caller
-//! builds too ([`BrowserOutput::space_menu`]). With a cell focused, ← and → move the
+//! it does nothing. A right-click on a cell's picture, its first line or its name, a
+//! Control-click there on the Mac, or the menu key, Shift+F10 or AccessKit's
+//! ShowContextMenu on the cell focused, asks for its photo's menu, which the caller builds
+//! ([`BrowserOutput::menu`]). On the panel's empty space, a cell's own included, or from
+//! the keys on the browser bar's buttons or a screen reader on the list, they ask for the
+//! Browser's own menu, which the caller builds too ([`BrowserOutput::space_menu`]). With a cell focused, ← and → move the
 //! focus to the next or previous photo, Home and End to the first and last, and Enter or
 //! Space opens the one focused; the panel scrolls to keep it in sight. The active photo's
 //! cell is scrolled into view when it changes. With no photos it is drawn empty and, where
@@ -688,7 +688,13 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                             }
                             let keys = menu_asked(ui.ctx(), &response);
                             let clicked = context_click(ui.ctx(), &response);
-                            if clicked || keys {
+                            // The pointer's on the cell's empty space asks for the Browser's own
+                            // menu, as between the cells; the keys always for the photo's.
+                            if clicked && !keys && cell.empty {
+                                let at = response.interact_pointer_pos();
+                                let at = at.unwrap_or(response.rect.left_bottom());
+                                space_menu = Some(SpaceMenu { at, opener: None });
+                            } else if clicked || keys {
                                 let pointer = response.interact_pointer_pos().filter(|_| !keys);
                                 let at = pointer.unwrap_or(response.rect.left_bottom());
                                 menu = Some(CellMenu {
