@@ -108,6 +108,7 @@ choice-option-unavailable = Niedostępne dla tego zdjęcia
 
 collapsible-group-set = Zmieniono: { $count }
 collapsible-group-tip = { $group }: zmieniono { $count }
+collapsible-group-active = { $group } (aktywne)
 
 ## Wiersz ustawień wstępnych w narzędziu, jak Tryb balansu bieli
 

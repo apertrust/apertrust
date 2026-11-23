@@ -77,8 +77,8 @@ use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
     Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, Group, GroupKind, MAX_POINTS,
-    PickerKind, ProcessingDefinition, ProcessingTool, Quad, Reset, Row, SettingRow, Slider,
-    ToolDefinition, Track, Unit, View, Widget, Word, check, messages,
+    PickerKind, ProcessingDefinition, ProcessingTool, Quad, ReadoutDef, Reset, Row, SettingRow,
+    Slider, ToolDefinition, Track, Unit, View, Widget, Word, check, messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
@@ -466,11 +466,11 @@ pub fn reset_name(words: &Translator, tool: &ToolDefinition, title: &str) -> Str
 }
 
 /// The tools whose pickers the panel draws: those whose pick is built, each joining with
-/// it (`docs/pickers.md`, The plan): Exposure's and White balance's, the latter turned on
-/// from Settings. Until then a tool's quad, its picker rows and its patches' input are
-/// not drawn, as a quad with nothing behind it is not, and a preset option that turns its
-/// picker on is drawn disabled.
-pub const PICKING: &[&str] = &["exposure", "temperature"];
+/// it (`docs/pickers.md`, The plan): Exposure's, White balance's, turned on from Settings,
+/// and Colour calibration's, on its readout row. Until then a tool's quad, its picker rows'
+/// buttons and its patches' input are not drawn, as a quad with nothing behind it is not,
+/// and a preset option that turns its picker on is drawn disabled.
+pub const PICKING: &[&str] = &["exposure", "temperature", "channelmixerrgb"];
 
 /// The colour pickers as a section draws them.
 #[derive(Clone, Copy)]
@@ -1344,6 +1344,24 @@ impl Rows for Page<'_> {
         self.pickers.settings
     }
 
+    /// Its title, with "(active)" after it while the tool says its settings, as the app
+    /// keeps them, make what the group holds act (`ProcessingTool::group_active`), as
+    /// darktable's "area colour mapping (active)".
+    fn title(&self, id: &str, kind: GroupKind) -> String {
+        let tool = self.tool.definition().tool.id;
+        let title = self.words.text(&messages::group_title(tool, id, kind));
+        let settings = self.pickers.settings.of(tool);
+        let active = kind == GroupKind::Collapsible
+            && catch_unwind(AssertUnwindSafe(|| self.tool.group_active(id, &settings)))
+                .unwrap_or(false);
+        if !active {
+            return title;
+        }
+        let mut args = Args::new();
+        args.set("group", title);
+        self.words.text_with(messages::GROUP_ACTIVE, Some(&args))
+    }
+
     fn words_by(&self, setting: &str) -> bool {
         (self.tool.definition().pickers.iter()).any(|picker| picker.words_by == Some(setting))
     }
@@ -1413,7 +1431,11 @@ impl Rows for Page<'_> {
                 photo,
             } => reference_row(ui, self, picker, lightness, photo, changes),
             Row::LastPick { picker } => last_pick_row(ui, self, picker),
-            Row::Pickers { label, pickers, .. } => pickers_row(ui, self, *label, pickers, changes),
+            Row::Pickers {
+                label,
+                pickers,
+                readout,
+            } => pickers_row(ui, self, *label, readout.as_ref(), pickers, changes),
             Row::Buttons { control, buttons } => {
                 buttons_row(ui, words, definition, control, buttons, state, changes);
             }
@@ -2115,9 +2137,10 @@ pub fn reference_photo(
 }
 
 /// A picker's input and target patches (`Row::Patches`), darktable's: the input the area
-/// its tool's last pick showed on the photo, with its L readout, "L: N/A" before one;
-/// the target the colour of its settings, L then C and h, as the app keeps them or at
-/// their defaults. Drawn disabled while the tool's pickers are not drawn.
+/// its tool's last pick showed on the photo, with its L readout, or for a target of L, C
+/// and h its L, h and c, "N/A" before one; the target the colour of its settings, L then
+/// C and h, as the app keeps them or at their defaults. Drawn disabled while the tool's
+/// pickers are not drawn.
 fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static str]) {
     let (words, definition) = (page.words, page.tool.definition());
     let tool = definition.tool.id;
@@ -2142,17 +2165,32 @@ fn patches_row(ui: &mut egui::Ui, page: &Page, picker: &str, target: &[&'static 
         lch.get(2).copied().unwrap_or_default(),
     ]);
     let input = page.pickers.picked.patch(tool).filter(|_| enabled);
-    let readout = match input {
-        Some(patch) => {
-            let mut args = Args::new();
-            args.set(
-                "value",
-                words.format_number(f64::from(patch.lch[0]), 1, false),
-            );
-            words.text_with("picker-patch-lightness", Some(&args))
-        }
-        None => words.text("picker-patch-none"),
+    // darktable's readout: L, then with a target of L, C and h, h and c, a line each
+    // (`channelmixerrgb.c:4182-4191`), "N/A" for each before a pick.
+    let lines: &[(usize, &str, &str)] = if target.len() == 3 {
+        &[
+            (0, "picker-patch-lightness", "picker-patch-none"),
+            (2, "picker-patch-hue", "picker-patch-hue-none"),
+            (1, "picker-patch-chroma", "picker-patch-chroma-none"),
+        ]
+    } else {
+        &[(0, "picker-patch-lightness", "picker-patch-none")]
     };
+    let readout: Vec<String> = lines
+        .iter()
+        .map(|&(at, value, none)| match input {
+            Some(patch) => {
+                let mut args = Args::new();
+                args.set(
+                    "value",
+                    words.format_number(f64::from(patch.lch[at]), 1, false),
+                );
+                words.text_with(value, Some(&args))
+            }
+            None => words.text(none),
+        })
+        .collect();
+    let readout = readout.join("\n");
     let [input_heading, input_tip, target_heading, lch_tip, ..] =
         messages::PATCHES.map(|id| words.text(id));
     let target_tip = target
@@ -2487,12 +2525,14 @@ impl<'a> Page<'a> {
 }
 
 /// A row of pickers, darktable's toggle buttons packed in a box: its label at the start,
-/// where it has one, and the buttons at the row's end, in order, where its tool draws
-/// its pickers.
+/// where it has one, or its readout's text, with its tooltip, and swatch, filling the row
+/// up to the buttons, as the session reports them (`ToolState::readouts`), and the buttons
+/// at the row's end, in order, where its tool draws its pickers.
 fn pickers_row(
     ui: &mut egui::Ui,
     page: &Page,
     label: Option<&str>,
+    readout: Option<&ReadoutDef>,
     ids: &[&'static str],
     changes: &mut Vec<Change>,
 ) {
@@ -2500,10 +2540,11 @@ fn pickers_row(
         .iter()
         .filter_map(|&id| page.button(ui.ctx(), id))
         .collect();
-    if buttons.is_empty() {
+    let tool = page.tool.definition().tool.id;
+    let shown = readout.and_then(|def| readout_words(page, tool, def));
+    if buttons.is_empty() && shown.is_none() {
         return;
     }
-    let tool = page.tool.definition().tool.id;
     let label = label.map(|id| page.words.text(&messages::group(tool, id)));
     let t = apertrust_ui::theme(ui.ctx());
     ui.horizontal(|ui| {
@@ -2513,7 +2554,33 @@ fn pickers_row(
         }
         // At the row's end, left to right, so readers and Tab meet them in order.
         let count = buttons.len() as f32;
-        let width = count * t.sizes.field + (count - 1.0) * ui.spacing().item_spacing.x;
+        let gap = ui.spacing().item_spacing.x;
+        let width = (count * t.sizes.field + (count - 1.0) * gap).max(0.0);
+        let after = if count > 0.0 { gap } else { 0.0 };
+        if let Some(shown) = &shown {
+            // The text truncates in what the buttons and the swatch's two quads leave, so
+            // a long language's text never pushes the pickers off the panel.
+            let swatch = if shown.swatch.is_some() {
+                2.0 * t.sizes.field + gap
+            } else {
+                0.0
+            };
+            let room = (ui.available_width() - width - after - swatch).max(0.0);
+            ui.scope(|ui| {
+                ui.set_max_width(room);
+                ui.add(
+                    egui::Label::new(shown.text.as_str())
+                        .selectable(false)
+                        .truncate(),
+                )
+            })
+            .inner
+            .on_hover_text(&shown.promise);
+            if let Some((colour, tip)) = &shown.swatch {
+                let room = ui.available_width() - width - after;
+                parts::ColourSwatch::new(*colour, tip).width(room).show(ui);
+            }
+        }
         ui.add_space((ui.available_width() - width).max(0.0));
         for (picker, words) in &buttons {
             let (_, pressed) = words.button().show(ui);
@@ -2523,6 +2590,42 @@ fn pickers_row(
             }
         }
     });
+}
+
+/// What a readout at a row of pickers' start shows, in words.
+struct ReadoutWords {
+    text: String,
+    promise: String,
+    /// The swatch's colour, as the screen shows it, and its tooltip.
+    swatch: Option<(egui::Color32, String)>,
+}
+
+/// The readout `def` of `tool` as the session reports it (`ToolState::readouts`): its text,
+/// its number in the language's numbers to its decimals, its tooltip, and its swatch,
+/// whose colour is handed to the screen as it is, as cairo paints darktable's. None before
+/// the session reports one.
+fn readout_words(page: &Page, tool: &str, def: &ReadoutDef) -> Option<ReadoutWords> {
+    let state = page
+        .state
+        .readouts
+        .iter()
+        .find(|state| state.id == def.id)?;
+    let readout = state.readout?;
+    let [text, promise] = messages::readout(tool, def.id, readout.text);
+    let mut args = Args::new();
+    if let Some(value) = readout.value {
+        let decimals = usize::from(def.decimals);
+        args.set(
+            "value",
+            page.words.format_number(f64::from(value), decimals, false),
+        );
+    }
+    let tip = page.words.text(&messages::readout_swatch(tool, def.id));
+    Some(ReadoutWords {
+        text: page.words.text_with(&text, Some(&args)),
+        promise: page.words.text(&promise),
+        swatch: readout.swatch.map(|rgb| (colour(rgb), tip)),
+    })
 }
 
 /// An f32 as the decimal it was written as: a definition's 0.01 is f32's 0.0099999998,
@@ -3041,7 +3144,20 @@ mod tests {
         };
         state.presets = presets(tool, &state);
         report_availability(tool, &mut state);
+        report_readouts(tool, &mut state);
         state
+    }
+
+    /// Each readout of the tool's rows of pickers as the session reports it for the values
+    /// `state` shows on the sample photo.
+    fn report_readouts(tool: &dyn ProcessingTool, state: &mut ToolState) {
+        let (image, values) = (testing::image(), values(state));
+        state.readouts = (tool.definition().readouts())
+            .map(|readout| apertrust_engine::session::ReadoutState {
+                id: readout.id,
+                readout: tool.readout(readout.id, &values, &image),
+            })
+            .collect();
     }
 
     /// Each control's availability as the session reports it for the values `state`
@@ -5713,6 +5829,8 @@ mod tests {
     #[test]
     fn the_colour_checker_s_settings_are_drawn_disabled_and_set_nothing() {
         let mut harness = panel(&ColourCalibration, untouched(&ColourCalibration));
+        // Tall enough for the CAT tab, its readout row too, with the group under it.
+        harness.set_size(egui::vec2(400.0, 600.0));
         harness.run();
         harness
             .get_by_role_and_label(Role::Button, "Calibrate with a colour checker")
@@ -7983,6 +8101,281 @@ mod tests {
             state.on = on.then_some(EXPOSURE_PICKER);
             harness.run();
             harness.snapshot(format!("{name}-{theme}"));
+            results.extend_harness(&mut harness);
+        }
+    }
+
+    /// Colour calibration's CAT tab as a section draws it, its pickers drawn, the area
+    /// colour mapping open, with the tool settings and picks the app keeps.
+    struct Calibrated {
+        settings: ToolSettings,
+        picked: Picked,
+        changes: Vec<Change>,
+        /// Its adaptation, where it is not CAT16.
+        adaptation: Option<u32>,
+    }
+
+    /// The CAT tab in `which` with these tool settings and picks.
+    fn calibrated(
+        picked: Picked,
+        which: Builtin,
+        settings: ToolSettings,
+    ) -> Harness<'static, Calibrated> {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 900.0))
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+            .build_ui_state(
+                |ui, calibrated: &mut Calibrated| {
+                    let panel = theme(ui.ctx()).colors.panel;
+                    ui.painter()
+                        .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                    let pickers = Pickers {
+                        drawn: PICKING,
+                        settings: &calibrated.settings,
+                        picked: &calibrated.picked,
+                        ..Pickers::NONE
+                    };
+                    let mut state = untouched(&ColourCalibration);
+                    if let Some(adaptation) = calibrated.adaptation {
+                        set(
+                            &mut state,
+                            "adaptation",
+                            ControlValue::Choice(adaptation),
+                            None,
+                        );
+                    }
+                    report_readouts(&ColourCalibration, &mut state);
+                    let groups = |_: &str| true;
+                    let changes = section(
+                        ui,
+                        &ColourCalibration,
+                        &state,
+                        Head {
+                            open: true,
+                            ..Head::default()
+                        },
+                        &Panels::default(),
+                        &groups,
+                        true,
+                        None,
+                        &pickers,
+                    );
+                    // Kept as the app keeps them.
+                    for change in changes {
+                        if let Change::Setting {
+                            tool,
+                            setting,
+                            ref value,
+                            ..
+                        } = change
+                        {
+                            calibrated.settings.set(tool, setting, value.clone());
+                        }
+                        calibrated.changes.push(change);
+                    }
+                },
+                Calibrated {
+                    settings,
+                    picked,
+                    changes: Vec::new(),
+                    adaptation: None,
+                },
+            );
+        harness.run();
+        harness
+    }
+
+    /// A reading of Colour calibration's picker whose pick showed a brown input patch and,
+    /// in measure mode, handed back the target it renders at.
+    fn illuminant_reading(measured: bool) -> apertrust_engine::session::PickerReading {
+        use apertrust_tools::pick::{Patch, Shown, Stats};
+        let stats = Stats {
+            mean: [0.2, 0.15, 0.1, 1.0],
+            min: [0.2, 0.15, 0.1, 1.0],
+            max: [0.2, 0.15, 0.1, 1.0],
+        };
+        let settings = if measured {
+            vec![
+                ("target_lightness", ControlValue::Number(45.2)),
+                ("target_chroma", ControlValue::Number(18.4)),
+                ("target_hue", ControlValue::Number(62.0)),
+            ]
+        } else {
+            Vec::new()
+        };
+        apertrust_engine::session::PickerReading {
+            through: 3,
+            picker: PickerRef::Tool {
+                tool: "channelmixerrgb",
+                picker: "illuminant",
+            },
+            region: apertrust_engine::session::Region::Area([0.2, 0.2, 0.4, 0.4]),
+            tool: Some(apertrust_engine::session::ToolReading {
+                input: Some(stats),
+                output: None,
+                picked: Some(Shown {
+                    patch: Some(Patch {
+                        srgb: [0.52, 0.41, 0.32],
+                        lch: [45.2, 18.4, 62.0],
+                    }),
+                    settings,
+                    ..Shown::default()
+                }),
+            }),
+            frame: None,
+        }
+    }
+
+    /// The CAT tab's readout row, darktable's: the CCT the values give, with its tooltip,
+    /// the light's colour, and the picker at the row's end; hidden with the adaptation
+    /// none, as darktable's
+    /// `_update_illuminants` hides all three.
+    #[test]
+    fn colour_calibration_s_readout_row_shows_the_cct_the_light_s_colour_and_its_picker() {
+        let mut harness = calibrated(Picked::default(), Builtin::Dark, ToolSettings::default());
+        let state = untouched(&ColourCalibration);
+        let readout = state.readouts[0].readout.unwrap();
+        assert_eq!(readout.text, "daylight");
+        let words = translator(&harness.ctx);
+        let mut args = Args::new();
+        let value = f64::from(readout.value.unwrap());
+        args.set("value", words.format_number(value, 0, false));
+        let text = words.text_with("tool-channelmixerrgb-readout-cct-daylight", Some(&args));
+        let cct = harness.get_by_label(&text);
+        let swatch = "This is the colour of the scene illuminant before chromatic adaptation. \
+                      This colour will be turned into pure white by the adaptation.";
+        let colour = harness.get_by_role_and_label(Role::Image, swatch);
+        let picker = harness.get_by_role_and_label(Role::Button, "Illuminant from an image area");
+        // One line: the text, the swatch filling the row, the picker at its end, with the
+        // illuminant under them.
+        let (cct, colour, picker) = (cct.rect(), colour.rect(), picker.rect());
+        assert!(cct.right() <= colour.left() && colour.right() <= picker.left());
+        assert!(colour.width() >= 2.0 * colour.height(), "{colour:?}");
+        let illuminant = harness.get_by_role_and_label(Role::ComboBox, "Illuminant");
+        assert!(picker.bottom() <= illuminant.rect().top());
+        // Its tooltip, darktable's for daylight.
+        harness
+            .ctx
+            .global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+        harness.get_by_label(&text).hover();
+        harness.run();
+        harness.get_by_label(&words.text("tool-channelmixerrgb-readout-cct-daylight-promise"));
+        // With no adaptation, none of it.
+        harness.state_mut().adaptation = Some(4);
+        harness.run();
+        assert!(harness.query_by_label(&text).is_none());
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Image, swatch)
+                .is_none()
+        );
+        let picker = "Illuminant from an image area";
+        assert!(
+            harness
+                .query_by_role_and_label(Role::Button, picker)
+                .is_none()
+        );
+    }
+
+    /// The area colour mapping is live: its settings kept and sent as a gesture ends, the
+    /// input patch with its L, h and c, "N/A" before a pick; a target measured is kept as the
+    /// user's own, once; and its title reads "(active)" as darktable's does, in correction
+    /// mode with the target off L 50 or chroma 0.
+    #[test]
+    fn colour_calibration_s_area_colour_mapping_is_live() {
+        let mut harness = calibrated(Picked::default(), Builtin::Dark, ToolSettings::default());
+        harness.get_by_role_and_label(Role::Button, "Area colour mapping");
+        let mode = harness.get_by_role_and_label(Role::ComboBox, "Area mode");
+        assert!(!mode.accesskit_node().is_disabled());
+        for line in ["L: N/A", "h: N/A", "c: N/A"] {
+            assert!(
+                harness.query_all_by_label_contains(line).count() > 0,
+                "{line}"
+            );
+        }
+        // Measure chosen: sent as the tool's setting, kept.
+        mode.click();
+        harness.run();
+        harness.get_by_label("Measure").click();
+        harness.run();
+        assert_eq!(
+            harness.state().changes.last(),
+            Some(&Change::Setting {
+                tool: "channelmixerrgb",
+                setting: "area_mode",
+                value: ControlValue::Choice(1),
+                done: true,
+            })
+        );
+        // A target measured, handed to the app once, as a pick's settings are.
+        let mut picked = Picked::default();
+        let reading = illuminant_reading(true);
+        let handed = picked.apply(Some(&reading));
+        assert_eq!(
+            handed,
+            Some((
+                "channelmixerrgb",
+                vec![
+                    ("target_lightness", ControlValue::Number(45.2)),
+                    ("target_chroma", ControlValue::Number(18.4)),
+                    ("target_hue", ControlValue::Number(62.0)),
+                ]
+            ))
+        );
+        assert_eq!(picked.apply(Some(&reading)), None);
+        // The title: plain at middle grey, active toward a colour in correction mode only.
+        let title = |harness: &Harness<'_, Calibrated>| {
+            harness
+                .query_by_role_and_label(Role::Button, "Area colour mapping (active)")
+                .is_some()
+        };
+        let mut settings = ToolSettings::default();
+        let harness = calibrated(Picked::default(), Builtin::Dark, settings.clone());
+        assert!(!title(&harness));
+        settings.set(
+            "channelmixerrgb",
+            "target_chroma",
+            ControlValue::Number(18.4),
+        );
+        let harness = calibrated(Picked::default(), Builtin::Dark, settings.clone());
+        assert!(title(&harness));
+        settings.set("channelmixerrgb", "area_mode", ControlValue::Choice(1));
+        let harness = calibrated(Picked::default(), Builtin::Dark, settings);
+        assert!(!title(&harness));
+        // After a pick, the input's L, h and c.
+        let mut picked = Picked::default();
+        picked.apply(Some(&illuminant_reading(false)));
+        let harness = calibrated(picked, Builtin::Dark, ToolSettings::default());
+        for line in ["L: 45.2%", "h: 62.0 °", "c: 18.4"] {
+            assert!(
+                harness.query_all_by_label_contains(line).count() > 0,
+                "{line}"
+            );
+        }
+    }
+
+    /// The CAT tab after a pick toward (60, 20, 40°), its title active, in each theme.
+    #[test]
+    fn colour_calibration_s_cat_tab_after_a_pick() {
+        let mut settings = ToolSettings::default();
+        settings.set(
+            "channelmixerrgb",
+            "target_lightness",
+            ControlValue::Number(60.0),
+        );
+        settings.set(
+            "channelmixerrgb",
+            "target_chroma",
+            ControlValue::Number(20.0),
+        );
+        settings.set("channelmixerrgb", "target_hue", ControlValue::Number(40.0));
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut picked = Picked::default();
+            picked.apply(Some(&illuminant_reading(false)));
+            let mut harness = calibrated(picked, which, settings.clone());
+            harness.run();
+            harness.snapshot(format!("colour-calibration-mapping-{theme}"));
             results.extend_harness(&mut harness);
         }
     }
