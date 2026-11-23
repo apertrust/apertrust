@@ -3014,12 +3014,14 @@ fn sample_jobs() -> Vec<Job> {
 /// button named in `ctx`'s language, those `disabled` names drawn disabled: the menu
 /// button, Import…, Export… and Reset with their words, Undo and Redo, which fold last, a
 /// space, Copy edit and Apply edit, the cursors' well between two flexible spaces, the
-/// jobs and the save state. The gallery and the design system's tests draw it.
+/// jobs and the save state. Every button but Import… is a tool's item, Export's or
+/// History's, which folds first. The gallery and the design system's tests draw it.
 pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEntry> {
     let button = |id: &'static str, icon: Icon| {
         let name = crate::tr(ctx, &format!("action-{id}"));
         let button = ToolbarButton::new(id, icon, name).enabled(!disabled.contains(&id));
         let button = button.words(["import", "export", "reset"].contains(&id));
+        let button = button.folds_first(id != "import");
         ToolbarEntry::Button(button.folds_last(["undo", "redo"].contains(&id)))
     };
     vec![

@@ -27,7 +27,8 @@
 //! each sit in a slot of its own, as wide as its widest form at the fold, kept whether it
 //! shows anything or not, so neither ever moves anything. Each tooltip carries its
 //! action's keys, which the app's actions registry gives. As it narrows it gives way one
-//! step at a time ([`Fold`]), always keeping empty panel to move the window by.
+//! step at a time ([`Fold`]), its buttons going under » (`toolbar-more`), and its parts
+//! never, always keeping empty panel to move the window by.
 //!
 //! **Guards** (decision 92): with no menu button in the list, the menus hang from the
 //! Toolbar's start ([`Toolbar::menu_anchor`]); with no save state, a failed write still
@@ -70,7 +71,7 @@ pub enum ToolbarAction {
     /// [`Toolbar::menu_popup`].
     Menu,
     /// The button of this id ([`ToolbarButton::new`]), pressed on the panel or chosen
-    /// under ⋯.
+    /// under ».
     Button(&'static str),
     /// An empty part of the panel pressed and dragged, where the panel is the title bar:
     /// the window should follow the pointer. Reported once a press.
@@ -107,7 +108,8 @@ pub enum ToolbarEntry {
     /// A button that runs an action.
     Button(ToolbarButton),
     /// 16 points (`spacing.xl`) between its neighbours, in place of the usual gap; drawn
-    /// only between two entries drawn, none of them a flexible space.
+    /// only between two entries drawn, none of them a flexible space. As the panel
+    /// narrows, the fixed spaces narrow to 8 points, then go one at a time from the end.
     Space,
     /// An equal share of the room the rest leave.
     FlexibleSpace,
@@ -128,6 +130,7 @@ pub struct ToolbarButton {
     name: String,
     enabled: bool,
     words: bool,
+    first: bool,
     last: bool,
 }
 
@@ -141,6 +144,7 @@ impl ToolbarButton {
             name: name.into(),
             enabled: true,
             words: false,
+            first: false,
             last: false,
         }
     }
@@ -162,8 +166,14 @@ impl ToolbarButton {
         self
     }
 
-    /// Goes under ⋯ only at the narrowing's last step, after every other button, as Undo
-    /// and Redo do.
+    /// Goes under » before the buttons that do not, as a tool's items do (decision 92).
+    pub fn folds_first(mut self, first: bool) -> Self {
+        self.first = first;
+        self
+    }
+
+    /// Goes under » only at the narrowing's last step, after every other button and the
+    /// status words, as Undo and Redo do.
     pub fn folds_last(mut self, last: bool) -> Self {
         self.last = last;
         self
@@ -249,42 +259,26 @@ const EMPTY: f32 = 24.0;
 /// The room beyond its own width a step needs to be undone, so a resize never flickers.
 const SPARE: f32 = 16.0;
 
-/// How far the panel gives way to its width, one step at a time (`docs/gui.md`, The
-/// Toolbar, Narrowing). The menu button never folds.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Fold {
-    /// Everything shown: the buttons with words, Import, Export and Reset, with them.
-    None,
-    /// The buttons are icons.
-    Words,
-    /// Every button but those that fold last, Undo and Redo, is under ⋯.
-    Actions,
-    /// The save state loses its word.
-    Status,
-    /// Undo and Redo join ⋯.
-    Undo,
+/// How far the panel gives way to its width (decision 92; `docs/gui.md`, The Toolbar,
+/// Narrowing): the overflow's steps, taken in this order, one at a time
+/// ([`Toolbar::steps`]). The parts never fold, the menu button among them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Fold {
+    /// The buttons' words fold, Import's, Export's and Reset's.
+    words: bool,
+    /// The fixed spaces narrow to 8 points.
+    narrow: bool,
+    /// How many fixed spaces have gone, from the list's end.
+    spaces: usize,
+    /// How many buttons are under », in the order they go ([`Toolbar::fold_order`]).
+    actions: usize,
+    /// The save state folds to its sign.
+    status: bool,
+    /// The buttons that fold last, Undo and Redo, are under » too.
+    last: bool,
 }
 
-impl Fold {
-    const ALL: [Fold; 5] = [
-        Fold::None,
-        Fold::Words,
-        Fold::Actions,
-        Fold::Status,
-        Fold::Undo,
-    ];
-
-    /// Whether `button` is under ⋯.
-    fn hides(self, button: &ToolbarButton) -> bool {
-        match self {
-            Fold::None | Fold::Words => false,
-            Fold::Actions | Fold::Status => !button.last,
-            Fold::Undo => true,
-        }
-    }
-}
-
-/// What the panel draws at a fold, in order: the entries that show, and ⋯ where buttons
+/// What the panel draws at a fold, in order: the entries that show, and » where buttons
 /// are under it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Drawn<'e> {
@@ -421,14 +415,86 @@ impl<'a> Toolbar<'a> {
         self.entries.contains(entry)
     }
 
+    /// The overflow's steps, from nothing folded to all that folds (decision 92): the
+    /// words fold; the fixed spaces narrow to 8 points, then go one at a time from the
+    /// end; the buttons go under » one at a time ([`Toolbar::fold_order`]); the status
+    /// words fold; and last the buttons that fold last, Undo and Redo, together.
+    fn steps(&self) -> Vec<Fold> {
+        let spaces = (self.entries.iter())
+            .filter(|entry| **entry == ToolbarEntry::Space)
+            .count();
+        let mut fold = Fold::default();
+        let mut steps = vec![fold];
+        fold.words = true;
+        steps.push(fold);
+        fold.narrow = true;
+        steps.push(fold);
+        for _ in 0..spaces {
+            fold.spaces += 1;
+            steps.push(fold);
+        }
+        for _ in self.fold_order() {
+            fold.actions += 1;
+            steps.push(fold);
+        }
+        fold.status = true;
+        steps.push(fold);
+        fold.last = true;
+        steps.push(fold);
+        steps
+    }
+
+    /// The buttons that go under » before the status words fold, by their place in the
+    /// list, in the order they go: in reverse reading order, those that fold first, a
+    /// tool's items, before the rest.
+    fn fold_order(&self) -> Vec<usize> {
+        let buttons = |first: bool| {
+            (self.entries.iter().enumerate().rev()).filter_map(move |(at, entry)| match entry {
+                ToolbarEntry::Button(button) if !button.last && button.first == first => Some(at),
+                _ => None,
+            })
+        };
+        buttons(true).chain(buttons(false)).collect()
+    }
+
+    /// Whether each entry has gone at `fold`, by its place in the list: a button under »,
+    /// or a fixed space removed.
+    fn folded(&self, fold: Fold) -> Vec<bool> {
+        let mut folded: Vec<bool> = (self.entries.iter())
+            .map(|entry| matches!(entry, ToolbarEntry::Button(b) if b.last && fold.last))
+            .collect();
+        for at in self.fold_order().into_iter().take(fold.actions) {
+            folded[at] = true;
+        }
+        let spaces = (self.entries.iter().enumerate().rev())
+            .filter(|(_, entry)| **entry == ToolbarEntry::Space)
+            .take(fold.spaces);
+        for (at, _) in spaces {
+            folded[at] = true;
+        }
+        folded
+    }
+
+    /// The buttons under » at `fold`, in the list's order.
+    fn under_more(&self, fold: Fold) -> Vec<&ToolbarButton> {
+        (self.entries.iter().zip(self.folded(fold)))
+            .filter_map(|(entry, folded)| match entry {
+                ToolbarEntry::Button(button) if folded => Some(button),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// What the panel draws at `fold`, `well` the cursors' well given, in order: the
-    /// entries that show, a fixed space
-    /// only between two of them with no flexible space between, and ⋯, where any button
-    /// is under it, just before the first flexible space, or last with none.
+    /// entries that show, a fixed space only between two of them with no flexible space
+    /// between, and », where any button is under it, just before the first flexible
+    /// space, or last with none.
     fn arrange(&self, fold: Fold, well: bool) -> Vec<Drawn<'_>> {
-        let shown = self.entries.iter().filter_map(|entry| match entry {
+        let folded = self.folded(fold);
+        let shown = (self.entries.iter().zip(&folded)).filter_map(|(entry, folded)| match entry {
+            _ if *folded => None,
             ToolbarEntry::MenuButton => self.menu.then_some(Drawn::Menu),
-            ToolbarEntry::Button(button) => (!fold.hides(button)).then_some(Drawn::Button(button)),
+            ToolbarEntry::Button(button) => Some(Drawn::Button(button)),
             ToolbarEntry::Space => Some(Drawn::Space),
             ToolbarEntry::FlexibleSpace => Some(Drawn::Flexible),
             ToolbarEntry::Cursors => well.then_some(Drawn::Cursors),
@@ -453,10 +519,8 @@ impl<'a> Toolbar<'a> {
             }
             drawn.push(*d);
         }
-        let hidden = self.entries.iter().any(|entry| match entry {
-            ToolbarEntry::Button(button) => fold.hides(button),
-            _ => false,
-        });
+        let hidden = (self.entries.iter().zip(&folded))
+            .any(|(entry, folded)| *folded && matches!(entry, ToolbarEntry::Button(_)));
         if hidden {
             let at = drawn.iter().position(|d| *d == Drawn::Flexible);
             drawn.insert(at.unwrap_or(drawn.len()), Drawn::More);
@@ -515,7 +579,7 @@ impl<'a> Toolbar<'a> {
         let guard_save = |fold: Fold| {
             let shows = save_guard && failed;
             if shows {
-                saving.width(fold >= Fold::Status)
+                saving.width(fold.status)
             } else {
                 0.0
             }
@@ -543,14 +607,15 @@ impl<'a> Toolbar<'a> {
         let gap = t.spacing.xxs;
         let width = |drawn: Drawn, fold: Fold| match drawn {
             Drawn::Menu => self.menu_style.width(),
-            Drawn::Button(button) if button.words && fold == Fold::None => {
+            Drawn::Button(button) if button.words && !fold.words => {
                 word_button(button, keys(ToolbarAction::Button(button.id))).width(ui)
             }
             Drawn::Button(_) | Drawn::Jobs | Drawn::More => BUTTON,
+            Drawn::Space if fold.narrow => t.spacing.m,
             Drawn::Space => t.spacing.xl,
             Drawn::Flexible => 0.0,
             Drawn::Cursors => well.as_ref().map_or(0.0, |well| well.width(ui)),
-            Drawn::Save => saving.width(fold >= Fold::Status),
+            Drawn::Save => saving.width(fold.status),
         };
         // Between two neighbours: a space or a flexible space is the whole room between
         // them; the menu button stands a group's gap before the rest, the cursors' well one
@@ -571,22 +636,23 @@ impl<'a> Toolbar<'a> {
 
         // How far to fold: the first step whose entries leave the empty panel, measured at
         // the current scale and language as egui lays them out; the cursors' well after a
-        // flexible space asks for a group's gap of it.
+        // flexible space asks for a group's gap of it. A step before the last frame's
+        // needs room to spare.
         let id = response.id.with("fold");
-        let last = ui.data(|d| d.get_temp::<Fold>(id)).unwrap_or(Fold::None);
-        let fold = Fold::ALL
-            .into_iter()
-            .find(|&fold| {
+        let last = ui.data(|d| d.get_temp::<usize>(id)).unwrap_or(0);
+        let steps = self.steps();
+        let (step, fold) = (steps.iter().copied().enumerate())
+            .find(|&(step, fold)| {
                 let drawn = self.arrange(fold, well.is_some());
                 let after_flexible = drawn
                     .windows(2)
                     .any(|w| w == [Drawn::Flexible, Drawn::Cursors]);
                 let well_gap = if after_flexible { t.spacing.xl } else { 0.0 };
-                let spare = if fold < last { SPARE } else { 0.0 };
+                let spare = if step < last { SPARE } else { 0.0 };
                 taken(&drawn, fold) + well_gap + EMPTY + spare <= list_end(fold) - inner.min.x
             })
-            .unwrap_or(Fold::Undo);
-        ui.data_mut(|d| d.insert_temp(id, fold));
+            .unwrap_or((steps.len() - 1, steps[steps.len() - 1]));
+        ui.data_mut(|d| d.insert_temp(id, step));
         let drawn = self.arrange(fold, well.is_some());
 
         // Where each entry goes: those before the first flexible space from the start,
@@ -643,7 +709,7 @@ impl<'a> Toolbar<'a> {
                     let done = ToolbarAction::Button(button.id);
                     let response = ui
                         .scope_builder(left(button.id), |ui| {
-                            if button.words && fold == Fold::None {
+                            if button.words && !fold.words {
                                 word_button(button, keys(done)).show(ui)
                             } else {
                                 icon_button(button.icon, &button.name, keys(done))
@@ -658,15 +724,10 @@ impl<'a> Toolbar<'a> {
                     }
                 }
                 Drawn::More => {
-                    let hidden: Vec<&ToolbarButton> = (self.entries.iter())
-                        .filter_map(|entry| match entry {
-                            ToolbarEntry::Button(button) if fold.hides(button) => Some(button),
-                            _ => None,
-                        })
-                        .collect();
+                    let hidden = self.under_more(fold);
                     let chosen = ui
                         .scope_builder(left("more"), |ui| {
-                            let more = IconButton::new(Icon::Options, &tr(&ctx, "toolbar-more"))
+                            let more = IconButton::new(Icon::More, &tr(&ctx, "toolbar-more"))
                                 .size(BUTTON)
                                 .show(ui);
                             pressed(more.clone());
@@ -728,9 +789,8 @@ impl<'a> Toolbar<'a> {
                     });
                 }
                 Drawn::Save => {
-                    let folded = fold >= Fold::Status;
                     let save = ui.scope_builder(right("save state"), |ui| {
-                        saving.show(ui, self.saved, folded, true)
+                        saving.show(ui, self.saved, fold.status, true)
                     });
                     if let Some(button) = save.inner
                         && pressed(button)
@@ -763,13 +823,12 @@ impl<'a> Toolbar<'a> {
         }
         if save_guard {
             let width = guard_save(fold);
-            let folded = fold >= Fold::Status;
             let save = ui.scope_builder(
                 UiBuilder::new()
                     .id_salt("save state")
                     .max_rect(room(inner.max.x - width, width))
                     .layout(Layout::right_to_left(Align::Center)),
-                |ui| saving.show(ui, self.saved, folded, false),
+                |ui| saving.show(ui, self.saved, fold.status, false),
             );
             if let Some(button) = save.inner
                 && pressed(button)

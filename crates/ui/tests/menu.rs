@@ -903,7 +903,8 @@ fn an_answer_is_read_once() {
 }
 
 /// The Toolbar's start as on Windows and Linux in the theme `which`: the menu button as the
-/// app's icon over one drawn as ☰, and nothing after Redo.
+/// app's icon over one drawn as ☰, and after it what a 320-point Toolbar keeps, Import…,
+/// Undo, Redo and ».
 fn menu_buttons(which: Builtin) -> Harness<'static> {
     Harness::builder()
         .with_size(vec2(320.0, 92.0))
