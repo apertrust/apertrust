@@ -62,6 +62,8 @@ pub enum Icon {
     OptionsVertical,
     /// » : more of something that doesn't fit, such as tabs.
     More,
+    /// The Toolbar's », at its icons' 16 points: the actions that don't fit.
+    ToolbarMore,
     /// A quad's eyedropper: pick from the photo.
     Pick,
     /// The Select cursor's arrow (decision 104).
@@ -217,7 +219,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 109] = [
+    pub const ALL: [Icon; 110] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -230,6 +232,7 @@ impl Icon {
         Icon::Options,
         Icon::OptionsVertical,
         Icon::More,
+        Icon::ToolbarMore,
         Icon::Pick,
         Icon::Select,
         Icon::Pan,
@@ -437,6 +440,7 @@ impl Icon {
             Icon::Options => derived!("options", "ellipsis", 14.0),
             Icon::OptionsVertical => derived!("options-vertical", "ellipsis-vertical", 14.0),
             Icon::More => derived!("more", "chevrons-right", 14.0),
+            Icon::ToolbarMore => derived!("toolbar-more", "chevrons-right", 16.0),
             Icon::Pick => derived!("pick", "pipette", 14.0),
             Icon::Select => derived!("select", "mouse-pointer-2", 16.0),
             Icon::Pan => derived!("pan", "hand", 16.0),

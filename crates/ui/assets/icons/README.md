@@ -18,7 +18,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `presets`, `menu` | Lucide's `menu` |
 | `options` | Lucide's `ellipsis` |
 | `options-vertical` | Lucide's `ellipsis-vertical` |
-| `more` | Lucide's `chevrons-right`, from Feather |
+| `more`, `toolbar-more` | Lucide's `chevrons-right`, from Feather: the Tools panel's » at 14 points, the Toolbar's at 16 |
 | `pick`, `pick-filled` | Lucide's `pipette` |
 | `pick-white-balance`, `pick-exposure` | Lucide's `pipette`, with a badge at its lower right, a neutral square or a dot: White balance's and Exposure's picker cursors (decision 104) |
 | `select` | Lucide's `mouse-pointer-2`: the Select cursor (decision 104) |
