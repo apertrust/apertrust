@@ -27,9 +27,9 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `undo` | Lucide's `undo-2` |
 | `redo` | Lucide's `redo-2` |
 | `copy`, `apply` | Drawn for Apertrust: an arrow out and an arrow in, Copy edit's and Apply edit's |
-| `import` | Lucide's `download`, from Feather |
+| `import`, `import-filled` | Lucide's `download`, from Feather |
 | `export` | Lucide's `upload`, from Feather |
-| `settings` | Lucide's `settings` |
+| `settings`, `settings-filled` | Lucide's `settings` |
 | `photos-selected`, `photos-selected-filled` | Lucide's `layout-grid` |
 | `proof-margin`, `proof-margin-filled` | Drawn for Apertrust: a photo inside a wide margin, the proof margin's |
 | `before-after`, `before-after-filled` | Lucide's `square-split-horizontal` |
@@ -58,7 +58,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `output` | Lucide's `arrow-right-from-line` |
 | `library` | Lucide's `library`, its third book drawn as a face |
 | `search` | Lucide's `search`, from Feather |
-| `photo` | Lucide's `image` |
+| `photo`, `photo-filled` | Lucide's `image` |
 | `photo-off` | Lucide's `image-off` |
 | `adjust`, `raw` and their filled forms | Lucide's `settings-2` and `camera`: Edit's Adjust and Raw tabs (decision 38) |
 | `base`, `color`, `correct`, `detail`, `effect` and their filled forms | Drawn for Apertrust: darktable's module group shapes, `correct` and `effect` also Edit's Geometry and Effects tabs, and Edit's Detail tab in their family, a circle with fine lines across it (decision 38) |
@@ -66,6 +66,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `minimise`, `maximise`, `restore`, `close` | Drawn for Apertrust: the window's caption buttons, as the systems draw theirs |
 | `app-icon` | Drawn for Apertrust: the app's icon in one colour, the macOS icon's rounded square with the app's mark cut out of it |
 | `caret` | Drawn for Apertrust: the menu button's ▾, after the app's icon |
+| `cpu`, `hard-drive`, `keyboard`, `sparkles` and their filled forms | Lucide's `cpu`, `hard-drive`, `keyboard` and `sparkles`: the Settings dialog's Processing, Storage, Shortcuts and AI pages |
 
 `Icon::file` in `src/icons.rs` is the one place an icon is mapped to its file, its size and the Lucide icon it is derived from.
 
@@ -75,7 +76,7 @@ Every icon follows the same rules, so it takes the theme's colour and stays shar
 
 - **One colour, `currentColor`.** Strokes, and the fills of dots and filled forms, use `currentColor`; no other colour appears. Nothing is partly transparent: no `opacity`, `fill-opacity` or `stroke-opacity`, so every part is solid or an outline. The app renders the file with resvg at the exact pixel size it needs, in white, and tints it with a theme token.
 - **Lucide's grid:** `viewBox="0 0 24 24"` with `width` and `height` 24; shapes a unit inside the box, their strokes' centres between 2 and 22; round caps and joins; outlines; Lucide's corner radii, 2 units, 1 on small rectangles; about 2 units between distinct parts. The caption buttons, the app icon and the caret keep boxes of their own, the size they are drawn at: 10, 20 and 8.
-- **Sizes:** `Icon::size` is the size an icon is drawn at, in points: 14 for header and control icons and the History tab's eye, 13 and 12 for a section header's tooltip's rows, 16 for the Toolbar's and the viewer bar's and the start window's ways in, and the cursors' Select, Pan and the two pickers', which the cursors' well draws, as it draws any face's icon, at 16, the pipette too; 20 for the app icon on the Toolbar's menu button, 22 for the Tools panel's tabs; 8 for the menu button's caret; 10 and 12 for chevrons, the check, the caption's lock, the grid's marks, the rating's stars and reject, and the scopes' clipping toggles.
+- **Sizes:** `Icon::size` is the size an icon is drawn at, in points: 14 for header and control icons and the History tab's eye, 13 and 12 for a section header's tooltip's rows, 16 for the Toolbar's and the viewer bar's and the start window's ways in and the Settings dialog's pages, and the cursors' Select, Pan and the two pickers', which the cursors' well draws, as it draws any face's icon, at 16, the pipette too; 20 for the app icon on the Toolbar's menu button, 22 for the Tools panel's tabs; 8 for the menu button's caret; 10 and 12 for chevrons, the check, the caption's lock, the grid's marks, the rating's stars and reject, and the scopes' clipping toggles.
 - **Stroke:** every line is drawn 1.25 points wide whatever the icon's size (`icons::STROKE`, Lucide's `absoluteStrokeWidth`). The files keep Lucide's 2-unit stroke, set once on the `<svg>` element and nowhere else, and the renderer sets it to 1.25 × 24 ÷ the size drawn in points: 3 units at 10 points, 2.14 at 14, 1.36 at 22. The cursors' well draws its chosen cursor's icon a quarter heavier, 1.5625 points (`icons::STROKE_HEAVY`), as decision 104's 2 to 1.6. The caption buttons keep their 1-unit strokes on half-unit coordinates, thin and sharp at every whole scale, the caret its 1.3-unit stroke in its 8-unit box, and the app icon, filled, has none.
 - **Shapes:** `<path>`, `<circle>`, `<rect>` and `<line>`; no text, images, gradients, filters or masks, but the exceptions below.
 - **Filled forms**, `<name>-filled.svg`, only to show a state: the Tools panel's chosen tab, an icon button that is on (a toggle, a quad's picker), and a rating's points (`Icon::filled`). Each is its outline's shapes, in its box and stroke, filled. Where a line crosses the filled shape, a mask cuts it out, so the icon stays one colour on any background: one `<mask id="cut">`, a white square with the lines in black, applied with `mask="url(#cut)"`.

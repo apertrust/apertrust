@@ -181,6 +181,12 @@ pub enum Icon {
     AppIcon,
     /// The small ▾ after the app's icon on the menu button.
     Caret,
+    /// The Settings dialog's page list (`docs/gui.md`, Settings): Processing's chip,
+    /// Storage's drive, Shortcuts' keyboard and AI's sparkles.
+    Cpu,
+    HardDrive,
+    Keyboard,
+    Sparkles,
     /// Filled forms, drawn only to show a state: the chosen Tools panel tab, an icon
     /// button that is on, a rating's points (`Icon::filled`).
     AdjustFilled,
@@ -201,10 +207,17 @@ pub enum Icon {
     StarFilled,
     PickFilled,
     LineFilled,
+    SettingsFilled,
+    ImportFilled,
+    PhotoFilled,
+    CpuFilled,
+    HardDriveFilled,
+    KeyboardFilled,
+    SparklesFilled,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 98] = [
+    pub const ALL: [Icon; 109] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -303,6 +316,17 @@ impl Icon {
         Icon::StarFilled,
         Icon::PickFilled,
         Icon::LineFilled,
+        Icon::Cpu,
+        Icon::HardDrive,
+        Icon::Keyboard,
+        Icon::Sparkles,
+        Icon::SettingsFilled,
+        Icon::ImportFilled,
+        Icon::PhotoFilled,
+        Icon::CpuFilled,
+        Icon::HardDriveFilled,
+        Icon::KeyboardFilled,
+        Icon::SparklesFilled,
     ];
 
     /// The icon's filled form, which shows a state: the chosen tab, an icon button that is
@@ -329,6 +353,13 @@ impl Icon {
             Icon::Star => Icon::StarFilled,
             Icon::Pick => Icon::PickFilled,
             Icon::Line => Icon::LineFilled,
+            Icon::Settings => Icon::SettingsFilled,
+            Icon::Import => Icon::ImportFilled,
+            Icon::Photo => Icon::PhotoFilled,
+            Icon::Cpu => Icon::CpuFilled,
+            Icon::HardDrive => Icon::HardDriveFilled,
+            Icon::Keyboard => Icon::KeyboardFilled,
+            Icon::Sparkles => Icon::SparklesFilled,
             other => other,
         }
     }
@@ -503,6 +534,17 @@ impl Icon {
             Icon::StarFilled => derived!("star-filled", "star", 12.0),
             Icon::PickFilled => derived!("pick-filled", "pipette", 14.0),
             Icon::LineFilled => own!("line-filled", 14.0),
+            Icon::Cpu => derived!("cpu", "cpu", 16.0),
+            Icon::HardDrive => derived!("hard-drive", "hard-drive", 16.0),
+            Icon::Keyboard => derived!("keyboard", "keyboard", 16.0),
+            Icon::Sparkles => derived!("sparkles", "sparkles", 16.0),
+            Icon::SettingsFilled => derived!("settings-filled", "settings", 16.0),
+            Icon::ImportFilled => derived!("import-filled", "download", 16.0),
+            Icon::PhotoFilled => derived!("photo-filled", "image", 14.0),
+            Icon::CpuFilled => derived!("cpu-filled", "cpu", 16.0),
+            Icon::HardDriveFilled => derived!("hard-drive-filled", "hard-drive", 16.0),
+            Icon::KeyboardFilled => derived!("keyboard-filled", "keyboard", 16.0),
+            Icon::SparklesFilled => derived!("sparkles-filled", "sparkles", 16.0),
         }
     }
 
