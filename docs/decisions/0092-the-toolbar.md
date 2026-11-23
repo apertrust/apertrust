@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Planned: Phase 3 builds the toolbar, its menu, tools' items, the overflow and labels; the Customise Toolbar window comes much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items and the set of what can be placed, which nothing draws from yet. Planned: Phase 3 builds the toolbar from the list, its menu, the overflow and labels; the Customise Toolbar window comes much later.
 
 ### The list and its defaults
 

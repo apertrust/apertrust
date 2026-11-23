@@ -31,7 +31,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - The shell's parts: `Toolbar`, `ViewerBar` and `Browser`, with interaction tests and a snapshot at a full window's width ([The shell](#the-shell)).
 - The app as that shell, with one raw open: the engine renders it on its own thread through the viewport pipe, every ported operation from the saved edit, and a paint callback draws each frame pixel for pixel (decision 17), scaled only while the window resizes (decision 18); the scale's zoom from Small to 1600%, 100% the detail pipeline's render, panning by the pointer and by Alt with the arrows, the position marks, and the photo a focus stop while zoomed, the zoom carried across photos and kept through Orientation's turns ([The zoom](#the-zoom), its five steps).
 - The tool panel renderer (`crates/app/src/tools.rs`), which draws any processing tool's section from its definition, with every tool of the first pass built so far; every tool's header and ⋯ drawn from its `ToolDefinition`, and each utility's page by its `UtilityTool` ([one tool model](#one-tool-model), decision 93), Export's section still by `export.rs`.
-- The actions registry and the [default keyboard map](#the-default-keyboard-map) in `crates/app/src/actions.rs`.
+- The actions registry and the [default keyboard map](#the-default-keyboard-map) in `crates/app/src/actions.rs`, and what can be placed on the Toolbar, tools' items among it ([Customising the Toolbar](#customising-the-toolbar)), in `crates/app/src/toolbar.rs`.
 - The cursors (decision 104; [cursors.md](cursors.md)): Select, Pan and Pick with White balance and Exposure on the Toolbar's well, their keys, Esc, A held and K, and their gestures and pointers on the photo, in `crates/app/src/cursors.rs`.
 - [The settings file](#settings-and-workspace), `settings.toml`, in the user data folder (decision 43).
 - The Mac's [window frame](#the-frame) and native [menu bar](#the-menus), and the frames of Windows and Linux with the menu button and its drawn menu (decision 39), on the first piece of [the popup service](#popups) (decision 40).
@@ -2811,7 +2811,7 @@ Never folded: the menu button on Windows and Linux, the save warning's sign, an 
 
 #### Customising the Toolbar
 
-Planned (decision 92): Phase 3 builds the toolbar, its menu, tools' items, the overflow and labels; the Customise Toolbar window comes much later.
+Built (decision 92): tools' items, `ToolDefinition::toolbar`, and the set of what can be placed, `toolbar::placeable` in the app, which nothing draws from yet. Planned: Phase 3 builds the toolbar from the list, its menu, the overflow and labels; the Customise Toolbar window comes much later.
 
 **The list.** One ordered list of item ids per workspace. The caption buttons and the traffic lights are not in it; the toolbar fills the room between its start inset and its end.
 
@@ -3600,7 +3600,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 
 | Kind | Its declaration, in `apertrust-tools` | Its behaviour | darktable's |
 | --- | --- | --- | --- |
-| Every tool | `ToolDefinition`: id, tabs, `before` and `after`, `reset`, `presets`, `open_at_first` and `menus`; `toolbar` and its place once built (decisions 86 and 90) | — | `dt_action_t` |
+| Every tool | `ToolDefinition`: id, tabs, `before` and `after`, `reset`, `presets`, `open_at_first`, `menus` and `toolbar` (decision 92); its place once built (decisions 86 and 90) | — | `dt_action_t` |
 | Processing tool | `ProcessingDefinition`, embedding it, with controls, version, switched, layers, Auto, preset rows (`preset_rows`), views, pickers and facts | `ProcessingTool`, run by the engine's session | `dt_iop_module_so_t`, `iop_api.h`'s non-GUI half |
 | Utility | `UtilityDefinition`, embedding it, with `measures`, each in `utility::UTILITIES`: Scopes, History, Collections and Export | `UtilityTool`, in the app (`crates/app/src/utility.rs`): `body`, one of its custom rows drawn each frame with the row's `Widget`, and `reset`, provided as a no-op | `dt_lib_module_t`, `lib_api.h` |
 
@@ -4894,7 +4894,7 @@ Phase 3 adds, for the interface:
 - the Photos workspace, for culling (decisions 37 and 96);
 - a visual editor for workspaces, opened by Customise Tabs…: adding, naming and removing tabs, hiding and showing tools, a new workspace, Save as, Rename and Delete Workspace (decision 96);
 - floating panels inside the window, with Float, Dock, Position, Dock All Floating Panels and their keys and actions (decision 83);
-- the toolbar (decision 92; [The Toolbar](#the-toolbar)): the Toolbar drawn from the workspace's list, kept in its file, in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items (`ToolDefinition::toolbar`, decision 93), Export's, History's, Collections' and Orientation's first; the Customise Toolbar window much later;
+- the toolbar (decision 92; [The Toolbar](#the-toolbar)): the Toolbar drawn from the workspace's list, kept in its file, in place of its fixed parts, with spaces, the guards, » and labels, the toolbar menu, and tools' items, declared in `ToolDefinition::toolbar` (decision 93) and listed with the rest of what can be placed (built); the Customise Toolbar window much later;
 - Export, built as a section of the Photos tab on the session's export job (decision 56), then grown into the Export tool (decision 90) in [its steps' order](#the-build-in-steps): built on the Mac and on Windows and Linux, its setting rows built in decision 93's step 93.6; left: its keys and the preview's in-view rule, its presets with the presets API every tool shares, metadata, and the width spike;
 - the system's alerts: built on the Mac with Export's overwrite question and the quit alert; Delete Workspace… and the other platforms left;
 - shortcuts after darktable, decision 98's steps 5 to 9: the dispatcher with presses, clicks and moves, fallbacks, speed and slider precision, visual mapping, the files with Import extras and a darktable `shortcutsrc`, and darktable's defaults after the keymap's audit, with `<focused>` and the overview ([Shortcuts: the build, in steps](#shortcuts-the-build-in-steps)).

@@ -1626,7 +1626,7 @@ pub fn action_writes(
 }
 
 /// The design system's icon for a button's.
-fn icon(icon: ButtonIcon) -> apertrust_ui::Icon {
+pub fn icon(icon: ButtonIcon) -> apertrust_ui::Icon {
     match icon {
         ButtonIcon::RotateLeft => apertrust_ui::Icon::RotateLeft,
         ButtonIcon::RotateRight => apertrust_ui::Icon::RotateRight,

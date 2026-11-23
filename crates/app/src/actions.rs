@@ -58,7 +58,7 @@ use apertrust_tools::{ProcessingDefinition, Row};
 use apertrust_ui::components::{
     BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize, ToolsPanelPosition,
 };
-use apertrust_ui::{Background, Translator};
+use apertrust_ui::{Background, Icon, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
 
 use crate::zoom::{Direction, Scale, ZoomStep};
@@ -2124,6 +2124,24 @@ pub static ACTIONS: [Action; 140] = [
         "action-background-white",
         Background::White,
     ),
+];
+
+/// The icons the registry gives the app's own actions, those that belong to no tool, each
+/// of which it makes a candidate for the Toolbar (decision 92; `toolbar::placeable`), in
+/// the order the Toolbar's set lists them. An action that belongs to a tool takes the icon
+/// its tool offers it with (`ToolDefinition::toolbar`); Import… is here until the Import
+/// tool offers it.
+pub const ICONS: [(ActionId, Icon); 10] = [
+    (ActionId::IMPORT, Icon::Import),
+    (ActionId::OPEN, Icon::Photo),
+    (ActionId::OPEN_FOLDER, Icon::ChooseFolder),
+    (ActionId::SETTINGS, Icon::Settings),
+    (ActionId::FULL_SCREEN, Icon::Maximise),
+    (ActionId::ZOOM_100, Icon::ZoomIn),
+    (ActionId::ZOOM_FIT, Icon::ZoomOut),
+    (ActionId::SHOW_JOBS, Icon::Process),
+    (ActionId::NEXT_PHOTO, Icon::Chevron),
+    (ActionId::PREVIOUS_PHOTO, Icon::Back),
 ];
 
 /// The action `id`, if the registry has it: one of [`ACTIONS`], a tool's
