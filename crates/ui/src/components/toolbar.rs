@@ -14,17 +14,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Toolbar (`docs/gui.md`, The Toolbar): at its start, on Windows and Linux, the menu
-//! button, which opens the menus ([`Toolbar::menu_button`], decision 39), drawn as the
-//! app's icon with a caret or as ☰ ([`MenuButtonStyle`]), then the common actions, Import,
-//! Export, Reset, Undo and Redo, then after a gap Copy edit and Apply edit; when the app
-//! asks, the cursors' well centred in the room after them ([`Toolbar::cursors`]); at its end,
-//! when the app asks, the jobs spinner ([`Toolbar::jobs`]), then the edit's save state
-//! ([`SaveState`]), which shows only when a save goes wrong. Each sits in a slot of its
-//! own, as wide as its widest form at the fold, kept whether it shows anything or not, so
-//! neither ever moves anything. Each tooltip carries its action's keys, which the app's
-//! actions registry gives. As it narrows it gives way one step at a time ([`Fold`]), always
-//! keeping empty panel to move the window by.
+//! The Toolbar (`docs/gui.md`, The Toolbar): a list of entries drawn in order (decision 92;
+//! [`ToolbarEntry`], [`Toolbar::entries`]), which the app works out from the workspace's
+//! list, so it knows parts and buttons only as plain data: the menu button, drawn where
+//! the app draws the menus, Windows and Linux ([`Toolbar::menu_button`], decision 39), as
+//! the app's icon with a caret or as ☰ ([`MenuButtonStyle`]); buttons that run actions
+//! ([`ToolbarButton`]); fixed and flexible spaces; the cursors' well
+//! ([`Toolbar::cursors`]); the jobs spinner ([`Toolbar::jobs`]); and the edit's save state
+//! ([`SaveState`]), which shows only when a save goes wrong. The entries before the first
+//! flexible space stand at the start, those after the last at the end, and those between
+//! two in the middle of the room the flexible spaces share. The spinner and the save state
+//! each sit in a slot of its own, as wide as its widest form at the fold, kept whether it
+//! shows anything or not, so neither ever moves anything. Each tooltip carries its
+//! action's keys, which the app's actions registry gives. As it narrows it gives way one
+//! step at a time ([`Fold`]), always keeping empty panel to move the window by.
+//!
+//! **Guards** (decision 92): with no menu button in the list, the menus hang from the
+//! Toolbar's start ([`Toolbar::menu_anchor`]); with no save state, a failed write still
+//! shows its warning at the end, and its live region stays; with no jobs, the spinner
+//! still shows at the end while a failed job is left. With no entries at all, the whole
+//! panel is empty area.
 //!
 //! It runs to the window's top edge and is the window's title bar ([`Toolbar::title_bar`];
 //! `docs/gui.md`, The window frame and menus, decision 39): it keeps room at its start for
@@ -60,13 +69,9 @@ pub enum ToolbarAction {
     /// closed: the menus should open, hung from [`Toolbar::menu_anchor`] as the popup
     /// [`Toolbar::menu_popup`].
     Menu,
-    Import,
-    Export,
-    Reset,
-    Undo,
-    Redo,
-    CopyEdit,
-    ApplyEdit,
+    /// The button of this id ([`ToolbarButton::new`]), pressed on the panel or chosen
+    /// under ⋯.
+    Button(&'static str),
     /// An empty part of the panel pressed and dragged, where the panel is the title bar:
     /// the window should follow the pointer. Reported once a press.
     MoveWindow,
@@ -92,29 +97,76 @@ pub enum ToolbarAction {
     Close,
 }
 
-/// Which common actions can run now; the rest are drawn disabled.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Available {
-    pub import: bool,
-    pub export: bool,
-    pub reset: bool,
-    pub undo: bool,
-    pub redo: bool,
-    pub copy: bool,
-    pub apply: bool,
+/// One entry of the Toolbar's list (decision 92), drawn in the list's order. Each part
+/// and button is meant to be listed once; the spaces any number of times.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ToolbarEntry {
+    /// The menu button, drawn only where the app draws the menus
+    /// ([`Toolbar::menu_button`]).
+    MenuButton,
+    /// A button that runs an action.
+    Button(ToolbarButton),
+    /// 16 points (`spacing.xl`) between its neighbours, in place of the usual gap; drawn
+    /// only between two entries drawn, none of them a flexible space.
+    Space,
+    /// An equal share of the room the rest leave.
+    FlexibleSpace,
+    /// The cursors' well, as [`Toolbar::cursors`] gives it.
+    Cursors,
+    /// The jobs spinner's slot, as [`Toolbar::jobs`] gives it.
+    Jobs,
+    /// The save state's slot ([`Toolbar::saved`]).
+    SaveState,
 }
 
-impl Default for Available {
-    fn default() -> Self {
-        Available {
-            import: true,
-            export: true,
-            reset: true,
-            undo: true,
-            redo: true,
-            copy: true,
-            apply: true,
+/// A button of the Toolbar that runs an action: its icon, its translated name and whether
+/// it can run now, drawn disabled where it cannot.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ToolbarButton {
+    id: &'static str,
+    icon: Icon,
+    name: String,
+    enabled: bool,
+    words: bool,
+    last: bool,
+}
+
+impl ToolbarButton {
+    /// The button `id`, which a press reports as [`ToolbarAction::Button`], drawn as `icon`
+    /// and named `name`. Enabled by default.
+    pub fn new(id: &'static str, icon: Icon, name: impl Into<String>) -> Self {
+        ToolbarButton {
+            id,
+            icon,
+            name: name.into(),
+            enabled: true,
+            words: false,
+            last: false,
         }
+    }
+
+    /// Its id, which a press reports.
+    pub fn id(&self) -> &'static str {
+        self.id
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    /// Shows its name beside its icon while there is room, as Import…, Export… and Reset
+    /// do: the narrowing's first step folds it.
+    pub fn words(mut self, words: bool) -> Self {
+        self.words = words;
+        self
+    }
+
+    /// Goes under ⋯ only at the narrowing's last step, after every other button, as Undo
+    /// and Redo do.
+    pub fn folds_last(mut self, last: bool) -> Self {
+        self.last = last;
+        self
     }
 }
 
@@ -170,11 +222,10 @@ impl MenuButtonStyle {
 
 #[derive(Default)]
 pub struct Toolbar<'a> {
-    available: Available,
+    entries: Vec<ToolbarEntry>,
     cursors: Option<CursorWell<'a>>,
     saved: SaveState<'a>,
     jobs: Option<Jobs<'a>>,
-    undo_tip: Option<&'a str>,
     shortcuts: Vec<(ToolbarAction, &'a str)>,
     start_inset: f32,
     menu: bool,
@@ -202,11 +253,11 @@ const SPARE: f32 = 16.0;
 /// Toolbar, Narrowing). The menu button never folds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Fold {
-    /// Everything shown: Import, Export and Reset with their words.
+    /// Everything shown: the buttons with words, Import, Export and Reset, with them.
     None,
-    /// The actions are icons.
+    /// The buttons are icons.
     Words,
-    /// Every action but Undo and Redo is under ⋯.
+    /// Every button but those that fold last, Undo and Redo, is under ⋯.
     Actions,
     /// The save state loses its word.
     Status,
@@ -223,41 +274,40 @@ impl Fold {
         Fold::Undo,
     ];
 
-    /// Whether `action` is under ⋯.
-    fn hides(self, action: ToolbarAction) -> bool {
+    /// Whether `button` is under ⋯.
+    fn hides(self, button: &ToolbarButton) -> bool {
         match self {
             Fold::None | Fold::Words => false,
-            Fold::Actions | Fold::Status => {
-                !matches!(action, ToolbarAction::Undo | ToolbarAction::Redo)
-            }
+            Fold::Actions | Fold::Status => !button.last,
             Fold::Undo => true,
         }
     }
 }
 
-/// One of the common actions.
-struct Common {
-    icon: Icon,
-    /// Its translated name; Undo's says what it would undo.
-    name: String,
-    enabled: bool,
-    action: ToolbarAction,
-}
-
-impl Common {
-    /// Whether it shows its name beside its icon while there is room: Import, Export and
-    /// Reset.
-    fn has_words(&self) -> bool {
-        matches!(
-            self.action,
-            ToolbarAction::Import | ToolbarAction::Export | ToolbarAction::Reset
-        )
-    }
+/// What the panel draws at a fold, in order: the entries that show, and ⋯ where buttons
+/// are under it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Drawn<'e> {
+    Menu,
+    Button(&'e ToolbarButton),
+    Space,
+    Flexible,
+    Cursors,
+    Jobs,
+    Save,
+    More,
 }
 
 impl<'a> Toolbar<'a> {
     pub fn new() -> Self {
         Toolbar::default()
+    }
+
+    /// What it draws, in order (decision 92). None by default: the panel is then all
+    /// empty area, the guards apart.
+    pub fn entries(mut self, entries: Vec<ToolbarEntry>) -> Self {
+        self.entries = entries;
+        self
     }
 
     /// Keeps `points` clear at the panel's start, in place of its margin there: room for
@@ -268,11 +318,13 @@ impl<'a> Toolbar<'a> {
         self
     }
 
-    /// Draws the menu button first, where the system has no menu bar: on Windows and Linux
-    /// (decision 39), as [`Toolbar::menu_button_style`] says. It never folds. Pressed, or
-    /// given ↓, it reports [`ToolbarAction::Menu`] for the app to open the menus as the
-    /// popup [`Toolbar::menu_popup`]; it is drawn on while that popup hangs from it, and a
-    /// press then closes it. Off by default.
+    /// Says the app draws the menus here, where the system has no menu bar: on Windows and
+    /// Linux (decision 39). The menu button, [`ToolbarEntry::MenuButton`], is drawn only
+    /// then, as [`Toolbar::menu_button_style`] says. It never folds. Pressed, or given ↓,
+    /// it reports [`ToolbarAction::Menu`] for the app to open the menus as the popup
+    /// [`Toolbar::menu_popup`]; it is drawn on while that popup hangs from it, and a press
+    /// then closes it. With no menu button in the list, the menus hang from the panel's
+    /// start ([`Toolbar::menu_anchor`]). Off by default.
     pub fn menu_button(mut self, on: bool) -> Self {
         self.menu = on;
         self
@@ -291,8 +343,9 @@ impl<'a> Toolbar<'a> {
         Id::unique("apertrust-ui toolbar menu")
     }
 
-    /// The menu button's rectangle as last drawn, for the menu to hang from; None before a
-    /// Toolbar has drawn one.
+    /// Where the menus hang from as last drawn: the menu button's rectangle, or where the
+    /// app draws the menus with no menu button listed, the place one would take at the
+    /// panel's start; None before a Toolbar has drawn either.
     pub fn menu_anchor(ctx: &egui::Context) -> Option<Rect> {
         ctx.data(|d| d.get_temp(menu_anchor_id()))
     }
@@ -300,8 +353,8 @@ impl<'a> Toolbar<'a> {
     /// Makes the panel the window's title bar: a drag that starts on an empty part of it
     /// reports [`ToolbarAction::MoveWindow`] once it has moved, never on the press, so a
     /// double-click stays one and reports [`ToolbarAction::TitleBarDoubleClick`]. Its
-    /// buttons take their presses as before; the status slots count as empty but for the
-    /// save warning and the spinner.
+    /// buttons take their presses as before; the spaces and the status slots count as
+    /// empty but for the save warning and the spinner.
     /// A right-click on an empty part reports [`ToolbarAction::WindowMenu`].
     pub fn title_bar(mut self, on: bool) -> Self {
         self.title_bar = on;
@@ -325,43 +378,34 @@ impl<'a> Toolbar<'a> {
         self
     }
 
-    pub fn available(mut self, available: Available) -> Self {
-        self.available = available;
-        self
-    }
-
-    /// The save state, at the panel's very end. Its slot is kept at its widest at every
-    /// state, so it never moves the fold or the spinner. A press of the save warning comes
-    /// back as [`ToolbarAction::NotSaved`].
+    /// The save state, in [`ToolbarEntry::SaveState`]'s slot. Its slot is kept at its
+    /// widest at every state, so it never moves the fold or the spinner. A press of the
+    /// save warning comes back as [`ToolbarAction::NotSaved`]. Not listed, a failed write
+    /// still shows at the panel's end.
     pub fn saved(mut self, saved: SaveState<'a>) -> Self {
         self.saved = saved;
         self
     }
 
-    /// Draws the jobs spinner before the save state while there are jobs to show, and keeps
-    /// its live region in the tree, empty while there are none. Its press comes back as
-    /// [`ToolbarAction::Jobs`]. Its slot is kept with or without jobs, a group's gap before
-    /// the save state's, so neither moves the other or anything else. The spinner has no
-    /// words, so it never folds. Off by default.
+    /// The jobs, whose spinner [`ToolbarEntry::Jobs`]'s slot draws while there are jobs to
+    /// show, its live region kept in the tree, empty while there are none. Its press comes
+    /// back as [`ToolbarAction::Jobs`]. Its slot is kept with or without jobs, a group's
+    /// gap before the save state's where that follows, so neither moves the other or
+    /// anything else. The spinner has no words, so it never folds. Not listed, it shows
+    /// at the panel's end while a failed job is left.
     pub fn jobs(mut self, jobs: Jobs<'a>) -> Self {
         self.jobs = Some(jobs);
         self
     }
 
-    /// Draws the cursors' well (decision 104; `docs/gui.md`, The Toolbar) centred between
-    /// two empty strips after Apply edit, in the middle of the room between the actions
-    /// and the status slots, a group's gap before it at least. It never folds: the actions
-    /// fold before it, and the empty panel left to move the window by is counted on both
-    /// sides of it together. It is no empty area: a press on it never moves the window.
-    /// What it reports comes back as [`ToolbarAction::Cursors`].
+    /// The cursors' well (decision 104; `docs/gui.md`, The Toolbar), drawn where
+    /// [`ToolbarEntry::Cursors`] stands, by default centred between two flexible spaces,
+    /// a group's gap before it at least. It never folds: the buttons fold before it, and
+    /// the empty panel left to move the window by is counted on both sides of it
+    /// together. It is no empty area: a press on it never moves the window. What it
+    /// reports comes back as [`ToolbarAction::Cursors`].
     pub fn cursors(mut self, well: CursorWell<'a>) -> Self {
         self.cursors = Some(well);
-        self
-    }
-
-    /// What Undo would undo, for its tooltip: "Undo Exposure: Brightness +8".
-    pub fn undo_tip(mut self, tip: &'a str) -> Self {
-        self.undo_tip = Some(tip);
         self
     }
 
@@ -372,7 +416,56 @@ impl<'a> Toolbar<'a> {
         self
     }
 
-    pub fn show(self, ui: &mut Ui) -> Option<ToolbarAction> {
+    /// Whether the list holds `entry`.
+    fn lists(&self, entry: &ToolbarEntry) -> bool {
+        self.entries.contains(entry)
+    }
+
+    /// What the panel draws at `fold`, `well` the cursors' well given, in order: the
+    /// entries that show, a fixed space
+    /// only between two of them with no flexible space between, and ⋯, where any button
+    /// is under it, just before the first flexible space, or last with none.
+    fn arrange(&self, fold: Fold, well: bool) -> Vec<Drawn<'_>> {
+        let shown = self.entries.iter().filter_map(|entry| match entry {
+            ToolbarEntry::MenuButton => self.menu.then_some(Drawn::Menu),
+            ToolbarEntry::Button(button) => (!fold.hides(button)).then_some(Drawn::Button(button)),
+            ToolbarEntry::Space => Some(Drawn::Space),
+            ToolbarEntry::FlexibleSpace => Some(Drawn::Flexible),
+            ToolbarEntry::Cursors => well.then_some(Drawn::Cursors),
+            ToolbarEntry::Jobs => self.jobs.is_some().then_some(Drawn::Jobs),
+            ToolbarEntry::SaveState => Some(Drawn::Save),
+        });
+        let shown: Vec<Drawn> = shown.collect();
+        let item = |d: &&Drawn| !matches!(d, Drawn::Space);
+        let within = |d: &&Drawn| **d != Drawn::Flexible;
+        let mut drawn: Vec<Drawn> = Vec::new();
+        for (at, d) in shown.iter().enumerate() {
+            if *d == Drawn::Space {
+                let before = shown[..at]
+                    .iter()
+                    .rev()
+                    .take_while(within)
+                    .any(|d| item(&d));
+                let after = shown[at + 1..].iter().take_while(within).any(|d| item(&d));
+                if !(before && after) {
+                    continue;
+                }
+            }
+            drawn.push(*d);
+        }
+        let hidden = self.entries.iter().any(|entry| match entry {
+            ToolbarEntry::Button(button) => fold.hides(button),
+            _ => false,
+        });
+        if hidden {
+            let at = drawn.iter().position(|d| *d == Drawn::Flexible);
+            drawn.insert(at.unwrap_or(drawn.len()), Drawn::More);
+        }
+        drawn
+    }
+
+    pub fn show(mut self, ui: &mut Ui) -> Option<ToolbarAction> {
+        let mut well = self.cursors.take();
         let t = theme(ui.ctx());
         let ctx = ui.ctx().clone();
         let (bar, response) =
@@ -409,217 +502,255 @@ impl<'a> Toolbar<'a> {
             caption
         });
 
-        let a = self.available;
-        let undo = self
-            .undo_tip
-            .map_or_else(|| tr(&ctx, "action-undo"), str::to_owned);
-        let common = [
-            (
-                Icon::Import,
-                "action-import",
-                a.import,
-                ToolbarAction::Import,
-            ),
-            (
-                Icon::Export,
-                "action-export",
-                a.export,
-                ToolbarAction::Export,
-            ),
-            (Icon::Reset, "action-reset", a.reset, ToolbarAction::Reset),
-            (Icon::Undo, "action-undo", a.undo, ToolbarAction::Undo),
-            (Icon::Redo, "action-redo", a.redo, ToolbarAction::Redo),
-            (
-                Icon::Copy,
-                "action-copy-edit",
-                a.copy,
-                ToolbarAction::CopyEdit,
-            ),
-            (
-                Icon::Apply,
-                "action-apply-edit",
-                a.apply,
-                ToolbarAction::ApplyEdit,
-            ),
-        ]
-        .map(|(icon, id, enabled, action)| Common {
-            icon,
-            name: if action == ToolbarAction::Undo {
-                undo.clone()
-            } else {
-                tr(&ctx, id)
-            },
-            enabled,
-            action,
-        });
-        let tool = |c| tool_button(c, keys(c.action));
-
-        // How far to fold: the first step whose parts leave the empty panel, measured at
-        // the current scale and language as egui lays them out, `gap` apart.
-        let gap = t.spacing.xxs;
-        let start = |fold: Fold| {
-            // The menu button, where there is one, and a space after it.
-            let (mut parts, mut spaces) = if self.menu {
-                (vec![self.menu_style.width()], t.spacing.s)
-            } else {
-                (Vec::new(), 0.0)
-            };
-            for c in common.iter().filter(|c| !fold.hides(c.action)) {
-                if c.action == ToolbarAction::CopyEdit {
-                    spaces += t.spacing.xl - gap;
-                }
-                let words = c.has_words() && fold == Fold::None;
-                parts.push(if words { tool(c).width(ui) } else { BUTTON });
-            }
-            if common.iter().any(|c| fold.hides(c.action)) {
-                parts.push(BUTTON);
-            }
-            parts.iter().sum::<f32>() + gap * (parts.len() as f32 - 1.0) + spaces
-        };
         // The save state's slot, at its widest form at each fold, Saving… or the warning,
         // whatever it shows, so a save never moves the fold, the spinner or anything else.
         let saving = SaveSlot::measure(ui);
-        let status_end = |fold: Fold| saving.width(fold >= Fold::Status);
-        // The jobs spinner's slot, a group's gap before the save state's, kept with or
-        // without jobs. It has no words, so it is the same at every fold.
-        let spinner_end = if self.jobs.is_some() {
-            BUTTON + t.spacing.m
-        } else {
-            0.0
+        // The guards (decision 92): a part the list leaves out that still has something to
+        // say shows at the end, after the list: a failed write, then before it the spinner
+        // while a failed job is left.
+        let save_guard = !self.lists(&ToolbarEntry::SaveState);
+        let jobs_guard = !self.lists(&ToolbarEntry::Jobs)
+            && (self.jobs.as_ref()).is_some_and(|jobs| jobs.failed());
+        let failed = matches!(self.saved, SaveState::Failed(_));
+        let guard_save = |fold: Fold| {
+            let shows = save_guard && failed;
+            if shows {
+                saving.width(fold >= Fold::Status)
+            } else {
+                0.0
+            }
         };
-        let end = |fold: Fold| status_end(fold) + spinner_end;
-        // The cursors' well, which never folds, and a group's gap before it.
-        let well = self
-            .cursors
-            .as_ref()
-            .map_or(0.0, |w| w.width(ui) + t.spacing.xl);
+        let guard_jobs = if jobs_guard { BUTTON } else { 0.0 };
+        // Where the list ends at `fold`: before the guards that show, a group's gap
+        // before them.
+        let list_end = |fold: Fold| {
+            let save = guard_save(fold);
+            let guards = save
+                + guard_jobs
+                + if save > 0.0 && jobs_guard {
+                    t.spacing.m
+                } else {
+                    0.0
+                };
+            inner.max.x
+                - if guards > 0.0 {
+                    guards + t.spacing.m
+                } else {
+                    0.0
+                }
+        };
+
+        let gap = t.spacing.xxs;
+        let width = |drawn: Drawn, fold: Fold| match drawn {
+            Drawn::Menu => self.menu_style.width(),
+            Drawn::Button(button) if button.words && fold == Fold::None => {
+                word_button(button, keys(ToolbarAction::Button(button.id))).width(ui)
+            }
+            Drawn::Button(_) | Drawn::Jobs | Drawn::More => BUTTON,
+            Drawn::Space => t.spacing.xl,
+            Drawn::Flexible => 0.0,
+            Drawn::Cursors => well.as_ref().map_or(0.0, |well| well.width(ui)),
+            Drawn::Save => saving.width(fold >= Fold::Status),
+        };
+        // Between two neighbours: a space or a flexible space is the whole room between
+        // them; the menu button stands a group's gap before the rest, the cursors' well one
+        // after what it follows, and the spinner one before the save state.
+        let between = |a: Drawn, b: Drawn| match (a, b) {
+            (Drawn::Space | Drawn::Flexible, _) | (_, Drawn::Space | Drawn::Flexible) => 0.0,
+            (Drawn::Menu, _) => gap + t.spacing.s,
+            (_, Drawn::Cursors) => t.spacing.xl,
+            (Drawn::Jobs, Drawn::Save) => t.spacing.m,
+            _ => gap,
+        };
+        // The room `drawn` takes but for the flexible spaces' shares.
+        let taken = |drawn: &[Drawn], fold: Fold| {
+            let widths: f32 = drawn.iter().map(|d| width(*d, fold)).sum();
+            let gaps: f32 = drawn.windows(2).map(|w| between(w[0], w[1])).sum();
+            widths + gaps
+        };
+
+        // How far to fold: the first step whose entries leave the empty panel, measured at
+        // the current scale and language as egui lays them out; the cursors' well after a
+        // flexible space asks for a group's gap of it.
         let id = response.id.with("fold");
         let last = ui.data(|d| d.get_temp::<Fold>(id)).unwrap_or(Fold::None);
         let fold = Fold::ALL
             .into_iter()
             .find(|&fold| {
+                let drawn = self.arrange(fold, well.is_some());
+                let after_flexible = drawn
+                    .windows(2)
+                    .any(|w| w == [Drawn::Flexible, Drawn::Cursors]);
+                let well_gap = if after_flexible { t.spacing.xl } else { 0.0 };
                 let spare = if fold < last { SPARE } else { 0.0 };
-                start(fold) + well + EMPTY + end(fold) + spare <= inner.width()
+                taken(&drawn, fold) + well_gap + EMPTY + spare <= list_end(fold) - inner.min.x
             })
             .unwrap_or(Fold::Undo);
         ui.data_mut(|d| d.insert_temp(id, fold));
+        let drawn = self.arrange(fold, well.is_some());
 
-        // At the start: the menu button and the common actions, the folded ones under ⋯.
-        let actions = ui.scope_builder(
-            UiBuilder::new()
-                .max_rect(inner)
-                .layout(Layout::left_to_right(Align::Center)),
-            |ui| {
-                ui.spacing_mut().item_spacing.x = gap;
-                if self.menu {
-                    let (button, press) =
-                        menu_button(ui, self.menu_style, keys(ToolbarAction::Menu));
-                    pressed(button);
-                    match press {
-                        Some(MenuPress::Open) => action = Some(ToolbarAction::Menu),
-                        Some(MenuPress::Close) => popup::close(&ctx, Toolbar::menu_popup()),
-                        None => {}
-                    }
-                    ui.add_space(t.spacing.s);
-                }
-                for c in common.iter().filter(|c| !fold.hides(c.action)) {
-                    // Copy edit and Apply edit are a group of their own.
-                    if c.action == ToolbarAction::CopyEdit {
-                        ui.add_space(t.spacing.xl - gap);
-                    }
-                    let response = if c.has_words() && fold == Fold::None {
-                        tool(c).show(ui)
-                    } else {
-                        icon_button(c.icon, &c.name, keys(c.action))
-                            .size(BUTTON)
-                            .enabled(c.enabled)
-                            .show(ui)
-                    };
-                    if pressed(response) {
-                        action = Some(c.action);
-                    }
-                }
-                if common.iter().any(|c| fold.hides(c.action)) {
-                    let more = IconButton::new(Icon::Options, &tr(&ctx, "toolbar-more"))
-                        .size(BUTTON)
-                        .show(ui);
-                    pressed(more.clone());
-                    // Each with its keys, and disabled where it can't run. Screen readers
-                    // hear its name, and the keys as its shortcut, as on every control.
-                    let name = tr(&ctx, "toolbar-more");
-                    let chosen = pull_down(ui, &more, &name, || {
-                        common
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, c)| fold.hides(c.action))
-                            .map(|(i, c)| {
-                                let item = popup::Item::new(i.to_string(), c.name.as_str())
-                                    .enabled(c.enabled);
-                                match keys(c.action) {
-                                    Some(keys) => item.shortcut(keys),
-                                    None => item,
-                                }
-                                .into()
-                            })
-                            .collect()
-                    });
-                    if let Some(i) = chosen.and_then(|chosen| chosen.parse::<usize>().ok()) {
-                        action = Some(common[i].action);
-                    }
-                }
-            },
-        );
-
-        // Between them, centred in the room the actions and the status slots leave, the
-        // cursors' well, after the actions in the focus order.
-        let mut well_rect = None;
-        if let Some(well) = self.cursors {
-            let width = well.width(ui);
-            let room = actions.response.rect.right()..=(inner.max.x - end(fold));
-            let centre = ((room.start() + room.end()) / 2.0).round();
-            let rect = Rect::from_center_size(
-                pos2(centre, bar.center().y),
-                vec2(width, t.sizes.cursor_well),
-            );
-            let drawn = ui.scope_builder(
-                UiBuilder::new()
-                    .id_salt("cursors")
-                    .max_rect(rect)
-                    .layout(Layout::left_to_right(Align::Center)),
-                |ui| well.show(ui),
-            );
-            if let Some(chosen) = drawn.inner {
-                action = Some(ToolbarAction::Cursors(chosen));
+        // Where each entry goes: those before the first flexible space from the start,
+        // those after the last to the end, and each run between two flexible spaces after
+        // its share of the room left, its centre on a whole point, so the cursors' well
+        // between two stands in the middle of the room between its neighbours.
+        let end = list_end(fold);
+        let runs: Vec<&[Drawn]> = drawn.split(|d| *d == Drawn::Flexible).collect();
+        let flexible = runs.len() - 1;
+        let share = ((end - inner.min.x - taken(&drawn, fold)) / flexible.max(1) as f32).max(0.0);
+        let mut placed: Vec<(Drawn, f32, f32)> = Vec::new();
+        let mut x = inner.min.x;
+        for (at, run) in runs.iter().enumerate() {
+            let run_width = taken(run, fold);
+            if at > 0 && at == flexible {
+                x = end - run_width;
+            } else if at > 0 {
+                x = (x + share + run_width / 2.0).round() - run_width / 2.0;
             }
-            well_rect = Some(rect);
+            for (i, d) in run.iter().enumerate() {
+                if i > 0 {
+                    x += between(run[i - 1], *d);
+                }
+                let w = width(*d, fold);
+                placed.push((*d, x, w));
+                x += w;
+            }
+        }
+        let room =
+            |x: f32, w: f32| Rect::from_min_max(pos2(x, inner.top()), pos2(x + w, inner.bottom()));
+
+        let mut menu_drawn = false;
+        let mut well_rect = None;
+        for (d, x, w) in placed {
+            let rect = room(x, w);
+            let builder = |salt: &str| UiBuilder::new().id_salt(salt).max_rect(rect);
+            let left = |salt: &str| builder(salt).layout(Layout::left_to_right(Align::Center));
+            let right = |salt: &str| builder(salt).layout(Layout::right_to_left(Align::Center));
+            match d {
+                Drawn::Menu => {
+                    menu_drawn = true;
+                    ui.scope_builder(left("menu button"), |ui| {
+                        let (button, press) =
+                            menu_button(ui, self.menu_style, keys(ToolbarAction::Menu));
+                        pressed(button);
+                        match press {
+                            Some(MenuPress::Open) => action = Some(ToolbarAction::Menu),
+                            Some(MenuPress::Close) => popup::close(&ctx, Toolbar::menu_popup()),
+                            None => {}
+                        }
+                    });
+                }
+                Drawn::Button(button) => {
+                    let done = ToolbarAction::Button(button.id);
+                    let response = ui
+                        .scope_builder(left(button.id), |ui| {
+                            if button.words && fold == Fold::None {
+                                word_button(button, keys(done)).show(ui)
+                            } else {
+                                icon_button(button.icon, &button.name, keys(done))
+                                    .size(BUTTON)
+                                    .enabled(button.enabled)
+                                    .show(ui)
+                            }
+                        })
+                        .inner;
+                    if pressed(response) {
+                        action = Some(done);
+                    }
+                }
+                Drawn::More => {
+                    let hidden: Vec<&ToolbarButton> = (self.entries.iter())
+                        .filter_map(|entry| match entry {
+                            ToolbarEntry::Button(button) if fold.hides(button) => Some(button),
+                            _ => None,
+                        })
+                        .collect();
+                    let chosen = ui
+                        .scope_builder(left("more"), |ui| {
+                            let more = IconButton::new(Icon::Options, &tr(&ctx, "toolbar-more"))
+                                .size(BUTTON)
+                                .show(ui);
+                            pressed(more.clone());
+                            // Each with its keys, and disabled where it can't run. Screen
+                            // readers hear its name, and the keys as its shortcut, as on
+                            // every control.
+                            let name = tr(&ctx, "toolbar-more");
+                            pull_down(ui, &more, &name, || {
+                                (hidden.iter())
+                                    .map(|button| {
+                                        let item =
+                                            popup::Item::new(button.id, button.name.as_str())
+                                                .enabled(button.enabled);
+                                        match keys(ToolbarAction::Button(button.id)) {
+                                            Some(keys) => item.shortcut(keys),
+                                            None => item,
+                                        }
+                                        .into()
+                                    })
+                                    .collect()
+                            })
+                        })
+                        .inner;
+                    let chosen = chosen.and_then(|chosen| hidden.iter().find(|b| b.id == chosen));
+                    if let Some(button) = chosen {
+                        action = Some(ToolbarAction::Button(button.id));
+                    }
+                }
+                Drawn::Cursors => {
+                    let Some(well) = well.take() else {
+                        continue;
+                    };
+                    let rect = Rect::from_center_size(
+                        pos2(rect.center().x, bar.center().y),
+                        vec2(w, t.sizes.cursor_well),
+                    );
+                    let drawn = ui.scope_builder(
+                        UiBuilder::new()
+                            .id_salt("cursors")
+                            .max_rect(rect)
+                            .layout(Layout::left_to_right(Align::Center)),
+                        |ui| well.show(ui),
+                    );
+                    if let Some(chosen) = drawn.inner {
+                        action = Some(ToolbarAction::Cursors(chosen));
+                    }
+                    well_rect = Some(rect);
+                }
+                Drawn::Jobs => {
+                    let Some(jobs) = self.jobs else {
+                        continue;
+                    };
+                    ui.scope_builder(right("jobs"), |ui| {
+                        if let Some(spinner) = jobs.spinner(ui)
+                            && pressed(spinner)
+                        {
+                            action = Some(ToolbarAction::Jobs);
+                        }
+                    });
+                }
+                Drawn::Save => {
+                    let folded = fold >= Fold::Status;
+                    let save = ui.scope_builder(right("save state"), |ui| {
+                        saving.show(ui, self.saved, folded, true)
+                    });
+                    if let Some(button) = save.inner
+                        && pressed(button)
+                    {
+                        action = Some(ToolbarAction::NotSaved);
+                    }
+                }
+                Drawn::Space | Drawn::Flexible => {}
+            }
         }
 
-        // At the end: the save state, in its slot, right-aligned.
-        let folded = fold >= Fold::Status;
-        let mut slot = inner;
-        slot.min.x = inner.max.x - status_end(fold);
-        let save = ui.scope_builder(
-            UiBuilder::new()
-                .id_salt("save state")
-                .max_rect(slot)
-                .layout(Layout::right_to_left(Align::Center)),
-            |ui| saving.show(ui, self.saved, folded),
-        );
-        if let Some(button) = save.inner
-            && pressed(button)
-        {
-            action = Some(ToolbarAction::NotSaved);
-        }
-
-        // Before it: the jobs spinner, in its own slot, a group's gap before.
-        if let Some(jobs) = self.jobs {
-            let mut room = inner;
-            room.max.x = slot.min.x - t.spacing.m;
-            room.min.x = room.max.x - BUTTON;
+        // The guards, after the list in the focus order as they stand: the spinner's, then
+        // the save state's at the very end, its live region kept whether it shows or not.
+        if let Some(jobs) = self.jobs.filter(|_| jobs_guard) {
+            let save = guard_save(fold);
+            let at = inner.max.x - save - if save > 0.0 { t.spacing.m } else { 0.0 };
             ui.scope_builder(
                 UiBuilder::new()
                     .id_salt("jobs")
-                    .max_rect(room)
+                    .max_rect(room(at - BUTTON, BUTTON))
                     .layout(Layout::right_to_left(Align::Center)),
                 |ui| {
                     if let Some(spinner) = jobs.spinner(ui)
@@ -629,6 +760,31 @@ impl<'a> Toolbar<'a> {
                     }
                 },
             );
+        }
+        if save_guard {
+            let width = guard_save(fold);
+            let folded = fold >= Fold::Status;
+            let save = ui.scope_builder(
+                UiBuilder::new()
+                    .id_salt("save state")
+                    .max_rect(room(inner.max.x - width, width))
+                    .layout(Layout::right_to_left(Align::Center)),
+                |ui| saving.show(ui, self.saved, folded, false),
+            );
+            if let Some(button) = save.inner
+                && pressed(button)
+            {
+                action = Some(ToolbarAction::NotSaved);
+            }
+        }
+        // With the menus drawn here and no menu button listed, they hang from where it
+        // would stand, at the panel's start.
+        if self.menu && !menu_drawn {
+            let start = Rect::from_min_size(
+                pos2(inner.min.x, bar.center().y - BUTTON / 2.0),
+                vec2(self.menu_style.width(), BUTTON),
+            );
+            ctx.data_mut(|d| d.insert_temp(menu_anchor_id(), start));
         }
 
         // At the very end: the window's caption buttons, after everything else in the focus
@@ -710,9 +866,16 @@ impl SaveSlot {
         if folded { self.folded } else { self.full }
     }
 
-    /// Draws `state` at the right of `ui`, its word left out where `folded`, and keeps the
-    /// live region in the tree. Returns the save warning's response, where it shows.
-    fn show(&self, ui: &mut Ui, state: SaveState<'_>, folded: bool) -> Option<egui::Response> {
+    /// Draws `state` at the right of `ui`, its word left out where `folded`, Saving… only
+    /// where `saving` (a guard shows only a failed write), and keeps the live region in the
+    /// tree. Returns the save warning's response, where it shows.
+    fn show(
+        &self,
+        ui: &mut Ui,
+        state: SaveState<'_>,
+        folded: bool,
+        saving: bool,
+    ) -> Option<egui::Response> {
         let ctx = ui.ctx().clone();
         let t = theme(&ctx);
         let words = translator(&ctx);
@@ -726,6 +889,7 @@ impl SaveSlot {
         let at = ui.next_widget_position();
         let button = match state {
             SaveState::None | SaveState::Saved => None,
+            SaveState::Saving if !saving => None,
             SaveState::Saving => {
                 let name = words.text("status-saving");
                 let shown = if folded {
@@ -974,10 +1138,9 @@ pub fn caption_button(
     response.on_hover_text(name)
 }
 
-/// A common action with its words beside its icon, with `keys` in its tooltip when it has
-/// any.
-fn tool_button<'a>(c: &'a Common, keys: Option<&'a str>) -> ToolButton<'a> {
-    let button = ToolButton::new(&c.name).icon(c.icon).enabled(c.enabled);
+/// A button with its words beside its icon, with `keys` in its tooltip when it has any.
+fn word_button<'a>(button: &'a ToolbarButton, keys: Option<&'a str>) -> ToolButton<'a> {
+    let button = (ToolButton::new(&button.name).icon(button.icon)).enabled(button.enabled);
     match keys {
         Some(keys) => button.shortcut(keys),
         None => button,

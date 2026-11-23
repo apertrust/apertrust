@@ -114,11 +114,11 @@ use apertrust_engine::sidecar::Reason;
 use apertrust_engine::view::{FramePlace, Placement};
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
-    ActivityAction, Available, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction,
-    BrowserPosition, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
-    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
-    PickerAction, Placed, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle,
-    Toolbar, ToolbarAction, ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom,
+    ActivityAction, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
+    CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle, PanelBody,
+    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
+    SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction,
+    ToolbarButton, ToolbarEntry, ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom,
     browser_lines, browser_thickness,
 };
 use apertrust_ui::{
@@ -1835,17 +1835,29 @@ fn resize_hover(ctx: &egui::Context, band: f32) {
     }
 }
 
-/// The Toolbar's buttons and the actions they run.
-const TOOLBAR: [(ToolbarAction, ActionId); 8] = [
-    (ToolbarAction::Menu, ActionId::MENU),
-    (ToolbarAction::Import, ActionId::IMPORT),
-    (ToolbarAction::Export, ActionId::EXPORT),
-    (ToolbarAction::Reset, ActionId::RESET),
-    (ToolbarAction::Undo, ActionId::UNDO),
-    (ToolbarAction::Redo, ActionId::REDO),
-    (ToolbarAction::CopyEdit, ActionId::COPY_EDIT),
-    (ToolbarAction::ApplyEdit, ActionId::APPLY_EDIT),
+/// The Toolbar's list (decision 92): today's order, which each workspace's file will hold.
+const TOOLBAR: [&str; 14] = [
+    "menu-button",
+    "import",
+    "export",
+    "reset",
+    "undo",
+    "redo",
+    "space",
+    "copy-edit",
+    "apply-edit",
+    "flexible-space",
+    "cursors",
+    "flexible-space",
+    "jobs",
+    "save-state",
 ];
+
+/// The Toolbar's actions that show their words beside their icons while there is room.
+const TOOLBAR_WORDS: [ActionId; 3] = [ActionId::IMPORT, ActionId::EXPORT, ActionId::RESET];
+
+/// The Toolbar's actions that go under ⋯ last as it narrows.
+const TOOLBAR_LAST: [ActionId; 2] = [ActionId::UNDO, ActionId::REDO];
 
 /// The viewer bar's zoom menu entries that are actions too, whose keys they show.
 const ZOOM_MENU: [(ViewerBarAction, ActionId); 5] = [
@@ -3450,7 +3462,8 @@ impl Shell {
         }
     }
 
-    /// The Toolbar, from the registry: what can't run is drawn disabled, and each tooltip
+    /// The Toolbar, its list's items from what can be placed (decision 92, [`toolbar::set`]),
+    /// each action from the registry: what can't run is drawn disabled, and each tooltip
     /// carries its keys. With `title_bar`, the room the window's buttons take at its start,
     /// it is the window's title bar; with `caption`, it draws the caption buttons at its
     /// end, Restore in place of Maximise where `caption` says the window is maximised.
@@ -3466,25 +3479,51 @@ impl Shell {
     ) -> Option<FromToolbar> {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
-        let can = |id| actions::action(id).is_some_and(|a| a.enabled(state));
-        let available = Available {
-            import: can(ActionId::IMPORT),
-            export: can(ActionId::EXPORT),
-            reset: can(ActionId::RESET),
-            // The photo's history alone: a click takes the focus from a text field first.
-            undo: state.undo && can(ActionId::UNDO),
-            redo: state.redo && can(ActionId::REDO),
-            copy: can(ActionId::COPY_EDIT),
-            apply: can(ActionId::APPLY_EDIT),
+        // The photo's history alone for Undo and Redo: a click takes the focus from a text
+        // field first.
+        let can = |action: &actions::Action| match action.id {
+            ActionId::UNDO => state.undo && action.enabled(state),
+            ActionId::REDO => state.redo && action.enabled(state),
+            _ => action.enabled(state),
         };
-        let tips: Vec<(ToolbarAction, String)> = TOOLBAR
-            .iter()
-            .filter_map(|(button, id)| Some((*button, self.keymap.tip(*id, ctx.os(), &words)?)))
-            .collect();
+        let listed = toolbar::listed(TOOLBAR);
+        let mut tips: Vec<(ToolbarAction, String)> = Vec::new();
+        tips.extend(
+            self.keymap
+                .tip(ActionId::MENU, ctx.os(), &words)
+                .map(|tip| (ToolbarAction::Menu, tip)),
+        );
+        let entries = listed.iter().filter_map(|placed| {
+            let entry = match (placed.kind, placed.id) {
+                (toolbar::Kind::Part, "menu-button") => ToolbarEntry::MenuButton,
+                (toolbar::Kind::Part, "jobs") => ToolbarEntry::Jobs,
+                (toolbar::Kind::Part, "save-state") => ToolbarEntry::SaveState,
+                (toolbar::Kind::Part, "cursors") => ToolbarEntry::Cursors,
+                (toolbar::Kind::Spacing, "space") => ToolbarEntry::Space,
+                (toolbar::Kind::Spacing, _) => ToolbarEntry::FlexibleSpace,
+                (toolbar::Kind::Part, _) => return None,
+                (toolbar::Kind::App | toolbar::Kind::Tool(_), id) => {
+                    let action = actions::named(id)?;
+                    let name = placed
+                        .words
+                        .map_or_else(String::new, |message| words.text(message));
+                    let button = ToolbarButton::new(action.id.0, placed.icon?, name)
+                        .enabled(can(action))
+                        .words(TOOLBAR_WORDS.contains(&action.id))
+                        .folds_last(TOOLBAR_LAST.contains(&action.id));
+                    if let Some(tip) = self.keymap.tip(action.id, ctx.os(), &words) {
+                        tips.push((ToolbarAction::Button(action.id.0), tip));
+                    }
+                    ToolbarEntry::Button(button)
+                }
+            };
+            Some(entry)
+        });
+        let entries: Vec<ToolbarEntry> = entries.collect();
         let mut bar = Toolbar::new()
+            .entries(entries)
             .menu_button(self.drawn_menus)
             .menu_button_style(self.menu_button)
-            .available(available)
             .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))
             .saved(saved);
         if let Some(inset) = title_bar {
@@ -3514,10 +3553,10 @@ impl Shell {
             ToolbarAction::Close => Some(FromToolbar::Action(ActionId::QUIT)),
             ToolbarAction::Jobs => Some(FromToolbar::Jobs),
             ToolbarAction::NotSaved => Some(FromToolbar::NotSaved),
-            clicked => TOOLBAR
-                .iter()
-                .find(|(button, _)| *button == clicked)
-                .map(|(_, id)| FromToolbar::Action(*id)),
+            ToolbarAction::Menu => Some(FromToolbar::Action(ActionId::MENU)),
+            ToolbarAction::Button(id) => {
+                actions::named(id).map(|action| FromToolbar::Action(action.id))
+            }
         }
     }
 

@@ -435,6 +435,12 @@ impl<'a> Jobs<'a> {
         jobs
     }
 
+    /// Whether a failed job is left, which the Toolbar shows even with the jobs left out of
+    /// its list (decision 92).
+    pub fn failed(&self) -> bool {
+        self.count(JobPhase::Failed) > 0
+    }
+
     fn count(&self, phase: JobPhase) -> usize {
         self.jobs.iter().filter(|j| j.phase == phase).count()
     }

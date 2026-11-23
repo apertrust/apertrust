@@ -19,10 +19,12 @@
 //! is compact (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    Available, Browser, BrowserAction, CursorWell, CursorWellAction, Jobs, Margin, MenuButtonStyle,
-    PanelEdge, PanelEdgeAction, PhotoCaption, PhotoFrame, SaveState, Thumb, Toggle, Toolbar,
-    ToolbarAction, ViewerBar, ViewerBarAction, WellCursor, WellGroup, WellSetting, Zoom,
+    Browser, BrowserAction, CursorWell, CursorWellAction, Job, JobMessage, JobPhase, Jobs, Margin,
+    MenuButtonStyle, PanelEdge, PanelEdgeAction, PhotoCaption, PhotoFrame, SaveState, Thumb,
+    Toggle, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ViewerBar, ViewerBarAction,
+    WellCursor, WellGroup, WellSetting, Zoom,
 };
+use apertrust_ui::gallery::toolbar_entries;
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator};
 use egui::accesskit::{Action, Role};
 use egui::{Color32, CursorIcon, Key, Modifiers, PointerButton, Pos2, Sense, vec2};
@@ -54,14 +56,14 @@ fn with_well<R>(chosen: usize, draw: impl FnOnce(CursorWell<'_>) -> R) -> R {
     draw(CursorWell::new(&groups).chosen(chosen))
 }
 
-fn toolbar(available: Available) -> Harness<'static, Vec<ToolbarAction>> {
+fn toolbar(disabled: &'static [&'static str]) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(1200.0, 60.0))
         .with_context_setup(install)
         .build_ui_state(
             move |ui, actions: &mut Vec<ToolbarAction>| {
                 if let Some(action) = Toolbar::new()
-                    .available(available)
+                    .entries(toolbar_entries(ui.ctx(), disabled))
                     .saved(SaveState::Saved)
                     .show(ui)
                 {
@@ -85,7 +87,7 @@ const ACTIONS: [&str; 7] = [
 
 #[test]
 fn the_toolbar_reports_its_actions() {
-    let mut harness = toolbar(Available::default());
+    let mut harness = toolbar(&[]);
     harness.run();
     for name in ACTIONS {
         harness.get_by_label(name).click();
@@ -94,13 +96,13 @@ fn the_toolbar_reports_its_actions() {
     assert_eq!(
         *harness.state(),
         vec![
-            ToolbarAction::Import,
-            ToolbarAction::Export,
-            ToolbarAction::Reset,
-            ToolbarAction::Undo,
-            ToolbarAction::Redo,
-            ToolbarAction::CopyEdit,
-            ToolbarAction::ApplyEdit,
+            ToolbarAction::Button("import"),
+            ToolbarAction::Button("export"),
+            ToolbarAction::Button("reset"),
+            ToolbarAction::Button("undo"),
+            ToolbarAction::Button("redo"),
+            ToolbarAction::Button("copy-edit"),
+            ToolbarAction::Button("apply-edit"),
         ]
     );
     // No Settings button: Settings is in the menus and on its keys. No mark either: About
@@ -111,7 +113,7 @@ fn the_toolbar_reports_its_actions() {
 
 #[test]
 fn the_actions_come_first_in_order_and_saved_last() {
-    let mut harness = toolbar(Available::default());
+    let mut harness = toolbar(&[]);
     harness.run();
     let rect = |name: &str| harness.get_by_label(name).rect();
     for pair in ACTIONS.windows(2) {
@@ -139,11 +141,7 @@ fn the_actions_come_first_in_order_and_saved_last() {
 
 #[test]
 fn unavailable_actions_do_nothing() {
-    let mut harness = toolbar(Available {
-        undo: false,
-        export: false,
-        ..Available::default()
-    });
+    let mut harness = toolbar(&["undo", "export"]);
     harness.run();
     harness.get_by_label("Undo").click();
     harness.get_by_label("Export…").click();
@@ -180,17 +178,13 @@ fn narrow_in(
         .build_ui_state(
             move |ui, actions: &mut Vec<ToolbarAction>| {
                 let bar = Toolbar::new()
-                    .available(Available {
-                        redo: false,
-                        apply: false,
-                        ..Available::default()
-                    })
+                    .entries(toolbar_entries(ui.ctx(), &["redo", "apply-edit"]))
                     .saved(saved)
                     .start_inset(inset)
                     .title_bar(true)
                     .menu_button(caption)
                     .caption_buttons(caption)
-                    .shortcut(ToolbarAction::Export, "Ctrl+E");
+                    .shortcut(ToolbarAction::Button("export"), "Ctrl+E");
                 if let Some(action) = with_well(0, |well| bar.cursors(well).show(ui)) {
                     actions.push(action);
                 }
@@ -249,7 +243,7 @@ fn a_narrowing_toolbar_folds_its_words_then_its_actions_into_more() {
     );
     export.click();
     more.run();
-    assert_eq!(*more.state(), vec![ToolbarAction::Export]);
+    assert_eq!(*more.state(), vec![ToolbarAction::Button("export")]);
 
     // At the narrowest, Undo and Redo join them.
     let mut least = narrow(150.0, SaveState::Saved, 0.0, false);
@@ -308,7 +302,7 @@ fn the_more_menu_is_a_popup_list_with_keys_and_enabled_states() {
     harness.key_press(Key::Enter);
     harness.run();
     assert!(harness.query_by_role(Role::Menu).is_none());
-    assert_eq!(*harness.state(), vec![ToolbarAction::Import]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Button("import")]);
 }
 
 /// Opened with the pointer, ⋯ gives the focus to its button as it closes, chosen or not:
@@ -329,7 +323,7 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
         .get_by_role_and_label(Role::MenuItem, "Export…")
         .click();
     harness.run();
-    assert_eq!(*harness.state(), vec![ToolbarAction::Export]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Button("export")]);
     assert_eq!(focused(&harness).as_deref(), Some("More actions"));
     let mut harness = narrow(400.0, SaveState::Saved, 0.0, false);
     harness.run();
@@ -411,6 +405,7 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>) -> [u32; 3] {
         .build_ui(move |ui| {
             let inset = if menu.is_some() { 0.0 } else { 78.0 };
             let bar = Toolbar::new()
+                .entries(toolbar_entries(ui.ctx(), &[]))
                 .saved(SaveState::Saved)
                 .jobs(Jobs::new(&[]))
                 .start_inset(inset)
@@ -486,7 +481,10 @@ fn saving_never_moves_the_fold() {
         .with_context_setup(install)
         .build_ui_state(
             |ui, saved: &mut SaveState<'static>| {
-                Toolbar::new().saved(*saved).show(ui);
+                Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
+                    .saved(*saved)
+                    .show(ui);
             },
             SaveState::Saved,
         );
@@ -524,7 +522,11 @@ fn saving(width: f32) -> Harness<'static, Saving> {
         .with_context_setup(install)
         .build_ui_state(
             |ui, (saved, actions): &mut Saving| {
-                let action = Toolbar::new().saved(*saved).title_bar(true).show(ui);
+                let action = Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
+                    .saved(*saved)
+                    .title_bar(true)
+                    .show(ui);
                 actions.extend(action);
             },
             (SaveState::Saved, Vec::new()),
@@ -632,7 +634,10 @@ fn screen_readers_hear_a_failed_write_and_saving_working_again_and_nothing_else(
             })
             .build_ui_state(
                 |ui, saved: &mut SaveState<'static>| {
-                    Toolbar::new().saved(*saved).show(ui);
+                    Toolbar::new()
+                        .entries(toolbar_entries(ui.ctx(), &[]))
+                        .saved(*saved)
+                        .show(ui);
                 },
                 SaveState::Saved,
             );
@@ -680,11 +685,15 @@ fn the_save_warning_and_saving() {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.push_id("failed", |ui| {
                 Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
                     .saved(SaveState::Failed("Permission denied"))
                     .show(ui);
             });
             ui.push_id("saving", |ui| {
-                Toolbar::new().saved(SaveState::Saving).show(ui);
+                Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
+                    .saved(SaveState::Saving)
+                    .show(ui);
             });
         });
     harness.run();
@@ -723,8 +732,9 @@ fn tooltips_carry_the_keys_and_screen_readers_hear_them() {
         })
         .build_ui(|ui| {
             Toolbar::new()
-                .shortcut(ToolbarAction::CopyEdit, "Ctrl+Shift+C")
-                .shortcut(ToolbarAction::Export, "Ctrl+E")
+                .entries(toolbar_entries(ui.ctx(), &[]))
+                .shortcut(ToolbarAction::Button("copy-edit"), "Ctrl+Shift+C")
+                .shortcut(ToolbarAction::Button("export"), "Ctrl+E")
                 .show(ui);
         });
     harness.run();
@@ -751,14 +761,14 @@ fn tooltips_carry_the_keys_and_screen_readers_hear_them() {
 /// its start. At 60 frames a second, since each event takes a frame of its own and a
 /// double-click's second click must come within 0.3 s of its first.
 fn title_bar(on: bool, start: f32) -> Harness<'static, Vec<ToolbarAction>> {
-    title_bar_with(on, start, Available::default())
+    title_bar_with(on, start, &[])
 }
 
-/// The title bar with only the actions `available` can run.
+/// The title bar with the actions `disabled` names unable to run.
 fn title_bar_with(
     on: bool,
     start: f32,
-    available: Available,
+    disabled: &'static [&'static str],
 ) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(1200.0, 120.0))
@@ -767,7 +777,7 @@ fn title_bar_with(
         .build_ui_state(
             move |ui, actions: &mut Vec<ToolbarAction>| {
                 if let Some(action) = Toolbar::new()
-                    .available(available)
+                    .entries(toolbar_entries(ui.ctx(), disabled))
                     .saved(SaveState::Saved)
                     .start_inset(start)
                     .title_bar(on)
@@ -854,11 +864,11 @@ fn the_title_bar_moves_and_zooms_the_window_from_its_empty_areas_only() {
     let bar = harness.get_by_role(Role::Toolbar).rect();
     assert_eq!(import.left() - bar.left(), 90.0);
     double_click(&mut harness, import.center());
-    assert_eq!(*harness.state(), vec![ToolbarAction::Import; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Button("import"); 2]);
     harness.state_mut().clear();
     let reset = harness.get_by_label("Reset").rect().center();
     double_click(&mut harness, reset);
-    assert_eq!(*harness.state(), vec![ToolbarAction::Reset; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Button("reset"); 2]);
     harness.state_mut().clear();
     let undo = harness.get_by_label("Undo").rect().center();
     drag(&mut harness, undo);
@@ -880,11 +890,7 @@ fn a_toolbar_that_is_not_the_title_bar_ignores_its_empty_areas() {
 
 #[test]
 fn a_disabled_button_and_the_margin_round_a_button_are_no_empty_areas() {
-    let available = Available {
-        undo: false,
-        ..Available::default()
-    };
-    let mut harness = title_bar_with(true, 90.0, available);
+    let mut harness = title_bar_with(true, 90.0, &["undo"]);
     harness.run();
     let undo = harness.get_by_label("Undo").rect().center();
     double_click(&mut harness, undo);
@@ -894,7 +900,7 @@ fn a_disabled_button_and_the_margin_round_a_button_are_no_empty_areas() {
     let reset = harness.get_by_label("Reset").rect();
     let near = egui::pos2(reset.center().x, reset.bottom() + 3.0);
     double_click(&mut harness, near);
-    assert_eq!(*harness.state(), vec![ToolbarAction::Reset; 2]);
+    assert_eq!(*harness.state(), vec![ToolbarAction::Button("reset"); 2]);
     harness.state_mut().clear();
     drag(&mut harness, near);
     assert!(harness.state().is_empty());
@@ -924,7 +930,10 @@ fn title_bar_with_well(width: f32) -> Harness<'static, Vec<ToolbarAction>> {
         .with_context_setup(install)
         .build_ui_state(
             |ui, actions: &mut Vec<ToolbarAction>| {
-                let bar = Toolbar::new().saved(SaveState::Saved).title_bar(true);
+                let bar = Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
+                    .saved(SaveState::Saved)
+                    .title_bar(true);
                 actions.extend(with_well(0, |well| bar.cursors(well).show(ui)));
             },
             Vec::new(),
@@ -992,6 +1001,7 @@ fn photograph_the_well(which: Builtin, name: &str) {
             ui.painter()
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
             let bar = Toolbar::new()
+                .entries(toolbar_entries(ui.ctx(), &[]))
                 .saved(SaveState::Saved)
                 .jobs(Jobs::new(&[]))
                 .title_bar(true);
@@ -1057,6 +1067,7 @@ fn caption_buttons(maximised: bool) -> Harness<'static, Vec<ToolbarAction>> {
         .build_ui_state(
             move |ui, actions: &mut Vec<ToolbarAction>| {
                 if let Some(action) = Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
                     .saved(SaveState::Saved)
                     .title_bar(true)
                     .caption_buttons(true)
@@ -1142,6 +1153,7 @@ fn caption_snapshot() -> Harness<'static> {
             ui.painter()
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
             Toolbar::new()
+                .entries(toolbar_entries(ui.ctx(), &[]))
                 .title_bar(true)
                 .caption_buttons(true)
                 .show(ui);
@@ -1183,7 +1195,11 @@ fn a_popup_over_the_bar_takes_its_presses() {
         .with_context_setup(install)
         .build_ui_state(
             |ui, state: &mut Covered| {
-                if let Some(action) = Toolbar::new().title_bar(true).show(ui) {
+                if let Some(action) = Toolbar::new()
+                    .entries(toolbar_entries(ui.ctx(), &[]))
+                    .title_bar(true)
+                    .show(ui)
+                {
                     state.actions.push(action);
                 }
                 if let Some(at) = state.cover {
@@ -1233,6 +1249,206 @@ fn a_popup_over_the_bar_takes_its_presses() {
         harness.state().actions,
         vec![ToolbarAction::TitleBarDoubleClick]
     );
+}
+
+/// What a Toolbar drawn from a list of entries (decision 92) reports, with the jobs and
+/// the save state it is given.
+struct Listed {
+    entries: Vec<ToolbarEntry>,
+    jobs: Vec<Job>,
+    saved: SaveState<'static>,
+    actions: Vec<ToolbarAction>,
+}
+
+/// The Toolbar 1000 points wide drawn from `entries`, as the title bar and with the menus
+/// drawn, as on Windows and Linux, and Phase 2's cursors' well.
+fn listed(entries: Vec<ToolbarEntry>) -> Harness<'static, Listed> {
+    Harness::builder()
+        .with_size(egui::vec2(1000.0, 120.0))
+        .with_step_dt(1.0 / 60.0)
+        .with_context_setup(install)
+        .build_ui_state(
+            |ui, listed: &mut Listed| {
+                let jobs = listed.jobs.clone();
+                let bar = Toolbar::new()
+                    .entries(listed.entries.clone())
+                    .jobs(Jobs::new(&jobs))
+                    .saved(listed.saved)
+                    .menu_button(true)
+                    .title_bar(true);
+                if let Some(action) = with_well(0, |well| bar.cursors(well).show(ui)) {
+                    listed.actions.push(action);
+                }
+            },
+            Listed {
+                entries,
+                jobs: Vec::new(),
+                saved: SaveState::Saved,
+                actions: Vec::new(),
+            },
+        )
+}
+
+/// A button of the app's own that is in no default, Settings….
+fn settings() -> ToolbarEntry {
+    ToolbarEntry::Button(ToolbarButton::new("settings", Icon::Settings, "Settings…"))
+}
+
+#[test]
+fn the_toolbar_draws_its_entries_in_their_order() {
+    let mut harness = listed(vec![
+        ToolbarEntry::SaveState,
+        settings(),
+        ToolbarEntry::Cursors,
+        ToolbarEntry::FlexibleSpace,
+        ToolbarEntry::MenuButton,
+    ]);
+    harness.state_mut().saved = SaveState::Failed("disk full");
+    harness.run();
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    let rect = |name: &str| harness.get_by_label(name).rect();
+    let well = harness.get_by_role(Role::RadioGroup).rect();
+    // The save warning first, Settings… after it, the well a group's gap, 16 points, on;
+    // the menu button alone at the end.
+    assert!(rect("Not saved").right() < rect("Settings…").left());
+    assert_eq!(well.left() - rect("Settings…").right(), 16.0);
+    let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    assert_eq!(bar.right() - menu.right(), 8.0);
+    harness.get_by_label("Settings…").click();
+    harness.run();
+    assert_eq!(harness.state().actions, [ToolbarAction::Button("settings")]);
+}
+
+/// With no menu button listed, the menus hang from the panel's start, where it would
+/// stand, so F10 and Alt still open them (decision 92).
+#[test]
+fn with_no_menu_button_the_menus_hang_from_the_toolbar_s_start() {
+    let mut harness = listed(vec![settings()]);
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Menu")
+            .is_none()
+    );
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    let anchor = Toolbar::menu_anchor(&harness.ctx).expect("an anchor");
+    assert_eq!(anchor.left(), bar.left() + 8.0);
+    assert_eq!(anchor.center().y, bar.center().y);
+    // Settings… stands where the menu button would have.
+    assert_eq!(
+        harness.get_by_label("Settings…").rect().left(),
+        anchor.left()
+    );
+}
+
+/// With no save state listed, a failed write still shows its warning at the panel's end,
+/// and the live region stays; Saving… does not show (decision 92).
+#[test]
+fn with_no_save_state_a_failed_write_still_shows_at_the_end() {
+    let mut harness = listed(vec![
+        settings(),
+        ToolbarEntry::FlexibleSpace,
+        ToolbarEntry::Cursors,
+    ]);
+    harness.state_mut().saved = SaveState::Saving;
+    harness.run();
+    let words = Translator::new(Locale::EnGb);
+    assert!(
+        harness
+            .query_by_label(&words.text("status-saving"))
+            .is_none()
+    );
+    harness.state_mut().saved = SaveState::Failed("disk full");
+    harness.run();
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    assert_eq!(save_state(&harness).right(), bar.right() - 8.0);
+    // The cursors' well, last in the list, stands a group's gap before its slot at least.
+    let well = harness.get_by_role(Role::RadioGroup).rect();
+    assert!(save_state(&harness).left() - well.right() >= 8.0);
+    assert!(said(&harness).contains("disk full"));
+    harness.get_by_label("Not saved").click();
+    harness.run();
+    assert_eq!(harness.state().actions, [ToolbarAction::NotSaved]);
+    // Saved again, it goes, and screen readers hear so.
+    harness.state_mut().saved = SaveState::Saved;
+    harness.run();
+    assert!(harness.query_by_label("Not saved").is_none());
+    assert_eq!(said(&harness), words.text("status-saved"));
+}
+
+/// With no jobs listed, the spinner shows at the end only while a failed job is left
+/// (decision 92).
+#[test]
+fn with_no_jobs_the_spinner_shows_while_a_failed_job_is_left() {
+    let mut harness = listed(vec![settings(), ToolbarEntry::SaveState]);
+    let job = |phase| Job::new(1, phase, JobMessage::new("job-thumbnails"));
+    harness.state_mut().jobs = vec![job(JobPhase::Running)];
+    harness.run();
+    let words = Translator::new(Locale::EnGb);
+    let name = words.text("jobs-name");
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, &name)
+            .is_none()
+    );
+    harness.state_mut().jobs = vec![job(JobPhase::Failed)];
+    harness.run();
+    let spinner = harness.get_by_role_and_label(Role::Button, &name).rect();
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    assert_eq!(spinner.right(), bar.right() - 8.0);
+    harness.get_by_role_and_label(Role::Button, &name).click();
+    harness.run();
+    assert_eq!(harness.state().actions, [ToolbarAction::Jobs]);
+}
+
+/// With nothing listed, the whole panel is empty area: it takes a double-click and a drag
+/// moves the window (decision 92).
+#[test]
+fn an_empty_toolbar_is_all_empty_area() {
+    let mut harness = listed(Vec::new());
+    harness.run();
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    for at in [bar.left() + 12.0, bar.center().x, bar.right() - 12.0] {
+        let point = egui::pos2(at, bar.center().y);
+        harness.state_mut().actions.clear();
+        harness.run_steps(30);
+        harness.hover_at(point);
+        for pressed in [true, false, true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: point,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+        }
+        harness.run();
+        assert_eq!(
+            harness.state().actions,
+            [ToolbarAction::TitleBarDoubleClick],
+            "{at}"
+        );
+        // A drag from there moves the window.
+        harness.state_mut().actions.clear();
+        harness.run_steps(30);
+        let press = |harness: &Harness<'_, Listed>, pressed| {
+            harness.event(egui::Event::PointerButton {
+                pos: point,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+        };
+        harness.hover_at(point);
+        press(&harness, true);
+        harness.step();
+        for step in 1..=3 {
+            harness.hover_at(point - egui::vec2(10.0 * step as f32, 0.0));
+            harness.step();
+        }
+        harness.drop_at(point - egui::vec2(30.0, 0.0));
+        harness.run();
+        assert_eq!(harness.state().actions, [ToolbarAction::MoveWindow], "{at}");
+    }
 }
 
 /// The viewer bar with its state applied as the app would.
@@ -1928,10 +2144,7 @@ fn the_shell_at_full_width() {
                 .rect_filled(ui.ctx().content_rect(), 0.0, panel);
             ui.spacing_mut().item_spacing.y = 0.0;
             Toolbar::new()
-                .available(Available {
-                    redo: false,
-                    ..Available::default()
-                })
+                .entries(toolbar_entries(ui.ctx(), &["redo"]))
                 .saved(SaveState::Saved)
                 .show(ui);
             ViewerBar::new("Image", Zoom::Fit)
