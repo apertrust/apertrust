@@ -57,10 +57,13 @@ pub struct Placeable {
     pub words: Option<&'static str>,
 }
 
+/// The menu button's id, a part's (decision 92): Show Menu Button puts it back first.
+pub const MENU_BUTTON: &str = "menu-button";
+
 /// The parts (decision 92), by id, each with its icon and words. The assistant joins them
 /// in Phase 6.
 const PARTS: [(&str, Option<Icon>, Option<&str>); 4] = [
-    ("menu-button", Some(Icon::Menu), Some("toolbar-menu")),
+    (MENU_BUTTON, Some(Icon::Menu), Some("toolbar-menu")),
     ("jobs", None, Some("jobs-name")),
     ("save-state", None, None),
     ("cursors", None, Some("cursor-well")),
@@ -163,6 +166,13 @@ pub fn listed<'a>(list: impl IntoIterator<Item = &'a str>) -> Vec<&'static Place
         }
     }
     drawn
+}
+
+/// The words' message of the item `id` can place, as [`set`] has it: an action's its
+/// message, a part's its own; none for an id the set lacks, the save state and the
+/// spacings.
+pub fn words(id: &str) -> Option<&'static str> {
+    set().iter().find(|placed| placed.id == id)?.words
 }
 
 impl Placeable {

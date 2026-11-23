@@ -1539,10 +1539,13 @@ enum FromToolbar {
     ShowLastPick(bool),
 }
 
-/// Where the toolbar menu was asked for (decision 92): where it hangs from, the pointer or
-/// under the button its keys were pressed on, and that button, which the focus goes back to.
+/// Where the toolbar menu was asked for (decision 92): the item it was asked on, by its id
+/// in the workspace's list, none on the empty areas or a part with no words; where it hangs
+/// from, the pointer or under the button its keys were pressed on; and that button, which the
+/// focus goes back to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ToolbarAsked {
+    item: Option<&'static str>,
     at: egui::Pos2,
     opener: Option<egui::Id>,
 }
@@ -1897,6 +1900,11 @@ struct Shell {
     /// at the next frame, the first time this run ([`Shell::warn_newer`]): one of those just
     /// shown again, or one a move was made in; never once another is shown.
     newer_shown: bool,
+    /// After Hide from the keys, the Toolbar's items the focus goes to, the first drawn
+    /// that can take it: those after the item hidden, then those before it, nearest first
+    /// (decision 92). Asked of the next frame's Toolbar, then taken; none left there, the
+    /// focus goes where F6 goes next. None where Hide came from no key.
+    toolbar_focus: Option<Vec<&'static str>>,
     /// The tab whose icon takes the focus at the next frame: where a section went.
     focus_tab: Option<usize>,
     /// The tool whose header takes the focus once drawn: the one after a hidden tool's in
@@ -2126,6 +2134,7 @@ impl Shell {
             to_say: VecDeque::new(),
             newer_found: BTreeSet::new(),
             newer_shown: false,
+            toolbar_focus: None,
             focus_tab: None,
             focus_section: None,
             reveal_header: None,
@@ -2451,6 +2460,97 @@ impl Shell {
         if let layout::Move::Pin { .. } | layout::Move::Unpin { .. } = change {
             self.focus_section = Some(tool);
         }
+        self.workspace_files
+            .moved(&self.workspace, change, Instant::now());
+        ctx.request_repaint();
+    }
+
+    /// The toolbar menu (decision 92; `menus::Place::Toolbar`), opened where the Toolbar
+    /// asked for it this frame, `asked`, drawn while open, its items enabled from `state`
+    /// ([`context_popup`]). Hide takes the item it opened on out of the workspace's list
+    /// here ([`Shell::move_toolbar`]); the action of any other item chosen is returned, to
+    /// run as its menu bar item's.
+    fn toolbar_menu(
+        &mut self,
+        ctx: &egui::Context,
+        asked: Option<ToolbarAsked>,
+        state: &State,
+    ) -> Option<ActionId> {
+        let id = egui::Id::unique("toolbar menu");
+        let kept = id.with("asked");
+        if let Some(asked) = asked {
+            ctx.data_mut(|d| d.insert_temp(kept, asked));
+        }
+        let kept = ctx.data(|d| d.get_temp::<ToolbarAsked>(kept));
+        let item = kept.and_then(|kept| kept.item);
+        let opened = asked.map(|asked| Opened {
+            place: menus::Place::Toolbar,
+            target: menus::Target::Toolbar { item: asked.item },
+            anchor: egui::Rect::from_min_size(asked.at, egui::Vec2::ZERO),
+            opener: asked.opener,
+        });
+        let chosen = context_popup(ctx, id, opened, &self.keymap, state, None)?;
+        if chosen != ActionId::TOOLBAR_HIDE {
+            return Some(chosen);
+        }
+        let state = State {
+            toolbar_item: item,
+            ..*state
+        };
+        let hides = actions::action(chosen).is_some_and(|a| a.enabled(&state));
+        let item = item.filter(|_| hides)?;
+        // Asked from the keys, the focus goes to the next item drawn, else the one before.
+        if kept.is_some_and(|kept| kept.opener.is_some()) {
+            let drawn = toolbar::listed(self.workspace.toolbar().iter().map(String::as_str));
+            let drawn: Vec<&'static str> = (drawn.iter())
+                .filter(|placed| placed.kind != toolbar::Kind::Spacing)
+                .map(|placed| placed.id)
+                .collect();
+            if let Some(at) = drawn.iter().position(|id| *id == item) {
+                let after = drawn[at + 1..].iter().copied();
+                self.toolbar_focus = Some(after.chain(drawn[..at].iter().rev().copied()).collect());
+            }
+        }
+        let toolbar = self.workspace.toolbar().iter();
+        let list = toolbar.filter(|id| *id != item).cloned().collect();
+        self.move_toolbar(list, ctx);
+        let words = translator(ctx);
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set(
+            "item",
+            toolbar::words(item).map_or_default(|w| words.text(w)),
+        );
+        self.say(words.text_with("toolbar-item-hidden", Some(&args)));
+        None
+    }
+
+    /// Where the focus goes after Hide from the keys took the focused item away (decision
+    /// 92), `asked` saying the Toolbar was asked to move it this frame: where none of the
+    /// items it was asked for took it, it goes on to the region F6 reaches next after the
+    /// Toolbar, the first of `regions`, as F6 would take it.
+    fn focus_after_hide(&self, ctx: &egui::Context, asked: bool, regions: &[egui::Rect]) {
+        let Some((toolbar, after)) = regions.split_first().filter(|_| asked) else {
+            return;
+        };
+        let widgets = focusable(ctx);
+        let focused = ctx.memory(|m| m.focused());
+        let on_toolbar = (widgets.iter())
+            .any(|(id, rect)| Some(*id) == focused && toolbar.contains(rect.center()));
+        if !on_toolbar && let Some(id) = actions::next_region(after, &widgets, None, true) {
+            ctx.memory_mut(|m| m.request_focus(id));
+        }
+    }
+
+    /// Makes `list` the workspace's Toolbar (decision 92), the whole list as it now is, ids
+    /// this build does not know in their places: shown at once, and written into the
+    /// workspace's file as a tab move is, once the layout has stood still.
+    fn move_toolbar(&mut self, list: Vec<String>, ctx: &egui::Context) {
+        let change = layout::Move::Toolbar(list);
+        if !self.workspace.apply(&change) {
+            return;
+        }
+        self.workspaces.keep(&self.workspace);
+        self.newer_shown |= self.workspace.newer;
         self.workspace_files
             .moved(&self.workspace, change, Instant::now());
         ctx.request_repaint();
@@ -3341,6 +3441,10 @@ impl Shell {
             dialog_window: false,
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
             toolbar_labels: self.toolbar_labels,
+            // The toolbar menu's own, as it opens ([`Shell::toolbar_menu`]).
+            toolbar_item: None,
+            menu_button_hidden: self.drawn_menus
+                && !(self.workspace.toolbar().iter()).any(|id| id == toolbar::MENU_BUTTON),
             panel_tab: self.panel_tab,
             workspace: actions::workspace(&self.workspace.id),
             workspace_given: self.workspace_given,
@@ -3522,11 +3626,16 @@ impl Shell {
                     ToolbarEntry::Button(button)
                 }
             };
-            Some(entry)
+            // Each entry's id where the toolbar menu can hide it: one with words.
+            Some((entry, placed.words.map(|_| placed.id)))
         });
-        let entries: Vec<ToolbarEntry> = entries.collect();
+        let (entries, items): (Vec<ToolbarEntry>, Vec<Option<&'static str>>) = entries.unzip();
+        let focus = (self.toolbar_focus.iter().flatten())
+            .filter_map(|wanted| items.iter().position(|item| *item == Some(*wanted)))
+            .collect();
         let mut bar = Toolbar::new()
             .entries(entries)
+            .focus(focus)
             .labels(self.toolbar_labels)
             .menu_button(self.drawn_menus)
             .menu_button_style(self.menu_button)
@@ -3555,6 +3664,7 @@ impl Shell {
             ToolbarAction::TitleBarDoubleClick => window(TitleBar::DoubleClick),
             ToolbarAction::WindowMenu => window(TitleBar::Menu),
             ToolbarAction::ContextMenu(menu) => Some(FromToolbar::Menu(ToolbarAsked {
+                item: menu.entry.and_then(|at| items.get(at).copied().flatten()),
                 at: menu.at,
                 opener: menu.opener,
             })),
@@ -3831,6 +3941,17 @@ impl Shell {
             Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
             Intent::Menu => self.menu = true,
             Intent::ToolbarLabels => self.toolbar_labels = !self.toolbar_labels,
+            // Run on its item by the toolbar menu alone ([`Shell::toolbar_menu`]): with no
+            // item it never runs from here.
+            Intent::ToolbarHide => {}
+            Intent::ShowMenuButton => {
+                let toolbar = self.workspace.toolbar();
+                if !toolbar.iter().any(|id| id == toolbar::MENU_BUTTON) {
+                    let first = std::iter::once(toolbar::MENU_BUTTON.to_owned());
+                    let list = first.chain(toolbar.iter().cloned()).collect();
+                    self.move_toolbar(list, ctx);
+                }
+            }
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
             Intent::HiddenTab => {
@@ -7582,31 +7703,6 @@ fn browser_menu(
     context_popup(ctx, id, opened, keymap, state, None)
 }
 
-/// The toolbar menu (decision 92; `menus::Place::Toolbar`), asked for this frame by `asked`
-/// anywhere on the Toolbar, built from `keymap` and `state` and drawn while open; returns the
-/// action of the item chosen in it.
-fn toolbar_menu(
-    ctx: &egui::Context,
-    asked: Option<ToolbarAsked>,
-    keymap: &Keymap,
-    state: &State,
-) -> Option<ActionId> {
-    let opened = asked.map(|asked| Opened {
-        place: menus::Place::Toolbar,
-        target: menus::Target::App,
-        anchor: egui::Rect::from_min_size(asked.at, egui::Vec2::ZERO),
-        opener: asked.opener,
-    });
-    context_popup(
-        ctx,
-        egui::Id::unique("toolbar menu"),
-        opened,
-        keymap,
-        state,
-        None,
-    )
-}
-
 /// What a context menu opened with: its place and target, where it hangs from, and the
 /// control the focus goes back to as it closes, if not what had it.
 #[derive(Clone, Copy, Debug)]
@@ -7799,12 +7895,9 @@ impl eframe::App for App {
             Some(FromToolbar::ShowLastPick(on)) => self.shell.cursors.show_last = on,
             None => {}
         }
-        run.extend(toolbar_menu(
-            &ctx,
-            toolbar_asked,
-            &self.shell.keymap,
-            &drawn,
-        ));
+        // The focus the Toolbar was asked to move this frame, before Hide asks again.
+        let refocus = self.shell.toolbar_focus.take().is_some();
+        run.extend(self.shell.toolbar_menu(&ctx, toolbar_asked, &drawn));
         // The Tools panel is as wide as its edge was dragged, a drag in progress included.
         // While the edge moves, the photo's size is held as it is while the window resizes.
         let edge_name = tr(&ctx, "tools-panel-width");
@@ -7861,6 +7954,7 @@ impl eframe::App for App {
         .collect();
         // The keys first, which zoom about the pointer over the photo; then what was
         // clicked or chosen in a menu, which zooms about the view's centre.
+        self.shell.focus_after_hide(&ctx, refocus, &regions);
         self.run_actions(keyed, &ctx, &regions);
         let pointed = self.shell.pointed.take();
         self.run_actions(run, &ctx, &regions);
@@ -21845,7 +21939,8 @@ mod tests {
                         Some(FromToolbar::ShowLastPick(on)) => bench.shell.cursors.show_last = on,
                         Some(FromToolbar::Jobs | FromToolbar::NotSaved) | None => {}
                     }
-                    run.extend(toolbar_menu(&ctx, asked, &bench.shell.keymap, &state));
+                    let refocus = bench.shell.toolbar_focus.take().is_some();
+                    run.extend(bench.shell.toolbar_menu(&ctx, asked, &state));
                     let name = tr(&ctx, "tools-panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
                     let width = edge.width(&ctx);
@@ -21934,6 +22029,7 @@ mod tests {
                     bench.chosen.extend(chosen);
                     run.extend(chosen);
                     bench.regions = vec![top.response.rect, side.response.rect];
+                    bench.shell.focus_after_hide(&ctx, refocus, &bench.regions);
                     // The keys first, about the pointer, as `App::ui` runs them.
                     let pointed = bench.shell.pointed;
                     for (at, id) in run.into_iter().enumerate() {
@@ -22248,6 +22344,172 @@ mod tests {
         harness.run_steps(30);
         assert!(harness.query_by_label("Maximise").is_none());
         harness.get_by_role_and_label(Role::Button, "Restore");
+    }
+
+    /// A right-click at `at` on the bench, its press and its release in one frame.
+    fn right_click_bench(harness: &mut Harness<'_, Bench>, at: egui::Pos2) {
+        let right = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        harness.run_steps(30);
+        frame(
+            harness,
+            [egui::Event::PointerMoved(at), right(true), right(false)],
+        );
+        harness.run();
+    }
+
+    /// Decision 92: the toolbar menu's Hide takes the item it opened on, by a right-click or
+    /// Shift+F10, out of the workspace's Toolbar, and Show Menu Button puts the menu button
+    /// back first; each change is the whole list, written into the workspace's file from
+    /// its bundled one, the rest of the list as it was.
+    #[test]
+    fn hide_and_show_menu_button_write_the_workspace_s_toolbar() {
+        let folder = settings::testing::Folder::new("toolbar-menu-hide");
+        let files = folder.0.join("workspaces");
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.state_mut().shell.workspace_files = layout::Files::new(files.clone());
+        harness.run();
+        let list =
+            |harness: &Harness<'_, Bench>| harness.state().shell.workspace.toolbar().to_vec();
+        let before = list(&harness);
+        let without = |gone: &[&str]| -> Vec<String> {
+            let kept = before.iter().filter(|id| !gone.contains(&id.as_str()));
+            kept.cloned().collect()
+        };
+        // Hide "Undo", from a right-click on it.
+        let undo = harness
+            .get_by_role_and_label(Role::Button, "Undo")
+            .rect()
+            .center();
+        right_click_bench(&mut harness, undo);
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Hide “Undo”")
+            .click();
+        harness.run();
+        assert_eq!(list(&harness), without(&["undo"]));
+        assert!(harness.query_by_label("Undo").is_none());
+        // The menu button hidden, from Shift+F10 on it; Show Menu Button puts it back at the
+        // start.
+        harness.get_by_role_and_label(Role::Button, "Menu").focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::SHIFT, egui::Key::F10);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Hide “Menu”")
+            .click();
+        harness.run();
+        assert_eq!(list(&harness), without(&["undo", "menu-button"]));
+        let empty = empty_point(&harness);
+        right_click_bench(&mut harness, empty);
+        assert!(harness.query_by_label("Hide “Menu”").is_none());
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Show menu button")
+            .click();
+        harness.run();
+        let shown = without(&["undo"]);
+        assert_eq!(list(&harness), shown);
+        assert_eq!(shown[0], "menu-button");
+        // Written into the workspace's own file; the bundled list unchanged.
+        harness.state_mut().shell.workspace_files.flush();
+        let (read, warnings) = layout::Workspace::open(Some(&files), layout::DEFAULT);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(read.toolbar(), shown);
+        let bundled = layout::Workspace::open(None, layout::DEFAULT).0;
+        assert_eq!(bundled.toolbar(), before);
+    }
+
+    /// Decision 92: Hide from the keys moves the focus to the next item drawn that can take
+    /// it, the cursors' well's chosen face among them, else the one before, else where F6
+    /// goes next; screen readers hear the item hidden.
+    #[test]
+    fn hide_from_the_keys_moves_the_focus_on() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.state_mut().photo = true;
+        harness.run();
+        let focused = |harness: &Harness<'_, Bench>| {
+            let buttons = harness.query_all_by_role(Role::Button);
+            let mut focused = buttons.filter(|b| b.accesskit_node().is_focused());
+            focused.next().and_then(|b| b.accesskit_node().label())
+        };
+        let enabled = |harness: &Harness<'_, Bench>, name: &str| {
+            !harness
+                .get_by_role_and_label(Role::Button, name)
+                .accesskit_node()
+                .is_disabled()
+        };
+        let hide = |harness: &mut Harness<'_, Bench>, name: &str| {
+            harness.get_by_role_and_label(Role::Button, name).focus();
+            harness.run();
+            harness.key_press_modifiers(Modifiers::SHIFT, egui::Key::F10);
+            harness.run();
+            let item = format!("Hide “{name}”");
+            harness.get_by_role_and_label(Role::MenuItem, &item).click();
+            harness.run();
+        };
+        // The menu button first: the next item drawn that can take the focus.
+        let next = [
+            "Import…",
+            "Export…",
+            "Reset",
+            "Undo",
+            "Redo",
+            "Copy edit",
+            "Apply edit",
+        ]
+        .into_iter()
+        .find(|name| enabled(&harness, name))
+        .expect("an enabled action");
+        hide(&mut harness, "Menu");
+        assert_eq!(harness.state().shell.announced, "Menu hidden");
+        assert_eq!(focused(&harness).as_deref(), Some(next));
+        // Every action hidden in turn from the keys, the focus moving on each time, until
+        // the last lands it on the cursors' well next, on its chosen face.
+        let mut name = next.to_owned();
+        for _ in 0..8 {
+            hide(&mut harness, &name);
+            let faces = harness.query_all_by_role(Role::RadioButton);
+            let mut face = faces.filter(|f| f.accesskit_node().is_focused());
+            if let Some(face) = face.next() {
+                let toggled = face.accesskit_node().toggled();
+                assert_eq!(toggled, Some(egui::accesskit::Toggled::True));
+                assert_eq!(
+                    face.accesskit_node().label().as_deref(),
+                    Some("Select, Esc")
+                );
+                return;
+            }
+            name = focused(&harness).expect("a button of the Toolbar");
+        }
+        panic!("the focus never reached the cursors' well");
+    }
+
+    /// Decision 92: Hide from the keys on a Toolbar's last item moves the focus where F6
+    /// goes next, nothing left on the Toolbar to take it.
+    #[test]
+    fn hide_from_the_keys_on_the_last_item_moves_the_focus_on() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        let alone = layout::Move::Toolbar(vec!["menu-button".to_owned()]);
+        assert!(harness.state_mut().shell.workspace.apply(&alone));
+        harness.run();
+        harness.get_by_role_and_label(Role::Button, "Menu").focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::SHIFT, egui::Key::F10);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Hide “Menu”")
+            .click();
+        harness.run();
+        assert!(harness.state().shell.workspace.toolbar().is_empty());
+        let id = harness.ctx.memory(|m| m.focused()).expect("the focus kept");
+        let rect = harness.ctx.read_response(id).expect("drawn").rect;
+        assert!(harness.state().regions[1].contains(rect.center()));
     }
 
     /// Decision 92: a right-click on the Toolbar's empty area opens the toolbar menu, never

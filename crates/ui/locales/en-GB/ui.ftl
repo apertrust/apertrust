@@ -231,6 +231,13 @@ toolbar-more = More actions
 # disabled with its tip until it is built.
 action-toolbar-labels = Toolbar labels
 action-customise-toolbar = Customise toolbar…
+# Hide "Undo", on the item the menu opened on, $item its name: it leaves the workspace's
+# Toolbar. Show Menu Button puts the menu button back while it is hidden.
+action-toolbar-hide = Hide toolbar item
+toolbar-menu-hide = Hide “{ $item }”
+# What screen readers hear once Hide has taken the item away.
+toolbar-item-hidden = { $item } hidden
+action-show-menu-button = Show menu button
 toolbar-customise-later = Customise Toolbar comes in a later version
 # The save state at the Toolbar's end, which shows only when a save goes wrong:
 # Saving… while a write is still unconfirmed about two seconds after it started, as on a
