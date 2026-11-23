@@ -196,6 +196,7 @@ Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, all built:
 - The engine's kernel, `slang/raw_histogram.slang`, in `pipeline::KERNELS`: each photosite of a region of the 16-bit mosaic in the bin of its value, 65536 words of integer atomics, four photosites an invocation; a mosaic larger than one binding in row windows, every window's dispatch in one submission (`count`, or `record` and `Counting::finish` for a caller that submits it itself).
 - Over the declared image (`for_instances`, `fill`), read back once and kept in the photo's image context: by the session before its values report and its rendered thumbnail (`Engine::count_raw_histogram`), where the edit as shown or as saved reads it; a failure reported once for the photo, an export failing, and by `export_at` before it plans, a job's handed to the engine thread (`Hand::hand_commands`, `export::Commands`).
 - The session reports what an operation computes for a tool's computed value (`Operation::computed`) with the tool's state (`ToolState::computed`, `ComputedState`), from a plan of the operations up to it, while the row shows.
+- The session reports each readout of a tool's rows of pickers (`ProcessingTool::readout`) with the tool's state (`ToolState::readouts`, `ReadoutState`), on the photo's image context after every change, none where the tool's code panics, warned of once for the photo: Colour calibration's CCT and the light's colour.
 
 ### Colour pickers
 
@@ -655,9 +656,9 @@ Photo › Next Photo (`next-photo`, Space and →) and Previous Photo (`previous
 - **Custom rows:**
   - the Tone curve's `Curve`;
   - the Tone equalizer's graph of its bands, `Equalizer`, a second view of them. The tool's curve is sampled at darktable's 256 points; each drag step settles the bands on it as darktable's does, and every band whose rounded value moves is sent as `SetControl`, the release's `done` writes of several bands as one `Step { source: You }` (`Change::Step`), one history step with the drag. A double-click and Shift+Delete reset the nine, as one `Step`. It has no histogram until the readouts (decision 19).
-- **Colour pickers** (decision 79; [pickers.md](pickers.md#the-picker-button)): a slider's `Quad::Picker(id)` is a `PickerButton` in its quad mode (`SliderRow::picker`), and a `Row::Pickers` its label and toggle `PickerButton`s at the row's end, each on while the mirror shows its picker on (`tools::Pickers`), disabled with the reason on a photo opening or open for viewing only, its words `messages::picker`'s. A press is `Change::Picker` with the keys held, sent as `PickerCommand::On`, or `Off` for the picker on (`pickers::pressed`). Only the tools in `tools::PICKING`, those whose pick is built, draw theirs: Exposure's, and White balance's, turned on from Settings. `On` carries the tool's settings as the app keeps them.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md#the-picker-button)): a slider's `Quad::Picker(id)` is a `PickerButton` in its quad mode (`SliderRow::picker`), and a `Row::Pickers` its label and toggle `PickerButton`s at the row's end, each on while the mirror shows its picker on (`tools::Pickers`), disabled with the reason on a photo opening or open for viewing only, its words `messages::picker`'s. A press is `Change::Picker` with the keys held, sent as `PickerCommand::On`, or `Off` for the picker on (`pickers::pressed`). Only the tools in `tools::PICKING`, those whose pick is built, draw theirs: Exposure's, White balance's, turned on from Settings, and Colour calibration's, on its readout row, which draws the readout the session reports (`ToolState::readouts`) as its text and a `ColourSwatch` before the button. `On` carries the tool's settings as the app keeps them.
 - **A tool's settings** (decisions 29 and 43): kept in the app's store with its own (`settings::ToolSettings`, `[tools.<module>]`), each `Row::Setting` that has one drawn live, a change reported as `Change::Setting`, kept at once and sent with the tool's others as `PickerCommand::Settings` as the gesture ends; one with none drawn disabled at darktable's default. A pick's measured settings are kept as the user's own (`Reaction::Measured`). Rows following a setting (`Row::WhenSetting`) show while the setting the app keeps holds one of their options; a choice setting lists an option still to come disabled, and, where a picker's words follow it, each option with its own tooltip. A picker's tooltip and the viewer bar's words follow such a setting (`pickers::by_setting`, decision 88). A reference (`Row::Reference`, decision 88) is drawn as the design system's `ReferenceRow`, its two settings optional, a number and a text, kept together, its L handed back by its picker with the open photo's path, cleared together (`Change::ClearReference`); whether its photo is still there is asked off the interface's thread as each photo opens and as it is set (`pickers::ReferencePhotos`). A picker its tool says is not ready (`ProcessingTool::picker_ready`) is drawn disabled with its reason. What a tool's last pick did and its warnings (`Row::LastPick`) are kept with its patch (`pickers::Picked::last`), drawn as warning rows over a readout with two patches, and said by the live region in place of the controls the pick changed (`pickers::LastPickWords`).
-- **Patches** (`Row::Patches`, no tool's yet): the design system's `Patches`, the input the tool's last pick showed on the photo with its L readout (`pickers::Picked`, gone as darktable's `gui_update` zeroes it: undo, redo, a move through history, the edit's or the tool's reset, another photo; a pick measured before the command that took it away, or carried again by a later reading, never brings it back), the target from the tool's settings, disabled until the tool's pickers are drawn.
+- **Patches** (`Row::Patches`, Colour calibration's): the design system's `Patches`, the input the tool's last pick showed on the photo with its L readout, or its L, h and c for a target of three settings (`pickers::Picked`, gone as darktable's `gui_update` zeroes it: undo, redo, a move through history, the edit's or the tool's reset, another photo; a pick measured before the command that took it away, or carried again by a later reading, never brings it back), the target from the tool's settings, disabled until the tool's pickers are drawn.
 
 ### The colour picker in the app
 
@@ -1330,7 +1331,8 @@ Colour maths shared by operations, and the numerical helpers their ports share o
 - Yrg, JzAzBz, darktable UCS 22 and CIE xyY (`ucs`), HSV, middle-grey uncompensation, and Lab to and from XYZ D50 (Slang and Rust);
 - darktable's RGB norms (`RgbNorm`, and `rgb_norm` in Slang);
 - darktable's illuminants: the daylight and Planckian loci, the fluorescent and LED tables, temperature from white-balance multipliers;
-- chromatic adaptation: Bradford, CAT16, XYZ;
+- chromatic adaptation: Bradford, CAT16, XYZ, and darktable's `chroma_adapt_pixel` for each, which Colour calibration's picker measures by;
+- linear Rec709 of XYZ D50 (`xyz_to_rec709_d50`) and an illuminant's colour for the screen (`illuminants::illuminant_xy_to_rgb`), Colour calibration's swatch;
 - darktable's white balance model (`white_balance`), which White balance's view uses: temperature and tint of coefficients through the camera's matrix, black-body and CIE daylight spectra over the CIE 1931 observer, lcms2's daylight locus restated with no lcms2, and darktable's pseudoinverse, in `f64`;
 - darktable UCS's gamut table (`ucs::gamut_lut`), which the colour equalizer's setup uses and colour balance rgb's is to.
 
@@ -1410,7 +1412,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 | White balance | `white_balance` | white balance | temperature | W0–W9, W15 |
 | Orientation | `orientation` | orientation | flip | F0–F2, F4, F5 (F3 and F6 in its source) |
 | Exposure | `exposure` | exposure | exposure | its invariant rows |
-| Colour calibration | `colour_calibration` | color calibration | channelmixerrgb | C0–C7 |
+| Colour calibration | `colour_calibration` | color calibration | channelmixerrgb | C0–C8 |
 | Tone equalizer | `tone_equalizer` | tone equalizer | toneequal | Q0–Q4 |
 | Colour balance RGB | `colour_balance_rgb` | color balance rgb | colorbalancergb | B0–B4 |
 | Tone curve | `tone_curve` | rgb curve (its Luma curve) | rgbcurve | T0, T1, T4–T8, T11, T16, T17 |
@@ -1506,10 +1508,10 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 - **CAT tab:**
   - the adaptation, unavailable while the illuminant is as shot in camera (decision 30);
   - then, unless none, the illuminant (darktable's nine, as shot in camera bound by its value 10) and what its type reads: an F or LED source, a temperature, or a custom light's hue and chroma, a lossless view of `x` and `y` reaching darktable's chroma of 300 within the operation's widened `x` and `y`;
-  - gamut compression, clipping, and the area colour mapping's settings, drawn disabled;
+  - gamut compression, clipping, and the area colour mapping, live: its settings kept as `tools.channelmixerrgb.*`, its patches with the input's L, h and c, its title "(active)" (`ProcessingTool::group_active`);
   - its defaults As shot, the operation's for the photo, restated and held to it bit for bit;
   - choosing an illuminant, a source or a temperature writes the light's `x`, `y` and temperature, and hue or chroma writes its temperature, as darktable's `gui_changed` does (`ProcessingTool::follow`);
-  - the CCT readout row waits for the renderer.
+  - after the adaptation, the readout row: the CCT and its model, the light's colour (`ProcessingTool::readout`) and the picker, `illuminant`, darktable's `_auto_set_illuminant` in correction and measure mode (`ProcessingTool::pick`); C8 lands a flat patch at its target's lightness on the target within ΔE2000 0.5, and with a mix, which changes the patch's luminance, on the target's chroma and hue alone.
 - **R, G, B, Colourfulness, Brightness and Grey tabs:** each Input R, G and B and Normalise channels, every control its parameter as it is. `version` is owned at 3, with no control (rule 12).
 - The colour checker's settings, under every tab, are drawn disabled until the colour checker is built.
 - C4 ties it to the eleven channelmixerrgb golden cases, and C6 to darktable's `gui_changed` restated. Two proposed bounds are kept `#[ignore]`d, awaiting a decision (decision 30): C5's on the hue, which fails below a chroma of 12 %, and C1's on an illuminant reset control by control, which keeps its light as custom rather than As shot.
@@ -1578,7 +1580,7 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 ### Planned
 
 - **Camera presets and tuning** (decision 27): preset rows listing a photo's options after their own under a heading (`PresetRow::camera`, `ProcessingTool::listed`) and taking a tuning addressed like a control (`PresetRow::tuning`, `ProcessingTool::tuning`), `ProcessingTool::preset` given the tuning and the tool's values. Then White balance's camera presets, stored in `preset` by darktable's name, and Finetune ([docs/tools/white-balance.md](tools/white-balance.md), Build).
-- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each built tool's `pick`; Colour calibration's and AgX's Auto tune levels' pickers with their rows; White balance's button bar with its picker's toggle.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each built tool's `pick`; AgX's Auto tune levels' picker with its row; White balance's button bar with its picker's toggle.
 
 ## apertrust-export
 
