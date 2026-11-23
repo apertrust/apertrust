@@ -1455,6 +1455,9 @@ picker-tip-area-quad =
 
 # The viewer bar's start while a picker is on.
 picker-bar-name = { $tool } · { $picker }
+# The label naming the tool on the picker's area or point, where the tool has several
+# pickers: "Exposure · Reference".
+picker-area-label = { $tool } · { $picker }
 # How to use a picker measuring an area.
 picker-bar-area = Drag an area on the photo. { $command }-click switches to a point. Esc ends.
 # How to use a picker measuring a point, after its own sentence.

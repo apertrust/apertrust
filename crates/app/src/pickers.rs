@@ -24,7 +24,8 @@
 //! it, so nothing waits for the GPU.
 //!
 //! - **On the photo** ([`on_photo`]): the active point or area as the design system's
-//!   [`PickerMarks`] draw it, and darktable's pointer (`darkroom.c:3815-4140`): a press
+//!   [`PickerMarks`] draw it, labelled with its tool's name, and the picker's icon beside
+//!   the pointer ([`label`], [`badge`]), and darktable's pointer (`darkroom.c:3815-4140`): a press
 //!   with a point moves it; with an area, a press within 6 points of a corner takes that
 //!   corner, the opposite one held, and one elsewhere starts a new area 2 % of the photo's
 //!   width each way of it, as tall on screen, the press held; Ctrl-click (Cmd-click on the
@@ -52,10 +53,10 @@ use apertrust_tools::pick::{LastPick, Patch, PickWarnings, Shown};
 use apertrust_tools::{
     ControlKind, PickerKind, ProcessingDefinition, ProcessingTool, Row, messages,
 };
-use apertrust_ui::Translator;
 use apertrust_ui::components::{PickerAction, PickerMarks, PickerPlace, ReadoutRow};
 use apertrust_ui::i18n::Args;
-use apertrust_ui::overlay::{Overlay, Point, Weight};
+use apertrust_ui::overlay::{Labelled, Overlay, Point, Weight};
+use apertrust_ui::{Icon, Translator};
 use eframe::egui::{
     self, Color32, CursorIcon, Key, Modifiers, Pos2, Rect, Role, Sense, Vec2, WidgetInfo, pos2,
     vec2,
@@ -607,6 +608,34 @@ pub fn name(words: &Translator, definition: &ProcessingDefinition, picker: &str)
     words.text(&id)
 }
 
+/// The label naming `picker`'s tool on its area or point (`docs/pickers.md`, On the photo):
+/// the tool's title, or where the tool declares more than one picker, each turned on from
+/// a button, a quad or a preset row's option, the title and the picker's [`name`],
+/// "Exposure · Reference" (`picker-area-label`); the title alone where the name, as shown,
+/// repeats it, as Exposure's own picker's does.
+pub fn label(words: &Translator, definition: &ProcessingDefinition, picker: &str) -> String {
+    let title = words.text(&messages::title(definition.tool.id));
+    let name = name(words, definition, picker);
+    if definition.pickers.len() < 2 || name == title {
+        return title;
+    }
+    let mut args = Args::new();
+    args.set("tool", title);
+    args.set("picker", name);
+    words.text_with("picker-area-label", Some(&args))
+}
+
+/// The pointer's badge for `picker` (`docs/pickers.md`, On the photo): the icon of its
+/// cursor in the Toolbar's well, White balance's `pick-white-balance` or Exposure's
+/// `pick-exposure`, else the pipette.
+pub fn badge(definition: &ProcessingDefinition, picker: &str) -> Icon {
+    (definition.tool.cursors.iter())
+        .find(|cursor| cursor.picker == picker)
+        .map_or(Icon::Pick, |cursor| {
+            crate::cursors::icon(cursor.cursor.icon)
+        })
+}
+
 /// A picker's words that say what a pick will do, by the option the setting its words
 /// follow holds (`Picker::words_by`, decision 88), as the app keeps it in `settings`, else
 /// that setting's default: `part` `promise`, its tooltip, or `hint`, the viewer bar's
@@ -974,6 +1003,10 @@ pub struct OnPhoto<'a> {
     pub colour: Color32,
     /// Its name, as the viewer bar gives it ([`name`]).
     pub name: &'a str,
+    /// The label naming its tool by its area or point ([`label`]); none drawn while empty.
+    pub label: &'a str,
+    /// Its icon beside the pointer ([`badge`]).
+    pub badge: Icon,
 }
 
 /// A drag of the picker on the photo, between its press and its release.
@@ -1221,6 +1254,14 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     PickerMarks::new(place)
         .focused(response.has_focus())
         .paint(&overlay);
+    paint_label(&overlay, on, place, response.has_focus());
+    let pointer = pos.filter(|_| response.contains_pointer());
+    paint_badge(
+        &overlay,
+        on,
+        pointer,
+        matches!(drag, Some(Drag::Area { .. })),
+    );
     let reveal = keyed.then(|| revealed(on, region, &overlay)).flatten();
 
     // To screen readers.
@@ -1264,6 +1305,29 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
         commands,
         pan,
         reveal,
+    }
+}
+
+/// The label naming the picker's tool by its area or point at `place`, `focused` while its
+/// node has the keyboard's focus, inside the photo area (`docs/pickers.md`, On the photo):
+/// decorative, no target, and nothing while the mark is wholly out of view.
+fn paint_label(overlay: &Overlay, on: &OnPhoto, place: PickerPlace, focused: bool) {
+    if on.label.is_empty() {
+        return;
+    }
+    let mark = match place {
+        PickerPlace::Area(area) => Labelled::Area { area, focused },
+        PickerPlace::Point { at, .. } => Labelled::Point(at),
+    };
+    overlay.mark_label(mark, on.label, on.area);
+}
+
+/// The pointer's badge, the picker's icon beside `pointer` while it is over the photo area,
+/// hidden while an area is `dragged`, the label then saying whose it is (`docs/pickers.md`,
+/// On the photo). Drawn, not a system pointer, so it trails the pointer by a frame.
+fn paint_badge(overlay: &Overlay, on: &OnPhoto, pointer: Option<Pos2>, dragged: bool) {
+    if let Some(pointer) = pointer.filter(|&at| !dragged && on.area.contains(at)) {
+        overlay.badge(on.badge, pointer, on.area);
     }
 }
 
@@ -1912,6 +1976,7 @@ mod tests {
                     };
                     let words = apertrust_ui::translator(&ctx);
                     let name = name(&words, Sample.definition(), id);
+                    let label = label(&words, Sample.definition(), id);
                     let on = OnPhoto {
                         picker,
                         area: PHOTO,
@@ -1921,6 +1986,8 @@ mod tests {
                         switched: scene.mirror.switched(region),
                         colour: sampled(scene.mirror.reading()),
                         name: &name,
+                        label: &label,
+                        badge: badge(Sample.definition(), id),
                     };
                     for command in on_photo(ui, &on).commands {
                         scene.send(command, &ctx);
@@ -2957,6 +3024,8 @@ mod tests {
                         switched: *region,
                         colour: Color32::RED,
                         name: "",
+                        label: LABEL,
+                        badge: Icon::PickExposure,
                     };
                     let now = on_photo(ui, &on);
                     picked.commands.extend(now.commands);
@@ -2995,6 +3064,174 @@ mod tests {
             (reveal.right() - moved.right() - reach).abs() < 1e-5,
             "{reveal:?}"
         );
+    }
+
+    /// The label [`zoomed`]'s picker carries.
+    const LABEL: &str = "Exposure";
+
+    /// Where the label `text` was drawn on the photo in the last frame.
+    fn label_at<S>(harness: &Harness<'_, S>, text: &str) -> Option<Rect> {
+        let shapes = &harness.output().shapes;
+        shapes.iter().find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(shape) if shape.galley.text() == text => {
+                Some(shape.visual_bounding_rect())
+            }
+            _ => None,
+        })
+    }
+
+    /// Where the pointer's badge was drawn in the last frame: the image on the photo.
+    fn badge_at<S>(harness: &Harness<'_, S>) -> Option<Rect> {
+        let shapes = &harness.output().shapes;
+        shapes
+            .iter()
+            .rev()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Mesh(mesh)
+                    if clipped.clip_rect == PHOTO
+                        && mesh.texture_id != egui::TextureId::default() =>
+                {
+                    Some(mesh.calc_bounds())
+                }
+                _ => None,
+            })
+    }
+
+    /// Sample's first rows, its preset row and its brightness quad, its preset row's Camera
+    /// option turning on its spread picker: one picker on a quad and one on a preset row.
+    fn quad_and_preset_row() -> &'static ProcessingDefinition {
+        use apertrust_tools::{PresetRow, ToolDefinition};
+        let sample = Sample.definition();
+        let preset_rows = Box::leak(Box::new([PresetRow {
+            id: "look",
+            options: &["untouched", "grainy", "camera"],
+            controls: &["brightness", "grain", "size"],
+            pickers: &[("camera", "spread")],
+        }]));
+        let pickers = (sample.pickers.iter())
+            .filter(|picker| ["brightness", "spread"].contains(&picker.id))
+            .copied()
+            .collect::<Vec<_>>();
+        Box::leak(Box::new(ProcessingDefinition {
+            tool: ToolDefinition {
+                before: sample.tool.before,
+                ..ToolDefinition::processing("sample", &[])
+            },
+            version: sample.version,
+            layers: sample.layers,
+            auto: sample.auto,
+            switched: sample.switched,
+            controls: sample.controls,
+            preset_rows,
+            views: &[],
+            pickers: Box::leak(pickers.into_boxed_slice()),
+            facts: None,
+        }))
+    }
+
+    /// The label names the picker's tool, and the picker where the tool has more than one
+    /// a person can turn on; the badge is the picker's cursor's icon, else the pipette.
+    #[test]
+    fn the_label_names_the_tool_and_the_badge_shows_the_picker_s_icon() {
+        use apertrust_tools::exposure::Exposure;
+        use apertrust_tools::white_balance::WhiteBalance;
+        let words = Translator::new(Locale::EnGb);
+        assert_eq!(
+            label(&words, Sample.definition(), "spread"),
+            "tool-sample-title · tool-sample-picker-spread-label"
+        );
+        assert_eq!(
+            label(&words, WhiteBalance.definition(), "spot"),
+            "White balance"
+        );
+        assert_eq!(
+            label(&words, Exposure.definition(), "reference"),
+            "Exposure · Reference"
+        );
+        // A picker a preset row's option turns on counts as one a person can turn on.
+        let both = quad_and_preset_row();
+        assert_eq!(
+            label(&words, both, "spread"),
+            "tool-sample-title · tool-sample-picker-spread-label"
+        );
+        // A picker's name that repeats its tool's is said once, in every language.
+        assert_eq!(label(&words, Exposure.definition(), "exposure"), "Exposure");
+        let words = Translator::new(Locale::Uk);
+        let title = words.text(&messages::title("exposure"));
+        assert_eq!(label(&words, Exposure.definition(), "exposure"), title);
+        assert_eq!(
+            badge(WhiteBalance.definition(), "spot"),
+            Icon::PickWhiteBalance
+        );
+        assert_eq!(badge(Exposure.definition(), "exposure"), Icon::PickExposure);
+        assert_eq!(badge(Sample.definition(), "spread"), Icon::Pick);
+    }
+
+    /// The label shows while the picker is on, whatever turned it on, and goes with it;
+    /// the badge sits below and right of the pointer over the photo, flips near its right
+    /// and bottom edges, and hides while an area is dragged, the label following the area.
+    #[test]
+    fn the_label_and_the_badge_show_while_the_picker_is_on() {
+        let mut harness = scene();
+        let text = "tool-sample-title · tool-sample-control-brightness-label";
+        harness.hover_at(at(0.5, 0.5));
+        harness.run();
+        assert_eq!(label_at(&harness, text), None);
+        assert_eq!(badge_at(&harness), None);
+
+        harness.get_by_role_and_label(Role::Button, QUAD).click();
+        harness.run();
+        answer(&mut harness, Region::Area([0.2, 0.3, 0.5, 0.6]));
+        // Above the area's top-left handle.
+        let drawn = label_at(&harness, text).expect("the label");
+        assert!(drawn.bottom() <= at(0.2, 0.3).y - 5.0, "{drawn:?}");
+        harness.hover_at(at(0.5, 0.5));
+        harness.run();
+        let badge = badge_at(&harness).expect("the badge");
+        assert!(
+            (badge.min - (at(0.5, 0.5) + vec2(12.0, 12.0))).length() < 1.0,
+            "{badge:?}"
+        );
+        // Near the right and bottom edges, on the pointer's other side.
+        harness.hover_at(at(0.99, 0.99));
+        harness.run();
+        let badge = badge_at(&harness).expect("the badge");
+        assert!(badge.max.x < at(0.99, 0.99).x && badge.max.y < at(0.99, 0.99).y);
+
+        // Dragging a new area: no badge, the label following the area at once.
+        harness.hover_at(at(0.7, 0.6));
+        harness.run();
+        harness.drag_at(at(0.7, 0.6));
+        harness.run();
+        harness.hover_at(at(0.9, 0.8));
+        harness.run();
+        assert_eq!(badge_at(&harness), None);
+        let drawn = label_at(&harness, text).expect("the label");
+        // Sample's long words cross the photo's right edge left-aligned: right-aligned
+        // to the right-hand handles.
+        let handles = at(0.9, 0.8).x + 5.0;
+        assert!((drawn.right() - handles).abs() < 2.0, "{drawn:?}");
+        harness.drop_at(at(0.9, 0.8));
+        harness.run();
+        // kittest's drop takes the pointer away; back over the photo, the badge is back.
+        harness.hover_at(at(0.5, 0.5));
+        harness.run();
+        assert!(badge_at(&harness).is_some());
+
+        harness.get_by_role_and_label(Role::Button, QUAD).click();
+        harness.run();
+        assert_eq!(label_at(&harness, text), None);
+        assert_eq!(badge_at(&harness), None);
+    }
+
+    #[test]
+    fn the_label_is_not_drawn_while_the_area_is_out_of_view() {
+        let mut harness = zoomed(4.0, Region::Area([0.1, 0.1, 0.2, 0.2]));
+        harness.run();
+        assert_eq!(label_at(&harness, LABEL), None);
+        let mut harness = zoomed(4.0, Region::Area([0.45, 0.45, 0.55, 0.55]));
+        harness.run();
+        assert!(label_at(&harness, LABEL).is_some());
     }
 
     /// Where the sampled colour's dot, the point's centre, was drawn in the last frame.

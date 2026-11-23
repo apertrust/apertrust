@@ -6146,7 +6146,7 @@ mod tests {
     /// rows with pickers, so the snapshot shows the pickers alone. Accepted with
     /// `UPDATE_SNAPSHOTS=1`, reviewed like a golden image.
     fn photograph_pickers(which: Builtin, name: &str) {
-        use crate::pickers::{OnPhoto, name as picker_name, on_photo};
+        use crate::pickers::{OnPhoto, label as picker_label, name as picker_name, on_photo};
         use apertrust_engine::session::Region;
 
         const BRIGHTNESS: PickerRef = PickerRef::Tool {
@@ -6213,6 +6213,8 @@ mod tests {
                     switched: Region::Point([0.5, 0.5]),
                     colour: egui::Color32::TRANSPARENT,
                     name: &name,
+                    label: &picker_label(&words, Sample.definition(), "brightness"),
+                    badge: apertrust_ui::Icon::Pick,
                 };
                 on_photo(ui, &on);
             });
