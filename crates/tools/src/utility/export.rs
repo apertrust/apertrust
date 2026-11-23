@@ -35,7 +35,7 @@ use crate::{
     Track, Widget, Word,
 };
 
-use super::UtilityDefinition;
+use super::{UtilityDefinition, item};
 
 /// A setting row of Export's: `kind` kept under `key` where it is kept, with `words`.
 const fn setting(
@@ -230,7 +230,7 @@ const fn custom(widget: Widget) -> Row {
 
 /// Export, the Photos tab's last tool: its ↺ its own, Default settings, and its presets
 /// in its header; its page Storage options, Format options and Global options, then the
-/// groups to come and its end.
+/// groups to come and its end; Export… and Export Again offered for the Toolbar.
 pub const EXPORT: UtilityDefinition = UtilityDefinition {
     tool: ToolDefinition {
         id: "export",
@@ -360,6 +360,8 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        // Export… and Export Again for the Toolbar (decision 92).
+        toolbar: &[item("export", "export"), item("export-again", "export")],
         cursors: &[],
     },
     measures: None,

@@ -37,7 +37,7 @@ use crate::definition::{
 };
 use crate::{
     Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, ProcessingTool, Section,
-    Setting, ToolValues,
+    Setting, ToolValues, ToolbarItem,
 };
 
 pub struct Orientation;
@@ -131,6 +131,17 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 actions: &ACTIONS,
             },
         }],
+        // Its two rotations for the Toolbar, each with its button's icon (decision 92).
+        toolbar: &[
+            ToolbarItem {
+                action: ACTIONS[0],
+                icon: None,
+            },
+            ToolbarItem {
+                action: ACTIONS[1],
+                icon: None,
+            },
+        ],
         cursors: &[],
     },
     version: 1,

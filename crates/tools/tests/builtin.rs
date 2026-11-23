@@ -208,6 +208,63 @@ fn the_built_in_tools_declare_their_picker_cursors() {
     assert_eq!(once.len(), keys.len(), "a key on two cursors: {keys:?}");
 }
 
+/// Decision 92: every toolbar item a built-in tool offers, by its tool, action and icon,
+/// and offered by no other tool: Orientation's two rotations, each a button's that takes
+/// its button's icon, History's six edit actions, Collections and Export's two. Each icon
+/// named is one `apertrust-ui` has.
+#[test]
+fn the_built_in_tools_offer_their_toolbar_items() {
+    let expected: [(&str, &str, Option<&str>); 11] = [
+        ("flip", "rotate_ccw", None),
+        ("flip", "rotate_cw", None),
+        ("history", "reset", Some("reset")),
+        ("history", "undo", Some("undo")),
+        ("history", "redo", Some("redo")),
+        ("history", "copy-edit", Some("copy")),
+        ("history", "apply-edit", Some("apply")),
+        ("history", "copy-apply-parts", Some("copy")),
+        ("collections", "show-collections", Some("library")),
+        ("export", "export", Some("export")),
+        ("export", "export-again", Some("export")),
+    ];
+    let processing = TOOLS.iter().map(|tool| tool.definition());
+    let buttons = |definition: &ProcessingDefinition| -> Vec<&str> {
+        let rows = definition.rows().filter_map(|row| match row {
+            Row::Buttons { buttons, .. } => Some(buttons.iter().map(|button| button.id)),
+            _ => None,
+        });
+        rows.flatten().collect()
+    };
+    for definition in processing.clone() {
+        for item in definition
+            .tool
+            .toolbar
+            .iter()
+            .filter(|item| item.icon.is_none())
+        {
+            let tool = definition.tool.id;
+            assert!(
+                buttons(definition).contains(&item.action),
+                "{tool}'s {}: no icon and no button",
+                item.action
+            );
+        }
+    }
+    let offered: Vec<(&str, &str, Option<&str>)> = processing
+        .map(|definition| &definition.tool)
+        .chain(UTILITIES.iter().map(|utility| &utility.tool))
+        .flat_map(|tool| (tool.toolbar.iter()).map(|item| (tool.id, item.action, item.icon)))
+        .collect();
+    assert_eq!(offered, expected);
+    for (tool, action, icon) in expected {
+        let Some(icon) = icon else { continue };
+        assert!(
+            Icon::ALL.iter().any(|known| known.name() == icon),
+            "{tool}'s {action}: no icon {icon}"
+        );
+    }
+}
+
 /// What a tool fixes, with no control, is among what it owns, so the refusal that names
 /// it names its owner.
 #[test]
@@ -500,6 +557,7 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
         presets: true,
         open_at_first: false,
         menus: &[],
+        toolbar: &[],
         cursors: &[],
     },
     version: 1,
