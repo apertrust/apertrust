@@ -32,6 +32,7 @@
 //! condensed to the width unless `verbose` is on ([`condense`]), an error kept whole on
 //! [`one_line`], and a line repeated is written once with how often it repeated.
 //! rawler's lens lookups are the raw domain's: Apertrust does not use the lens yet.
+//! arboard's fallback to the X11 clipboard on Wayland shows only with `verbose`.
 //! Binaries call [`init`] with their `-d` switches, keeping the [`Logging`] it returns,
 //! then [`starting`] with the [`Program`] that [`program!`](crate::program) names, which
 //! prints the [`banner()`] when a domain is on.
@@ -237,13 +238,16 @@ impl Switches {
     }
 
     /// rawler's lens lookups are the raw domain's lines, not warnings: Apertrust does not
-    /// use the lens yet, so they show only with `raw` on.
+    /// use the lens yet, so they show only with `raw` on. arboard's clipboard fallback is
+    /// detail, shown only with `verbose` ([`is_clipboard_fallback`]).
     fn admits_event(&self, event: &Event<'_>) -> bool {
         let normalized = event.normalized_metadata();
         let metadata = normalized.as_ref().unwrap_or_else(|| event.metadata());
-        !metadata.target().starts_with("rawler")
-            || self.domains.contains(&"raw")
-            || !is_lens(&message_of(event))
+        let target = metadata.target();
+        if target.starts_with("rawler") {
+            return self.domains.contains(&"raw") || !is_lens(&message_of(event));
+        }
+        !target.starts_with("arboard") || self.verbose || !is_clipboard_fallback(&message_of(event))
     }
 }
 
@@ -518,6 +522,14 @@ fn is_lens(message: &str) -> bool {
     .any(|start| message.starts_with(start))
 }
 
+/// arboard's warning that it falls back to the X11 clipboard, on a Wayland compositor
+/// without the data-control protocol, as GNOME's: egui's other clipboard,
+/// smithay-clipboard, carries copy and paste on Wayland, so it reports nothing a person
+/// needs.
+fn is_clipboard_fallback(message: &str) -> bool {
+    message.starts_with("Tried to initialize the wayland data control protocol clipboard")
+}
+
 /// Text over several lines on one, as wgpu's errors are written: "Validation Error",
 /// "Caused by:", then each cause, the innermost last.
 pub fn one_line(text: &str) -> String {
@@ -741,6 +753,35 @@ mod tests {
         // With `raw` on, each is the one lens line, which the repeats then count.
         let (lines, _) = written(&["raw"], missing);
         assert_eq!(lines, ["[raw] lens: not identified by rawler"]);
+    }
+
+    /// arboard's fallback to the X11 clipboard, as on GNOME's Wayland, shows only with
+    /// `verbose`, whole; arboard's other warnings, and the same text from elsewhere, show.
+    #[test]
+    fn arboards_clipboard_fallback_shows_only_with_verbose() {
+        const FALLBACK: &str = "Tried to initialize the wayland data control protocol \
+                                clipboard, but failed. Falling back to the X11 clipboard \
+                                protocol. The error was: A required Wayland protocol \
+                                (ext-data-control, or wlr-data-control version 1) is not \
+                                supported by the compositor";
+        let fallback = || tracing::warn!(target: "arboard::platform::linux", "{FALLBACK}");
+        let (lines, _) = written(&[], fallback);
+        assert!(lines.is_empty(), "{lines:?}");
+        let (lines, _) = written(&["gpu"], fallback);
+        assert!(lines.is_empty(), "{lines:?}");
+        let (lines, _) = written(&["verbose"], fallback);
+        assert_eq!(lines, [format!("[arboard] warning: {FALLBACK}")]);
+
+        let (lines, _) = written(&[], || {
+            tracing::warn!(target: "arboard::platform::linux", "Failed to get clipboard");
+            tracing::warn!(target: "smithay_clipboard", "{FALLBACK}");
+        });
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines[0], "[arboard] warning: Failed to get clipboard");
+        assert!(
+            lines[1].starts_with("[smithay_clipboard] warning: Tried to initialize"),
+            "{lines:?}"
+        );
     }
 
     #[test]
