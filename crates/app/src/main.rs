@@ -3754,7 +3754,8 @@ impl Shell {
     /// has answered with the picker still on goes.
     fn follow_picker(&mut self, mirror: &Mirror, words: &Translator) {
         let open = mirror.photo.open();
-        if let Some(turned) = self.cursors.follow(mirror.pickers.active(), open) {
+        let (on, through) = (mirror.pickers.active(), mirror.pickers.through());
+        if let Some(turned) = self.cursors.follow(on, open, through) {
             let text = cursors::turned_words(words, mirror.tools(), &turned, open, &mirror.values);
             self.cursors.say_turned(text);
         }
@@ -5410,7 +5411,12 @@ impl App {
             } => {
                 (self.shell.tool_settings).clear_reference(tool, (lightness, photo));
                 let settings = self.shell.tool_settings.of(tool);
+                let active = self.mirror.pickers.active();
+                let ending = cursors::cleared_by(self.mirror.tools(), tool, &settings, active);
                 let number = self.send_picker(PickerCommand::Settings { tool, settings }, ctx);
+                if let Some(why) = ending {
+                    self.shell.cursors.ending(number, why);
+                }
                 // A pick measured before it hands no reference back over the clear.
                 self.mirror.picked.settings_cleared(tool, number);
             }
@@ -8012,6 +8018,10 @@ impl eframe::App for App {
         // What second starts handed over, and the command line's paths once the window has
         // shown, taken here since `logic` runs while the window is minimised too.
         self.take_hand_offs(ctx, frame.winit_window().map(|window| &**window));
+        // A picker turned on since the last look, seen before what the engine reported, so
+        // one it refuses before its first reading is seen to turn on and off, and its
+        // turn-off, the text the frame then draws, is said (decision 104).
+        self.shell.follow_picker(&self.mirror, &translator(ctx));
         // What the engine reported first, so the actions and the frame see it.
         self.drain(ctx);
         // The picker on as the cursors' well follows it, observed before any frame, the
@@ -13627,6 +13637,32 @@ mod tests {
         assert_eq!(harness.state().0.cursors.chosen(), cursors::Cursor::SELECT);
     }
 
+    /// A picker the engine refuses before its first reading, within one round trip: seen
+    /// on before what the engine reported and off after it, as `App::logic` follows it on
+    /// either side of `drain`, so its cursor is chosen and given back, and the turn-off is
+    /// what the frame then draws for screen readers (decision 104).
+    #[test]
+    fn a_picker_refused_before_the_next_frame_is_followed_on_and_off() {
+        let words = Translator::new(Locale::EnGb);
+        let mut mirror = crate::mirror::tests::mirror();
+        mirror.apply(Event::Opened(crate::mirror::tests::photo(1)));
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
+        let picker = PickerRef::Tool {
+            tool: "temperature",
+            picker: "spot",
+        };
+        mirror.pickers.asked(5, Some((picker, true)));
+        shell.follow_picker(&mirror, &words);
+        assert_eq!(shell.cursors.chosen(), SPOT);
+        mirror.apply(Event::Failed(SessionError::Refused {
+            command: 5,
+            error: Box::new(SessionError::NotLive),
+        }));
+        shell.follow_picker(&mirror, &words);
+        assert_eq!(shell.cursors.chosen(), cursors::Cursor::SELECT);
+        assert_eq!(shell.cursors.turned(), "White balance picker off");
+    }
+
     /// The start window's keys after the app's: the keymap takes Cmd+O and leaves ↓, Enter
     /// and Escape to the list, as the app reads its keys before the window is drawn.
     #[test]
@@ -18474,7 +18510,7 @@ mod tests {
         let mut mode = cursors::Mode::new();
         mode.choose(chosen);
         if chosen == SPOT {
-            mode.follow(Some(SPOT_PICKER), Some(1));
+            mode.follow(Some(SPOT_PICKER), Some(1), None);
         }
         Harness::builder()
             .with_size(egui::vec2(1300.0, 940.0))

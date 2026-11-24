@@ -1148,6 +1148,7 @@ picker-off-tool-off = { $tool } wyłączone
 picker-off-section = { $tool } zwinięte
 picker-off-history = zmieniono historię
 picker-off-reset = edycja zresetowana
+picker-off-reference = wyczyszczono wzorzec
 
 ## Studnia kursorów (docs/cursors.md, The well).
 cursor-well = Kursory

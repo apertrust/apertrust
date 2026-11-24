@@ -1147,6 +1147,7 @@ picker-off-tool-off = { $tool } вимкнено
 picker-off-section = { $tool } згорнуто
 picker-off-history = змінено історію
 picker-off-reset = редагування скинуто
+picker-off-reference = еталон очищено
 
 ## Колодязь курсорів (docs/cursors.md, The well).
 cursor-well = Курсори
