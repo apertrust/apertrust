@@ -76,6 +76,11 @@ pub fn deg_to_rad(degrees: f32) -> f32 {
     degrees * PI / 180.0
 }
 
+/// darktable `rad2degf`.
+pub fn rad_to_deg(radians: f32) -> f32 {
+    radians / PI * 180.0
+}
+
 /// CAT16 chromatic adaptation between D50 and D65 (`chromatic_adaptation.h`).
 pub const XYZ_D50_TO_D65_CAT16: Mat3 = [
     [9.89466254e-01, -4.00304626e-02, 4.40530317e-02],
@@ -677,6 +682,27 @@ pub fn make_ych(y: f32, c: f32, hue: f32) -> [f32; 4] {
     [y, c, hue.cos(), hue.sin()]
 }
 
+/// darktable `Yrg_to_Ych`: Yrg in polar coordinates about the white, luminance, chroma,
+/// and the hue as its cosine and sine, 1 and 0 where the chroma is 0. The chroma is
+/// `dt_fast_hypotf`'s, as darktable's release builds compute it.
+pub fn yrg_to_ych(yrg: [f32; 3]) -> [f32; 4] {
+    let [y, r, g] = yrg;
+    let (r, g) = (r - YRG_WHITE[0], g - YRG_WHITE[1]);
+    let c = (g * g + r * r).sqrt();
+    let (cos_h, sin_h) = if c != 0.0 { (r / c, g / c) } else { (1.0, 0.0) };
+    [y, c, cos_h, sin_h]
+}
+
+/// darktable `XYZ_to_Ych`, from XYZ D65: CIE 2006 LMS, Yrg, then Ych.
+pub fn xyz_to_ych(xyz: [f32; 3]) -> [f32; 4] {
+    yrg_to_ych(lms_to_yrg(apply(&XYZ_D65_TO_LMS_2006, xyz)))
+}
+
+/// darktable `get_hue_angle_from_Ych`: the hue of Ych in radians, from −π to π.
+pub fn ych_hue(ych: [f32; 4]) -> f32 {
+    ych[3].atan2(ych[2])
+}
+
 /// darktable `Ych_to_Yrg`.
 pub fn ych_to_yrg(ych: [f32; 4]) -> [f32; 3] {
     let [y, c, cos_h, sin_h] = ych;
@@ -860,6 +886,48 @@ mod tests {
         for (got, want) in back.iter().zip(yrg) {
             assert!((got - want).abs() < 1e-5, "{back:?}");
         }
+    }
+
+    /// darktable's `XYZ_to_Ych` (`colorspaces_inline_conversions.h`) restated in f64 from
+    /// its constants, on a few colours of XYZ D65, a near grey among them: within 1e-6
+    /// relative in Y, 1e-7 in c, which takes the white's r and g off with their f32
+    /// rounding, and 1e-5 rad in the hue; the white's Yrg is chroma 0, its hue's cosine 1
+    /// and sine 0.
+    #[test]
+    fn xyz_to_ych_is_darktable_s() {
+        let wide = |m: &Mat3| m.map(|row| row.map(f64::from));
+        let times = |m: &Mat3d, v: [f64; 3]| -> [f64; 3] {
+            std::array::from_fn(|r| (0..3).map(|c| m[r][c] * v[c]).sum())
+        };
+        let ych = |xyz: [f64; 3]| {
+            let lms = times(&wide(&XYZ_D65_TO_LMS_2006), xyz);
+            let y = 0.68990272 * lms[0] + 0.34832189 * lms[1];
+            let a: f64 = lms.iter().sum();
+            let rgb = times(&wide(&LMS_TO_GRADING_RGB), lms.map(|v| v / a));
+            let (r, g) = (rgb[0] - 0.21902143, rgb[1] - 0.54371398);
+            [y, g.hypot(r), g.atan2(r)]
+        };
+        for xyz in [
+            [0.18, 0.19, 0.2],
+            [0.4124, 0.2126, 0.0193],
+            [0.3576, 0.7152, 0.1192],
+            [0.1805, 0.0722, 0.9505],
+            [0.35, 0.3, 0.2],
+        ] {
+            let got = xyz_to_ych(xyz.map(|v: f64| v as f32));
+            let want = ych(xyz);
+            let luminance = (f64::from(got[0]) - want[0]).abs() / want[0];
+            let chroma = (f64::from(got[1]) - want[1]).abs();
+            let hue = (f64::from(ych_hue(got)) - want[2]).abs();
+            assert!(luminance < 1e-6, "{xyz:?}: {got:?} for {want:?}");
+            assert!(chroma < 1e-7, "{xyz:?}: {got:?} for {want:?}");
+            assert!(hue < 1e-5, "{xyz:?}: {got:?} for {want:?}");
+        }
+        assert_eq!(
+            yrg_to_ych([0.5, YRG_WHITE[0], YRG_WHITE[1]]),
+            [0.5, 0.0, 1.0, 0.0]
+        );
+        assert_eq!(ych_hue([0.5, 0.0, 1.0, 0.0]), 0.0);
     }
 
     #[test]
