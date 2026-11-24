@@ -467,10 +467,16 @@ pub fn reset_name(words: &Translator, tool: &ToolDefinition, title: &str) -> Str
 
 /// The tools whose pickers the panel draws: those whose pick is built, each joining with
 /// it (`docs/pickers.md`, The plan): Exposure's, White balance's, turned on from Settings,
-/// and Colour calibration's, on its readout row. Until then a tool's quad, its picker rows'
-/// buttons and its patches' input are not drawn, as a quad with nothing behind it is not,
-/// and a preset option that turns its picker on is drawn disabled.
-pub const PICKING: &[&str] = &["exposure", "temperature", "channelmixerrgb"];
+/// Colour calibration's, on its readout row, and Colour balance RGB's six quads. Until
+/// then a tool's quad, its picker rows' buttons and its patches' input are not drawn, as a
+/// quad with nothing behind it is not, and a preset option that turns its picker on is
+/// drawn disabled.
+pub const PICKING: &[&str] = &[
+    "exposure",
+    "temperature",
+    "channelmixerrgb",
+    "colorbalancergb",
+];
 
 /// The colour pickers as a section draws them.
 #[derive(Clone, Copy)]
@@ -8376,6 +8382,141 @@ mod tests {
             let mut harness = calibrated(picked, which, settings.clone());
             harness.run();
             harness.snapshot(format!("colour-calibration-mapping-{theme}"));
+            results.extend_harness(&mut harness);
+        }
+    }
+
+    /// Colour balance RGB as a section draws it, its pickers drawn, on its tab `tab`, the
+    /// picker `on` on.
+    struct Balanced {
+        tab: usize,
+        on: Option<PickerRef>,
+        changes: Vec<Change>,
+    }
+
+    /// Colour balance RGB's section in `which` on its tab `tab`.
+    fn balanced(which: Builtin, tab: usize) -> Harness<'static, Balanced> {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 670.0))
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+            .build_ui_state(
+                |ui, balanced: &mut Balanced| {
+                    let panel = theme(ui.ctx()).colors.panel;
+                    ui.painter()
+                        .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                    let pickers = Pickers {
+                        drawn: PICKING,
+                        on: balanced.on,
+                        ..Pickers::NONE
+                    };
+                    let mut panels = Panels::default();
+                    panels.apply(&Change::Tab {
+                        tool: "colorbalancergb",
+                        tab: balanced.tab,
+                    });
+                    let changes = section(
+                        ui,
+                        &ColourBalanceRgb,
+                        &untouched(&ColourBalanceRgb),
+                        Head {
+                            open: true,
+                            ..Head::default()
+                        },
+                        &panels,
+                        &|_: &str| GROUP_OPEN,
+                        true,
+                        None,
+                        &pickers,
+                    );
+                    balanced.changes.extend(changes);
+                },
+                Balanced {
+                    tab,
+                    on: None,
+                    changes: Vec::new(),
+                },
+            );
+        harness.run();
+        harness
+    }
+
+    /// Colour balance RGB's six quads, darktable's: the four hues' on the 4 ways tab and
+    /// the two fulcrums' on the Masks tab, each named by its picker, its tooltip darktable's
+    /// words alone, as an area picker's has no line on choosing an area; a press sends `On`
+    /// with the keys held, Ctrl (Cmd on the Mac) for a hue's own colour.
+    #[test]
+    fn colour_balance_rgb_draws_its_six_pickers_and_a_press_sends_on_with_the_keys() {
+        let quads = |harness: &Harness<'_, Balanced>| {
+            harness
+                .query_all_by_role(Role::Button)
+                .filter_map(|node| node.accesskit_node().label())
+                .filter(|label| label.ends_with(": pick from the photo"))
+                .collect::<Vec<_>>()
+        };
+        let mut harness = balanced(Builtin::Dark, 1);
+        assert_eq!(
+            quads(&harness),
+            [
+                "Global offset hue: pick from the photo",
+                "Shadows lift hue: pick from the photo",
+                "Highlights gain hue: pick from the photo",
+                "Power hue: pick from the photo",
+            ]
+        );
+        let quad =
+            harness.get_by_role_and_label(Role::Button, "Global offset hue: pick from the photo");
+        let tip = quad.accesskit_node().description().unwrap_or_default();
+        assert_eq!(
+            tip,
+            "Picks the colour opposite the selected area's. Ctrl-click, Cmd-click on the Mac, \
+             picks the area's own."
+        );
+        quad.click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Button, "Power hue: pick from the photo")
+            .click_modifiers(Modifiers::COMMAND);
+        harness.run();
+        let pressed = |picker, command| Change::Picker {
+            tool: "colorbalancergb",
+            picker,
+            action: PickerAction::On { area: command },
+            keys: PickKeys {
+                command,
+                shift: false,
+            },
+        };
+        assert_eq!(
+            harness.state().changes,
+            [pressed("global_hue", false), pressed("midtones_hue", true)]
+        );
+        let harness = balanced(Builtin::Dark, 2);
+        assert_eq!(
+            quads(&harness),
+            [
+                "White fulcrum: pick from the photo",
+                "Contrast grey fulcrum: pick from the photo",
+            ]
+        );
+        let quad =
+            harness.get_by_role_and_label(Role::Button, "White fulcrum: pick from the photo");
+        let tip = quad.accesskit_node().description().unwrap_or_default();
+        assert_eq!(tip, "Pick colour from the photo");
+    }
+
+    /// Colour balance RGB's 4 ways tab with its four quads, Global offset hue's on, in
+    /// each theme.
+    #[test]
+    fn colour_balance_rgb_s_pickers() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = balanced(which, 1);
+            harness.state_mut().on = Some(PickerRef::Tool {
+                tool: "colorbalancergb",
+                picker: "global_hue",
+            });
+            harness.run();
+            harness.snapshot(format!("colour-balance-rgb-pickers-{theme}"));
             results.extend_harness(&mut harness);
         }
     }
