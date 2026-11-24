@@ -142,6 +142,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::DefinedByProfile,
         output: Fact::NonLinearRgbOrLabDisplayReferred,
     }),
+    // src/iop/colorout.c's flags: neither `IOP_FLAGS_UNSAFE_COPY` nor `_INCLUDE_IN_STYLES`.
+    copy_safe: true,
+    in_styles: false,
 };
 
 /// Every parameter of `colorout`: the tool is darktable's and owns them both, the

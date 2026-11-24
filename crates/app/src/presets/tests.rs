@@ -35,13 +35,29 @@ fn scratch(name: &str) -> PathBuf {
     folder
 }
 
+/// `dialog` drawn as the dialog host draws it each frame, in the harness `builder` sizes
+/// and sets up, what it asked kept beside it; run once.
+pub(crate) fn drawn<D: Dialog + 'static>(
+    builder: egui_kittest::HarnessBuilder<(D, Vec<Output>)>,
+    dialog: D,
+) -> Harness<'static, (D, Vec<Output>)> {
+    let mut harness = builder.build_ui_state(
+        |ui, (dialog, outputs): &mut (D, Vec<Output>)| {
+            outputs.extend(crate::dialog_host::draw(ui, dialog).outputs);
+        },
+        (dialog, Vec::new()),
+    );
+    harness.run();
+    harness
+}
+
 /// Exposure at its defaults, every control available.
 fn untouched() -> ToolState {
     state_of(&Exposure)
 }
 
 /// `tool` at its defaults, every control available, off where it is switched.
-fn state_of(tool: &dyn ProcessingTool) -> ToolState {
+pub(crate) fn state_of(tool: &dyn ProcessingTool) -> ToolState {
     let definition = tool.definition();
     ToolState {
         tool: definition.tool.id,
@@ -217,16 +233,10 @@ fn save_as_preset_writes_the_tool_s_values() {
     let name = free_name("Exposure", &taken, &words);
     assert_eq!(name, "Exposure 1");
     let dialog = NameDialog::save("exposure", "Exposure".to_owned(), taken, name);
-    let mut harness = Harness::builder()
+    let builder = Harness::builder()
         .with_size(egui::vec2(400.0, 240.0))
-        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
-        .build_ui_state(
-            |ui, (dialog, outputs): &mut (NameDialog, Vec<Output>)| {
-                outputs.extend(crate::dialog_host::draw(ui, dialog).outputs);
-            },
-            (dialog, Vec::new()),
-        );
-    harness.run();
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()));
+    let mut harness = drawn(builder, Sheet(dialog));
     let field = harness.get_by_role_and_label(Role::TextInput, "Name");
     assert_eq!(
         field.accesskit_node().value().as_deref(),
@@ -274,16 +284,10 @@ fn a_name_taken_or_empty_disables_save_and_says_why() {
         taken,
         "Bright".to_owned(),
     );
-    let mut harness = Harness::builder()
+    let builder = Harness::builder()
         .with_size(egui::vec2(400.0, 240.0))
-        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
-        .build_ui_state(
-            |ui, (dialog, outputs): &mut (NameDialog, Vec<Output>)| {
-                outputs.extend(crate::dialog_host::draw(ui, dialog).outputs);
-            },
-            (dialog, Vec::new()),
-        );
-    harness.run();
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()));
+    let mut harness = drawn(builder, Sheet(dialog));
     harness.get_by_label("Exposure already has a preset with this name");
     let save = harness.get_by_role_and_label(Role::Button, "Save");
     assert!(save.accesskit_node().is_disabled());

@@ -149,6 +149,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::LinearRaw,
         output: Fact::LinearRawSceneReferred,
     }),
+    // src/iop/rawprepare.c's flags: `IOP_FLAGS_UNSAFE_COPY`, not `_INCLUDE_IN_STYLES`.
+    copy_safe: false,
+    in_styles: false,
 };
 
 /// Every parameter of `rawprepare`: the tool is darktable's and owns them all, the crop

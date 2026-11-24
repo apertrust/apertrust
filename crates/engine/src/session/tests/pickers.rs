@@ -1058,6 +1058,8 @@ static SPOT: ProcessingDefinition = ProcessingDefinition {
     layers: false,
     auto: false,
     switched: false,
+    copy_safe: true,
+    in_styles: false,
     controls: &[Control {
         id: "red",
         kind: ControlKind::Number {
@@ -1435,6 +1437,8 @@ static CONFIGURED: ProcessingDefinition = ProcessingDefinition {
     layers: false,
     auto: false,
     switched: false,
+    copy_safe: true,
+    in_styles: false,
     controls: &[
         Control {
             id: "level",
@@ -3070,6 +3074,8 @@ static SWITCHED: ProcessingDefinition = ProcessingDefinition {
     layers: false,
     auto: false,
     switched: true,
+    copy_safe: true,
+    in_styles: false,
     controls: &[Control {
         id: "level",
         kind: ControlKind::Number {

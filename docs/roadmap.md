@@ -303,7 +303,8 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
     - [x] the files read and written, `apertrust_library::presets`, and `Folders::presets` and `styles`;
     - [x] tool presets in every processing tool's header: choose, save, update, rename and delete, Update and Delete disabled on Windows until its alerts are built ([gui.md](gui.md#a-tools-presets));
     - [x] Export's presets, For sharing and Full size JPEG built in, and `apertrust-cli export --preset NAME` ([gui.md](gui.md#its-header-and-presets));
-    - [ ] creating a style; the Styles tool applying one to the active photo, with the styles applied to it kept in its history and Clear; Copy Edit and Apply Edit on the active photo; then Apply Edit and styles on every selected photo, as one batch;
+    - [x] creating a style, from History's ⋯ and Edit › Save Edit as Style… ([gui.md](gui.md#creating-a-style));
+    - [ ] the Styles tool applying one to the active photo, with the styles applied to it kept in its history and Clear; Copy Edit and Apply Edit on the active photo; then Apply Edit and styles on every selected photo, as one batch;
   - [ ] phase 2 (#364): the hover preview; darktable's built-in presets for each ported tool; Copy or Apply Parts…; a tool's Copy Settings and Paste Settings; Favourites, editing and duplicating a style; a preset's and a style's actions, with their ids; styles on export and import; `.appreset` and `.apstyle` files opened from outside; importing darktable's `.dtstyle` and `.dtpreset`; presets applied automatically; `--preset` and `--style` for processing tools on the CLI.
 - [ ] Before and after, and warnings.
 - [ ] Colour calibration's colour checker, darktable's, with its chart data and fit.

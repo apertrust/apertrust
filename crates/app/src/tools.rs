@@ -5388,6 +5388,8 @@ mod tests {
         layers: true,
         auto: false,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: &[
             apertrust_tools::Control {
                 id: "mode",

@@ -267,6 +267,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::ReconstructionRaw,
         output: Fact::LinearRawSceneReferred,
     }),
+    // src/iop/highlights.c's flags: neither `IOP_FLAGS_UNSAFE_COPY` nor `_INCLUDE_IN_STYLES`.
+    copy_safe: true,
+    in_styles: false,
 };
 
 /// Every parameter of `highlights`, the method and the threshold: the tool is

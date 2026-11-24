@@ -1072,6 +1072,8 @@ pub(crate) mod tests {
         layers: true,
         auto: true,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: &[
             Control {
                 id: "strength",

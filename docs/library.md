@@ -34,7 +34,7 @@ Decisions 46 and 101. The library meets five requirements:
 | A Library: its folders and its albums across them | `<user data>/libraries/<id>/`, seen only on this computer ([A Library](#a-library)) | New Library… (Phase 5) |
 | A Library that travels, by choice | `.apertrust/libraries/<id>/` in its home folder, one of its own ([A Library that travels](#a-library-that-travels)) | Save Library in a Folder…, or the choice in New Library… (Phase 5) |
 | A tool's presets | One `.appreset` each, `<user data>/presets/<tool>/<Name>.appreset`, XMP holding the `.apxmp`'s tool entries or, for a utility, its settings; the built-in ones in `data/presets/`, embedded (decision 106) | Save as Preset… in the tool's header's presets pull-down |
-| Styles | One `.apstyle` each, `<user data>/styles/<Name>.apstyle`, XMP holding one or more tools' entries; a copied edit only in the app's memory; the styles applied to a photo in its sidecar's history, planned (decision 106) | Create a Style… or Save Edit as Style… (planned) |
+| Styles | One `.apstyle` each, `<user data>/styles/<Name>.apstyle`, XMP holding one or more tools' entries; a copied edit only in the app's memory; the styles applied to a photo in its sidecar's history, planned (decision 106) | Create a Style… or Save Edit as Style… |
 
 ```text
 NAS/Photos/                          a folder, opened as it is

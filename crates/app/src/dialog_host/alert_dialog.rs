@@ -67,18 +67,11 @@ impl Dialog for AlertDialog {
     }
 
     fn look(&self, t: &apertrust_ui::Theme) -> Look {
-        Look {
-            background: t.colors.panel,
-            margin: t.spacing.l,
-        }
+        Look::spaced(t)
     }
 
     fn keys(&self, _os: OperatingSystem) -> Keys {
-        Keys {
-            escape: true,
-            close_window: true,
-            cancel: true,
-        }
+        Keys::ALL
     }
 
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {

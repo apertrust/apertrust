@@ -362,6 +362,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::LinearRaw,
         output: Fact::LinearRgbSceneReferred,
     }),
+    // src/iop/demosaic.c's flags: neither `IOP_FLAGS_UNSAFE_COPY` nor `_INCLUDE_IN_STYLES`.
+    copy_safe: true,
+    in_styles: false,
 };
 
 /// Every parameter of `demosaic`: the tool is darktable's and owns them all.

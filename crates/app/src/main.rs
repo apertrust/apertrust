@@ -84,6 +84,7 @@ mod settings;
 mod settings_dialog;
 mod start;
 mod storage;
+mod styles;
 #[cfg(test)]
 mod testing;
 mod thumbnails;
@@ -1558,6 +1559,9 @@ struct App {
     /// Whether Keep was pressed while `--conf` sets the graphics card or API, which then
     /// cannot change: the notice stays, saying why.
     notice_held: bool,
+    /// A status message the Viewer says over the photo, with the time it came, for
+    /// [`STATUS_FOR`] seconds: a style created ([`App::create_style`]).
+    status: Option<(String, f64)>,
     /// This run's start marker, removed once a frame has been drawn into the window.
     marker: recovery::Pending,
     /// What was open last, while it reopens at the start ([`reopened`]).
@@ -2097,6 +2101,8 @@ struct Shell {
     discard: alerts::Question,
     /// Whether Discard History… ran, for the app to ask first, or send it.
     discard_history: bool,
+    /// Whether Create a Style… or Save Edit as Style… ran, for the app to open its dialog.
+    create_style: bool,
     /// A tool's own action that ran, by its tool and action, for the app to run as its
     /// button does ([`App::tool_action`]).
     tool_action: Option<(&'static str, &'static str)>,
@@ -2253,6 +2259,7 @@ impl Shell {
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
             discard: alerts::Question::discard(settings.ask_before_discard, false),
             discard_history: false,
+            create_style: false,
             tool_action: None,
             drawn_menus: os != OperatingSystem::Mac,
             menu: false,
@@ -3475,6 +3482,8 @@ impl Shell {
             editable: false,
             view_only: false,
             edited,
+            // The app's, from the photo's edit ([`App::shell_state`]).
+            styles: false,
             // The app's, from the photo's history ([`App::shell_state`]).
             undo: false,
             redo: false,
@@ -4033,6 +4042,7 @@ impl Shell {
             Intent::ExportAgain => self.export_again = true,
             Intent::Step { next } => self.step = Some(next),
             Intent::DiscardHistory => self.discard_history = true,
+            Intent::CreateStyle => self.create_style = true,
             Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
             Intent::Menu => self.menu = true,
             Intent::ToolbarLabels => self.toolbar_labels = !self.toolbar_labels,
@@ -4684,6 +4694,7 @@ impl App {
             restart,
             notice,
             notice_held: false,
+            status: None,
             marker,
             reopening: None,
             remembered: Remembered::default(),
@@ -5595,7 +5606,7 @@ impl App {
                 presets::NameDialog::save(tool, title, taken, name)
             }
         };
-        self.dialogs.open(dialog, None, ctx);
+        self.dialogs.open(presets::Sheet(dialog), None, ctx);
     }
 
     /// Update or Delete of `tool`'s preset, `item`: its alert first, the answer carried out
@@ -5743,6 +5754,35 @@ impl App {
         }
     }
 
+    /// Create a Style… and Save Edit as Style… (decision 106; `styles`): their dialog,
+    /// over the tools the active photo's edit touches, refusing the styles' names.
+    fn style_dialog(&mut self, ctx: &egui::Context) {
+        let Some(folder) = self.shell.presets.styles() else {
+            return;
+        };
+        let words = translator(ctx);
+        let lines = styles::lines(self.mirror.tools(), &self.mirror.values.tools, &words);
+        let dialog = styles::StyleDialog::new(styles::taken(&folder), lines);
+        self.dialogs.open(presets::Sheet(dialog), None, ctx);
+    }
+
+    /// What Create a Style… asked as Create was pressed: the tools checked written as a
+    /// style with their values now, and the Viewer saying so, or why it could not be,
+    /// which is logged under `-d settings` too. No history step: no photo changes.
+    fn create_style(&mut self, asked: styles::Asked, ctx: &egui::Context) {
+        let Some(folder) = self.shell.presets.styles() else {
+            return;
+        };
+        let build = apertrust_base::program!().version;
+        let (tools, states) = (self.mirror.tools(), &self.mirror.values.tools);
+        let done = styles::create(&folder, tools, states, &asked, build);
+        if let Err(error) = &done {
+            tracing::warn!(target: "settings", "style {}: {error}", asked.name);
+        }
+        let said = styles::said(&translator(ctx), &asked.name, done.as_ref().err());
+        self.status = Some((said, ctx.input(|i| i.time)));
+    }
+
     /// The processing tool `id`, among the mirror's.
     fn tool(&self, id: &str) -> Option<&'static dyn ProcessingTool> {
         (self.mirror.tools().iter())
@@ -5874,6 +5914,7 @@ impl App {
             waiting: self.mirror.photo.asked().is_some() && !self.mirror.live(),
             editable: takes && self.mirror.live(),
             view_only: self.view_only(),
+            styles: styles::can_create(&self.mirror) && self.shell.presets.styles().is_some(),
             opened: opened(&self.mirror),
             undo: history.is_some_and(|h| h.undo.is_some()),
             redo: history.is_some_and(|h| h.redo.is_some()),
@@ -6048,6 +6089,9 @@ impl App {
             }
             if std::mem::take(&mut self.shell.discard_history) {
                 self.discard_history(ctx);
+            }
+            if std::mem::take(&mut self.shell.create_style) {
+                self.style_dialog(ctx);
             }
             if let Some((tool, action)) = self.shell.tool_action.take() {
                 self.tool_action(tool, action, ctx);
@@ -6765,10 +6809,18 @@ impl App {
             args.set("error", why.clone());
             translator(ui.ctx()).text_with("edit-not-saved", Some(&args))
         });
+        // A status message, for its time.
+        let time = ui.input(|i| i.time);
+        self.status = self.status.take().filter(|(_, at)| time - at < STATUS_FOR);
+        if let Some((_, at)) = &self.status {
+            ui.ctx()
+                .request_repaint_after_secs((at + STATUS_FOR - time) as f32);
+        }
         let said: Vec<&str> = [
             left.as_deref(),
             self.mirror.notice.as_deref(),
             message.as_ref().or(failure).map(String::as_str),
+            self.status.as_ref().map(|(said, _)| said.as_str()),
         ]
         .into_iter()
         .flatten()
@@ -8382,6 +8434,9 @@ impl eframe::App for App {
         for asked in taken.presets {
             self.preset_named(asked);
         }
+        for asked in taken.styles {
+            self.create_style(asked, ctx);
+        }
         self.log_saved(ctx);
         // The app's keys pressed in a dialog's own window, Quit among them.
         self.run_actions(taken.actions, ctx, &[]);
@@ -9086,6 +9141,7 @@ fn take_dialogs(
     let mut settings = Vec::new();
     let mut storage = Vec::new();
     let mut presets = Vec::new();
+    let mut styles = Vec::new();
     for output in dialogs.outputs() {
         match output {
             dialog_host::Output::Keys(keys) => actions.extend(actions::read_from_dialog(
@@ -9109,6 +9165,7 @@ fn take_dialogs(
             }
             dialog_host::Output::Log(asked) => log.push(asked),
             dialog_host::Output::Preset(asked) => presets.push(asked),
+            dialog_host::Output::Style(asked) => styles.push(asked),
         }
     }
     let held = hold_close(ctx, dialogs);
@@ -9120,6 +9177,7 @@ fn take_dialogs(
         jobs,
         log,
         presets,
+        styles,
         actions,
     }
 }
@@ -9152,6 +9210,8 @@ struct Taken {
     log: Vec<log_window::Asked>,
     /// What Save as Preset… and Rename… asked, in order.
     presets: Vec<presets::Asked>,
+    /// What Create a Style… asked, in order.
+    styles: Vec<styles::Asked>,
     /// The actions the app's keys asked for in a dialog's own window, in order.
     actions: Vec<ActionId>,
 }
@@ -10074,6 +10134,10 @@ fn marks_opacity(
     let id = egui::Id::unique("view marks");
     ctx.animate_bool_with_time(id, overflows && left.is_some(), fade)
 }
+
+/// How long a status message shows over the photo, in seconds: darktable's
+/// `DT_CTL_LOG_TIMEOUT`, its log message's.
+const STATUS_FOR: f64 = 5.0;
 
 /// What the Viewer says over the photo, `said`, each apart: on a raised plate at its
 /// centre, and to screen readers as a polite status, which they hear as it changes, as a

@@ -307,6 +307,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::QuasiLinearRgb,
         output: Fact::QuasiLinearRgbSceneReferred,
     }),
+    // src/iop/toneequal.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
+    copy_safe: true,
+    in_styles: true,
 };
 
 /// Every parameter of `toneequal`, each by the control of its name: the tool is

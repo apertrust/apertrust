@@ -338,6 +338,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::LinearRgb,
         output: Fact::LinearRgbSceneReferred,
     }),
+    // src/iop/exposure.c's flags: neither `IOP_FLAGS_UNSAFE_COPY` nor `_INCLUDE_IN_STYLES`.
+    copy_safe: true,
+    in_styles: false,
 };
 
 /// darktable's picker on Exposure (`DT_COLOR_PICKER_AREA`): the exposure that maps the

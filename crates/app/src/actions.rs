@@ -107,10 +107,12 @@ impl ActionId {
     /// `Command::DiscardHistory` (decision 78).
     pub const DISCARD_HISTORY: ActionId = ActionId("discard-history");
     /// The History section's ⋯ items (decision 93): `Command::Compress`, `Command::Truncate`,
-    /// and Create a Style…, which waits for styles (Phase 3).
+    /// and Create a Style…, its dialog (`styles`, decision 106).
     pub const COMPRESS_HISTORY: ActionId = ActionId("compress-history");
     pub const TRUNCATE_HISTORY: ActionId = ActionId("truncate-history");
     pub const CREATE_STYLE: ActionId = ActionId("create-style");
+    /// Edit › Save Edit as Style…: Create a Style…'s dialog, from the Edit menu.
+    pub const SAVE_STYLE: ActionId = ActionId("save-style");
     /// A History step's menu (decision 91): Go to Step, `Command::GoTo` of the step; Show
     /// Tool, its tool's section revealed, as Shift-click on it does; Compress up to Here and
     /// Truncate after Here, `Command::Compress` and `Command::Truncate` with the step. Each
@@ -401,6 +403,8 @@ pub enum Intent {
     },
     /// Discard History, asked first unless the setting says not to (`alerts`).
     DiscardHistory,
+    /// Create a Style…'s dialog, over the tools the active photo's edit touches (`styles`).
+    CreateStyle,
     View(View),
     PanelTab(usize),
     /// The Hidden tab chosen, while it shows (decision 96).
@@ -578,6 +582,9 @@ pub struct State {
     /// of its edit does.
     pub view_only: bool,
     pub edited: bool,
+    /// Whether Create a Style… can run: the photo open takes edits, its edit touches a
+    /// tool, and the app has a user data folder to keep styles in (`styles::can_create`).
+    pub styles: bool,
     /// Whether the open photo's history has something for Undo, and for Redo, to do, and
     /// takes them: live and not open for viewing only (decision 78).
     pub undo: bool,
@@ -968,7 +975,7 @@ pub fn options_tip(id: ActionId, state: &State) -> Option<&'static str> {
     why_unavailable(id, state).or(match id {
         ActionId::COMPRESS_HISTORY => Some("history-compress-tip"),
         ActionId::TRUNCATE_HISTORY => Some("history-truncate-tip"),
-        ActionId::CREATE_STYLE => Some("history-options-style-later"),
+        ActionId::CREATE_STYLE => Some("history-options-style-tip"),
         ActionId::SECTION_COPY_SETTINGS | ActionId::SECTION_PASTE_SETTINGS => {
             Some("section-options-later")
         }
@@ -1169,7 +1176,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 160] = [
+pub static ACTIONS: [Action; 161] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1403,15 +1410,25 @@ pub static ACTIONS: [Action; 160] = [
         },
         emits: Emit::Intent(Intent::HistoryStep(StepItem::Truncate)),
     },
-    // History's ⋯ item, drawn disabled until styles come (Phase 3).
+    // History's ⋯ item and Edit › Save Edit as Style… (decision 106), with no key, as
+    // darktable's create style has none: the one dialog, which rests under another.
     Action {
         id: ActionId::CREATE_STYLE,
         message: "history-options-style",
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: never,
-        emits: Emit::Later,
+        available: |s| s.styles && on_main_window(s) && no_modal_dialog(s),
+        emits: Emit::Intent(Intent::CreateStyle),
+    },
+    Action {
+        id: ActionId::SAVE_STYLE,
+        message: "action-save-style",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.styles && on_main_window(s) && no_modal_dialog(s),
+        emits: Emit::Intent(Intent::CreateStyle),
     },
     // darktable's Ctrl+Z and Ctrl+Y (`src/views/darkroom.c:3425-3428`), with the
     // platforms' Shift for Redo: Redo shows Ctrl+Y first on Windows, Ctrl+Shift+Z first on
@@ -3490,6 +3507,7 @@ pub(crate) mod tests {
             editable: true,
             view_only: false,
             edited: true,
+            styles: true,
             undo: true,
             redo: true,
             compress: true,

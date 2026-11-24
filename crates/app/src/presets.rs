@@ -80,6 +80,12 @@ impl Presets {
         self.folders.as_ref().map(|folders| folders.presets(tool))
     }
 
+    /// The styles' folder, which may not exist yet; none where the app has no user data
+    /// folder, where no style can be created.
+    pub fn styles(&self) -> Option<PathBuf> {
+        self.folders.as_ref().map(Folders::styles)
+    }
+
     /// What `tool`'s header needs to build its pull-down, where the app has a user data
     /// folder; `alerts` whether the platform can ask before Update and Delete.
     pub fn menu(&self, tool: &str, alerts: bool) -> Option<Menu> {
@@ -647,10 +653,9 @@ enum Purpose {
     Rename(String),
 }
 
-/// Save as Preset… and Rename… (decision 41): a sheet on the Mac, a modal window
-/// elsewhere, with Name, its first focus, Save's Description, optional, and the button,
-/// the default, with Cancel. An empty name, or one `taken`, disables the button and says
-/// why under the field. Return presses it; Escape cancels, from the field too.
+/// Save as Preset… and Rename…, a [`Sheet`]'s content: Name, its first focus, and Save's
+/// Description, optional, above the button. An empty name, or one `taken`, disables the
+/// button and says why under the field.
 #[derive(Debug)]
 pub struct NameDialog {
     purpose: Purpose,
@@ -696,15 +701,10 @@ impl NameDialog {
 
     /// Why the name cannot be taken, in `words`; none where it can.
     fn refused(&self, words: &Translator) -> Option<String> {
-        let name = self.name.trim();
-        if name.is_empty() {
-            return Some(words.text("presets-name-empty"));
-        }
-        self.taken.iter().any(|taken| taken == name).then(|| {
-            let mut args = Args::new();
-            args.set("tool", self.title.as_str());
-            words.text_with("presets-name-taken", Some(&args))
-        })
+        let mut args = Args::new();
+        args.set("tool", self.title.as_str());
+        let messages = ("presets-name-empty", "presets-name-taken");
+        refusal(&self.name, &self.taken, messages, &args, words)
     }
 
     /// What its button asks.
@@ -728,10 +728,168 @@ impl NameDialog {
     }
 }
 
-/// The dialog's width inside its margin, in points.
-const WIDTH: f32 = 320.0;
+/// Why `name` cannot be taken where `taken` are, in `words`: `empty`'s message where it is
+/// empty once trimmed, `clash`'s, with `args`, where it is one of `taken`; none where it
+/// can.
+pub fn refusal(
+    name: &str,
+    taken: &[String],
+    (empty, clash): (&str, &str),
+    args: &Args,
+    words: &Translator,
+) -> Option<String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Some(words.text(empty));
+    }
+    (taken.iter().any(|taken| taken == name)).then(|| words.text_with(clash, Some(args)))
+}
 
-impl Dialog for NameDialog {
+/// A name dialog's Name: its label, the field, given the focus as the dialog first draws
+/// (`focused`), its edge the error's while `refused` refuses a name typed, and under it
+/// why, the text that disables the dialog's button. Returns whether Return was pressed in
+/// it.
+pub fn name_rows(
+    ui: &mut egui::Ui,
+    name: &mut String,
+    focused: &mut bool,
+    refused: impl Fn(&str) -> Option<String>,
+) -> bool {
+    let ctx = ui.ctx().clone();
+    let (t, words) = (theme(&ctx), translator(&ctx));
+    let label = words.text("presets-name");
+    ui.add(Label::new(&label).selectable(false));
+    let id = ui.make_persistent_id("preset name");
+    let (field, typed) = TextField::new(id, &label, name)
+        .error(refused(name).is_some() && !name.is_empty())
+        .show(ui);
+    if !*focused {
+        field.request_focus();
+        *focused = true;
+    }
+    if let Some(typed) = typed {
+        *name = typed;
+    }
+    let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+    // The reason under the field, the text that disables the button.
+    if let Some(why) = refused(name) {
+        let why = RichText::new(why).size(t.text.small).color(t.colors.error);
+        ui.add(Label::new(why).selectable(false));
+    }
+    enter
+}
+
+/// A name dialog's Description, optional: its label and the field.
+pub fn description_rows(ui: &mut egui::Ui, description: &mut String) {
+    let words = translator(ui.ctx());
+    let label = words.text("presets-description");
+    ui.add(Label::new(&label).selectable(false));
+    let hint = words.text("presets-description-hint");
+    let id = ui.make_persistent_id("preset description");
+    let (_, typed) = TextField::new(id, &label, description).hint(&hint).show(ui);
+    if let Some(typed) = typed {
+        *description = typed;
+    }
+}
+
+/// The dialog's width inside its margin, in points.
+pub const WIDTH: f32 = 320.0;
+
+/// What a name dialog shows in its [`Sheet`], Save as Preset…'s and Create a Style…'s:
+/// all that differs between them.
+pub trait SheetContent: std::fmt::Debug {
+    /// Its stable name ([`Dialog::id`]).
+    fn id(&self) -> &'static str;
+    /// Its title, in `ctx`'s language ([`Dialog::title`]).
+    fn title(&self, ctx: &egui::Context) -> String;
+    /// Draws its rows above the buttons in `ui`, in `words`. Returns whether Return was
+    /// pressed in its name.
+    fn rows(&mut self, ui: &mut egui::Ui, words: &Translator) -> bool;
+    /// Its button's words, and whether it can be pressed now.
+    fn button(&self, words: &Translator) -> (String, bool);
+    /// What its button asks of the app.
+    fn output(&self) -> Output;
+}
+
+/// A name dialog (decision 41): a sheet on the Mac, a modal window elsewhere, [`WIDTH`]
+/// wide, its title first where no frame holds it, then its content's rows and its button,
+/// the default, with Cancel. Its button, or Return in the name while the button can be
+/// pressed, asks its content's output and closes it; Cancel closes it; Escape, Close
+/// Window and Cancel's keys cancel it, Escape from the field too.
+#[derive(Debug)]
+pub struct Sheet<C>(pub C);
+
+impl<C> std::ops::Deref for Sheet<C> {
+    type Target = C;
+
+    fn deref(&self) -> &C {
+        &self.0
+    }
+}
+
+impl<C> std::ops::DerefMut for Sheet<C> {
+    fn deref_mut(&mut self) -> &mut C {
+        &mut self.0
+    }
+}
+
+impl<C: SheetContent + 'static> Dialog for Sheet<C> {
+    fn id(&self) -> &'static str {
+        self.0.id()
+    }
+
+    fn title(&self, ctx: &egui::Context) -> String {
+        self.0.title(ctx)
+    }
+
+    fn form(&self, _os: OperatingSystem) -> Form {
+        Form::Sheet
+    }
+
+    fn look(&self, t: &Theme) -> Look {
+        Look::spaced(t)
+    }
+
+    fn keys(&self, _os: OperatingSystem) -> Keys {
+        Keys::ALL
+    }
+
+    fn show(&mut self, ui: &mut egui::Ui) -> Asks {
+        let ctx = ui.ctx().clone();
+        let (t, words) = (theme(&ctx), translator(&ctx));
+        let title = self.0.title(&ctx);
+        let content = &mut self.0;
+        let (pressed, enter) = ui
+            .scope(|ui| {
+                ui.set_width(WIDTH);
+                ui.spacing_mut().item_spacing = egui::vec2(t.spacing.s, t.spacing.s);
+                // A sheet has no frame to hold its title.
+                if !platform::draws_frame(ctx.os()) {
+                    ui.add(Label::new(RichText::new(title).heading()).selectable(false));
+                }
+                let enter = content.rows(ui, &words);
+                ui.add_space(t.spacing.s);
+                let (button, able) = content.button(&words);
+                let cancel = words.text("alert-cancel");
+                (buttons(ui, [(&button, able), (&cancel, true)]), enter)
+            })
+            .inner;
+        let confirmed = pressed == Some(0) || enter && content.button(&words).1;
+        Asks {
+            outputs: if confirmed {
+                vec![content.output()]
+            } else {
+                Vec::new()
+            },
+            close: confirmed || pressed == Some(1),
+            // Escape cancels from the field too, which takes nothing of it.
+            gives_escape: true,
+            ..Asks::default()
+        }
+    }
+}
+
+impl SheetContent for NameDialog {
     fn id(&self) -> &'static str {
         "preset-name"
     }
@@ -743,93 +901,29 @@ impl Dialog for NameDialog {
         }
     }
 
-    fn form(&self, _os: OperatingSystem) -> Form {
-        Form::Sheet
+    fn rows(&mut self, ui: &mut egui::Ui, words: &Translator) -> bool {
+        let mut args = Args::new();
+        args.set("tool", self.title.as_str());
+        let messages = ("presets-name-empty", "presets-name-taken");
+        let taken = &self.taken;
+        let refused = |name: &str| refusal(name, taken, messages, &args, words);
+        let enter = name_rows(ui, &mut self.name, &mut self.focused, refused);
+        if self.purpose == Purpose::Save {
+            description_rows(ui, &mut self.description);
+        }
+        enter
     }
 
-    fn look(&self, t: &Theme) -> Look {
-        Look {
-            background: t.colors.panel,
-            margin: t.spacing.l,
-        }
+    fn button(&self, words: &Translator) -> (String, bool) {
+        let button = match self.purpose {
+            Purpose::Save => words.text("presets-save-button"),
+            Purpose::Rename(_) => words.text("presets-rename-button"),
+        };
+        (button, self.refused(words).is_none())
     }
 
-    fn keys(&self, _os: OperatingSystem) -> Keys {
-        Keys {
-            escape: true,
-            close_window: true,
-            cancel: true,
-        }
-    }
-
-    fn show(&mut self, ui: &mut egui::Ui) -> Asks {
-        let ctx = ui.ctx().clone();
-        let (t, words) = (theme(&ctx), translator(&ctx));
-        let refused = self.refused(&words);
-        let mut pressed = None;
-        let mut enter = false;
-        ui.scope(|ui| {
-            ui.set_width(WIDTH);
-            ui.spacing_mut().item_spacing = egui::vec2(t.spacing.s, t.spacing.s);
-            // A sheet has no frame to hold its title.
-            if !platform::draws_frame(ctx.os()) {
-                let title = self.title(&ctx);
-                ui.add(Label::new(RichText::new(title).heading()).selectable(false));
-            }
-            let label = words.text("presets-name");
-            ui.add(Label::new(&label).selectable(false));
-            let id = ui.make_persistent_id("preset name");
-            let (field, typed) = TextField::new(id, &label, &self.name)
-                .error(refused.is_some() && !self.name.is_empty())
-                .show(ui);
-            if !self.focused {
-                field.request_focus();
-                self.focused = true;
-            }
-            if let Some(typed) = typed {
-                self.name = typed;
-            }
-            enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            // The reason under the field, the text that disables the button.
-            let refused = self.refused(&words);
-            if let Some(why) = &refused {
-                let why = RichText::new(why).size(t.text.small).color(t.colors.error);
-                ui.add(Label::new(why).selectable(false));
-            }
-            if self.purpose == Purpose::Save {
-                let label = words.text("presets-description");
-                ui.add(Label::new(&label).selectable(false));
-                let hint = words.text("presets-description-hint");
-                let id = ui.make_persistent_id("preset description");
-                let (_, typed) = TextField::new(id, &label, &self.description)
-                    .hint(&hint)
-                    .show(ui);
-                if let Some(typed) = typed {
-                    self.description = typed;
-                }
-            }
-            ui.add_space(t.spacing.s);
-            let button = match self.purpose {
-                Purpose::Save => words.text("presets-save-button"),
-                Purpose::Rename(_) => words.text("presets-rename-button"),
-            };
-            let cancel = words.text("alert-cancel");
-            let able = refused.is_none();
-            pressed = buttons(ui, [(&button, able), (&cancel, true)]);
-        });
-        let able = self.refused(&words).is_none();
-        let confirmed = pressed == Some(0) || enter && able;
-        Asks {
-            outputs: if confirmed {
-                vec![Output::Preset(self.asked())]
-            } else {
-                Vec::new()
-            },
-            close: confirmed || pressed == Some(1),
-            // Escape cancels from the field too, which takes nothing of it.
-            gives_escape: true,
-            ..Asks::default()
-        }
+    fn output(&self) -> Output {
+        Output::Preset(self.asked())
     }
 }
 
@@ -865,4 +959,4 @@ fn buttons(ui: &mut egui::Ui, buttons: [(&str, bool); 2]) -> Option<usize> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
