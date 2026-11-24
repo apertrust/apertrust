@@ -251,9 +251,6 @@ pub struct Settings {
     pub ask_before_overwrite: bool,
     /// Whether Discard History asks first, `history.ask_before_discard`.
     pub ask_before_discard: bool,
-    /// Whether the area a picker cursor last read stays drawn on the photo,
-    /// `cursors.pick.show_last` (decision 104).
-    pub show_last_pick: bool,
 }
 
 impl Default for Settings {
@@ -298,7 +295,6 @@ impl Default for Settings {
             tool_settings: ToolSettings::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
             ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
-            show_last_pick: CURSORS_PICK_SHOW_LAST.default(),
         }
     }
 }
@@ -389,7 +385,6 @@ impl Settings {
             tool_settings: ToolSettings::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
             ask_before_discard: store.get(&HISTORY_ASK_BEFORE_DISCARD),
-            show_last_pick: store.get(&CURSORS_PICK_SHOW_LAST),
         }
     }
 
@@ -550,9 +545,6 @@ impl Settings {
         }
         if s.ask_before_discard != was.ask_before_discard {
             store.set(&HISTORY_ASK_BEFORE_DISCARD, s.ask_before_discard);
-        }
-        if s.show_last_pick != was.show_last_pick {
-            store.set(&CURSORS_PICK_SHOW_LAST, s.show_last_pick);
         }
     }
 }
@@ -1486,7 +1478,6 @@ mod tests {
             },
             ask_before_overwrite: false,
             ask_before_discard: false,
-            show_last_pick: false,
         }
     }
 
@@ -1637,7 +1628,6 @@ mod tests {
                 },
                 ask_before_overwrite: true,
                 ask_before_discard: true,
-                show_last_pick: true,
             }
         );
         // What the app takes where nothing is kept.
@@ -1732,9 +1722,6 @@ rows = 3
 sort = \"file-name\"
 square_thumbnails = true
 thumbnails = \"large\"
-
-[cursors.pick]
-show_last = false
 
 [edit.groups.exposure]
 area_exposure_mapping = true
@@ -2554,6 +2541,27 @@ proof_margin = 0.3
         drop(keeper);
         let (_, again) = Keeper::open(folder.storage());
         assert_eq!(again.tool_settings, settings.tool_settings);
+    }
+
+    /// An old `cursors.pick.show_last`, Pick's Show the last pick, which went with the
+    /// picker cursors' one-shot pick (decision 104), is an unknown key: the file loads, and
+    /// a change written back leaves it in the file as it was.
+    #[test]
+    fn an_old_show_last_pick_key_is_left_alone() {
+        let folder = Folder::new("show-last-pick");
+        let text = "version = 2\n[cursors.pick]\nshow_last = false\n";
+        std::fs::write(folder.settings(), text).expect("written");
+        let (mut keeper, mut settings) = Keeper::open(folder.storage());
+        assert_eq!(settings, Settings::default());
+        settings.ask_before_discard = false;
+        keeper.frame(Instant::now(), &settings);
+        keeper.flush();
+        let written = folder.text();
+        assert!(
+            written.contains("[cursors.pick]\nshow_last = false\n"),
+            "{written}"
+        );
+        assert!(written.contains("ask_before_discard = false"), "{written}");
     }
 
     /// Colour calibration's area colour mapping survives a restart: read from

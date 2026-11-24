@@ -1167,7 +1167,6 @@ cursor-pan-how = Перетягніть, щоб зсунути збільшен�
 cursor-group-select = Вибір
 cursor-group-pan = Зсув
 cursor-group-pick = Піпетки
-cursor-setting-pick-show-last = Показувати останню пробу на фото
 cursor-well-no-photo = Відкрийте фото, щоб вибрати курсор
 
 ## Плашки піпетки (docs/pickers.md, Declaring pickers).
