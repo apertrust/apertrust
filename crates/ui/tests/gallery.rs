@@ -22,12 +22,12 @@
 //! It renders through wgpu, on CI's software GPU, and through AccessKit, whose tree the
 //! harness checks too.
 
-use apertrust_ui::components::GridCell;
+use apertrust_ui::components::{CaptionStyle, GridCell, Toolbar};
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme, Translator};
 use egui::accesskit::Role;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
-use egui_kittest::{Harness, SnapshotResults};
+use egui_kittest::{Harness, SnapshotResults, try_image_snapshot};
 
 /// The gallery's page width, in points.
 const WIDTH: f32 = 600.0;
@@ -304,6 +304,98 @@ fn every_focus_stop_of_the_settings_controls_is_named() {
         })
         .collect();
     assert!(unnamed.is_empty(), "unnamed focus stops: {unnamed:?}");
+}
+
+/// The size of one state's photograph of Linux's caption buttons: the end of a Toolbar
+/// with labels, 62 points tall.
+const CAPTION_STRIP: egui::Vec2 = egui::vec2(180.0, 62.0);
+
+/// The end of an empty Toolbar, the title bar with the caption buttons in Linux's style,
+/// in theme `which`, the window `maximised` or not; tooltips never show, so each state is
+/// the buttons' own.
+fn linux_caption(which: Builtin, maximised: bool) -> Harness<'static> {
+    Harness::builder()
+        .with_size(CAPTION_STRIP)
+        .with_context_setup(move |ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(which));
+            apertrust_ui::set_locale(ctx, Locale::EnGb);
+            ctx.global_style_mut(|style| style.interaction.tooltip_delay = f32::INFINITY);
+        })
+        .build_ui(move |ui| {
+            // The Toolbar from edge to edge, as in the window.
+            let whole = ui.ctx().content_rect();
+            let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(whole));
+            Toolbar::new()
+                .labels(true)
+                .title_bar(true)
+                .caption_buttons(Some(CaptionStyle::Linux))
+                .maximised(maximised)
+                .show(&mut ui);
+        })
+}
+
+/// Linux's caption buttons in every built-in theme, each theme's states one above the
+/// next in one picture: at rest; Minimise, Maximise and Close under the pointer; each held
+/// down; Minimise focused by the keyboard; and maximised, Restore in the middle.
+#[test]
+fn linux_s_caption_buttons_in_every_theme() {
+    let mut results = SnapshotResults::new();
+    for (which, name) in [
+        (Builtin::Dark, "caption-buttons-linux-dark"),
+        (Builtin::Grey, "caption-buttons-linux-grey"),
+        (Builtin::Light, "caption-buttons-linux-light"),
+        (Builtin::HighContrast, "caption-buttons-linux-high-contrast"),
+    ] {
+        let buttons = ["Minimise", "Maximise", "Close"];
+        let mut states = Vec::new();
+        let mut rest = linux_caption(which, false);
+        rest.run();
+        states.push(rest.render().unwrap());
+        for pressed in [false, true] {
+            for button in buttons {
+                let mut harness = linux_caption(which, false);
+                harness.run();
+                // At the circle's lower right, so the pointer drawn there hides no glyph.
+                let at = harness.get_by_label(button).rect().center() + egui::vec2(7.0, 7.0);
+                harness.hover_at(at);
+                if pressed {
+                    harness.event(egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+                harness.run();
+                states.push(harness.render().unwrap());
+            }
+        }
+        let mut focused = linux_caption(which, false);
+        focused.run();
+        focused.get_by_label("Minimise").focus();
+        focused.run();
+        assert!(focused.get_by_label("Minimise").is_focused());
+        states.push(focused.render().unwrap());
+        let mut maximised = linux_caption(which, true);
+        maximised.run();
+        assert!(maximised.query_by_label("Restore").is_some());
+        states.push(maximised.render().unwrap());
+
+        // One picture, the states one under another, on a canvas rendered as tall as them.
+        let rows = states.len() as f32;
+        let mut canvas = Harness::builder()
+            .with_size(egui::vec2(CAPTION_STRIP.x, CAPTION_STRIP.y * rows))
+            .build_ui(|_| {});
+        let mut picture = canvas.render().unwrap();
+        for (row, state) in states.iter().enumerate() {
+            let top = row as u32 * state.height();
+            for (x, y, pixel) in state.enumerate_pixels() {
+                picture.put_pixel(x, top + y, *pixel);
+            }
+        }
+        results.add(try_image_snapshot(&picture, name));
+    }
+    results.unwrap();
 }
 
 #[test]

@@ -310,6 +310,15 @@ pub struct Colors {
     /// The close button's icon on `close_hover`.
     #[serde(with = "hex")]
     pub text_on_close_hover: Color32,
+    /// The circle behind a caption button in Linux's style under the pointer, as
+    /// libadwaita's window controls draw it: `text` at 15% over the Toolbar's `surface`;
+    /// nothing behind the button at rest. Close takes it too, never red. Seen at 3:1
+    /// against `surface` in high contrast, where it carries the button's edge.
+    #[serde(with = "hex")]
+    pub caption_plate_hover: Color32,
+    /// The same circle held down: `text` at 30% over `surface`.
+    #[serde(with = "hex")]
+    pub caption_plate_pressed: Color32,
     #[serde(with = "hex")]
     pub slider_track: Color32,
     /// The part of a plain track moved from the default.
@@ -877,6 +886,28 @@ impl Theme {
                 c.close_hover,
                 CONTROL,
             ),
+            // Linux's caption buttons: the glyph at rest on the Toolbar, then on its circle.
+            (
+                "text_secondary",
+                c.text_secondary,
+                "surface",
+                c.surface,
+                CONTROL,
+            ),
+            (
+                "text",
+                c.text,
+                "caption_plate_hover",
+                c.caption_plate_hover,
+                CONTROL,
+            ),
+            (
+                "text",
+                c.text,
+                "caption_plate_pressed",
+                c.caption_plate_pressed,
+                CONTROL,
+            ),
             ("slider_handle", c.slider_handle, "panel", c.panel, CONTROL),
             (
                 "slider_handle_hover",
@@ -970,6 +1001,26 @@ impl Theme {
                 ("button_edge", c.button_edge, "panel", c.panel, CONTROL),
                 ("button_edge", c.button_edge, "raised", c.raised, CONTROL),
                 ("text_disabled", c.text_disabled, "panel", c.panel, CONTROL),
+            ]);
+        }
+        // So does the circle of Linux's caption buttons in high contrast, drawn with no
+        // edge of its own.
+        if high_contrast {
+            menu_band.extend([
+                (
+                    "caption_plate_hover",
+                    c.caption_plate_hover,
+                    "surface",
+                    c.surface,
+                    CONTROL,
+                ),
+                (
+                    "caption_plate_pressed",
+                    c.caption_plate_pressed,
+                    "surface",
+                    c.surface,
+                    CONTROL,
+                ),
             ]);
         }
         let mut issues = Vec::new();
@@ -1081,6 +1132,8 @@ impl Theme {
             ("list_chosen", c.list_chosen),
             ("close_hover", c.close_hover),
             ("text_on_close_hover", c.text_on_close_hover),
+            ("caption_plate_hover", c.caption_plate_hover),
+            ("caption_plate_pressed", c.caption_plate_pressed),
             ("slider_track", c.slider_track),
             ("slider_fill", c.slider_fill),
             ("slider_handle", c.slider_handle),

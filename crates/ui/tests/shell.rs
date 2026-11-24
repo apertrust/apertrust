@@ -19,9 +19,9 @@
 //! is compact (`docs/gui.md`, Testing).
 
 use apertrust_ui::components::{
-    Browser, BrowserAction, CursorWell, CursorWellAction, Job, JobMessage, JobPhase, Jobs, Margin,
-    MenuButtonStyle, PanelEdge, PanelEdgeAction, PhotoCaption, PhotoFrame, SaveState, Thumb,
-    Toggle, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ToolbarMenu, ViewerBar,
+    Browser, BrowserAction, CaptionStyle, CursorWell, CursorWellAction, Job, JobMessage, JobPhase,
+    Jobs, Margin, MenuButtonStyle, PanelEdge, PanelEdgeAction, PhotoCaption, PhotoFrame, SaveState,
+    Thumb, Toggle, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ToolbarMenu, ViewerBar,
     ViewerBarAction, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use apertrust_ui::gallery::toolbar_entries;
@@ -342,7 +342,7 @@ fn narrow_in(
                     .start_inset(inset)
                     .title_bar(true)
                     .menu_button(caption)
-                    .caption_buttons(caption)
+                    .caption_buttons(caption.then_some(CaptionStyle::Windows))
                     .shortcut(ToolbarAction::Button("export"), "Ctrl+E");
                 if let Some(action) = with_well(0, |well| bar.cursors(well).show(ui)) {
                     actions.push(action);
@@ -716,7 +716,7 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [
                 .title_bar(true)
                 .menu_button(menu.is_some())
                 .menu_button_style(menu.unwrap_or_default())
-                .caption_buttons(menu.is_some());
+                .caption_buttons(menu.map(|_| CaptionStyle::Windows));
             with_well(0, |well| bar.cursors(well).show(ui));
         });
     let words = Translator::new(locale);
@@ -835,7 +835,7 @@ fn every_part_bar(
                 .title_bar(true)
                 .menu_button(menu.is_some())
                 .menu_button_style(menu.unwrap_or_default())
-                .caption_buttons(menu.is_some());
+                .caption_buttons(menu.map(|_| CaptionStyle::Windows));
             with_well(0, |well| bar.cursors(well).show(ui));
         })
 }
@@ -994,7 +994,7 @@ fn a_guard_never_changes_the_least_width() {
                     .title_bar(true)
                     .menu_button(true)
                     .menu_button_style(MenuButtonStyle::Icon)
-                    .caption_buttons(true);
+                    .caption_buttons(Some(CaptionStyle::Windows));
                 with_well(0, |well| bar.cursors(well).show(ui));
             },
             false,
@@ -1725,8 +1725,13 @@ fn a_control_click_on_the_mac_asks_for_the_toolbar_menu() {
     assert_eq!(menus_asked(&harness), vec![(Some(3), reset, None)]);
 }
 
-/// The title bar with the window's caption buttons, the window maximised or not.
-fn caption_buttons(maximised: bool) -> Harness<'static, Vec<ToolbarAction>> {
+/// The title bar with the window's caption buttons in `style`, with labels or without,
+/// the window maximised or not.
+fn caption_buttons(
+    style: CaptionStyle,
+    labels: bool,
+    maximised: bool,
+) -> Harness<'static, Vec<ToolbarAction>> {
     Harness::builder()
         .with_size(egui::vec2(1200.0, 120.0))
         .with_step_dt(1.0 / 60.0)
@@ -1736,8 +1741,9 @@ fn caption_buttons(maximised: bool) -> Harness<'static, Vec<ToolbarAction>> {
                 if let Some(action) = Toolbar::new()
                     .entries(toolbar_entries(ui.ctx(), &[]))
                     .saved(SaveState::Saved)
+                    .labels(labels)
                     .title_bar(true)
-                    .caption_buttons(true)
+                    .caption_buttons(Some(style))
                     .maximised(maximised)
                     .show(ui)
                 {
@@ -1748,57 +1754,121 @@ fn caption_buttons(maximised: bool) -> Harness<'static, Vec<ToolbarAction>> {
         )
 }
 
+/// Both caption styles, which the same tests hold.
+const STYLES: [CaptionStyle; 2] = [CaptionStyle::Windows, CaptionStyle::Linux];
+
 #[test]
 fn the_caption_buttons_report_their_clicks() {
-    let mut harness = caption_buttons(false);
-    harness.run();
-    // Each as tall as the panel and 46 points wide, the three at its very end, close last.
-    let bar = harness.get_by_role(Role::Toolbar).rect();
-    let close = harness.get_by_label("Close").rect();
-    let minimise = harness.get_by_label("Minimise").rect();
-    assert_eq!(close.right(), bar.right());
-    assert_eq!(close.right() - minimise.left(), 3.0 * 46.0);
-    assert_eq!(close.height(), bar.height());
-    // A group's gap before them.
-    assert_eq!(
-        minimise.left() - harness.get_by_role(Role::Status).rect().right(),
-        16.0
-    );
-    for name in ["Minimise", "Maximise", "Close"] {
-        harness.get_by_role_and_label(Role::Button, name).click();
+    for style in STYLES {
+        let mut harness = caption_buttons(style, false, false);
         harness.run();
-    }
-    assert_eq!(
-        *harness.state(),
-        vec![
+        let close = harness.get_by_label("Close").rect();
+        let minimise = harness.get_by_label("Minimise").rect();
+        // A group's gap before them.
+        assert_eq!(
+            minimise.left() - harness.get_by_role(Role::Status).rect().right(),
+            16.0,
+            "{style:?}"
+        );
+        for name in ["Minimise", "Maximise", "Close"] {
+            harness.get_by_role_and_label(Role::Button, name).click();
+            harness.run();
+        }
+        let clicks = vec![
             ToolbarAction::Minimise,
             ToolbarAction::MaximiseOrRestore,
             ToolbarAction::Close,
-        ]
-    );
-    // They are no empty areas: a double-click on one is two clicks, never a zoom.
-    harness.state_mut().clear();
-    double_click(&mut harness, minimise.center());
-    assert_eq!(*harness.state(), vec![ToolbarAction::Minimise; 2]);
-    harness.state_mut().clear();
-    right_click(&mut harness, close.center());
-    assert!(harness.state().is_empty());
+        ];
+        assert_eq!(*harness.state(), clicks, "{style:?}");
+        // They are no empty areas: a double-click on one is two clicks, never a zoom.
+        harness.state_mut().clear();
+        double_click(&mut harness, minimise.center());
+        assert_eq!(
+            *harness.state(),
+            vec![ToolbarAction::Minimise; 2],
+            "{style:?}"
+        );
+        harness.state_mut().clear();
+        right_click(&mut harness, close.center());
+        assert!(harness.state().is_empty(), "{style:?}");
+    }
+}
+
+#[test]
+fn windows_caption_buttons_fill_the_panel_s_end() {
+    for labels in [true, false] {
+        let mut harness = caption_buttons(CaptionStyle::Windows, labels, false);
+        harness.run();
+        // Each as tall as the panel and 46 points wide, the three at its very end, close
+        // last.
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        let close = harness.get_by_label("Close").rect();
+        let minimise = harness.get_by_label("Minimise").rect();
+        assert_eq!(close.right(), bar.right());
+        assert_eq!(close.right() - minimise.left(), 3.0 * 46.0);
+        assert_eq!(close.height(), bar.height());
+    }
+}
+
+#[test]
+fn linux_caption_buttons_stand_apart_with_the_title_bar_between_them() {
+    for labels in [true, false] {
+        let mut harness = caption_buttons(CaptionStyle::Linux, labels, false);
+        harness.run();
+        // 24 points square, centred on the panel, 62 or 44 points tall, 13 points apart and
+        // the last 12 from its end.
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        assert_eq!(bar.height(), if labels { 62.0 } else { 44.0 });
+        let rects = ["Minimise", "Maximise", "Close"].map(|name| harness.get_by_label(name).rect());
+        for rect in rects {
+            assert_eq!(rect.size(), egui::vec2(24.0, 24.0), "{labels}");
+            assert_eq!(rect.center().y, bar.center().y, "{labels}");
+        }
+        assert_eq!(rects[1].left() - rects[0].right(), 13.0);
+        assert_eq!(rects[2].left() - rects[1].right(), 13.0);
+        assert_eq!(bar.right() - rects[2].right(), 12.0);
+        // The panel between two buttons, and round them, is the title bar's.
+        let gap = egui::pos2((rects[0].right() + rects[1].left()) / 2.0, bar.center().y);
+        drag(&mut harness, gap);
+        assert_eq!(
+            *harness.state(),
+            vec![ToolbarAction::MoveWindow],
+            "{labels}"
+        );
+        harness.state_mut().clear();
+        double_click(&mut harness, gap);
+        assert_eq!(
+            *harness.state(),
+            vec![ToolbarAction::TitleBarDoubleClick],
+            "{labels}"
+        );
+        harness.state_mut().clear();
+        let below = egui::pos2(rects[2].center().x, bar.bottom() - 3.0);
+        drag(&mut harness, below);
+        assert_eq!(
+            *harness.state(),
+            vec![ToolbarAction::MoveWindow],
+            "{labels}"
+        );
+    }
 }
 
 #[test]
 fn a_maximised_window_s_middle_button_restores() {
-    let mut harness = caption_buttons(true);
-    harness.run();
-    assert!(harness.query_by_label("Maximise").is_none());
-    harness
-        .get_by_role_and_label(Role::Button, "Restore")
-        .click();
-    harness.run();
-    assert_eq!(*harness.state(), vec![ToolbarAction::MaximiseOrRestore]);
-    let mut normal = caption_buttons(false);
-    normal.run();
-    assert!(normal.query_by_label("Restore").is_none());
-    assert!(normal.query_by_label("Maximise").is_some());
+    for style in STYLES {
+        let mut harness = caption_buttons(style, false, true);
+        harness.run();
+        assert!(harness.query_by_label("Maximise").is_none());
+        harness
+            .get_by_role_and_label(Role::Button, "Restore")
+            .click();
+        harness.run();
+        assert_eq!(*harness.state(), vec![ToolbarAction::MaximiseOrRestore]);
+        let mut normal = caption_buttons(style, false, false);
+        normal.run();
+        assert!(normal.query_by_label("Restore").is_none());
+        assert!(normal.query_by_label("Maximise").is_some());
+    }
 }
 
 #[test]
@@ -1824,7 +1894,7 @@ fn caption_snapshot() -> Harness<'static> {
                 .entries(toolbar_entries(ui.ctx(), &[]))
                 .labels(true)
                 .title_bar(true)
-                .caption_buttons(true)
+                .caption_buttons(Some(CaptionStyle::Windows))
                 .show(ui);
         })
 }

@@ -169,11 +169,17 @@ pub enum Icon {
     ClipShadows,
     ClipHighlights,
     /// The window's caption buttons, where the app draws them: minimise, maximise,
-    /// restore a maximised window, close.
+    /// restore a maximised window, close, as Windows draws its own.
     Minimise,
     Maximise,
     Restore,
     Close,
+    /// The same four in Linux's style (`CaptionStyle::Linux`), symbolic glyphs after
+    /// Adwaita's, on Lucide's grid and with its stroke.
+    MinimiseLinux,
+    MaximiseLinux,
+    RestoreLinux,
+    CloseLinux,
     /// The Toolbar's ☰ on Windows and Linux, which opens the menus where the menu button
     /// setting asks for it.
     Menu,
@@ -229,7 +235,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 114] = [
+    pub const ALL: [Icon; 118] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -306,6 +312,10 @@ impl Icon {
         Icon::Maximise,
         Icon::Restore,
         Icon::Close,
+        Icon::MinimiseLinux,
+        Icon::MaximiseLinux,
+        Icon::RestoreLinux,
+        Icon::CloseLinux,
         Icon::Menu,
         Icon::Kind,
         Icon::WorksOn,
@@ -387,8 +397,8 @@ impl Icon {
     }
 
     /// The side of the square it is drawn in by default, in points. Its file's design box
-    /// is Lucide's 24 units, but for the app icon's, the caret's and the caption buttons',
-    /// which are their size.
+    /// is Lucide's 24 units, but for the app icon's, the caret's and Windows' caption
+    /// buttons', which are their size.
     pub fn size(self) -> f32 {
         self.file().size
     }
@@ -398,8 +408,8 @@ impl Icon {
     }
 
     /// Whether the icon keeps a design box and stroke of its own rather than Lucide's: the
-    /// app's icon and its caret, and the window's caption buttons, drawn as the systems
-    /// draw theirs.
+    /// app's icon and its caret, and the window's caption buttons in Windows' style, drawn
+    /// as Windows draws its own. Linux's keep Lucide's.
     pub(crate) fn keeps_its_box(self) -> bool {
         matches!(
             self,
@@ -531,6 +541,10 @@ impl Icon {
             Icon::Maximise => own!("maximise", 10.0),
             Icon::Restore => own!("restore", 10.0),
             Icon::Close => own!("close", 10.0),
+            Icon::MinimiseLinux => own!("minimise-linux", 16.0),
+            Icon::MaximiseLinux => own!("maximise-linux", 16.0),
+            Icon::RestoreLinux => own!("restore-linux", 16.0),
+            Icon::CloseLinux => own!("close-linux", 16.0),
             Icon::Menu => derived!("menu", "menu", 16.0),
             Icon::Kind => derived!("kind", "tag", 13.0),
             Icon::WorksOn => derived!("works-on", "sun", 13.0),
@@ -604,7 +618,7 @@ impl Icon {
 
 /// The width of every icon's lines, in points, whatever size it is drawn at: Lucide's
 /// `absoluteStrokeWidth`, set as each icon is rendered, so a 10-point chevron is as heavy
-/// as a 22-point tab. The app's icon, its caret and the caption buttons keep their own.
+/// as a 22-point tab. The app's icon, its caret and Windows' caption buttons keep their own.
 pub const STROKE: f32 = 1.25;
 
 /// The chosen cursor's lines in the cursors' well, a quarter heavier than [`STROKE`], as
@@ -774,7 +788,7 @@ mod tests {
             let source = icon.source();
             let tree = usvg::Tree::from_str(source, &usvg::Options::default())
                 .unwrap_or_else(|e| panic!("{name}.svg: {e}"));
-            // Lucide's 24-unit box, but for the app icon's, the caret's and the caption
+            // Lucide's 24-unit box, but for the app icon's, the caret's and Windows' caption
             // buttons', which are their size.
             let side = if icon.keeps_its_box() {
                 icon.size()

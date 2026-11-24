@@ -25,8 +25,8 @@ use egui::emath::GuiRounding as _;
 use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::components::{
-    About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CellPicture, CellRating,
-    CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
+    About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CaptionStyle, CellPicture,
+    CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
     Equalizer, EqualizerAction, FileManager, FindBar, FindBarAction, GridCell, Histogram,
     HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker,
@@ -3192,9 +3192,18 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     // As the title bar on Windows and Linux, with the menu button at its start and the
     // window's caption buttons at its end: the window as it is, the button the app's icon,
     // its menu open at first with View expanded where the snapshots photograph it, then
-    // maximised, the button ☰ and labels off. Without Saved, as with no photo open.
+    // maximised, the button ☰ and labels off; the caption buttons in Windows' style, then
+    // the same two in Linux's. Without Saved, as with no photo open.
     let menu = Toolbar::menu_popup();
-    for maximised in [false, true] {
+    let rows = [
+        (CaptionStyle::Windows, false),
+        (CaptionStyle::Windows, true),
+        (CaptionStyle::Linux, false),
+        (CaptionStyle::Linux, true),
+    ];
+    for (caption, maximised) in rows {
+        // The first row's menu, open at first.
+        let opens = caption == CaptionStyle::Windows && !maximised;
         ui.add_space(t.spacing.s);
         let style = if maximised {
             MenuButtonStyle::Menu
@@ -3207,12 +3216,12 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
             .menu_button_style(style)
             .labels(!maximised)
             .title_bar(true)
-            .caption_buttons(true)
+            .caption_buttons(Some(caption))
             .maximised(maximised)
             .shortcut(ToolbarAction::Menu, "F10")
             .show(ui);
         let anchor = Toolbar::menu_anchor(&ctx);
-        let first = !maximised && demo.open_menu;
+        let first = opens && demo.open_menu;
         if let Some(anchor) = anchor.filter(|_| first || action == Some(ToolbarAction::Menu)) {
             let mut request = sample_menu(anchor);
             if first {
@@ -3223,7 +3232,7 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         } else if let Some(action) = action {
             demo.last = format!("Toolbar: {action:?}");
         }
-        if !maximised {
+        if opens {
             // Room for the menu, so it covers nothing else.
             ui.allocate_space(vec2(ui.available_width(), 210.0));
         }

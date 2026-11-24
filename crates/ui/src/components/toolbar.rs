@@ -58,9 +58,10 @@
 //! areas, the same on every platform, for the app to move the window or do what the
 //! system does on a double-click. It
 //! draws the caption buttons Windows and Linux need, minimise, maximise or restore and
-//! close, at its very end when asked ([`Toolbar::caption_buttons`]). It knows nothing of
-//! platforms: the app says whether it is the title bar, how much room the system's
-//! buttons take, whether to draw its own and whether the window is maximised.
+//! close, at its very end when asked, in either system's style ([`Toolbar::caption_buttons`],
+//! [`CaptionStyle`]). It knows nothing of platforms: the app says whether it is the title
+//! bar, how much room the system's buttons take, whether to draw its own and in which
+//! style, and whether the window is maximised.
 
 use apertrust_base::settings::Choice;
 use egui::accesskit::{HasPopup, Live};
@@ -72,8 +73,8 @@ use egui::{
 use super::icon_button::colour;
 use super::plate::{Touch, paint_focus, undimmed_painter};
 use super::{
-    CursorWell, CursorWellAction, IconButton, Jobs, focus_ring, menu_asked, menu_asked_of,
-    pull_down, report_shortcut,
+    CursorWell, CursorWellAction, IconButton, Jobs, focus_ring, focus_ring_round, menu_asked,
+    menu_asked_of, pull_down, report_shortcut,
 };
 use crate::i18n::Args;
 use crate::{Icon, popup, theme, tr, translator};
@@ -334,8 +335,84 @@ pub struct Toolbar<'a> {
     menu: bool,
     menu_style: MenuButtonStyle,
     title_bar: bool,
-    caption_buttons: bool,
+    caption_buttons: Option<CaptionStyle>,
     maximised: bool,
+}
+
+/// How the window's caption buttons are drawn (`docs/gui.md`, Windows' and Linux's
+/// frames), by [`Toolbar::caption_buttons`] and [`caption_button`]. The app chooses it for
+/// its platform; the Toolbar knows none.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CaptionStyle {
+    /// Windows 11's: 46-point cells as tall as the panel, side by side and meeting the
+    /// window's edge, `hover` behind one under the pointer, close's red, with 1-unit
+    /// glyphs in a 10-unit box.
+    #[default]
+    Windows,
+    /// libadwaita's window controls: 24-point buttons centred on the panel's height, 13
+    /// points apart and the last 12 points from its end, a circle behind one under the
+    /// pointer (`caption_plate_hover`) and a stronger one held down
+    /// (`caption_plate_pressed`), none at rest, close as the others, with 16-point
+    /// symbolic glyphs at the other icons' stroke, in `text_secondary` at rest and `text`
+    /// on the circle.
+    Linux,
+}
+
+/// A Linux caption button's side, its circle's diameter: libadwaita's 16-point icon with
+/// 4 points round it.
+const LINUX_BUTTON: f32 = 24.0;
+/// Between two Linux caption buttons: libadwaita's 3 points between its buttons and the
+/// 5 points each keeps round its circle, so a press within egui's margin round a button is
+/// its own and the 3 points between those margins are the title bar's.
+const LINUX_GAP: f32 = 13.0;
+/// From the last Linux caption button to the panel's end: libadwaita's header bar's 7
+/// points and the button's own 5 round its circle.
+const LINUX_END: f32 = 12.0;
+
+impl CaptionStyle {
+    /// The room the three buttons take at the end of a panel, in points, what lies after
+    /// the last included: 138 points on Windows, 110 on Linux.
+    pub fn width(self) -> f32 {
+        match self {
+            CaptionStyle::Windows => 3.0 * CAPTION_BUTTON,
+            CaptionStyle::Linux => 3.0 * LINUX_BUTTON + 2.0 * LINUX_GAP + LINUX_END,
+        }
+    }
+
+    /// The room between the last button and the end of the panel or strip it ends: none
+    /// on Windows, whose buttons meet the window's edge; 12 points on Linux. A caller
+    /// drawing a close alone with [`caption_button`] keeps it there.
+    pub fn end_margin(self) -> f32 {
+        match self {
+            CaptionStyle::Windows => 0.0,
+            CaptionStyle::Linux => LINUX_END,
+        }
+    }
+
+    /// The three buttons' rectangles, minimise, maximise or restore and close, at the end
+    /// of `bar`: on Windows each as tall as it, on Linux centred on its height.
+    fn buttons(self, bar: Rect) -> [Rect; 3] {
+        let (size, gap) = match self {
+            CaptionStyle::Windows => (vec2(CAPTION_BUTTON, bar.height()), 0.0),
+            CaptionStyle::Linux => (Vec2::splat(LINUX_BUTTON), LINUX_GAP),
+        };
+        let end = bar.max.x - self.end_margin();
+        [2.0, 1.0, 0.0].map(|after: f32| {
+            let right = end - after * (size.x + gap);
+            Rect::from_center_size(pos2(right - size.x / 2.0, bar.center().y), size)
+        })
+    }
+
+    /// The glyph this style draws for `icon`, one of Windows' four.
+    fn glyph(self, icon: Icon) -> Icon {
+        match (self, icon) {
+            (CaptionStyle::Linux, Icon::Minimise) => Icon::MinimiseLinux,
+            (CaptionStyle::Linux, Icon::Maximise) => Icon::MaximiseLinux,
+            (CaptionStyle::Linux, Icon::Restore) => Icon::RestoreLinux,
+            (CaptionStyle::Linux, Icon::Close) => Icon::CloseLinux,
+            _ => icon,
+        }
+    }
 }
 
 /// The side of the parts' buttons: », the spinner and the ☰ menu button.
@@ -351,7 +428,7 @@ const ACTION_STROKE: f32 = 2.0;
 const ICON_PADDING: f32 = 5.0;
 /// Between the menu button's app icon and its caret.
 const CARET_GAP: f32 = 3.0;
-/// A caption button's width, as Windows 11's; it is as tall as the panel.
+/// A caption button's width in Windows' style, as Windows 11's; it is as tall as the panel.
 const CAPTION_BUTTON: f32 = 46.0;
 /// What the folded "Saving…" shows.
 const ELLIPSIS: &str = "…";
@@ -508,12 +585,12 @@ impl<'a> Toolbar<'a> {
     }
 
     /// Draws the window's caption buttons at the panel's very end, after a group's gap,
-    /// where the system draws none: minimise, maximise or restore, and close, each as tall
-    /// as the panel and 46 points wide. Their clicks report [`ToolbarAction::Minimise`],
-    /// [`ToolbarAction::MaximiseOrRestore`] and [`ToolbarAction::Close`]. Off by
-    /// default.
-    pub fn caption_buttons(mut self, on: bool) -> Self {
-        self.caption_buttons = on;
+    /// where the system draws none: minimise, maximise or restore, and close, in `style`,
+    /// taking [`CaptionStyle::width`]. Their clicks report [`ToolbarAction::Minimise`],
+    /// [`ToolbarAction::MaximiseOrRestore`] and [`ToolbarAction::Close`]; the panel
+    /// between and round them stays empty area. None, the default, draws none.
+    pub fn caption_buttons(mut self, style: Option<CaptionStyle>) -> Self {
+        self.caption_buttons = style;
         self
     }
 
@@ -712,12 +789,9 @@ impl<'a> Toolbar<'a> {
         let mut inner = bar.shrink2(vec2(t.spacing.m, 0.0));
         inner.min.x = bar.min.x + self.start_inset.max(t.spacing.m);
         // The caption buttons take the panel's end, a group's gap before them.
-        let caption = self.caption_buttons.then(|| {
-            let mut caption = bar;
-            caption.min.x = bar.max.x - 3.0 * CAPTION_BUTTON;
-            inner.max.x = caption.min.x - t.spacing.xl;
-            caption
-        });
+        if let Some(style) = self.caption_buttons {
+            inner.max.x = bar.max.x - style.width() - t.spacing.xl;
+        }
 
         // The save state's slot, at its widest form at each fold, Saving… or the warning,
         // whatever it shows, so a save never moves the fold, the spinner or anything else.
@@ -1104,35 +1178,33 @@ impl<'a> Toolbar<'a> {
         }
 
         // At the very end: the window's caption buttons, after everything else in the focus
-        // order too.
-        if let Some(caption) = caption {
-            ui.scope_builder(
-                UiBuilder::new()
-                    .max_rect(caption)
-                    .layout(Layout::left_to_right(Align::Center)),
-                |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    let (icon, middle) = if self.maximised {
-                        (Icon::Restore, "window-restore")
-                    } else {
-                        (Icon::Maximise, "window-maximise")
-                    };
-                    for (icon, id, close, done) in [
-                        (
-                            Icon::Minimise,
-                            "window-minimise",
-                            false,
-                            ToolbarAction::Minimise,
-                        ),
-                        (icon, middle, false, ToolbarAction::MaximiseOrRestore),
-                        (Icon::Close, "window-close", true, ToolbarAction::Close),
-                    ] {
-                        if pressed(caption_button(ui, icon, &tr(&ctx, id), close, &t)) {
-                            action = Some(done);
-                        }
-                    }
-                },
-            );
+        // order too, each in its own place, the panel round them empty.
+        let mut captions = Vec::new();
+        if let Some(style) = self.caption_buttons {
+            let (icon, middle) = if self.maximised {
+                (Icon::Restore, "window-restore")
+            } else {
+                (Icon::Maximise, "window-maximise")
+            };
+            let buttons = [
+                (
+                    Icon::Minimise,
+                    "window-minimise",
+                    false,
+                    ToolbarAction::Minimise,
+                ),
+                (icon, middle, false, ToolbarAction::MaximiseOrRestore),
+                (Icon::Close, "window-close", true, ToolbarAction::Close),
+            ];
+            for ((icon, id, close, done), rect) in buttons.into_iter().zip(style.buttons(bar)) {
+                let button = ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                    caption_button(ui, icon, &tr(&ctx, id), close, style, &t)
+                });
+                captions.push(rect);
+                if pressed(button.inner) {
+                    action = Some(done);
+                }
+            }
         }
         // The well is no empty area, between its buttons too.
         controls.extend(well_rect);
@@ -1155,7 +1227,8 @@ impl<'a> Toolbar<'a> {
         let menu = keyed.or_else(|| {
             let (at, control) = menu_click(ui, bar)?;
             let owns = |rect: Option<Rect>| rect.is_some_and(|r| r.contains(at));
-            if owns(caption) || (control && (owns(more_rect) || owns(well_rect))) {
+            let caption = captions.iter().any(|r| r.contains(at));
+            if caption || (control && (owns(more_rect) || owns(well_rect))) {
                 return None;
             }
             let entry = items.iter().find(|(_, rect)| rect.contains(at));
@@ -1488,18 +1561,28 @@ fn title_bar_gesture(ui: &Ui, bar: Rect, id: egui::Id, controls: &[Rect]) -> Opt
     None
 }
 
-/// One of the window's caption buttons, 46 points wide and as tall as `ui` has room for:
-/// no corners, `hover` behind it under the pointer, or, for `close`, the close button's
-/// red with its own icon colour. The focus ring is drawn inside, since the button meets
-/// the window's edges. The Toolbar draws minimise, maximise and close with it, and the
-/// dialog host a dialog's close where it draws the window's frame.
+/// One of the window's caption buttons in `style`, `icon` one of Windows' four glyphs,
+/// which Linux's style draws as its own. On Windows, 46 points wide and as tall as `ui`
+/// has room for: no corners, `hover` behind it under the pointer, or, for `close`, the
+/// close button's red with its own icon colour, and the focus ring inside, since the
+/// button meets the window's edges. On Linux, 24 points square, centred where the layout
+/// puts it: nothing behind it at rest and its glyph in `text_secondary`, as the Toolbar's
+/// icons rest; under the pointer a circle of `caption_plate_hover`, held down one of
+/// `caption_plate_pressed`, the glyph on it in `text`; close the same, and the focus ring
+/// round the circle. The Toolbar draws minimise, maximise and close with it, and the dialog host and
+/// the start window their close where they draw the window's frame, a close alone kept
+/// [`CaptionStyle::end_margin`] from the strip's end.
 pub fn caption_button(
     ui: &mut Ui,
     icon: Icon,
     name: &str,
     close: bool,
+    style: CaptionStyle,
     t: &crate::Theme,
 ) -> egui::Response {
+    if style == CaptionStyle::Linux {
+        return linux_caption_button(ui, style.glyph(icon), name, t);
+    }
     let (rect, response) =
         ui.allocate_exact_size(vec2(CAPTION_BUTTON, ui.available_height()), Sense::click());
     if ui.is_rect_visible(rect) {
@@ -1525,6 +1608,35 @@ pub fn caption_button(
         if response.has_focus() {
             // The ring lies outside the rectangle it is given: here, inside the button.
             focus_ring(painter, rect.shrink(2.0), t);
+        }
+    }
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
+    response.on_hover_text(name)
+}
+
+/// [`caption_button`] in Linux's style, drawing `glyph`.
+fn linux_caption_button(ui: &mut Ui, glyph: Icon, name: &str, t: &crate::Theme) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(LINUX_BUTTON), Sense::click());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let (centre, radius) = (rect.center(), LINUX_BUTTON / 2.0);
+        // At rest a step quieter, as the Toolbar's own icons rest; on its circle, `text`.
+        let mut colour = t.colors.text;
+        if response.is_pointer_button_down_on() {
+            painter.circle_filled(centre, radius, t.colors.caption_plate_pressed);
+        } else if response.hovered() {
+            painter.circle_filled(centre, radius, t.colors.caption_plate_hover);
+        } else {
+            colour = t.colors.text_secondary;
+        }
+        let size = glyph.size();
+        glyph.paint(
+            painter,
+            Rect::from_center_size(centre, vec2(size, size)),
+            colour,
+        );
+        if response.has_focus() {
+            focus_ring_round(painter, centre, radius, t);
         }
     }
     response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
@@ -1682,5 +1794,46 @@ fn icon_button<'a>(icon: Icon, name: &'a str, keys: Option<&'a str>) -> IconButt
     match keys {
         Some(keys) => button.shortcut(keys),
         None => button,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_caption_area_is_as_wide_as_its_style() {
+        assert_eq!(CaptionStyle::Windows.width(), 138.0);
+        // Three 24-point buttons, 13 points apart, the last 12 from the end.
+        assert_eq!(CaptionStyle::Linux.width(), 110.0);
+        for style in [CaptionStyle::Windows, CaptionStyle::Linux] {
+            let bar = Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 44.0));
+            let [minimise, _, close] = style.buttons(bar);
+            assert_eq!(bar.right() - minimise.left(), style.width(), "{style:?}");
+            assert_eq!(bar.right() - close.right(), style.end_margin(), "{style:?}");
+        }
+    }
+
+    #[test]
+    fn linux_s_buttons_are_24_points_and_centred_at_both_heights() {
+        // The Toolbar with labels and without.
+        for height in [62.0, 44.0] {
+            let bar = Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, height));
+            let buttons = CaptionStyle::Linux.buttons(bar);
+            for button in buttons {
+                assert_eq!(button.size(), vec2(24.0, 24.0), "{height}");
+                assert_eq!(button.center().y, height / 2.0, "{height}");
+            }
+            assert_eq!(buttons[1].left() - buttons[0].right(), 13.0);
+            assert_eq!(buttons[2].left() - buttons[1].right(), 13.0);
+            assert_eq!(bar.right() - buttons[2].right(), 12.0);
+            // Windows' fill the panel's height and meet one another.
+            let windows = CaptionStyle::Windows.buttons(bar);
+            for button in windows {
+                assert_eq!(button.size(), vec2(46.0, height), "{height}");
+            }
+            assert_eq!(windows[1].left(), windows[0].right());
+            assert_eq!(windows[2].right(), bar.right());
+        }
     }
 }

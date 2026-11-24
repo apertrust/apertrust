@@ -125,8 +125,8 @@ pub use tabs::Tabs;
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
 pub use toolbar::{
-    MenuButtonStyle, SaveState, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ToolbarMenu,
-    caption_button,
+    CaptionStyle, MenuButtonStyle, SaveState, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry,
+    ToolbarMenu, caption_button,
 };
 pub use tools_panel::{
     FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,
@@ -412,6 +412,16 @@ fn focus_ring(painter: &Painter, rect: Rect, t: &Theme) {
 /// neighbours an outside ring would run into, as a list's line in the app is.
 pub fn focus_ring_centred(painter: &Painter, rect: Rect, t: &Theme) {
     ring(painter, rect, t, StrokeKind::Middle);
+}
+
+/// The ring round a focused round control, a circle of `radius` at `centre`, while focus
+/// rings show.
+fn focus_ring_round(painter: &Painter, centre: Pos2, radius: f32, t: &Theme) {
+    if focus_shows(painter.ctx()) {
+        let width = t.shape.focus_width;
+        let stroke = Stroke::new(width, t.colors.focus_ring);
+        painter.circle_stroke(centre, radius + width / 2.0, stroke);
+    }
 }
 
 fn ring(painter: &Painter, rect: Rect, t: &Theme, kind: StrokeKind) {

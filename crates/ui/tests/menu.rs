@@ -18,7 +18,7 @@
 //! popup service (`docs/gui.md`, The menu bar, The drawn menus; decision 39), driven by the
 //! pointer and the keys and read through AccessKit, as a screen reader reads them.
 
-use apertrust_ui::components::{MenuButtonStyle, Toolbar, ToolbarAction};
+use apertrust_ui::components::{CaptionStyle, MenuButtonStyle, Toolbar, ToolbarAction};
 use apertrust_ui::gallery::toolbar_entries;
 use apertrust_ui::popup::{self, Answer, Entry, Item, Request, Submenu};
 use apertrust_ui::{Builtin, Locale, Theme};
@@ -139,7 +139,7 @@ fn app_in(locale: Locale, menu_button: bool) -> Harness<'static, App> {
                     .menu_button(app.menu_button)
                     .menu_button_style(app.style)
                     .title_bar(true)
-                    .caption_buttons(true)
+                    .caption_buttons(Some(CaptionStyle::Windows))
                     .shortcut(ToolbarAction::Menu, "F10")
                     .show(ui);
                 let ctx = ui.ctx().clone();

@@ -39,7 +39,9 @@
 
 use std::path::{Path, PathBuf};
 
-use apertrust_ui::components::{Button, caption_button, focus_ring_centred, middle_cut};
+use apertrust_ui::components::{
+    Button, CaptionStyle, caption_button, focus_ring_centred, middle_cut,
+};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Icon, fonts, theme, tr, translator};
 use eframe::egui::{
@@ -389,7 +391,16 @@ pub fn show(
                 .layout(Layout::right_to_left(Align::Center)),
         );
         let name = tr(&ctx, "window-close");
-        if caption_button(&mut end, Icon::Close, &name, true, &t).clicked() {
+        if caption_button(
+            &mut end,
+            Icon::Close,
+            &name,
+            true,
+            CaptionStyle::Windows,
+            &t,
+        )
+        .clicked()
+        {
             asked.push(Asked::Close);
         }
     }
