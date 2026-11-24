@@ -79,7 +79,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/orientation.rs` and the 
 ## In the panel
 
 - **No tabs:** the Transform row, its label and darktable's four buttons inline, then Show guides with the guide settings button at its end, drawn disabled.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 - **In the photo's right-click menu** (decision 91; [gui.md](../gui.md#context-menus)): Orientation ▸, after Background ▸ (`VIEW`, 200), holding its four buttons in their order, each the registry's `tool-flip-<button>` with its full name, as Rotate 90° clockwise is `tool-flip-rotate_cw`. It is hidden while the photo takes no edits, and shown disabled while the photo waits to go live.
 
 ## Gaps

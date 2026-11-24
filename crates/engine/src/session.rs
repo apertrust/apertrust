@@ -168,7 +168,7 @@ use crate::raw_histogram;
 use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
 use crate::sidecar;
-pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_values};
+pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_entry, tool_values};
 pub use crate::view::{FramePlace, Placement, View, ViewScale};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};

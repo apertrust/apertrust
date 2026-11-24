@@ -78,6 +78,12 @@ pub struct SectionOutput {
     /// The options button where it opens a menu or is a utility's, by which its menu's
     /// popup is known (`popup::button_menu`), so its caller can close it.
     pub options: Option<egui::Id>,
+    /// The id of the item chosen this frame in the menu an editing tool's presets button
+    /// opens, given by [`Section::presets_menu`].
+    pub preset: Option<String>,
+    /// The presets button where it opens a menu, by which its menu's popup is known, as
+    /// [`SectionOutput::options`].
+    pub presets: Option<egui::Id>,
     /// The header's toggle, its chevron and title, by which its caller gives screen readers
     /// what else it can do to the section (AccessKit's custom actions).
     pub header: Option<egui::Id>,
@@ -104,6 +110,9 @@ pub struct Section<'a> {
     /// What the options button opens, a pull-down of the popup service's, where the
     /// section gives one.
     menu: Option<Vec<Entry>>,
+    /// What an editing tool's presets button opens, built only as it opens, where the
+    /// section gives one.
+    presets_menu: Option<Entries<'a>>,
     peek: bool,
     not_applied: bool,
     /// What its header's tooltip says, where the section has it.
@@ -125,6 +134,9 @@ impl Section<'_> {
 /// What a section draws inside it while open.
 type Body<'b> = Box<dyn FnOnce(&mut Ui) + 'b>;
 
+/// A menu's entries, built only as it opens.
+type Entries<'b> = Box<dyn FnOnce() -> Vec<Entry> + 'b>;
+
 impl<'a> Section<'a> {
     /// A utility section: options only. `title` is translated.
     pub fn new(title: &'a str, open: bool) -> Self {
@@ -141,6 +153,7 @@ impl<'a> Section<'a> {
             presets: true,
             options: true,
             menu: None,
+            presets_menu: None,
             peek: false,
             not_applied: false,
             about: None,
@@ -226,6 +239,16 @@ impl<'a> Section<'a> {
         self
     }
 
+    /// An editing tool's presets as a menu its presets button opens, a pull-down of the
+    /// popup service's whose `entries`, translated, are built only as it opens, so a
+    /// folder they list is read then and not every frame: the item chosen comes back as
+    /// [`SectionOutput::preset`], in place of [`SectionAction::Presets`]. It opens only
+    /// while the button can run ([`Self::presets`]).
+    pub fn presets_menu(mut self, entries: impl FnOnce() -> Vec<Entry> + 'a) -> Self {
+        self.presets_menu = Some(Box::new(entries));
+        self
+    }
+
     /// Whether the keys that peek (H by default) are held, as the app's actions registry
     /// reports them; the section peeks while it is under the pointer or its header has
     /// focus.
@@ -287,8 +310,11 @@ impl<'a> Section<'a> {
         let (header, _) =
             ui.allocate_exact_size(vec2(width, t.sizes.section_header), Sense::hover());
         let menu = self.menu;
+        let presets_menu = self.presets_menu;
         let mut chosen = None;
         let mut options_id = None;
+        let mut preset = None;
+        let mut presets_id = None;
 
         // The buttons, right to left, each `sizes.section_button` wide round its icon and
         // a control high, `spacing.section_button_gap` apart. The last one's ink, not its
@@ -333,13 +359,18 @@ impl<'a> Section<'a> {
                                     .show(ui);
                             }
                         }
-                        if IconButton::new(Icon::Presets, &say("section-presets"))
+                        let name = say("section-presets");
+                        let presets = IconButton::new(Icon::Presets, &name)
                             .width(narrow)
                             .enabled(self.presets)
-                            .show(ui)
-                            .clicked()
-                        {
-                            pressed.push(SectionAction::Presets);
+                            .show(ui);
+                        match presets_menu {
+                            Some(entries) => {
+                                presets_id = Some(presets.id);
+                                preset = pull_down(ui, &presets, &name, entries);
+                            }
+                            None if presets.clicked() => pressed.push(SectionAction::Presets),
+                            None => {}
                         }
                         if IconButton::new(Icon::Reset, &say("section-reset"))
                             .width(narrow)
@@ -618,6 +649,8 @@ impl<'a> Section<'a> {
             pos2(header.right(), bottom),
         ));
         output.chosen = chosen;
+        output.preset = preset;
+        output.presets = presets_id;
         output.options = options_id;
         output.header = Some(id);
         output.focused = focused;

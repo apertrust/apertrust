@@ -357,7 +357,11 @@ pub fn ending_of(command: &Command, tool: &str) -> Option<Ended> {
             tool: t.clone(),
             control: control.clone(),
         }),
-        Command::ResetTool { tool: t } | Command::ApplyPreset { tool: t, .. } if t == tool => {
+        Command::ResetTool { tool: t }
+        | Command::ApplyPreset { tool: t, .. }
+        | Command::SetTool { tool: t, .. }
+            if t == tool =>
+        {
             Some(Ended::Tool(t.clone()))
         }
         Command::Undo
@@ -421,6 +425,7 @@ fn changed_by(change: &crate::tools::Change) -> Option<&'static str> {
         | Change::ResetTool { tool }
         | Change::Action { tool, .. }
         | Change::ApplyPreset { tool, .. } => Some(tool),
+        Change::Preset { tool, item } if item.edits() => Some(tool),
         Change::Step(changes) => changes.iter().find_map(changed_by),
         _ => None,
     }
@@ -1590,6 +1595,13 @@ mod tests {
             ending_of(&step, "exposure"),
             Some(Ended::Control { .. })
         ));
+        // A preset applied, its whole values set inside a step, ends it too.
+        let preset = crate::presets::apply("exposure", "Bright", Default::default());
+        assert_eq!(
+            ending_of(&preset, "exposure"),
+            Some(Ended::Tool("exposure".to_owned()))
+        );
+        assert_eq!(ending_of(&preset, "temperature"), None);
 
         use crate::tools::Change;
         let change = |tool| Change::Reset {

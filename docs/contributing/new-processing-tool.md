@@ -505,7 +505,7 @@ The control holds what a value may be; the slider row holds how it is shown:
 
 ### 6.5 The header
 
-Every tool's header is drawn from its `ToolDefinition`: its title, ↺ as `reset` says (`Reset::Tool` for a processing tool), the presets button where `presets` is true (drawn disabled until presets come), and ⋯ with the app's items and those of `menus`. A processing tool starts closed (`open_at_first: false`). There is no Auto or options button. A tool takes no right-click: what it adds to menus goes in `menus` ([tools/README.md](../tools/README.md#the-rules), rule 14).
+Every tool's header is drawn from its `ToolDefinition`: its title, ↺ as `reset` says (`Reset::Tool` for a processing tool), the presets button where `presets` is true, which for a processing tool opens its presets with no code of the tool's own ([gui.md](../gui.md#a-tools-presets)), and ⋯ with the app's items and those of `menus`. A processing tool starts closed (`open_at_first: false`). There is no Auto or options button. A tool takes no right-click: what it adds to menus goes in `menus` ([tools/README.md](../tools/README.md#the-rules), rule 14).
 
 ### 6.6 Its words
 

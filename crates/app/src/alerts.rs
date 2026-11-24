@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The app's confirmations (`docs/gui.md`, Dialogs and alerts; decision 41): the system's
-//! alerts, asked through the dialog host and answered on a later frame. Six so far:
+//! alerts, asked through the dialog host and answered on a later frame. Eight so far:
 //!
 //! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
 //!   replaces files, as darktable does, from the Export tool or Export Again.
@@ -34,6 +34,9 @@
 //! - **Already running** ([`Purpose::Running`]): a second start on the user data folder
 //!   with flags for one run is refused (decision 89), and the instance's window, brought
 //!   forward, says to quit it first.
+//! - **Update and Delete a tool's preset** ([`Purpose::UpdatePreset`],
+//!   [`Purpose::DeletePreset`]): darktable's "update preset?" and "delete preset?"
+//!   (decision 106; `presets.rs`).
 //!
 //! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
 //! text.
@@ -68,6 +71,10 @@ pub enum Purpose {
     Discard,
     /// A second start with flags for one run was refused: the alert only says so.
     Running,
+    /// A tool's preset is to be updated with its values now: yes writes it.
+    UpdatePreset,
+    /// A tool's preset is to be deleted: yes removes its file.
+    DeletePreset,
 }
 
 /// The open photo's edit as Quit finds it.
@@ -285,6 +292,29 @@ pub fn discard_request(ctx: &egui::Context, held: bool, unreadable: bool, file: 
     }
 }
 
+/// darktable's "update preset?": "Update the preset "…" with the tool's current
+/// values?", with Update, the default, and Cancel.
+pub fn update_preset_request(ctx: &egui::Context, name: &str) -> Request {
+    let mut args = Args::new();
+    args.set("name", name);
+    let title = translator(ctx).text_with("alert-preset-update-title", Some(&args));
+    Request::new(title, tr(ctx, "alert-preset-update-message"))
+        .button(tr(ctx, "alert-preset-update-button"), Role::Default)
+        .button(tr(ctx, "alert-cancel"), Role::Cancel)
+}
+
+/// darktable's "delete preset?": "Delete the preset "…"?", with Delete, which
+/// destroys and has no key, and Cancel, the default.
+pub fn delete_preset_request(ctx: &egui::Context, name: &str) -> Request {
+    let mut args = Args::new();
+    args.set("name", name);
+    let title = translator(ctx).text_with("alert-preset-delete-title", Some(&args));
+    Request::new(title, tr(ctx, "alert-preset-delete-message"))
+        .button(tr(ctx, "alert-preset-delete-button"), Role::Destructive)
+        .button(tr(ctx, "alert-cancel"), Role::Cancel)
+        .default_button(1)
+}
+
 /// "Quit while a job is running?": its message says what a yes does to the `running` jobs.
 /// Where the edit's last write failed, "Quit without your last changes?", saying why, then
 /// what a yes does to any jobs running, with Quit Anyway and Cancel, the default.
@@ -435,6 +465,10 @@ pub enum Then {
     /// Quit again at once, to leave: the quit alert could not be shown, so this one Quit
     /// leaves and the next asks again, as when asking it fails ([`ask_quit`]).
     Leave,
+    /// Write the tool's values now over the preset asked about.
+    UpdatePreset,
+    /// Remove the preset asked about.
+    DeletePreset,
     /// Nothing: the alert only said something, so no question waits on its answer.
     Told,
 }
@@ -463,7 +497,9 @@ pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) 
         Purpose::Save if confirmed => Then::RetrySave,
         Purpose::Save => Then::Nothing,
         Purpose::Discard if confirmed => Then::Discard,
-        Purpose::Discard => Then::Nothing,
+        Purpose::UpdatePreset if confirmed => Then::UpdatePreset,
+        Purpose::DeletePreset if confirmed => Then::DeletePreset,
+        Purpose::Discard | Purpose::UpdatePreset | Purpose::DeletePreset => Then::Nothing,
         Purpose::Refused | Purpose::Running => Then::Told,
     }
 }
@@ -831,6 +867,38 @@ mod tests {
         assert_eq!(then(Answer::Dismissed, &mut guard), Then::Nothing);
         assert_eq!(then(Answer::Failed, &mut guard), Then::Nothing);
         assert!(!guard.confirmed());
+    }
+
+    /// A preset's Update and Delete name it and run only on a yes, Delete destructive with
+    /// Cancel the default, in every language.
+    #[test]
+    fn a_preset_s_update_and_delete_ask_and_run_on_a_yes() {
+        for locale in Locale::ALL {
+            let words = apertrust_ui::Translator::new(locale);
+            let update = update_preset_request(&context(locale), "Bright");
+            assert!(update.title.contains("Bright"), "{locale:?}");
+            assert_eq!(
+                update.buttons[0].label,
+                words.text("alert-preset-update-button")
+            );
+            assert_eq!(update.default, 0);
+            let delete = delete_preset_request(&context(locale), "Bright");
+            assert!(delete.title.contains("Bright"), "{locale:?}");
+            assert_eq!(delete.buttons[0].role, Role::Destructive);
+            assert_eq!(delete.default, 1);
+        }
+        let (mirror, _) = exporting();
+        let mut guard = Guard::default();
+        for (purpose, yes) in [
+            (Purpose::UpdatePreset, Then::UpdatePreset),
+            (Purpose::DeletePreset, Then::DeletePreset),
+        ] {
+            assert_eq!(then(purpose, Answer::Pressed(0), &mut guard, &mirror), yes);
+            let no = then(purpose, Answer::Pressed(1), &mut guard, &mirror);
+            assert_eq!(no, Then::Nothing);
+            let gone = then(purpose, Answer::Dismissed, &mut guard, &mirror);
+            assert_eq!(gone, Then::Nothing);
+        }
     }
 
     /// A mirror with an export of the user's running, and its job.

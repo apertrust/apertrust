@@ -272,6 +272,7 @@ dependencies = [
  "apertrust-display",
  "apertrust-engine",
  "apertrust-export",
+ "apertrust-library",
  "apertrust-operations",
  "apertrust-plugin",
  "apertrust-tools",

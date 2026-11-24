@@ -167,6 +167,36 @@ preset-custom = Custom
 # The tooltip of an option drawn disabled because this photo cannot have it.
 preset-option-unavailable = Not available for this photo
 
+## A tool's presets: the pull-down its header's presets button opens, and its dialogs
+
+presets-default = Default settings
+presets-save = Save as Preset…
+# Shown while the tool's values differ from the preset chosen last: $name is its name.
+presets-update = Update “{ $name }”
+presets-rename = Rename…
+presets-delete = Delete…
+# The tooltip of Rename… and Delete… while no preset has been chosen or saved on the tool.
+presets-choose-first = Choose a preset first
+# The tooltip of Update and Delete where the platform can't show the question they ask.
+presets-no-alert = This asks first, and the question can’t be shown here yet.
+# A parked preset's tooltip: made by a newer Apertrust, or for a newer version of its tool,
+# $tool the tool's title and $version the version the file names.
+presets-parked-newer = Made by a newer Apertrust
+presets-parked-tool = Made for a newer { $tool }: version { $version }
+# Save as Preset… and Rename…: their titles, fields and buttons. A new preset's name is the
+# tool's title, $tool, and the first number, $number, no other preset of the tool has.
+presets-save-title = Save as Preset
+presets-rename-title = Rename Preset
+presets-name = Name
+presets-new-name = { $tool } { $number }
+presets-description = Description
+presets-description-hint = Optional
+presets-save-button = Save
+presets-rename-button = Rename
+# Under the name, why it can't be taken: $tool is the tool's title.
+presets-name-empty = A preset needs a name
+presets-name-taken = { $tool } already has a preset with this name
+
 ## A slider's marker
 
 slider-kept = Kept: you set it, so Auto and Match leave it. Click to release it.
@@ -1296,6 +1326,9 @@ history-go-to-step = Go to Step
 history-compress = Compress History
 history-truncate = Truncate History
 history-discard = Discard History
+# A tool's preset applied, $name its name, and its Default settings.
+history-preset = Preset { $name }
+history-default-settings = Default settings
 # The History section's options (⋯), as items, each with its tip: Compress History,
 # Truncate History, Create a Style…, which comes with styles, and Discard History…'s tip.
 history-options-compress = Compress History
@@ -1831,3 +1864,11 @@ alert-discard-message = The photo goes back to how it first opened, and its hist
 # what couldn't be read is lost. $file is the edit's file beside the photo.
 alert-discard-unreadable-message = Some of this edit’s history can’t be read. Discarding starts it afresh from the photo as it looks now, and what can’t be read is lost for good. To keep it, copy { $file } first.
 alert-discard-button = Discard History
+# A tool's preset's Update: darktable's "update preset?". $name is the preset's name.
+alert-preset-update-title = Update the preset “{ $name }” with the tool’s current values?
+alert-preset-update-message = Its file is replaced.
+alert-preset-update-button = Update
+# A tool's preset's Delete, Cancel the default: darktable's "delete preset?".
+alert-preset-delete-title = Delete the preset “{ $name }”?
+alert-preset-delete-message = Its file is removed.
+alert-preset-delete-button = Delete

@@ -115,6 +115,28 @@ collapsible-group-active = { $group } (aktywne)
 preset-custom = Własne
 preset-option-unavailable = Niedostępne dla tego zdjęcia
 
+## A tool's presets
+
+presets-default = Ustawienia domyślne
+presets-save = Zapisz jako preset…
+presets-update = Zaktualizuj „{ $name }”
+presets-rename = Zmień nazwę…
+presets-delete = Usuń…
+presets-choose-first = Najpierw wybierz preset
+presets-no-alert = To najpierw pyta, a tego pytania nie da się tu jeszcze pokazać.
+presets-parked-newer = Utworzony w nowszej wersji Apertrust
+presets-parked-tool = Utworzony dla nowszej wersji narzędzia { $tool }: wersja { $version }
+presets-save-title = Zapisz jako preset
+presets-rename-title = Zmień nazwę presetu
+presets-name = Nazwa
+presets-new-name = { $tool } { $number }
+presets-description = Opis
+presets-description-hint = Opcjonalnie
+presets-save-button = Zapisz
+presets-rename-button = Zmień nazwę
+presets-name-empty = Preset musi mieć nazwę
+presets-name-taken = Narzędzie { $tool } ma już preset o tej nazwie
+
 ## Znacznik suwaka
 
 slider-kept = Zablokowany: ta wartość została ustawiona przez Ciebie, więc Auto i Dopasowanie jej nie zmieniają. Kliknij, aby odblokować.
@@ -990,6 +1012,8 @@ history-go-to-step = Przejście do kroku
 history-compress = Kompresja historii
 history-truncate = Przycięcie historii
 history-discard = Odrzucenie historii
+history-preset = Preset { $name }
+history-default-settings = Ustawienia domyślne
 history-options-compress = Kompresuj historię
 history-options-truncate = Przytnij historię
 history-compress-tip = Zachowuje ostatni krok każdego narzędzia do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
@@ -1428,3 +1452,9 @@ alert-discard-title = Odrzucić historię tego zdjęcia?
 alert-discard-message = Zdjęcie wróci do stanu z pierwszego otwarcia, a jego historia zostanie wyczyszczona. Można ją przywrócić poleceniem Edycja › Cofnij, dopóki zdjęcie jest otwarte.
 alert-discard-unreadable-message = Części historii tej edycji nie da się odczytać. Odrzucenie zacznie ją od nowa od zdjęcia w obecnym stanie, a to, czego nie da się odczytać, przepadnie na zawsze. Aby to zachować, najpierw skopiuj { $file }.
 alert-discard-button = Odrzuć historię
+alert-preset-update-title = Zaktualizować preset „{ $name }” bieżącymi wartościami narzędzia?
+alert-preset-update-message = Jego plik zostanie zastąpiony.
+alert-preset-update-button = Zaktualizuj
+alert-preset-delete-title = Usunąć preset „{ $name }”?
+alert-preset-delete-message = Jego plik zostanie usunięty.
+alert-preset-delete-button = Usuń

@@ -98,7 +98,7 @@ The golden cases, with the tool: `hazeremoval` a mean ΔE2000 of 0.0213, p95 0.0
 - **Tracks** are plain, filled from the default: the strength's from 0.2, the distance's from 0.2.
 - **Values** show darktable's decimals, the strength two and the distance three, in the language's number format: "+0.40", "−0.30", "0.650". The strength is signed, as darktable's is, since its range spans zero, and a zero strength reads "+0.00".
 - **Keyboard:** every row is a `SliderRow`, stepping by darktable's 0.01, Shift ten steps and Ctrl a tenth, Option on the Mac, never less than the last decimal shown, 0.01 for the strength and 0.001 for the distance, as darktable's `min_visible`. The value is rounded to the decimals shown before it is sent.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 

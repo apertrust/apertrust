@@ -522,9 +522,10 @@ fn entry_text(
     }
 }
 
-/// A tool's state as its entry: its version, its marks, `enabled` where a switched tool
-/// is on, and each control set, in the definition's order.
-fn tool_entry(definition: &ProcessingDefinition, values: &ToolValues) -> Entry {
+/// A tool's state as its entry, as an edit and a preset write it (decision 106): its
+/// version, its marks, `enabled` where a switched tool is on, and each control set, in the
+/// definition's order. The inverse of [`tool_values`].
+pub fn tool_entry(definition: &ProcessingDefinition, values: &ToolValues) -> Entry {
     let marked = |mark| {
         definition
             .controls

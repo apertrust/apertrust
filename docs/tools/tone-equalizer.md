@@ -119,7 +119,7 @@ Q4 in detail: the parameters bound are the cases' bit for bit, curve smoothing's
 - **Advanced:** darktable's graph of the bands first ([below](#the-bands-graph)), then Mask contrast compensation, which follows Preserve details from the Masking tab: shown with EIGF and hidden with No or Averaged EIGF, as darktable's is.
 - **Tracks** span darktable's soft ranges, and widen to show a value typed or scripted beyond one, as darktable's do, until the row is reset.
 - **Keyboard:** every slider row is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac, the value rounded to the decimals shown before it is sent.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ### The bands' graph
 

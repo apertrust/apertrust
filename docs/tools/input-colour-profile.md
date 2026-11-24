@@ -80,7 +80,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/input_colour_profile.rs`
 ## In the panel
 
 - **No tabs:** Input profile, Working profile and Gamut clipping, as darktable's page has them (`input_colour_profile_draws_darktable_s_three_lists`). Input profile opens on the photo's profiles, the unported ones drawn disabled with "Coming in a later version"; Working profile is drawn disabled at its default and does not open; Gamut clipping opens on its five options, all enabled.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 
