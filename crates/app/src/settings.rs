@@ -228,6 +228,8 @@ pub struct Settings {
     pub panel_width: Option<f32>,
     /// The margins round the Viewer's photo and caption.
     pub viewer: Viewer,
+    /// The guides drawn over the photo while Guides is on.
+    pub guides: Guides,
     /// The workspace the Tools panel shows, by id, as kept: one with no workspace stays
     /// until another is chosen (decision 96).
     pub workspace: String,
@@ -280,6 +282,7 @@ impl Default for Settings {
             panel_position: TOOLS_PANEL_POSITION.default(),
             panel_width: None,
             viewer: Viewer::default(),
+            guides: Guides::default(),
             workspace: WORKSPACE.default().to_owned(),
             edit: ViewState::default(),
             scopes: ScopeView {
@@ -354,6 +357,10 @@ impl Settings {
                 margin: store.get(&VIEWER_MARGIN),
                 proof_margin: store.get(&VIEWER_PROOF_MARGIN),
                 background: store.kept(&VIEWER_BACKGROUND),
+            },
+            guides: Guides {
+                kind: store.get(&GUIDES_TYPE),
+                flip: store.get(&GUIDES_FLIP),
             },
             workspace: store.get(&WORKSPACE),
             edit: ViewState {
@@ -479,6 +486,12 @@ impl Settings {
         }
         if s.viewer.background != was.viewer.background {
             keep(store, &VIEWER_BACKGROUND, s.viewer.background);
+        }
+        if s.guides.kind != was.guides.kind {
+            store.set(&GUIDES_TYPE, s.guides.kind);
+        }
+        if s.guides.flip != was.guides.flip {
+            store.set(&GUIDES_FLIP, s.guides.flip);
         }
         if s.workspace != was.workspace {
             store.set(&WORKSPACE, s.workspace.clone());
@@ -922,6 +935,25 @@ pub struct Viewer {
     pub proof_margin: f32,
     /// The background chosen behind the photo; None for the theme's own.
     pub background: Option<apertrust_ui::Background>,
+}
+
+/// The guides drawn over the photo while Guides is on, `[guides]` (decision 92; `docs/gui.md`,
+/// Guides), which View › Guides and the Toolbar's Guides choose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Guides {
+    /// darktable's guide type, `guides.type`.
+    pub kind: apertrust_ui::guides::Guide,
+    /// Its flip, `guides.flip`, which only a type that takes one follows.
+    pub flip: apertrust_ui::guides::GuideFlip,
+}
+
+impl Default for Guides {
+    fn default() -> Self {
+        Guides {
+            kind: GUIDES_TYPE.default(),
+            flip: GUIDES_FLIP.default(),
+        }
+    }
 }
 
 /// The log the app keeps in memory, `[log]`, the Settings dialog's Diagnostics, and what
@@ -1406,6 +1438,10 @@ mod tests {
                 proof_margin: 0.25,
                 background: Some(apertrust_ui::Background::Medium),
             },
+            guides: Guides {
+                kind: apertrust_ui::guides::Guide::GoldenSpiral,
+                flip: apertrust_ui::guides::GuideFlip::Both,
+            },
             workspace: "portraits".to_owned(),
             edit: ViewState {
                 sections: BTreeMap::from([
@@ -1580,6 +1616,11 @@ mod tests {
                     margin: 10.0,
                     proof_margin: 0.12,
                     background: None,
+                },
+                // darktable's: rules of thirds, unflipped.
+                guides: Guides {
+                    kind: apertrust_ui::guides::Guide::RulesOfThirds,
+                    flip: apertrust_ui::guides::GuideFlip::None,
                 },
                 workspace: "default".to_owned(),
                 edit: ViewState {
@@ -1756,6 +1797,10 @@ mode = \"cm\"
 scale = \"1/2\"
 upscale = true
 width = 2048
+
+[guides]
+flip = \"both\"
+type = \"golden-spiral\"
 
 [history]
 ask_before_discard = false

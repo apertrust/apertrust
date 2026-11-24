@@ -35,3 +35,40 @@ fn photograph(which: Builtin, name: &str) {
 fn the_overlays_in_the_dark_theme() {
     photograph(Builtin::Dark, "overlay-dark");
 }
+
+/// darktable's ten guide types (decision 92), each over a mid-grey photo 280 by 180 points,
+/// unflipped but for harmonious triangles and the golden spiral, flipped both ways beside
+/// their unflipped forms: the overlay's secondary line, the grid's at its lower opacities.
+#[test]
+fn the_guides_are_photographed() {
+    use apertrust_ui::guides::{self, Guide, GuideFlip};
+    use egui_kittest::Harness;
+    let photo = egui::vec2(280.0, 180.0);
+    let mut cells: Vec<(Guide, GuideFlip)> = Guide::ALL
+        .into_iter()
+        .map(|guide| (guide, GuideFlip::None))
+        .collect();
+    cells.push((Guide::HarmoniousTriangles, GuideFlip::Both));
+    cells.push((Guide::GoldenSpiral, GuideFlip::Both));
+    let rows = cells.len().div_ceil(2) as f32;
+    let size = egui::vec2(2.0 * photo.x + 36.0, rows * (photo.y + 12.0) + 12.0);
+    let mut harness = Harness::builder()
+        .with_size(size)
+        .with_pixels_per_point(2.0)
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
+        .build_ui(move |ui| {
+            let painter = ui.painter();
+            painter.rect_filled(ui.ctx().content_rect(), 0.0, egui::Color32::from_gray(40));
+            for (i, (guide, flip)) in cells.iter().enumerate() {
+                let at = egui::pos2(
+                    12.0 + (i % 2) as f32 * (photo.x + 12.0),
+                    12.0 + (i / 2) as f32 * (photo.y + 12.0),
+                );
+                let rect = egui::Rect::from_min_size(at, photo);
+                painter.rect_filled(rect, 0.0, egui::Color32::from_gray(119));
+                guides::draw(&painter.with_clip_rect(rect), rect, *guide, *flip);
+            }
+        });
+    harness.run();
+    harness.snapshot("guides");
+}

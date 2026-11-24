@@ -58,6 +58,7 @@ use apertrust_tools::{ProcessingDefinition, Row};
 use apertrust_ui::components::{
     BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize, ToolsPanelPosition,
 };
+use apertrust_ui::guides::{Guide, GuideFlip};
 use apertrust_ui::{Background, Icon, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
 
@@ -300,6 +301,30 @@ impl ActionId {
         ActionId("background-light"),
         ActionId("background-white"),
     ];
+    /// Guides, on or off: darktable's guide lines over the photo, the type and flip
+    /// `guides.type` and `guides.flip` say (decision 92).
+    pub const GUIDES: ActionId = ActionId("guides");
+    /// View › Guides' types, darktable's ten in its order, each chosen and the guides
+    /// turned on.
+    pub const GUIDE_TYPES: [ActionId; 10] = [
+        ActionId("guides-grid"),
+        ActionId("guides-rules-of-thirds"),
+        ActionId("guides-metering"),
+        ActionId("guides-perspective"),
+        ActionId("guides-diagonal-method"),
+        ActionId("guides-harmonious-triangles"),
+        ActionId("guides-golden-sections"),
+        ActionId("guides-golden-spiral"),
+        ActionId("guides-golden-spiral-sections"),
+        ActionId("guides-golden-mean"),
+    ];
+    /// View › Guides › Flip's choices, darktable's four.
+    pub const GUIDE_FLIPS: [ActionId; 4] = [
+        ActionId("guides-flip-none"),
+        ActionId("guides-flip-horizontally"),
+        ActionId("guides-flip-vertically"),
+        ActionId("guides-flip-both"),
+    ];
 }
 
 /// The old views enum, from before the one view (decision 37), to become the
@@ -421,6 +446,12 @@ pub enum Intent {
     ToolsPanelPosition(ToolsPanelPosition),
     /// The background behind the photo (`docs/gui.md`, The background).
     Background(Background),
+    /// The guides over the photo turned on or off (decision 92).
+    Guides,
+    /// The guide type chosen, `guides.type`, and the guides turned on.
+    GuideType(Guide),
+    /// The guides' flip chosen, `guides.flip`.
+    GuideFlip(GuideFlip),
     /// A move of the photo's zoom (`docs/gui.md`, The zoom).
     Zoom(ZoomStep),
     /// A zoomed photo's view moved in `direction`, a fifth of the part shown, or the whole
@@ -658,6 +689,11 @@ pub struct State {
     /// The background behind the photo, whose item is shown checked; None for a theme's
     /// own surround that is none of the six.
     pub background: Option<Background>,
+    /// Whether the guides are on, which Guides shows checked, and the type and flip in use,
+    /// whose items are shown checked (decision 92).
+    pub guides: bool,
+    pub guide: Guide,
+    pub guide_flip: GuideFlip,
     /// Whether a widget had the keys as the last frame ended, a focused control, a field,
     /// an open list or Find Tool…'s search: Escape is then theirs, left in the input for
     /// them, egui having taken the focus from them as the frame began (decision 104).
@@ -809,6 +845,9 @@ impl Action {
             Emit::Intent(Intent::BrowserBar(chosen)) => Some(state.browser.holds(chosen)),
             Emit::Intent(Intent::ToolsPanelPosition(p)) => Some(state.panel_position == p),
             Emit::Intent(Intent::Background(b)) => Some(state.background == Some(b)),
+            Emit::Intent(Intent::Guides) => Some(state.guides),
+            Emit::Intent(Intent::GuideType(guide)) => Some(state.guide == guide),
+            Emit::Intent(Intent::GuideFlip(flip)) => Some(state.guide_flip == flip),
             _ => None,
         }
     }
@@ -887,14 +926,17 @@ fn never(_: &State) -> bool {
 /// Why the action `id` cannot run in `state`, as its menu item's tooltip says, where the
 /// reason is one the person can act on: Discard History… where it would ask and the
 /// platform shows no alert; the Tools panel's positions where `--conf` sets it for this
-/// run, [`SET_BY_CONF`]; Customise Toolbar… until its window is built. The message's id, or
-/// none.
+/// run, [`SET_BY_CONF`]; Customise Toolbar… until its window is built; Guides' flips while
+/// the guide type is one darktable never flips. The message's id, or none.
 pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
     if state.panel_position_given && ActionId::TOOLS_PANEL_POSITION.contains(&id) {
         return Some(SET_BY_CONF);
     }
     if id == ActionId::CUSTOMISE_TOOLBAR {
         return Some("toolbar-customise-later");
+    }
+    if ActionId::GUIDE_FLIPS.contains(&id) && !state.guide.flips() {
+        return Some("guides-flip-unavailable");
     }
     state
         .discard_why
@@ -1022,6 +1064,45 @@ const fn background(id: ActionId, message: &'static str, chosen: Background) -> 
     }
 }
 
+/// Whether the guides can be turned on, or their type changed: a photo open and live, as
+/// the photo's zoom (decision 77).
+fn guided(state: &State) -> bool {
+    zooms(state)
+}
+
+/// Whether the guides' flip can change: as [`guided`], and the type in use takes a flip.
+fn flipped(state: &State) -> bool {
+    guided(state) && state.guide.flips()
+}
+
+/// The guide type `chosen` as an action of the view: no keys by default, its words
+/// `action-guides-<id>`.
+const fn guide_type(id: ActionId, message: &'static str, chosen: Guide) -> Action {
+    Action {
+        id,
+        message,
+        keys: &[],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Press,
+        available: guided,
+        emits: Emit::Intent(Intent::GuideType(chosen)),
+    }
+}
+
+/// The guides' flip `chosen` as an action of the view: no keys by default, its words
+/// `action-guides-flip-<id>`.
+const fn guide_flip(id: ActionId, message: &'static str, chosen: GuideFlip) -> Action {
+    Action {
+        id,
+        message,
+        keys: &[],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Press,
+        available: flipped,
+        emits: Emit::Intent(Intent::GuideFlip(chosen)),
+    }
+}
+
 /// Whether Open Recent's `I`th entry, newest first, can be opened: it is there and not
 /// found missing, and no modal dialog is open, as for Open Folder….
 fn recent_enabled<const I: usize>(state: &State) -> bool {
@@ -1075,7 +1156,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 144] = [
+pub static ACTIONS: [Action; 159] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -2192,6 +2273,82 @@ pub static ACTIONS: [Action; 144] = [
         ActionId::BACKGROUND[5],
         "action-background-white",
         Background::White,
+    ),
+    // View › Guides: Guides on G, darktable's key, then the types and the flips.
+    Action {
+        id: ActionId::GUIDES,
+        message: "action-guides",
+        keys: &[plain(Key::G)],
+        scope: Scope::View(View::Edit),
+        trigger: Trigger::Press,
+        available: guided,
+        emits: Emit::Intent(Intent::Guides),
+    },
+    guide_type(ActionId::GUIDE_TYPES[0], "action-guides-grid", Guide::Grid),
+    guide_type(
+        ActionId::GUIDE_TYPES[1],
+        "action-guides-rules-of-thirds",
+        Guide::RulesOfThirds,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[2],
+        "action-guides-metering",
+        Guide::Metering,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[3],
+        "action-guides-perspective",
+        Guide::Perspective,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[4],
+        "action-guides-diagonal-method",
+        Guide::DiagonalMethod,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[5],
+        "action-guides-harmonious-triangles",
+        Guide::HarmoniousTriangles,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[6],
+        "action-guides-golden-sections",
+        Guide::GoldenSections,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[7],
+        "action-guides-golden-spiral",
+        Guide::GoldenSpiral,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[8],
+        "action-guides-golden-spiral-sections",
+        Guide::GoldenSpiralSections,
+    ),
+    guide_type(
+        ActionId::GUIDE_TYPES[9],
+        "action-guides-golden-mean",
+        Guide::GoldenMean,
+    ),
+    guide_flip(
+        ActionId::GUIDE_FLIPS[0],
+        "action-guides-flip-none",
+        GuideFlip::None,
+    ),
+    guide_flip(
+        ActionId::GUIDE_FLIPS[1],
+        "action-guides-flip-horizontally",
+        GuideFlip::Horizontally,
+    ),
+    guide_flip(
+        ActionId::GUIDE_FLIPS[2],
+        "action-guides-flip-vertically",
+        GuideFlip::Vertically,
+    ),
+    guide_flip(
+        ActionId::GUIDE_FLIPS[3],
+        "action-guides-flip-both",
+        GuideFlip::Both,
     ),
 ];
 
@@ -3358,6 +3515,10 @@ pub(crate) mod tests {
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(Background::Dark),
+            // A type that takes a flip, so every flip can run.
+            guides: true,
+            guide: apertrust_ui::guides::Guide::GoldenMean,
+            guide_flip: apertrust_ui::guides::GuideFlip::None,
             escape_kept: false,
         }
     }

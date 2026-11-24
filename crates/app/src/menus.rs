@@ -300,6 +300,46 @@ pub static BACKGROUND: Menu = Menu {
     ]],
 };
 
+/// darktable's guide types, the one in use checked (decision 92).
+const GUIDE_TYPES: &[Entry] = &[
+    item(ActionId::GUIDE_TYPES[0]),
+    item(ActionId::GUIDE_TYPES[1]),
+    item(ActionId::GUIDE_TYPES[2]),
+    item(ActionId::GUIDE_TYPES[3]),
+    item(ActionId::GUIDE_TYPES[4]),
+    item(ActionId::GUIDE_TYPES[5]),
+    item(ActionId::GUIDE_TYPES[6]),
+    item(ActionId::GUIDE_TYPES[7]),
+    item(ActionId::GUIDE_TYPES[8]),
+    item(ActionId::GUIDE_TYPES[9]),
+];
+
+/// View › Guides › Flip: darktable's four, the one in use checked, drawn disabled while
+/// the type takes none.
+static GUIDES_FLIP: Menu = Menu {
+    title: "menu-guides-flip",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[&[
+        item(ActionId::GUIDE_FLIPS[0]),
+        item(ActionId::GUIDE_FLIPS[1]),
+        item(ActionId::GUIDE_FLIPS[2]),
+        item(ActionId::GUIDE_FLIPS[3]),
+    ]],
+};
+
+/// View › Guides: Guides, checked while on, then the types and Flip (decision 92).
+static GUIDES: Menu = Menu {
+    title: "menu-guides",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[
+        &[item(ActionId::GUIDES)],
+        GUIDE_TYPES,
+        &[Entry::Submenu(&GUIDES_FLIP)],
+    ],
+};
+
 /// A History step's menu (decision 91), the app's alone: Go to Step and Show Tool, then
 /// the rewrites, Compress up to Here and Truncate after Here.
 static STEP: Menu = Menu {
@@ -459,6 +499,8 @@ pub static MENUS: [Menu; 8] = [
                 item(ActionId::ZOOM_FIT),
                 item(ActionId::ZOOM_100),
             ],
+            // What is drawn over the photo.
+            &[Entry::Submenu(&GUIDES)],
             // The browser bar's menus (`docs/gui.md`, The browser bar).
             &[
                 Entry::Submenu(&SORT_BY),
@@ -2169,6 +2211,10 @@ mod tests {
             browser: crate::settings::BrowserSettings::default(),
             shown: true,
             background: Some(apertrust_ui::Background::Dark),
+            // A type that takes a flip, so every flip can run.
+            guides: true,
+            guide: apertrust_ui::guides::Guide::GoldenMean,
+            guide_flip: apertrust_ui::guides::GuideFlip::None,
             escape_kept: false,
         }
     }
@@ -4025,6 +4071,106 @@ mod tests {
             words(&menu),
             ["Export…", "-", "Background ▸", "Orientation ▸"]
         );
+    }
+
+    /// One line of a menu as a test reads it: its words, whether enabled, its check mark,
+    /// its key and its tip.
+    type Line = (String, bool, Option<bool>, Option<String>, Option<String>);
+
+    /// The lines of `entries`, a submenu by its words and a line as `—`.
+    fn guide_lines(entries: &[popup::Entry]) -> Vec<Line> {
+        (entries.iter())
+            .map(|entry| match entry {
+                popup::Entry::Item(item) => (
+                    item.text.clone(),
+                    item.enabled,
+                    item.checked,
+                    item.shortcut.clone(),
+                    item.tip.clone(),
+                ),
+                popup::Entry::Submenu(submenu) => (submenu.text.clone(), true, None, None, None),
+                popup::Entry::Separator | popup::Entry::Heading(_) => {
+                    ("—".to_owned(), false, None, None, None)
+                }
+            })
+            .collect()
+    }
+
+    /// Decision 92: View › Guides ▸, right after the zoom, holds Guides, checked while on
+    /// with its key G, a line, darktable's ten types, the one in use checked, a line, then
+    /// Flip ▸ with darktable's four, drawn disabled with why while the type takes none.
+    #[test]
+    fn view_guides_holds_guides_darktable_s_types_and_flip() {
+        use apertrust_ui::guides::{Guide, GuideFlip};
+        let tr = Translator::new(Locale::EnGb);
+        for os in PLATFORMS {
+            let view = menus(os).find(|m| m.title == "menu-view").expect("View");
+            let groups = groups(view, os);
+            assert!(matches!(groups[1][..], [Entry::Submenu(menu)] if menu.title == "menu-guides"));
+            let keymap = Keymap::defaults(os);
+            let mut state = everything();
+            state.guides = false;
+            state.guide = Guide::GoldenSpiral;
+            state.guide_flip = GuideFlip::Vertically;
+            let lists = Lists::default();
+            let steps = Steps::default();
+            let guides = drawn(&GUIDES, os, &keymap, &state, lists, &steps, &tr);
+            assert_eq!(guides.text, "Guides");
+            let lines = guide_lines(&guides.entries);
+            let words: Vec<&str> = lines.iter().map(|line| line.0.as_str()).collect();
+            assert_eq!(
+                words,
+                [
+                    "Guides",
+                    "—",
+                    "Grid",
+                    "Rules of thirds",
+                    "Metering",
+                    "Perspective",
+                    "Diagonal method",
+                    "Harmonious triangles",
+                    "Golden sections",
+                    "Golden spiral",
+                    "Golden spiral sections",
+                    "Golden mean (all guides)",
+                    "—",
+                    "Flip",
+                ],
+                "{os:?}"
+            );
+            assert_eq!(lines[0].2, Some(false));
+            assert_eq!(lines[0].3.as_deref(), Some("G"));
+            let checked: Vec<&str> = (lines.iter())
+                .filter(|line| line.2 == Some(true))
+                .map(|line| line.0.as_str())
+                .collect();
+            assert_eq!(checked, ["Golden spiral"]);
+            let popup::Entry::Submenu(flip) = &guides.entries[13] else {
+                panic!("no Flip ▸");
+            };
+            let flips = guide_lines(&flip.entries);
+            let expected = |enabled: bool, tip: Option<&str>| {
+                ["None", "Horizontally", "Vertically", "Both"].map(|words| {
+                    let checked = Some(words == "Vertically");
+                    (
+                        words.to_owned(),
+                        enabled,
+                        checked,
+                        None,
+                        tip.map(str::to_owned),
+                    )
+                })
+            };
+            assert_eq!(flips, expected(true, None), "{os:?}");
+            // Rules of thirds takes no flip: each disabled, saying why.
+            state.guide = Guide::RulesOfThirds;
+            let guides = drawn(&GUIDES, os, &keymap, &state, lists, &steps, &tr);
+            let popup::Entry::Submenu(flip) = &guides.entries[13] else {
+                panic!("no Flip ▸");
+            };
+            let why = "Only harmonious triangles and the golden guides flip";
+            assert_eq!(guide_lines(&flip.entries), expected(false, Some(why)));
+        }
     }
 
     /// The photo's Background ▸ is View › Background's items, in its order, so the two
