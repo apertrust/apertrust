@@ -51,7 +51,7 @@ Light and colour together, since a scene-referred edit interleaves them. The tab
 | Haze removal | haze removal | `hazeremoval`, camera RGB 14 | Yes | Built, switched at darktable's 0.2 (decision 32) | [page](haze-removal.md), [port](../ports/hazeremoval.md) |
 | RGB curve | rgb curve | `rgbcurve`, working 42 | Yes | Operation ported; built as the Tone curve's Luma curve, to be reshaped into RGB curve | [page](tone-curve.md), [port](../ports/rgbcurve.md) |
 | RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; tool planned (Phase 3), switched | [port](../ports/rgblevels.md) |
-| Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, switched (decision 32); the graph, mask display and pickers to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
+| Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, switched (decision 32), with its six pickers; the graph and mask display to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
 | Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Operation ported; tool planned (Phase 2), switched | [port](../ports/colorequal.md) |
 | RGB primaries | rgb primaries | `primaries`, working 28.9 | Yes | Built, switched (decision 32); the painted tracks to come | [page](rgb-primaries.md), [port](../ports/primaries.md) |
 

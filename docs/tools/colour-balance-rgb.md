@@ -11,6 +11,7 @@ It drives one operation, `colorbalancergb` ([../ports/colorbalancergb.md](../por
 **Status:** built, in `crates/tools/src/colour_balance_rgb.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Adjust, after RGB levels and before Colour equalizer, in [README.md](README.md)'s order (decision 38).
 
 - Its rows are tests in `crates/tools/tests/colour_balance_rgb.rs`; [Results](#results) gives what they measured.
+- Its six pickers, on the four hues and the two fulcrums, are darktable's `color_picker_apply` ([The pickers](#the-pickers); decision 79's 79.10).
 - Contrast and its grey fulcrum are this tool's, not Exposure's (decision 2): darktable's parameters, `contrast` as darktable's percentage and `grey_fulcrum` at its 18.45 % (decision 22). Brightness is this tool's Power luminance, `midtones_y`.
 - The first step is row B1, measured and reported without a bound (decision 22).
 - A choice marked proposed is open; the [design choices](#design-choices) are settled.
@@ -58,6 +59,21 @@ The promises, the tooltips, are darktable's tooltips in British English; the per
 
 **Presets:** none yet. darktable's basic colourfulness presets (legacy, natural skin, vibrant colours, standard; the legacy one JzAzBz, the others darktable UCS) come with the header's presets menu (Phase 3), all of whose values the tool takes.
 
+### The pickers
+
+darktable's six, each `dt_color_picker_new(self, DT_COLOR_PICKER_AREA, …)` on its slider (`colorbalancergb.c:1886`, `:1907`, `:1928`, `:1949`, `:2019`, `:2024`), its quad drawn at the slider's end: an area of `colorbalancergb`'s input, working RGB, with no denoise. Each reads the area's mean and each channel's maximum in Ych, darktable's `pipe_RGB_to_Ych` (`:1261-1275`): through the working profile to XYZ D50, CAT16 to D65, then LMS 2006, Yrg and Ych (`apertrust-color`'s `xyz_to_ych`). Its pick is `color_picker_apply` (`:1278-1338`), in the controls' units:
+
+| Picker | On | Writes |
+| --- | --- | --- |
+| `global_hue`, `shadows_hue`, `highlights_hue`, `midtones_hue` | Global offset, Shadows lift, Highlights gain and Power hue | The wheel's hue, the area's opposite, `atan2` of the mean's Ych in degrees plus darktable's 30° shift plus 180°, or with Ctrl (Cmd on the Mac) held its own, without the 180°; and its chroma, the mean's c times its Y, as a percentage |
+| `white_fulcrum` | White fulcrum | `log2` of the maximum's Y, in EV |
+| `grey_fulcrum` | Contrast grey fulcrum | The mean's Y, as a percentage |
+
+- **darktable stores the hue from −150° to 390°;** the session wraps it onto 0° to 360°, the same angle ([pickers.md](../pickers.md#against-darktable)). darktable bounds nothing else: the session holds each value to its control's range, and leaves out one that is not finite, as `log2` of a black maximum.
+- **A pick turns the tool on,** as any write of a control does, and is one step of source Auto where it writes, none where it writes nothing, as White fulcrum's on a black area; `On` turning the tool on is a step of its own before the pick's, and a one-shot pick's turning on and its writes are one step, the turning on alone where the pick writes nothing ([pickers.md](../pickers.md#a-one-shot-pick)).
+- **Its tooltips** are darktable's, worded as the app's: the hue quads' two lines, "pick opposite color from image" and "ctrl+click to pick selected color" (`:1875`), as "Picks the colour opposite the selected area's. Ctrl-click, Cmd-click on the Mac, picks the area's own.", and the fulcrums' darktable's default for a picker, "pick color from image", as "Pick colour from the photo". Each picker takes an area alone, so its tooltip has no line on choosing one, as darktable's area-only quads have none.
+- **Nothing more:** darktable's `gui_changed` after a pick repaints the chroma tracks alone, so nothing more is written, and the tool shows no patch.
+
 ### Sliders against darktable
 
 Audited against darktable's `src/iop/colorbalancergb.c`, its params and `gui_init` ([README.md](README.md), Sliders against darktable). darktable's side is in its parameters' units:
@@ -97,6 +113,7 @@ A switched tool's rows (decision 32; [README.md](README.md), Rows every table ha
 | B5 | Each control on a layer, Phase 4 | B2's moves on a full-mask layer at 100 % | Frame, inside the mask | As the same values on the background | As B2 | Ramp |
 | B6 | On at darktable's defaults | Every control's default made explicit; the tool on at its defaults, and off | The parameters bound (`check::switched_defaults`); the plan | Its defaults bind the operation's own exactly, its two grey fulcrums within one f32 step, as a percentage divided by 100 lands (`check::ONE_STEP_FROM_DEFAULT`); on at its defaults colour balance rgb is planned with no parameter set, darktable's new instance; off, it is not planned | Exact | The CPU, a colour raw's context and an image that is not a raw |
 | B7 | Version 1's edits | Version 1 entries read from `.apxmp`: Contrast +20 %; Global vibrance +30 % and Contrast grey fulcrum 30 % with Contrast 0 %; the formula JzAzBz; and Contrast 0 % alone, and nothing | The tool's state; the parameters bound | Those with a value off its default read on and bind what version 1 bound; the others read off, their values dropped, colour balance rgb not planned | Exact | The CPU |
+| B8 | The pickers | Global offset hue's picker with Ctrl and without it, and Contrast grey fulcrum's, each on a flat patch of colour at the operation's input, applied to the edit as the session applies a pick | The values read back from the edit, which the pick turns on | Global offset hue the patch's own hue in darktable's Ych with Ctrl, that hue + 180° without it, each wrapped onto 0° to 360°; Contrast grey fulcrum the patch's luminance | 1e-4° in hue, 1e-5 relative in the fulcrum, against darktable's arithmetic restated in f64 (proposed) | Red, blue, a skin tone and a cyan, whose own and opposite hues reach below 0° and past 360° in darktable's; the CPU |
 
 B4 is how the tool matches darktable. The golden cases check the operation against darktable-cli at the cases' settings, means of 0.0057 and 0.0018 ΔE2000 (`docs/ports/colorbalancergb.md`). B4 holds the tool's controls, set to those settings, to bind exactly those parameters.
 
@@ -115,6 +132,10 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/colour_balance_rgb.rs`. 
 | B4 | Holds. Test 0083's kernel inputs are the golden case's byte for byte; test 0093's are within 7.5e-8 relative, one f32 step from a percentage's division, its gamut table exact |
 | B6 | Holds |
 | B7 | Holds, exactly |
+| B8 | Holds: Global offset hue within 4.0e-5° of darktable's, wrapped, and Contrast grey fulcrum within 6.4e-8 relative; the blue's own −94.8° held as 265.2°, the cyan's opposite 373.7° as 13.7° |
+| By hand | To be filled by the maintainer: the reference release's GUI on the 7R V and the X-T5 at the same areas, each picker's written values, against Apertrust's |
+
+The pickers against darktable's arithmetic restated in f64, on readings made for the test (`crates/tools/src/colour_balance_rgb.rs`): each hue picker's hue within 4.0e-5° and its chroma within 8.6e-7 relative, on red, green, blue, a skin tone and a cyan, with Ctrl and without; White fulcrum within 3.5e-7 relative, Contrast grey fulcrum within 4.6e-8. The gap is f32 against f64, the same arithmetic: Yrg's r and g lose their f32 rounding as the white is taken off them, which the hue's angle feels most on colours of little chroma. A neutral area picks a chroma within 1e-5 % of 0.
 
 B1 in detail, with darktable UCS, the default. Colour calibration runs on every colour raw (decision 27) from darktable's own defaults, As shot snapped to daylight or Planckian where darktable snaps, and compresses the gamut before colour balance rgb does.
 
@@ -136,21 +157,20 @@ So darktable UCS leaves neutral and moderately saturated colours where they were
 ## In the panel
 
 - **Tabs:** Master, 4 ways and Masks, the first shown at first; the tab shown is the app's for the run. Nothing shows under every tab.
-- **Hues** are drawn on the hue track and unfilled, as darktable draws them. The luminance and saturation tracks are drawn plain until the renderer draws those bands (`docs/gui.md`, What the renderer still lacks).
+- **Hues** are drawn on the hue track and unfilled, as darktable draws them, each with its picker's quad, and so are White fulcrum and Contrast grey fulcrum ([The pickers](#the-pickers)): the pipette, filled while its picker is on. The luminance and saturation tracks are drawn plain until the renderer draws those bands (`docs/gui.md`, What the renderer still lacks).
 - **Saturation formula** is a dropdown with both of darktable's options, both ported.
 - **Keyboard:** every row but the formula is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac. A step is never less than 0.01, the last decimal shown, as darktable's `min_visible`, so Ctrl's tenth moves Global offset chroma, whose step is 0.01 %. The step grows as a widened track's span does, as darktable's zoom step makes it. The value is rounded to the two decimals shown before it is sent.
 - **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
 
 ## Gaps
 
-What darktable's page has that the panel does not draw yet. A row the definition cannot hold is left out of it until it can; one it can hold, as the pickers, is in it, drawn once what it runs is built:
+What darktable's page has that the panel does not draw yet. A row the definition cannot hold is left out of it until it can:
 
 1. **The luminance ranges' graph,** darktable's read-only graph of the three masks, first under Luminance ranges on the Masks tab. The design system's closed registry has no such widget, and the renderer draws no custom row but the curve.
-2. **The pickers** ([pickers.md](../pickers.md), decision 79, its pull request 79.10) on the four hue sliders (darktable's "pick opposite colour from image", Ctrl+click the colour itself) and on White fulcrum and Contrast grey fulcrum. They are declared in the definition, `global_hue`, `shadows_hue`, `midtones_hue`, `highlights_hue`, `white_fulcrum` and `grey_fulcrum`, each named by its slider's quad (`Quad::Picker(id)`), so it holds darktable's page whole, but the renderer draws no quad until what it runs is built (`docs/gui.md`, Tool panels from definitions: a quad with nothing behind it).
-3. **The mask display** quads on Shadows fall-off, Mask middle-grey fulcrum and Highlights fall-off, which show a range's mask on the photo as a checkerboard. The definition's `Quad` has no showmask yet, and the mask preview is a view mode, later ([README.md](README.md), rule 10).
-4. **Mask preview settings,** darktable's last section label with its two checkerboard colours and size: darktable's settings, the mask preview's app settings when it comes (rule 12). The size could be drawn disabled as a `Row::Setting` (`docs/gui.md`, Tool panels from definitions), but not the two colours, since a tool's setting has no colour kind.
-5. **Tooltips with no message:** darktable's tabs' ("global grading", "selective color grading", "isolate luminances"), and a tool tooltip mentioning the first step's shift, which [README.md](README.md) asks for: a definition implies no message for either, so this document says it (B1).
-6. **Tracks:** darktable paints a wheel's chroma track in that wheel's hue, which a track following another control's value would need; the luminance and saturation bands are drawn plain meanwhile.
+2. **The mask display** quads on Shadows fall-off, Mask middle-grey fulcrum and Highlights fall-off, which show a range's mask on the photo as a checkerboard. The definition's `Quad` has no showmask yet, and the mask preview is a view mode, later ([README.md](README.md), rule 10).
+3. **Mask preview settings,** darktable's last section label with its two checkerboard colours and size: darktable's settings, the mask preview's app settings when it comes (rule 12). The size could be drawn disabled as a `Row::Setting` (`docs/gui.md`, Tool panels from definitions), but not the two colours, since a tool's setting has no colour kind.
+4. **Tooltips with no message:** darktable's tabs' ("global grading", "selective color grading", "isolate luminances"), and a tool tooltip mentioning the first step's shift, which [README.md](README.md) asks for: a definition implies no message for either, so this document says it (B1).
+5. **Tracks:** darktable paints a wheel's chroma track in that wheel's hue, which a track following another control's value would need; the luminance and saturation bands are drawn plain meanwhile.
 
 darktable changes no row's range by mode in this module, so the renderer's missing per-mode ranges (`docs/gui.md`, What the renderer still lacks) do not touch it.
 
