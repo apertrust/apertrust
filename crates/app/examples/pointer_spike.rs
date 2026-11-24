@@ -641,6 +641,8 @@ impl eframe::App for Spike {
             };
             #[cfg(target_os = "macos")]
             let line = format!("{line}; {}", self.mac.summary());
+            #[cfg(windows)]
+            let line = format!("{line}; drawn {}", win::drawn_pointer());
             println!("{line}; zone {zone}; pointer: {}", self.describe(native));
         }
     }
@@ -1309,6 +1311,44 @@ mod win {
             data.to_string()
         } else {
             format!("unread (error {status})")
+        }
+    }
+
+    /// The pointer Windows draws now, wherever it is: its bitmap's size and hotspot, the
+    /// size it is drawn at, a system pointer's or a custom one's alike.
+    pub fn drawn_pointer() -> String {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{CURSORINFO, GetCursorInfo};
+        // SAFETY: a CURSORINFO with its size set; the cursor is the system's, only read,
+        // and the bitmaps GetIconInfo makes are deleted.
+        unsafe {
+            let mut info: CURSORINFO = std::mem::zeroed();
+            info.cbSize = size_of::<CURSORINFO>() as u32;
+            if GetCursorInfo(&mut info) == 0 || info.hCursor.is_null() {
+                return "n/a".to_owned();
+            }
+            let mut icon: ICONINFO = std::mem::zeroed();
+            if GetIconInfo(info.hCursor, &mut icon) == 0 {
+                return "n/a".to_owned();
+            }
+            let text = if icon.hbmColor.is_null() {
+                let mask = bitmap(icon.hbmMask);
+                format!(
+                    "{}×{} (mask only), hotspot ({}, {})",
+                    mask.bmWidth,
+                    mask.bmHeight / 2,
+                    icon.xHotspot,
+                    icon.yHotspot
+                )
+            } else {
+                let colour = bitmap(icon.hbmColor);
+                DeleteObject(icon.hbmColor);
+                format!(
+                    "{}×{}, hotspot ({}, {})",
+                    colour.bmWidth, colour.bmHeight, icon.xHotspot, icon.yHotspot
+                )
+            };
+            DeleteObject(icon.hbmMask);
+            text
         }
     }
 
