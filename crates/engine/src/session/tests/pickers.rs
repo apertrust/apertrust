@@ -3636,3 +3636,127 @@ fn colour_balance_rgb_s_white_fulcrum_of_a_black_area_writes_nothing() {
     assert_eq!(steps(&driven), before.0);
     remove(&path);
 }
+
+/// AgX's control `id` set to `value`, done.
+fn set_agx(id: &str, value: f32) -> Command {
+    Command::SetControl {
+        tool: "agx".to_owned(),
+        control: id.to_owned(),
+        value: ControlValue::Number(value),
+        done: true,
+    }
+}
+
+/// darktable's white and black relative exposure from `reading`, in f64, at Dynamic range
+/// scaling `scaling` in percent: `log2(max(ε, v) / 0.18) · (1 + s)` of the maximum's
+/// largest channel and the minimum's smallest, each held to darktable's bounds
+/// (`agx.c:1135-1160`).
+fn auto_tuned(reading: &apertrust_tools::pick::Reading, scaling: f32) -> (f64, f64) {
+    let s = 1.0 + f64::from(scaling) / 100.0;
+    let ev = |v: f32| (f64::from(v).max(1e-6) / 0.18).log2() * s;
+    let [r, g, b, _] = reading.input.max;
+    let white = ev(r.max(g).max(b)).clamp(0.1, 20.0);
+    let [r, g, b, _] = reading.input.min;
+    let black = ev(r.min(g).min(b)).clamp(-20.0, -0.1);
+    (white, black)
+}
+
+/// AgX's Auto tune levels, `On` for its `range` picker: one step of the tool, source Auto,
+/// writing white and black relative exposure from the reading the session measured at
+/// AgX's input, within 1e-5 EV of darktable's arithmetic, and the pivot, set at +6.4 EV,
+/// clamped into the new range, kept. Dynamic range scaling set by `SetControl` scales
+/// the next pick's range, and writes nothing into it itself.
+#[test]
+fn agx_s_auto_tune_levels_writes_both_exposures_and_the_clamped_pivot_as_one_step() {
+    use crate::history::StepSource;
+    use apertrust_tools::agx::Agx;
+    let path = scratch("picker-agx-range");
+    let mut driven = Driven::new(&[&Agx]);
+    driven.open(&path);
+    // Exposure at −1 EV, so the photo spans mid-grey at AgX's input and neither exposure
+    // is held at darktable's bounds.
+    let events = driven.run([
+        Command::Set {
+            operation: "exposure".to_owned(),
+            param: "exposure".to_owned(),
+            value: Value::Float(-1.0),
+        },
+        set_agx("curve_pivot_x", 6.4),
+    ]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let before = sources(&driven);
+    let mut events = driven.run([on_picker("agx", "range", true)]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let after = sources(&driven);
+    assert_eq!(after[..before.len()], before[..]);
+    assert_eq!(
+        after[before.len()..],
+        [(StepSource::Auto, "agx".to_owned())]
+    );
+    let step = {
+        use crate::history::{Change, Entry};
+        let open = driven.engine.open.as_ref().unwrap();
+        match &open.history.log().steps().last().unwrap().change {
+            Change::Entry(Entry::Tool { values, .. }) => values.clone(),
+            other => panic!("{other:?}"),
+        }
+    };
+    let reading = *driven.engine.pickers.latest_reading("agx").unwrap();
+    let (white, black) = auto_tuned(&reading, 10.0);
+    assert!(white > 0.1 && black < -0.1, "{white}, {black}: {reading:?}");
+    let shown = values(&events);
+    let (got_white, got_black) = (
+        number(shown, "agx", "range_white_relative_ev"),
+        number(shown, "agx", "range_black_relative_ev"),
+    );
+    assert!(
+        (f64::from(got_white) - white).abs() <= 1e-5,
+        "{got_white} for {white}"
+    );
+    assert!(
+        (f64::from(got_black) - black).abs() <= 1e-5,
+        "{got_black} for {black}"
+    );
+    // The synthetic photo's brightest reads below +6.4 EV: the pivot is held at white.
+    assert!(white < 6.4, "{white}");
+    assert_eq!(number(shown, "agx", "curve_pivot_x"), got_white);
+    for (control, value) in [
+        ("range_white_relative_ev", got_white),
+        ("range_black_relative_ev", got_black),
+        ("curve_pivot_x", got_white),
+    ] {
+        assert_eq!(step.number(control), Some(value), "{control}");
+        assert_eq!(step.mark(control), Some(apertrust_tools::Mark::Kept));
+    }
+
+    // Dynamic range scaling at +50 %: no write into the range, then a range half as wide
+    // again as unscaled at the next pick.
+    let events = driven.run([set_agx("dynamic_range_scaling", 50.0)]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let shown = values(&events);
+    assert_eq!(number(shown, "agx", "range_white_relative_ev"), got_white);
+    assert_eq!(number(shown, "agx", "range_black_relative_ev"), got_black);
+    let mut events = driven.run([on_picker("agx", "range", true)]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let reading = *driven.engine.pickers.latest_reading("agx").unwrap();
+    let (white, black) = auto_tuned(&reading, 50.0);
+    let shown = values(&events);
+    let (got_white, got_black) = (
+        number(shown, "agx", "range_white_relative_ev"),
+        number(shown, "agx", "range_black_relative_ev"),
+    );
+    assert!(
+        (f64::from(got_white) - white).abs() <= 1e-5,
+        "{got_white} for {white}"
+    );
+    assert!(
+        (f64::from(got_black) - black).abs() <= 1e-5,
+        "{got_black} for {black}"
+    );
+    let (unscaled_white, unscaled_black) = auto_tuned(&reading, 0.0);
+    assert!((white - 1.5 * unscaled_white).abs() <= 1e-5, "{white}");
+    assert!((black - 1.5 * unscaled_black).abs() <= 1e-5, "{black}");
+    remove(&path);
+}

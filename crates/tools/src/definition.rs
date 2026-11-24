@@ -738,10 +738,11 @@ pub enum Row {
     /// shows what is missing.
     Setting(SettingRow),
     /// One of darktable's buttons, by its id: an action that writes the tool's controls
-    /// and is never stored (`docs/tools/README.md`, rule 10), as AgX's Auto tune levels
-    /// picks both exposures from the photo and its Set from above copies one set of
-    /// controls to another. It is no control. Until what it runs is built the panel draws
-    /// it disabled, so the page reads as darktable's and shows what is missing.
+    /// and is never stored (`docs/tools/README.md`, rule 10), as AgX's Read exposure sets
+    /// both exposures from the Exposure tool's effective exposure, its compensation of the
+    /// metadata's exposure bias included, and its Set from above copies one set of controls
+    /// to another. It is no control. Until what it runs is built the panel draws it
+    /// disabled, so the page reads as darktable's and shows what is missing.
     Action {
         id: &'static str,
     },

@@ -16,7 +16,7 @@
 
 //! The action row, one line (`docs/gui.md`, How the rows are laid out): one of darktable's
 //! buttons in a tool, an action that writes the tool's controls and is never stored,
-//! as AgX's Auto tune levels and Set from above. The design system's [`Button`] at the
+//! as AgX's Read exposure and Set from above. The design system's [`Button`] at the
 //! start, holding the short label; screen readers hear its full name, and its promise is
 //! the tooltip. Until what it runs is built a tool's action is drawn disabled.
 
