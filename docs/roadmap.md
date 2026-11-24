@@ -213,8 +213,16 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 - [ ] 79.11 AgX's pickers.
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
-- [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo.
+- [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo; with it 105.5, a click for a point and a drag for an area, and the live sample's Point or Area choice.
 - [x] 79.17 The one-shot pick: `PickerCommand::Once`, a tool's picker on for one reading of a point or an area, applied as one step where it changes the edit and off again, for scripts, the MCP and assistants (decision 104's 104.1).
+
+The gestures on the photo (decision 105; [pickers.md](pickers.md#the-plan)), one pull request each:
+
+- [ ] 105.1 A press a click while within 6 points, by distance alone, for every picker; a still press on a touch screen never resetting the area.
+- [ ] 105.2 A picker that takes one kind keeps it on the photo: no Ctrl-click or Space switch, the viewer bar's words without it.
+- [ ] 105.3 The session refuses a switch, a point or an area of a kind the picker does not take.
+- [ ] 105.4 A click's area at a fixed size on screen, its size at Fit, at every zoom.
+- [ ] 105.5 A picker with both kinds: a click for a point, a drag for an area, no switch, with the Colour picker (79.16).
 
 ### Cursors
 
@@ -364,6 +372,7 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 
 - [ ] Usability tests with photographers coming from darktable and from commercial raw editors.
 - [ ] Fixes to the interface from what the tests find (decision 1). From then on Apertrust evolves on its own (decision 2).
+- [ ] A click on an area picker moving its area, keeping its size, tried against a new area round the click ([pickers.md](pickers.md#open-questions)).
 - [ ] Import's later parts (decision 85): Verify the copies, Eject the card, the Backup group after Destination (the same subfolders and names under another folder, each copy checked with step 19's verified copy), Adjustments with styles, and Filters' Date taken.
 
 ## Mobile, after Phase 3
