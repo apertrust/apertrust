@@ -861,6 +861,56 @@ impl Edit {
         self.tools.remove(tool.definition().tool.id);
     }
 
+    /// Makes the tool's values exactly `values` on `image`, as a preset or a style sets
+    /// them (decision 106): each control `values` holds takes its value and its mark, every
+    /// other goes back to its default, unmarked. A switched tool is on or off as `values`
+    /// says, off holding its marks alone (decision 32); one that is not switched stays on.
+    ///
+    /// A control the tool lacks is refused, and so are a value of another kind, one a
+    /// control not ported cannot take and a choice's option the photo does not list
+    /// (decision 30), as [`Self::set_control`] refuses them, every value checked before
+    /// any is set. A number outside its control's range, or the range the values give, is
+    /// brought inside, as a saved edit's is as it is read ([`Self::clamp_read`]): the
+    /// values may come from another photo. Returns a warning for each number the range the
+    /// values give moved; one past its control's own range is moved without one. From a
+    /// file's entry, [`crate::sidecar::tool_values`] has clamped an older version's migrated
+    /// values already, warning of each, and parked a current version's entry holding a value
+    /// out of range.
+    pub fn set_tool(
+        &mut self,
+        tool: &dyn ProcessingTool,
+        values: &ToolValues,
+        image: &ImageContext,
+    ) -> Result<Vec<String>, EditError> {
+        let definition = tool.definition();
+        let id = definition.tool.id;
+        let on = definition.switched && values.enabled();
+        let mut set = ToolValues::new();
+        for (name, value) in values.values() {
+            let (_, control) = find_control(tool, name)?;
+            let value = (control.clamp(value.clone()))
+                .map_err(|source| EditError::Control { tool: id, source })?;
+            if let Some(option) = unlisted(tool, control, &value, image) {
+                return Err(EditError::NotListed {
+                    tool: id,
+                    control: control.id,
+                    option,
+                });
+            }
+            if on || !definition.switched {
+                set.set(control.id, value);
+            }
+        }
+        for (name, mark) in values.marks() {
+            let (_, control) = find_control(tool, name)?;
+            set.set_mark(control.id, Some(mark));
+        }
+        set.set_enabled(on);
+        self.tools.insert(id.to_owned(), set);
+        self.tidy(id);
+        Ok(self.clamp_read(&[tool], image))
+    }
+
     /// Keeps a control or releases it. Keeping an untouched control holds it at its
     /// default; releasing a set one leaves its value, free for Auto and Match. It never
     /// turns a switched tool on, nor off (decision 32).
