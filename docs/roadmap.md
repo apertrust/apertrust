@@ -210,7 +210,7 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 - [x] 79.8 White balance's picker: Settings' from image area turns it on, its pick makes the area neutral where every mean is above darktable's 0.001 floor and every coefficient inside 0 to 8, and once history is read again it reads what the coefficients match, user modified for most picks.
 - [x] 79.9 Colour calibration's picker: the readout row with the CCT and the light's colour, the area colour mapping live and kept in settings, its title "(active)", its pick in correction and measure mode.
 - [x] 79.10 Colour balance RGB's six pickers: the four hues', the area's opposite colour or with Ctrl its own, with its chroma, and the white and contrast grey fulcrums'.
-- [ ] 79.11 AgX's pickers.
+- [x] 79.11 AgX's five pickers: white and black relative exposure, Auto tune levels setting both, the pivot and its target output, with Dynamic range scaling live as their margin.
 - [ ] 79.14 Stored samples through the session.
 - [ ] 79.15 The scopes restricted to the Colour picker's selection.
 - [ ] 79.16 The Colour picker, hidden by default, its place to be decided: the live sample, numbered stored samples, statistics and colour modes, samples on the photo; with it 105.5, a click for a point and a drag for an area, and the live sample's Point or Area choice.
