@@ -45,6 +45,7 @@ pub struct IconButton<'a> {
     shortcut: Option<&'a str>,
     size: Option<f32>,
     icon_size: Option<f32>,
+    stroke: Option<f32>,
     width: Option<f32>,
     tip: Option<&'a str>,
     state: Option<ButtonState>,
@@ -81,6 +82,7 @@ impl<'a> IconButton<'a> {
             shortcut: None,
             size: None,
             icon_size: None,
+            stroke: None,
             width: None,
             tip: None,
             state: None,
@@ -143,6 +145,13 @@ impl<'a> IconButton<'a> {
         self
     }
 
+    /// Its icon's lines `points` wide, in place of [`icons::STROKE`](crate::icons::STROKE):
+    /// the Toolbar's actions, heavier.
+    pub fn stroke(mut self, points: f32) -> Self {
+        self.stroke = Some(points);
+        self
+    }
+
     /// The button's width alone, in points, its height staying its side: a section
     /// header's buttons, as narrow as their icon and a control high.
     pub fn width(mut self, width: f32) -> Self {
@@ -192,7 +201,8 @@ impl<'a> IconButton<'a> {
             let size = self.icon_size.unwrap_or(self.icon.size());
             let icon = if on { self.icon.filled() } else { self.icon };
             let icon_rect = Rect::from_center_size(rect.center(), vec2(size, size));
-            icon.paint(painter, icon_rect, colour(&t, touch, on));
+            let stroke = self.stroke.unwrap_or(crate::icons::STROKE);
+            icon.paint_stroked(painter, icon_rect, colour(&t, touch, on), stroke);
             if self.dot {
                 // On the icon's box's top end corner, clear of a narrow glyph as ⋮'s.
                 let centre = icon_rect.right_top();

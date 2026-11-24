@@ -293,6 +293,9 @@ const BUTTON: f32 = 30.0;
 const ACTION: f32 = 32.0;
 /// The side an action's icon is drawn at, labelled or not, as the Tools panel's tabs'.
 const ACTION_ICON: f32 = 22.0;
+/// An action's icon's lines, labelled or not, in points: heavier than every other icon's
+/// [`STROKE`](crate::icons::STROKE), as heavy as its word below (`docs/gui.md`, The Toolbar).
+const ACTION_STROKE: f32 = 2.0;
 /// The room each side of the menu button's app icon and caret.
 const ICON_PADDING: f32 = 5.0;
 /// Between the menu button's app icon and its caret.
@@ -848,6 +851,7 @@ impl<'a> Toolbar<'a> {
                                 icon_button(button.icon, &button.name, keys(done))
                                     .size(ACTION)
                                     .icon_size(action_icon(button.icon))
+                                    .stroke(ACTION_STROKE)
                                     .enabled(button.enabled)
                                     .show(ui)
                             }
@@ -1515,7 +1519,9 @@ impl<'b> Labelled<'b> {
             );
             let icon =
                 Rect::from_center_size(square.center(), Vec2::splat(action_icon(button.icon)));
-            button.icon.paint(painter, icon, colour(&t, touch, false));
+            button
+                .icon
+                .paint_stroked(painter, icon, colour(&t, touch, false), ACTION_STROKE);
             let word = pos2(
                 rect.center().x - self.word.size().x / 2.0,
                 square.bottom() + LABEL_GAP,
