@@ -20,7 +20,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `options-vertical` | Lucide's `ellipsis-vertical` |
 | `more`, `toolbar-more` | Lucide's `chevrons-right`, from Feather: the Tools panel's » at 14 points, the Toolbar's at 16 |
 | `pick`, `pick-filled` | Lucide's `pipette` |
-| `pick-white-balance`, `pick-exposure`, `pick-colour-calibration` | Lucide's `pipette`, with a badge at its lower right, a neutral square, a dot or a diamond: White balance's, Exposure's and Colour calibration's picker cursors (decision 104) |
+| `pick-white-balance`, `pick-exposure`, `pick-colour-calibration`, `pick-colour-balance-rgb` | Lucide's `pipette`, with a badge at its lower right, a neutral square, a dot, a diamond or a triangle: White balance's, Exposure's, Colour calibration's and Colour balance RGB's four hue picker cursors, one icon for the four (decision 104) |
 | `select` | Lucide's `mouse-pointer-2`: the Select cursor (decision 104) |
 | `pan` | Lucide's `hand`: the Pan cursor (decision 104) |
 | `line`, `line-filled` | Drawn for Apertrust |

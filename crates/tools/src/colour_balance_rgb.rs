@@ -49,8 +49,9 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Group, GroupKind, Picker, PickerKind, ProcessingDefinition,
-    Quad, Reset, Row, Slider, Space, Tab, ToolDefinition, Track, Unit,
+    ChoiceStyle, Control, ControlKind, CursorDef, CursorGroup, Gesture, Group, GroupKind, Picker,
+    PickerKind, ProcessingDefinition, Quad, Reset, Row, Slider, Space, Surface, Tab, ToolCursor,
+    ToolDefinition, Track, Unit,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
 use crate::{
@@ -314,6 +315,34 @@ const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
     }
 }
 
+/// A wheel's hue picker's cursor (decision 104; `docs/cursors.md`), named for its picker
+/// and placed `order` in Pick: a click or a drag on the photo picks with the picker, as its
+/// quad does. No key, as darktable's pickers have none. The four share one icon; the
+/// fulcrums' pickers, advanced ones on the Masks tab, get no cursor.
+const fn hue_cursor(picker: &'static str, order: u16) -> ToolCursor {
+    ToolCursor {
+        cursor: CursorDef {
+            id: picker,
+            group: CursorGroup::Pick,
+            icon: "pick-colour-balance-rgb",
+            key: None,
+            order,
+            gestures: &[Gesture::Click, Gesture::Area],
+            surfaces: &[Surface::Viewer],
+            options: &[],
+        },
+        picker,
+    }
+}
+
+/// The four hue pickers' cursors, in the page's order, after Colour calibration's.
+static CURSORS: [ToolCursor; 4] = [
+    hue_cursor("global_hue", 400),
+    hue_cursor("shadows_hue", 500),
+    hue_cursor("highlights_hue", 600),
+    hue_cursor("midtones_hue", 700),
+];
+
 /// A wheel's chroma, on darktable's track of its hue's chroma, over its soft range.
 const fn chroma_row(control: &'static str, (min, max): (f32, f32)) -> Row {
     Row::Slider(Slider::new(control).track(Track::Saturation).soft(min, max))
@@ -439,7 +468,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         open_at_first: false,
         menus: &[],
         toolbar: &[],
-        cursors: &[],
+        cursors: &CURSORS,
     },
     version: 2,
     layers: true,

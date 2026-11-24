@@ -954,6 +954,14 @@ tool-colorbalancergb-picker-white_fulcrum-full = Опорна точка біл�
 tool-colorbalancergb-picker-white_fulcrum-promise = Узяти колір зі знімка
 tool-colorbalancergb-picker-grey_fulcrum-full = Опорна точка контрасту сірого: узяти зі знімка
 tool-colorbalancergb-picker-grey_fulcrum-promise = Узяти колір зі знімка
+tool-colorbalancergb-cursor-global_hue = Піпетка відтінку глобального зміщення
+tool-colorbalancergb-cursor-global_hue-how = Клацніть область або обведіть її перетягуванням
+tool-colorbalancergb-cursor-shadows_hue = Піпетка відтінку підйому тіней
+tool-colorbalancergb-cursor-shadows_hue-how = Клацніть область або обведіть її перетягуванням
+tool-colorbalancergb-cursor-highlights_hue = Піпетка відтінку підсилення світлих тонів
+tool-colorbalancergb-cursor-highlights_hue-how = Клацніть область або обведіть її перетягуванням
+tool-colorbalancergb-cursor-midtones_hue = Піпетка відтінку показника степеня
+tool-colorbalancergb-cursor-midtones_hue-how = Клацніть область або обведіть її перетягуванням
 
 ## Тонова крива (docs/tools/tone-curve.md)
 
