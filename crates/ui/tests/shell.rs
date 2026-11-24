@@ -207,17 +207,17 @@ fn images<T>(harness: &Harness<'_, T>) -> Vec<egui::Rect> {
 }
 
 /// Toolbar Labels (decision 92): each button's `.toolbar` word under its icon, centred,
-/// the icon in a 22-point square 8 points below the panel's top and the word 4 points
+/// the icon in a 22-point square 11 points below the panel's top and the word 4 points
 /// below the square, the button as wide as its word or its icon, the wider, with 8 points
-/// at each side; the panel 56 points tall with labels, 44 without, its buttons a gap
+/// at each side; the panel 62 points tall with labels, 44 without, its buttons a gap
 /// apart, as without, each 32 points wide with its 22-point icon.
 #[test]
 fn labels_stand_under_their_icons_in_a_taller_toolbar() {
     let mut harness = toolbar(&[], true);
     harness.run();
     let bar = harness.get_by_role(Role::Toolbar).rect();
-    assert_eq!(bar.height(), 56.0);
-    assert_eq!(Toolbar::height(&Theme::default(), true), 56.0);
+    assert_eq!(bar.height(), 62.0);
+    assert_eq!(Toolbar::height(&Theme::default(), true), 62.0);
     let words = Translator::new(Locale::EnGb);
     let drawn = texts(&harness);
     let icons = images(&harness);
@@ -240,12 +240,13 @@ fn labels_stand_under_their_icons_in_a_taller_toolbar() {
         let icon = (icons.iter())
             .find(|icon| button.contains_rect(**icon))
             .unwrap_or_else(|| panic!("{name}: no icon"));
-        // In a 22-point square 8 points below the panel's top, the word 4 points below it,
-        // and 8 points of the panel left under the word.
+        // In a 22-point square 11 points below the panel's top, the word 4 points below it,
+        // and 11 points of the panel left under the word, as above and below the icon
+        // without labels.
         assert_eq!(icon.width(), 22.0, "{name}: {icon:?}");
-        assert!((icon.center().y - bar.top() - 19.0).abs() < 0.51, "{name}");
-        assert_eq!(text.top() - bar.top(), 8.0 + 22.0 + 4.0, "{name}");
-        assert_eq!(bar.bottom() - text.bottom(), 8.0, "{name}: under the word");
+        assert!((icon.center().y - bar.top() - 22.0).abs() < 0.51, "{name}");
+        assert_eq!(text.top() - bar.top(), 11.0 + 22.0 + 4.0, "{name}");
+        assert_eq!(bar.bottom() - text.bottom(), 11.0, "{name}: under the word");
         assert!((text.center().x - button.center().x).abs() < 0.01, "{name}");
         assert!((icon.center().x - button.center().x).abs() < 0.51, "{name}");
         assert!(text.height() < caption * 1.5, "{name}: one line");
@@ -275,7 +276,7 @@ fn labels_stand_under_their_icons_in_a_taller_toolbar() {
 
 /// With labels on, what has no label stays centred in the taller panel, as on Windows and
 /// Linux: the menu button, the cursors' well and the caption buttons, which run its whole
-/// height; and with actions under » as it narrows, the panel keeps its 56 points, » centred
+/// height; and with actions under » as it narrows, the panel keeps its 62 points, » centred
 /// in it too.
 #[test]
 fn what_has_no_label_stays_centred_in_the_taller_toolbar() {
@@ -283,7 +284,7 @@ fn what_has_no_label_stays_centred_in_the_taller_toolbar() {
         let mut harness = narrow(width, SaveState::Saved, 0.0, true);
         harness.run();
         let bar = harness.get_by_role(Role::Toolbar).rect();
-        assert_eq!(bar.height(), 56.0, "at {width}");
+        assert_eq!(bar.height(), 62.0, "at {width}");
         let centred = |name: &str, rect: egui::Rect| {
             assert!(
                 (rect.center().y - bar.center().y).abs() < 0.51,
@@ -1232,7 +1233,7 @@ fn screen_readers_hear_a_failed_write_and_saving_working_again_and_nothing_else(
 #[test]
 fn the_save_warning_and_saving() {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(700.0, 124.0))
+        .with_size(egui::vec2(700.0, 136.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
         .build_ui(|ui| {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;
@@ -1813,7 +1814,7 @@ fn without_the_option_there_are_no_caption_buttons() {
 /// room under it for a tooltip.
 fn caption_snapshot() -> Harness<'static> {
     Harness::builder()
-        .with_size(egui::vec2(700.0, 102.0))
+        .with_size(egui::vec2(700.0, 108.0))
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
         .build_ui(|ui| {
             let panel = apertrust_ui::theme(ui.ctx()).colors.panel;

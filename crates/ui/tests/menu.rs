@@ -907,7 +907,7 @@ fn an_answer_is_read_once() {
 /// Undo and Redo with their words, and ».
 fn menu_buttons(which: Builtin) -> Harness<'static> {
     Harness::builder()
-        .with_size(vec2(320.0, 116.0))
+        .with_size(vec2(320.0, 128.0))
         .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
         .build_ui(|ui| {
             for style in [MenuButtonStyle::Icon, MenuButtonStyle::Menu] {

@@ -360,8 +360,10 @@ const EMPTY: f32 = 24.0;
 /// The room beyond its own width a step needs to be undone, so a resize never flickers.
 const SPARE: f32 = 16.0;
 /// A labelled button's icon's square, [`ACTION_ICON`] wide, below the panel's top, and its
-/// word below it, in the panel [`Toolbar::height`] makes taller for them.
-const LABEL_TOP: f32 = 8.0;
+/// word below it, in the panel [`Toolbar::height`] makes taller for them: as much room
+/// above the icon, and under the word, as the panel leaves above and below the icon
+/// without labels.
+const LABEL_TOP: f32 = 11.0;
 const LABEL_GAP: f32 = 4.0;
 
 /// The side `icon` is drawn at as an action: [`ACTION_ICON`], but for an icon that keeps a
@@ -1530,10 +1532,10 @@ pub fn caption_button(
 }
 
 /// A button with its word under its icon (decision 92, Labels), as the Tools panel's tab
-/// names are set: in the taller panel, 8 points below its top, the icon in
+/// names are set: in the taller panel, 11 points below its top, the icon in
 /// `text_secondary` in a 22-point square, as the tabs' icons, so every word stands on one
-/// line, 4 points, then the word, centred, at the caption size, Regular, in `text`, the
-/// rest of the panel below it. Otherwise an
+/// line, 4 points, then the word, centred, at the caption size, Regular, in `text`, and
+/// 11 points of the panel below it. Otherwise an
 /// icon button (decision 81): no plate, the icon `text_strong` under the pointer and
 /// `accent_text` held down, high contrast's `button_edge` round it under the pointer, the
 /// focus ring after a key.
