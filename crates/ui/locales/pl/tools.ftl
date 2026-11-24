@@ -955,6 +955,14 @@ tool-colorbalancergb-picker-white_fulcrum-full = Punkt podparcia bieli: pobierz 
 tool-colorbalancergb-picker-white_fulcrum-promise = Pobierz kolor ze zdjęcia
 tool-colorbalancergb-picker-grey_fulcrum-full = Punkt szarości kontrastu: pobierz ze zdjęcia
 tool-colorbalancergb-picker-grey_fulcrum-promise = Pobierz kolor ze zdjęcia
+tool-colorbalancergb-cursor-global_hue = Próbnik odcienia globalnego przesunięcia
+tool-colorbalancergb-cursor-global_hue-how = Kliknij obszar lub zaznacz go przeciągnięciem
+tool-colorbalancergb-cursor-shadows_hue = Próbnik odcienia wzniosu cieni
+tool-colorbalancergb-cursor-shadows_hue-how = Kliknij obszar lub zaznacz go przeciągnięciem
+tool-colorbalancergb-cursor-highlights_hue = Próbnik odcienia wzmocnienia w światłach
+tool-colorbalancergb-cursor-highlights_hue-how = Kliknij obszar lub zaznacz go przeciągnięciem
+tool-colorbalancergb-cursor-midtones_hue = Próbnik odcienia potęgi
+tool-colorbalancergb-cursor-midtones_hue-how = Kliknij obszar lub zaznacz go przeciągnięciem
 
 ## Krzywa tonalna (docs/tools/tone-curve.md)
 

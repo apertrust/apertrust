@@ -221,7 +221,7 @@ darktable's colour pickers and its Colour picker, one API (decision 79; [pickers
 One cursor chosen at a time decides what a press on the photo does (decision 104; [cursors.md](cursors.md#the-plan)), one pull request each:
 
 - [x] 104.1 The one-shot pick, 79.17 above.
-- [x] 104.2 The declarations in `apertrust-tools`: `CursorDef`, the groups, `ToolDefinition::cursors` and its checks; White balance's and Exposure's picker cursors and their words.
+- [x] 104.2 The declarations in `apertrust-tools`: `CursorDef`, the groups, `ToolDefinition::cursors` and its checks; White balance's and Exposure's picker cursors and their words; Colour calibration's and Colour balance RGB's four hue pickers' with their picks, a tool's advanced pickers having none.
 - [x] 104.3 The well in the design system: one button per group, its face and its chevron's list of cursors and settings, its states, keys and screen readers, in the gallery.
 - [x] 104.4 The app: Select, the default, Pan and Pick on the Toolbar between two empty strips, the gestures and pointers on the photo, Esc, A held and K, Show the last pick; its picker cursors pick once.
 - [x] 104.5 The well shows the picker that is on, whichever door turned it on, and Select, or the cursor the person chose, once it turns off, each turn-off announced with its reason; Esc ends a picker wherever the focus is, but a field being typed in or an open list keeps the first Esc; A held pans over a picker; the crosshair over the photo; "Right-click resets the area." in the viewer bar.
