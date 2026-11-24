@@ -871,6 +871,79 @@ fn a_tool_picker_turns_its_tool_on_and_off_as_the_tool_changes_unless_it_keeps()
     remove(&path);
 }
 
+/// A `Step` of `commands`, as a style sends its tools.
+fn style(commands: Vec<Command>) -> Command {
+    Command::Step {
+        source: StepSource::Style,
+        note: Some(Note::Text("Warm film".to_owned())),
+        commands,
+    }
+}
+
+/// A `Step`'s commands turn a tool's picker off as they would on their own: its tool's
+/// values set whole, or its reset, end it through the `Step`.
+#[test]
+fn a_step_turns_off_the_picker_of_a_tool_its_commands_change() {
+    let path = scratch("picker-step");
+    let mut driven = Driven::new(&[&Sample, &ColourBalanceRgb]);
+    driven.open(&path);
+    driven.writes();
+    driven.run([on_tool("spread", true)]);
+    driven.picked();
+    let events = driven.run([style(vec![Command::SetTool {
+        tool: "sample".to_owned(),
+        values: ToolValues::new(),
+    }])]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    assert_eq!(end(&events), Some(driven.engine.applied));
+    assert!(!driven.engine.pickers.on());
+    // A tool's reset inside a `Step` too.
+    driven.run([on_picker("colorbalancergb", "global_hue", true)]);
+    driven.picked();
+    let events = driven.run([style(vec![Command::ResetTool {
+        tool: "colorbalancergb".to_owned(),
+    }])]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    assert_eq!(end(&events), Some(driven.engine.applied));
+    assert!(!driven.engine.pickers.on());
+    remove(&path);
+}
+
+/// A `Step` on two tools ends only a picker that does not keep: Sample's `show`,
+/// darktable's keep-active, stays on through it, Colour balance RGB's picker does not.
+#[test]
+fn a_step_on_two_tools_leaves_a_keeping_picker_on() {
+    let path = scratch("picker-step-keeps");
+    let mut driven = Driven::new(&[&Sample, &ColourBalanceRgb]);
+    driven.open(&path);
+    driven.writes();
+    let both = |strength| {
+        style(vec![
+            set("grain", ControlValue::Number(strength), true),
+            Command::ResetTool {
+                tool: "colorbalancergb".to_owned(),
+            },
+        ])
+    };
+    driven.run([on_tool("show", true)]);
+    driven.picked();
+    let events = driven.run([both(20.0)]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(
+        readings(&events).is_empty() && driven.engine.pickers.on(),
+        "{events:?}"
+    );
+    driven.run([on_picker("colorbalancergb", "global_hue", true)]);
+    driven.picked();
+    let events = driven.run([both(30.0)]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    assert_eq!(end(&events), Some(driven.engine.applied));
+    remove(&path);
+}
+
 /// Undo, Redo and a move through the history turn a tool's picker off where they change
 /// its tool, as darktable's `gui_update` does, and leave it on where they change another
 /// tool alone; a keep-active picker stays on through its own tool's.
