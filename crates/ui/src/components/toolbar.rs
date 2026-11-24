@@ -155,8 +155,8 @@ pub enum ToolbarEntry {
 }
 
 /// A button of the Toolbar that runs an action: its icon, drawn at 22 points with labels
-/// on or off, its translated name, its word under its icon while labels are on, and
-/// whether it can run now, drawn disabled where it cannot.
+/// on or off, its translated name, its word under its icon while labels are on, whether it
+/// can run now, drawn disabled where it cannot, and for a toggle whether it is on.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolbarButton {
     id: &'static str,
@@ -164,6 +164,7 @@ pub struct ToolbarButton {
     name: String,
     label: Option<String>,
     enabled: bool,
+    toggled: Option<bool>,
     first: bool,
     last: bool,
 }
@@ -178,6 +179,7 @@ impl ToolbarButton {
             name: name.into(),
             label: None,
             enabled: true,
+            toggled: None,
             first: false,
             last: false,
         }
@@ -190,6 +192,13 @@ impl ToolbarButton {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    /// A toggle (decision 92, States): while `on`, its filled icon in `text_strong`, where
+    /// it has one, an AccessKit toggle, pressed; under », its item checked.
+    pub fn toggled(mut self, on: bool) -> Self {
+        self.toggled = Some(on);
         self
     }
 
@@ -848,12 +857,16 @@ impl<'a> Toolbar<'a> {
                             if labelled {
                                 Labelled::of(ui, button).show(ui, bar, keys(done))
                             } else {
-                                icon_button(button.icon, &button.name, keys(done))
+                                let icon = icon_button(button.icon, &button.name, keys(done))
                                     .size(ACTION)
                                     .icon_size(action_icon(button.icon))
                                     .stroke(ACTION_STROKE)
-                                    .enabled(button.enabled)
-                                    .show(ui)
+                                    .enabled(button.enabled);
+                                match button.toggled {
+                                    Some(on) => icon.toggled(on),
+                                    None => icon,
+                                }
+                                .show(ui)
                             }
                         })
                         .inner;
@@ -884,9 +897,12 @@ impl<'a> Toolbar<'a> {
                             pull_down(ui, &more, &name, || {
                                 (hidden.iter())
                                     .map(|button| {
-                                        let item =
+                                        let mut item =
                                             popup::Item::new(button.id, button.name.as_str())
                                                 .enabled(button.enabled);
+                                        if let Some(on) = button.toggled {
+                                            item = item.checked(on);
+                                        }
                                         match keys(ToolbarAction::Button(button.id)) {
                                             Some(keys) => item.shortcut(keys),
                                             None => item,
@@ -1519,9 +1535,14 @@ impl<'b> Labelled<'b> {
             );
             let icon =
                 Rect::from_center_size(square.center(), Vec2::splat(action_icon(button.icon)));
-            button
-                .icon
-                .paint_stroked(painter, icon, colour(&t, touch, false), ACTION_STROKE);
+            // On, a toggle that is on: its filled icon, where it has one, in `text_strong`.
+            let on = button.toggled == Some(true);
+            let shape = if on {
+                button.icon.filled()
+            } else {
+                button.icon
+            };
+            shape.paint_stroked(painter, icon, colour(&t, touch, on), ACTION_STROKE);
             let word = pos2(
                 rect.center().x - self.word.size().x / 2.0,
                 square.bottom() + LABEL_GAP,
@@ -1534,8 +1555,11 @@ impl<'b> Labelled<'b> {
             painter.galley(word, self.word, text);
             paint_focus(painter, rect, t.shape.radius, touch, &t);
         }
-        let name = button.name.as_str();
-        response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, name));
+        let (name, toggled) = (button.name.as_str(), button.toggled);
+        response.widget_info(|| match toggled {
+            Some(on) => WidgetInfo::selected(Role::Button, enabled, on, name),
+            None => WidgetInfo::labeled(Role::Button, enabled, name),
+        });
         let tip = match keys {
             Some(keys) => {
                 report_shortcut(ui, response.id, keys);

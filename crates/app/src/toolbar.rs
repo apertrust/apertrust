@@ -303,6 +303,7 @@ mod tests {
             ("menu-button", Kind::Part),
             ("cursors", Kind::Part),
             ("import", Kind::App),
+            ("guides", Kind::App),
             ("previous-photo", Kind::App),
             ("tool-flip-rotate_ccw", Kind::Tool("flip")),
             ("undo", Kind::Tool("history")),
@@ -316,6 +317,7 @@ mod tests {
         assert_eq!(icon("tool-flip-rotate_ccw"), Some(Icon::RotateLeft));
         assert_eq!(icon("tool-flip-rotate_cw"), Some(Icon::RotateRight));
         assert_eq!(icon("show-collections"), Some(Icon::Library));
+        assert_eq!(icon("guides"), Some(Icon::Guides));
     }
 
     /// A tool's item folds under » before the app's own actions; nothing else is marked.

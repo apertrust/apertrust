@@ -81,12 +81,13 @@ fn toolbar(
 }
 
 /// The common actions' names, in the panel's order.
-const ACTIONS: [&str; 7] = [
+const ACTIONS: [&str; 8] = [
     "Import…",
     "Export…",
     "Reset",
     "Undo",
     "Redo",
+    "Guides",
     "Copy edit",
     "Apply edit",
 ];
@@ -114,6 +115,7 @@ fn the_toolbar_reports_its_actions_with(labels: bool) {
             ToolbarAction::Button("reset"),
             ToolbarAction::Button("undo"),
             ToolbarAction::Button("redo"),
+            ToolbarAction::Button("guides"),
             ToolbarAction::Button("copy-edit"),
             ToolbarAction::Button("apply-edit"),
         ]
@@ -142,10 +144,12 @@ fn the_actions_come_first_in_order_and_saved_last() {
     );
     assert_eq!(rect("Export…").left() - rect("Import…").right(), 2.0);
     assert_eq!(rect("Reset").left() - rect("Export…").right(), 2.0);
-    // The empty strip that moves the window, then Copy edit and Apply edit at the end,
-    // before the save state, which shows nothing while saving works: no word, no tick.
+    // The empty strip that moves the window, then Guides and, a group of their own 16
+    // points on with no line, Copy edit and Apply edit at the end, before the save state,
+    // which shows nothing while saving works: no word, no tick.
     assert!(rect("Redo").right() < bar.center().x);
-    assert!(rect("Copy edit").left() > bar.center().x);
+    assert!(rect("Guides").left() > bar.center().x);
+    assert_eq!(rect("Copy edit").left() - rect("Guides").right(), 16.0);
     assert_eq!(rect("Apply edit").left() - rect("Copy edit").right(), 2.0);
     for word in ["Saved", "Saving…", "Not saved"] {
         assert!(harness.query_by_label(word).is_none(), "{word}");
@@ -224,6 +228,7 @@ fn labels_stand_under_their_icons_in_a_taller_toolbar() {
         "action-reset",
         "action-undo",
         "action-redo",
+        "action-guides",
         "action-copy-edit",
         "action-apply-edit",
     ]) {
@@ -372,13 +377,13 @@ fn a_narrowing_toolbar_folds_its_actions_into_more_with(labels: bool) {
     wide.run();
     // Every action, with its word where labels are on; no ».
     let full = shown(&wide);
-    assert_eq!(full.len(), 7);
+    assert_eq!(full.len(), 8);
     let labelled = |width: f32| if labels { width > 32.0 } else { width == 32.0 };
     assert!(full.iter().all(|(_, w)| labelled(*w)), "{labels}: {full:?}");
     assert!(wide.query_by_label("More actions").is_none());
 
     // Narrower, the actions go under » one at a time, a tool's items first from the end,
-    // then Import…, the app's own, » fitting in the first's room; Undo and Redo last. The
+    // then Guides and Import…, the app's own, » fitting in the first's room; Undo and Redo last. The
     // ones still shown keep their widths, words and all.
     let mut narrowing = narrow_in(Locale::EnGb, labels, 1400.0, saved, 0.0, false);
     let mut gone: Vec<Vec<&str>> = Vec::new();
@@ -405,6 +410,7 @@ fn a_narrowing_toolbar_folds_its_actions_into_more_with(labels: bool) {
             vec!["Copy edit"],
             vec!["Reset"],
             vec!["Export…"],
+            vec!["Guides"],
             vec!["Import…"],
             vec!["Undo", "Redo"],
         ],
@@ -543,6 +549,7 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
             "action-reset",
             "action-undo",
             "action-redo",
+            "action-guides",
             "action-copy-edit",
             "action-apply-edit",
         ]
@@ -600,9 +607,10 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
 /// on Windows and Linux, the menu button drawn as `menu` says and the caption buttons at
 /// the end; with the jobs spinner's slot and Phase 2's cursors' well, as the app draws
 /// them, and a failed write, whose words show the status step. Each is the widest Toolbar
-/// that has taken the step, plus one: the first action under », every action but Undo and
+/// that has taken the step, plus one, 1601 for one taken at the widest: the fixed space
+/// narrowed, the fixed space gone, the first action under », every action but Undo and
 /// Redo under », the status words folded, and Undo and Redo under ».
-fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [u32; 4] {
+fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [u32; 6] {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1600.0, 120.0))
         .with_context_setup(move |ctx| {
@@ -624,19 +632,28 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [
             with_well(0, |well| bar.cursors(well).show(ui));
         });
     let words = Translator::new(locale);
-    let [import, more, undo, failed] = [
+    let [import, guides, copy, more, undo, failed] = [
         "action-import",
+        "action-guides",
+        "action-copy-edit",
         "toolbar-more",
         "action-undo",
         "status-not-saved",
     ]
     .map(|id| words.text(id));
+    // The room between Guides and Copy edit, the fixed space's, while both show.
+    let space = |harness: &Harness<'_>| {
+        let guides = harness.query_by_label(&guides)?.rect();
+        Some(harness.query_by_label(&copy)?.rect().left() - guides.right())
+    };
     let sign = 2.0 * Theme::default().spacing.s + Icon::Warning.size();
-    let mut starts = [0; 4];
+    let mut starts = [0; 6];
     for width in (150..=1600).rev() {
         harness.set_size(egui::vec2(width as f32, 120.0));
         harness.run();
         let taken = [
+            space(&harness).is_none_or(|room| room < 16.0),
+            space(&harness).is_none_or(|room| room < 8.0),
             harness.query_by_label(&more).is_some(),
             harness.query_by_label(&import).is_none(),
             harness.get_by_label(&failed).rect().width() == sign,
@@ -780,28 +797,38 @@ fn keeps_every_part<T>(harness: &Harness<'_, T>, locale: Locale, menu: Option<Me
 /// every part placed fold no part and keep 24 points empty.
 #[test]
 fn the_toolbar_folds_where_gui_md_says() {
-    type Case = (Locale, Option<MenuButtonStyle>, [u32; 4], [u32; 4]);
+    type Case = (Locale, Option<MenuButtonStyle>, [u32; 6], [u32; 6]);
     let cases: [Case; 5] = [
         (
             Locale::EnGb,
             None,
-            [730, 533, 481, 423],
-            [599, 495, 461, 403],
+            [797, 789, 783, 533, 481, 423],
+            [647, 639, 633, 495, 461, 403],
         ),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Icon),
-            [855, 658, 606, 548],
-            [724, 620, 586, 528],
+            [922, 914, 908, 658, 606, 548],
+            [772, 764, 758, 620, 586, 528],
         ),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Menu),
-            [844, 647, 595, 537],
-            [713, 609, 575, 517],
+            [911, 903, 897, 647, 595, 537],
+            [761, 753, 747, 609, 575, 517],
         ),
-        (Locale::Uk, None, [861, 618, 564, 480], [626, 522, 488, 403]),
-        (Locale::Pl, None, [834, 567, 506, 433], [614, 510, 476, 403]),
+        (
+            Locale::Uk,
+            None,
+            [942, 934, 928, 618, 564, 480],
+            [674, 666, 660, 522, 488, 403],
+        ),
+        (
+            Locale::Pl,
+            None,
+            [923, 915, 909, 567, 506, 433],
+            [662, 654, 648, 510, 476, 403],
+        ),
     ];
     for (locale, menu, on, off) in cases {
         let measured = fold_widths(locale, menu, true);
@@ -1529,7 +1556,7 @@ fn a_right_click_anywhere_asks_for_the_toolbar_menu_with_what_is_under_it() {
             ("Import…", 1),
             ("Reset", 3),
             ("Undo", 4),
-            ("Apply edit", 10),
+            ("Apply edit", 12),
         ];
         for (name, _) in buttons {
             let control = harness.get_by_label(name).rect().center();
@@ -2208,7 +2235,7 @@ fn an_empty_toolbar_is_all_empty_area() {
 
 /// The viewer bar with its state applied as the app would.
 struct Photo {
-    guides: bool,
+    proof: bool,
     zoom: Zoom,
     /// Whether Zoom in and Zoom out have somewhere to go, as the app works them out.
     steps: (bool, bool),
@@ -2231,9 +2258,8 @@ fn viewer_bar_in(theme: Theme, size: egui::Vec2) -> Harness<'static, Photo> {
                 if let Some(action) = ViewerBar::new("Image", state.zoom)
                     .toggles(
                         Toggle::new(false, false),
+                        Toggle::new(state.proof, true),
                         Toggle::new(false, true),
-                        Toggle::new(false, true),
-                        Toggle::new(state.guides, true),
                     )
                     .values(Some([142, 128, 113]))
                     .zoom_enabled(true)
@@ -2245,7 +2271,7 @@ fn viewer_bar_in(theme: Theme, size: egui::Vec2) -> Harness<'static, Photo> {
                     .show(ui)
                 {
                     match action {
-                        ViewerBarAction::Guides => state.guides = !state.guides,
+                        ViewerBarAction::ProofMargin => state.proof = !state.proof,
                         ViewerBarAction::Zoom(zoom) => state.zoom = zoom,
                         _ => {}
                     }
@@ -2253,7 +2279,7 @@ fn viewer_bar_in(theme: Theme, size: egui::Vec2) -> Harness<'static, Photo> {
                 }
             },
             Photo {
-                guides: false,
+                proof: false,
                 zoom: Zoom::Fit,
                 steps: (true, true),
                 actions: Vec::new(),
@@ -2287,13 +2313,13 @@ fn zoom_lines(harness: &Harness<'_, Photo>) -> Vec<String> {
 fn the_viewer_bar_toggles_and_shows_the_values() {
     let mut harness = viewer_bar();
     harness.run();
-    harness.get_by_label("Guides").click();
+    harness.get_by_label("Proof margin").click();
     harness.run();
-    assert!(harness.state().guides);
+    assert!(harness.state().proof);
     // Disabled: one photo, nothing to show side by side.
     harness.get_by_label("Show all selected photos").click();
     harness.run();
-    assert_eq!(harness.state().actions, vec![ViewerBarAction::Guides]);
+    assert_eq!(harness.state().actions, vec![ViewerBarAction::ProofMargin]);
     assert_eq!(
         harness.get_by_label("Values under the cursor").value(),
         Some("Red 142, green 128, blue 113, grey 130".to_owned())
@@ -2907,7 +2933,6 @@ fn the_shell_at_full_width() {
                 .toggles(
                     Toggle::new(false, true),
                     Toggle::new(true, true),
-                    Toggle::new(false, true),
                     Toggle::new(false, true),
                 )
                 .layers(true)

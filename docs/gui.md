@@ -2562,7 +2562,7 @@ The model's words:
 | --- | --- |
 | Toolbar | The window's title bar, from its top edge ([The window frame and menus](#the-window-frame-and-menus)). At its start: the traffic lights' place on the Mac; the menu button, the app's icon or ☰, on Windows and Linux; the common actions (Import, Export, Cull, Reset, Undo, Redo, Copy, Apply). At its end: the jobs spinner, an assistant's connection and the save state; the caption buttons on Windows and Linux. No layout switcher and no Settings button ([below](#the-toolbar)) |
 | Viewer | The current layout ([below](#the-viewers-layouts)): in Photo, the active photo or the selected photos side by side; later in Map, the photos on a map. "No photo selected" when no photo is active. Floating panels lie over it (decision 83, planned) |
-| Viewer bar | The thin bar along the Viewer's top ([below](#the-viewer-bar)). In Photo: the photo's toggles, ending with Guides; immediately after Guides the Map toggle (later); the layer menu, the values under the cursor, the scale. In Map: the photo's toggles where they are, drawn disabled, the Map toggle where it is, then Map's own controls |
+| Viewer bar | The thin bar along the Viewer's top ([below](#the-viewer-bar)). In Photo: the photo's toggles, ending with Before and after; immediately after them the Map toggle (later); the layer menu, the values under the cursor, the scale. In Map: the photo's toggles where they are, drawn disabled, the Map toggle where it is, then Map's own controls |
 | Caption | One line under the photo, on the surround, as wide as the photo and part of its block in the Viewer's slot ([below](#the-photo-frame)): the file name with its marks at its start; the photo's reject, rating and colour labels in its middle; the exposure at its end ([below](#the-caption-under-the-photo)) |
 | Tools panel | The current workspace's icon tabs, the Photos tab first, the same whatever the Viewer shows; then pinned sections, then sections that scroll; on the right or the left; as wide as the user drags its edge ([below](#the-tools-panel)) |
 | Browser | The current folder's or album's thumbnails along the bottom, except under the Tools panel, or in a column at the window's left or right, with the browser bar at its left end at the bottom and along its top at a side ([below](#the-browser-bar)). Shown in every layout, Map too, and never hidden; one line of thumbnails or several ([below](#the-browser)) |
@@ -2579,7 +2579,7 @@ The model's words:
 
 The Viewer shows one of its layouts and changes only when the person asks for it (decision 37): the viewer bar's Map toggle, Map's key, the View menu, or a command that says so, such as "Show on map". Choosing a tab, opening a section or moving a slider never changes it.
 
-The Toolbar has no layout switcher. A small Map toggle on the viewer bar, immediately right of Guides, shows the map; Photo is what shows while it is off ([The viewer bar](#the-viewer-bar)). There is no Grid layout either: the Viewer shows Photo, or the map while Map is on, and the Browser shows under both.
+The Toolbar has no layout switcher. A small Map toggle on the viewer bar, immediately right of the photo's toggles, shows the map; Photo is what shows while it is off ([The viewer bar](#the-viewer-bar)). There is no Grid layout either: the Viewer shows Photo, or the map while Map is on, and the Browser shows under both.
 
 | Layout | Shows | When |
 | --- | --- | --- |
@@ -2614,7 +2614,7 @@ The Toolbar has no layout switcher. A small Map toggle on the viewer bar, immedi
 - **Culling** (Phase 3) is Photo with the Browser and the caption's ratings, with no Grid. The Browser chooses and selects, Photo shows the active photo or the selected ones side by side, and the caption, the keys and the Photo menu rate, reject and label.
   - The browser bar's sort comes with the Browser ([The browser bar](#the-browser-bar)); Search Photos, by file name, is planned in the View menu.
   - Filters, by rating and the rest, come with the Filters tool in Phase 3, over the open folder's index (decision 73); searching across a Library's folders arrives with the saved index in Phase 5.
-- **Map** (later) shows only on an explicit request: its toggle on the viewer bar, immediately right of Guides; View › Map; its key, Shift+M, since M is the gradient shape's; or "Show on map" in a section that needs the map. A tab or a section never shows it. The toggle or Shift+M, pressed again, goes back to Photo.
+- **Map** (later) shows only on an explicit request: its toggle on the viewer bar, immediately right of the photo's toggles; View › Map; its key, Shift+M, since M is the gradient shape's; or "Show on map" in a section that needs the map. A tab or a section never shows it. The toggle or Shift+M, pressed again, goes back to Photo.
   - Its sections (a photo's location, assigning one to the selected photos) work without the map shown, so the keyboard reaches all of them.
   - In Map, photos are placed by dragging them from the Browser onto the map, the Browser showing in Map as in Photo, or by finding a place and choosing "Assign to 5 photos".
   - The first time it is shown, it asks before any map tile is fetched, since tiles tell their server where the photos were taken (principle 3). Offline tiles come first: a Natural Earth basemap shipped with the app and regional PMTiles files the person adds. Online tiles, as darktable has them (OpenStreetMap and other sources, cached on disk), stay off until the person turns them on (decision 37).
@@ -2772,15 +2772,15 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 **A toolbar a person customises** (decision 92; the list, the overflow, the labels and its menu built). The order below is the default of one list of item ids kept for each workspace, `toolbar` in its file (decision 96). Everything but the caption buttons and the Mac's traffic lights may be moved or hidden: the menu button, the save state, the jobs, an assistant's connection and every action ([Customising the Toolbar](#customising-the-toolbar)).
 
 - **Order.**
-  - macOS: the traffic lights; Import…, Export…, Cull, Reset, Undo, Redo; the empty strip that moves the window, the cursors' well in its middle; Copy edit and Apply edit; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
+  - macOS: the traffic lights; Import…, Export…, Cull, Reset, Undo, Redo; the empty strip that moves the window, the cursors' well in its middle; Guides ([Guides](#guides)); Copy edit and Apply edit; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
   - Windows and Linux: the menu button, the app's icon or ☰, with no menu titles (decision 39); the same actions; the empty strip and the same end; minimise, maximise or restore, close.
-  - The common actions sit at the start, right after the traffic lights or the menu button; at the end stand Copy edit and Apply edit, then the jobs, an assistant's connection and the save state, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)). Export… reveals the Export tool in the Tools panel and focuses its button, as Ctrl+E does, rather than opening anything over the photo ([The Export tool](#the-export-tool), decision 90).
+  - The common actions sit at the start, right after the traffic lights or the menu button; at the end stand Guides, Copy edit and Apply edit, then the jobs, an assistant's connection and the save state, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)). Export… reveals the Export tool in the Tools panel and focuses its button, as Ctrl+E does, rather than opening anything over the photo ([The Export tool](#the-export-tool), decision 90).
   - **Fixed slots.** The jobs spinner and the save state each keep a slot of fixed width, the width of its widest form at the current fold step (the save state's: Saving… or the warning with its word, folded "…" or the sign alone; the spinner's: one button), in that order, reserved whether it shows anything or not. So the spinner coming or going, or the save state changing between nothing, Saving… and Not saved, moves neither the other nor anything else in the panel. While a slot shows nothing it is part of the strip that moves the window.
-  - **The cursors' well** (decision 104; [cursors.md](cursors.md#the-well)): one sunken well of cursors, one button per group, centred between two empty strips after Redo, so it stands in the middle of the room between the actions at the start and Copy edit and Apply edit at the end. It never folds; the actions fold before it. Its Pick face is a second door to each tool's picker (built, 104.5 and 104.6): chosen exactly while that picker is on, from its button or the well, and back to Select, or to the cursor the person chose, as it turns off. The Colour picker's own picker has its own group after Pick, its face the second door to the Colour picker's header button, on Shift+K (planned with that tool, decision 104's 104.8).
+  - **The cursors' well** (decision 104; [cursors.md](cursors.md#the-well)): one sunken well of cursors, one button per group, centred between two empty strips after Redo, so it stands in the middle of the room between the actions at the start and Guides, Copy edit and Apply edit at the end. It never folds; the actions fold before it. Its Pick face is a second door to each tool's picker (built, 104.5 and 104.6): chosen exactly while that picker is on, from its button or the well, and back to Select, or to the cursor the person chose, as it turns off. The Colour picker's own picker has its own group after Pick, its face the second door to the Colour picker's header button, on Shift+K (planned with that tool, decision 104's 104.8).
   - Slideshow and Copy or Apply Parts are not in the Toolbar: they are in View › Slideshow and Edit › Copy or Apply Parts…. Cull arrives with culling in Phase 3, where what it opens is still to be designed; until then it is drawn on the wireframe only.
 - **No layout switcher:** the viewer bar's Map toggle switches the Viewer between Photo and the map ([The viewer bar](#the-viewer-bar)).
 - **No Settings button** in the default: Settings is in the app menu on the Mac and on Ctrl+, (⌘,); on Windows and Linux also last in Edit in the menu button's menu ([the menu bar](#the-menu-bar)). Settings… is offered for the toolbar (decision 92).
-- **Groups** are told apart by space, never a separator line: the empty strips round the cursors' well between the actions at the start and Copy edit and Apply edit at the end, and on Windows and Linux `spacing.xl`, 16 points, before the caption buttons, against the usual gap between buttons. The menu button stands 8 points before Import, as the actions' groups stand apart.
+- **Groups** are told apart by space, never a separator line: the empty strips round the cursors' well between the actions at the start and those at the end, and `spacing.xl`, 16 points, between Guides and Copy edit and, on Windows and Linux, before the caption buttons, against the usual gap between buttons. The menu button stands 8 points before Import, as the actions' groups stand apart.
 - **The menu button** on Windows and Linux ([The menu button on Windows and Linux](#the-menu-button-on-windows-and-linux)): the app's icon, its rounded square in one colour with the Slider A cut out of it, and a caret, or ☰, as the setting Menu button chooses.
   - Amber marks what is chosen (the tab underline, the active photo's outline, the active curve point), and the Toolbar is part of the photo's surround, so the app's icon stays neutral, in the icons' colours; the cut shows the A and its marker without colour.
   - No mark of its own and no name beside it: About is in the app menu on the Mac and in Help on Windows and Linux ([Help](#help)), and the Mac's app menu, the window's title and About carry the name. The colour mark, the app icon in colour and the full logo are for where the logo stands alone, away from the photo.
@@ -2794,7 +2794,7 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 Built, decision 92's overflow ([Customising the Toolbar](#customising-the-toolbar)): the Toolbar measures its entries at the current scale and language each frame and gives way one step at a time, undoing a step only with 16 points to spare so a resize never flickers. The steps are the same with labels on or off: what does not fit goes under », a labelled action with its word, the ones still shown keeping theirs.
 
 1. the fixed spaces narrow to 8 points, then go one at a time from the end;
-2. the actions move into » (`toolbar-more`) one at a time, in reverse reading order, a tool's items before the app's own: Apply edit, Copy edit, Reset and Export…, then Import…, » fitting in the first one's room. » stands just before the first flexible space, or with none at the end, and lists them in the Toolbar's order with their keys, disabled where they cannot run;
+2. the actions move into » (`toolbar-more`) one at a time, in reverse reading order, a tool's items before the app's own: Apply edit, Copy edit, Reset and Export…, then Guides and Import…, » fitting in the first one's room. » stands just before the first flexible space, or with none at the end, and lists them in the Toolbar's order with their keys, disabled where they cannot run;
 3. the save warning and Saving… lose their words, to the sign and "…", and the assistant's connection its, planned with it in Phase 6 (the jobs spinner has none);
 4. Undo and Redo go into » together, and the assistant's connection becomes one button whose menu holds Disconnect, planned with it.
 
@@ -2806,7 +2806,9 @@ With labels:
 
 | Step starts below | Mac, English | Linux, English, the app's icon | Linux, English, ☰ | Mac, Ukrainian | Mac, Polish |
 | --- | --- | --- | --- | --- | --- |
-| Apply edit goes under » | 730 points | 855 | 844 | 861 | 834 |
+| The fixed space narrows to 8 points | 797 points | 922 | 911 | 942 | 923 |
+| The fixed space goes | 789 | 914 | 903 | 934 | 915 |
+| Apply edit goes under » | 783 | 908 | 897 | 928 | 909 |
 | Import…, the last before Undo and Redo, goes under » | 533 | 658 | 647 | 618 | 567 |
 | The status words fold | 481 | 606 | 595 | 564 | 506 |
 | Undo and Redo go under » | 423 | 548 | 537 | 480 | 433 |
@@ -2815,14 +2817,16 @@ Without labels:
 
 | Step starts below | Mac, English | Linux, English, the app's icon | Linux, English, ☰ | Mac, Ukrainian | Mac, Polish |
 | --- | --- | --- | --- | --- | --- |
-| Apply edit goes under » | 599 points | 724 | 713 | 626 | 614 |
+| The fixed space narrows to 8 points | 647 points | 772 | 761 | 674 | 662 |
+| The fixed space goes | 639 | 764 | 753 | 666 | 654 |
+| Apply edit goes under » | 633 | 758 | 747 | 660 | 648 |
 | Import…, the last before Undo and Redo, goes under » | 495 | 620 | 609 | 522 | 510 |
 | The status words fold | 461 | 586 | 575 | 488 | 476 |
 | Undo and Redo go under » | 403 | 528 | 517 | 403 | 403 |
 
 Linux needs 125 points more than the Mac, 114 with ☰, 49 + 146 − 70: the menu button and the 8 points after it, 49 (38 with ☰, which is 11 narrower than the app's icon and its caret); at the end the caption buttons with the 16 points before them, 154, less the Mac's 8-point end margin they replace, 146; less the 70 points by which the traffic lights' room, 78, is wider than the start's 8-point margin. Each step starts 117 points wider than it would without the cursors' well, which never folds: the well, 101 points for Phase 2's Select, Pan and Pick, and the 16 points before it. The test (`the_toolbar_folds_where_gui_md_says`) holds these numbers, with labels and without, the jobs spinner's slot and the well counted as the app draws them, and checks at 500 points, in every language, as on the Mac and on Linux with either menu button, that the default list and one with every part and twelve more actions placed fold no part and leave 24 points of empty panel. The narrowing test checks at every width down to 500, in every language, that those 24 points are left, counted on both sides of the well together, the menu button included.
 
-Never folded: the menu button on Windows and Linux, the save warning's sign, an assistant's connection, the cursors' well, », the caption buttons, and 24 points of empty panel to move the window by. The well stands centred in the room between the actions at the start and Copy edit and Apply edit at the end, the status slots counted at their widest, so neither a save nor a job moves it.
+Never folded: the menu button on Windows and Linux, the save warning's sign, an assistant's connection, the cursors' well, », the caption buttons, and 24 points of empty panel to move the window by. The well stands centred in the room between the actions at the start and Guides, Copy edit and Apply edit at the end, the status slots counted at their widest, so neither a save nor a job moves it.
 
 **The window's minimum width** (built, decision 92) is at least what never folds, so the Toolbar never overlaps itself or the caption buttons and keeps its 24 points. The Toolbar measures it each frame at the scale and language in use, every step taken, a hidden part's guard counted as if it showed so a failure never changes it (`Toolbar::least_width`), and the app keeps the window at least that wide at the interface size, never under its own 960 by 600 pixels, setting it again as the list, the interface size or the language changes, and widening a window left narrower, since X11 and Wayland never resize a window to a new minimum themselves: at once, or, before it shows, while it is maximised or full screen or still has the start window's size, once it shows, is restored or has its own, so a window restored from maximised, or one started straight into the main window at a large interface size, is widened too. With every part placed it is the same in every language, the status words folded; on the Mac it narrows as the interface grows, since the traffic lights' 78 points are fewer of the interface's points:
 
@@ -2843,14 +2847,14 @@ Built (decision 92): tools' items, `ToolDefinition::toolbar`; the set of what ca
 
 | Platform | The default, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `flexible-space`, `copy-edit`, `apply-edit`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `flexible-space`, `guides`, `space`, `copy-edit`, `apply-edit`, `jobs`, `assistant` (Phase 6), `save-state` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - One list for every platform: the Mac never shows `menu-button` and never takes it out of the list.
 - **Drawn** in the list's order: what stands before the first flexible space from the toolbar's start, what stands after the last at its end, and what stands between two in the middle of the room the flexible spaces share, so the default's well is centred between the actions at the start and those at the end. A fixed space is drawn only between two items drawn with no flexible space between; a part or an action listed twice is drawn once.
 - **What can be placed:**
   - the parts `menu-button` (Windows and Linux, drawn as the setting Menu button says), `jobs`, `save-state`, `assistant` and `cursors`, the whole well of cursors (decision 104), one each; a hidden well leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button ([cursors.md](cursors.md#the-well));
-  - the app's own actions, only those that belong to no tool, pressed or toggled, to which the registry gives an icon, one each: `open`, `open-folder`, `settings`, `full-screen`, `zoom-100`, `zoom-fit`, `show-jobs`, `next-photo` and `previous-photo`; `import` until the Import tool declares it; Cull, Before and After, Clipping Warnings, Show in Folder and Map Shortcuts (decision 98, [Visual mapping](#visual-mapping)) as their actions are built; Before and After, Clipping Warnings, `zoom-100`, `settings` and Map Shortcuts are not in the default;
+  - the app's own actions, only those that belong to no tool, pressed or toggled, to which the registry gives an icon, one each: `guides` ([Guides](#guides)), `open`, `open-folder`, `settings`, `full-screen`, `zoom-100`, `zoom-fit`, `show-jobs`, `next-photo` and `previous-photo`; `import` until the Import tool declares it; Cull, Before and After, Clipping Warnings, Show in Folder and Map Shortcuts (decision 98, [Visual mapping](#visual-mapping)) as their actions are built; Before and After, Clipping Warnings, `zoom-100`, `settings` and Map Shortcuts are not in the default;
   - tools' actions, an action that belongs to a tool offered by that tool, so its buttons travel with it, a third-party tool's included: a processing tool's `tool-<tool>-<action>` actions decision 91 built ([Context menus](#context-menus)) or a utility's registry action, the item's id the action's, declared in `ToolDefinition::toolbar` (`ToolbarItem { action, icon }`), a processing tool's or a utility's ([One tool model](#one-tool-model), decision 93); `action` a processing tool's own (`rotate_ccw`) or the registry action a utility names (`undo`); the icon one of `apertrust-ui`'s by name, a `Row::Buttons` action taking its button's; the check refusing an empty or unknown action, a repeat, no icon on an action that is no button's, and more than two on a processing tool, a utility having no limit. Export's `export` and `export-again`; History's `reset`, `undo`, `redo`, `copy-edit`, `apply-edit` and `copy-apply-parts`; Collections' `show-collections`; Orientation's `tool-flip-rotate_ccw` and `tool-flip-rotate_cw`;
   - `space`, 16 points, and `flexible-space`, sharing what is left, any number; the overflow removes fixed spaces as it narrows.
 - **Never placeable:** hold actions (H), focus moves (F6), a set's members (the backgrounds, the workspaces), the platform's own items. Groups are told apart by space, never a line.
@@ -2878,7 +2882,7 @@ Every item of the toolbar menu is reachable from the keys whatever the toolbar s
 version = 1
 toolbar = ["menu-button", "import", "export", "reset", "undo", "redo",
            "flexible-space", "cursors", "flexible-space",
-           "copy-edit", "apply-edit", "jobs", "save-state"]
+           "guides", "space", "copy-edit", "apply-edit", "jobs", "save-state"]
 
 [[tabs]]
 id = "photos"
@@ -2900,7 +2904,7 @@ labels = true
 3. the status words fold to their signs;
 4. Undo and Redo go into ».
 
-» lists its items in the toolbar's order with their keys and disabled states, and their check marks, planned; it matches the Tools panel's ». Never folded: the parts placed, the cursors' well among them, », the caption buttons and 24 points of empty area; when even those do not fit, at a large interface size, the window's minimum width grows to their width, so the bar never overlaps and keeps its 24 points to move the window. A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
+» lists its items in the toolbar's order with their keys, disabled states and check marks; it matches the Tools panel's ». Never folded: the parts placed, the cursors' well among them, », the caption buttons and 24 points of empty area; when even those do not fit, at a large interface size, the window's minimum width grows to their width, so the bar never overlaps and keeps its 24 points to move the window. A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
 
 **Labels** (built). Under the icons by default, as the Tools panel's tab names. Toolbar Labels (`toolbar.labels`, on, app-wide, applied at once) is in View › Panels, the toolbar menu and Settings › General › Interface; off, each item is its icon alone, Import…, Export… and Reset too.
 
@@ -2918,7 +2922,7 @@ labels = true
 | Rest, under the pointer, pressed, focused | An `IconButton` (decision 81), the focus ring after keys |
 | Disabled: no photo, a sheet or dialog open, not live, view-only | `text_disabled`, the tooltip saying why; not an empty area |
 | Not built yet | Disabled, "To come" |
-| On (Before and After, Clipping Warnings) | The filled icon in `text_strong`; an AccessKit toggle, pressed |
+| On: any placed action whose menu item is checked, as Guides while the guides are on | The filled icon in `text_strong`, where the icon has one, its colour alone where it has not, as Guides'; an AccessKit toggle, pressed; under », its item checked (`ToolbarButton::toggled`, from the action's check mark) |
 | A tool's item, the tool off | Enabled; pressing it turns the tool on |
 | A tool the workspace hides (decision 96) | Enabled; it runs as its button would |
 | A background-only tool while a layer is edited (Phase 4) | Enabled; it acts on the background, and the tooltip says so |
@@ -3236,6 +3240,8 @@ Built. The surround behind the photo is one of six neutral greys (`Background`),
 
 Built (decision 92). darktable's guide lines over the photo, from the reference release's `src/gui/guides.c`, ported as `apertrust_ui::guides`: Guides turns them on and off for the run, on G, darktable's key, and View › Guides ▸ chooses which.
 
+- **Guides on the Toolbar:** `guides`, one of the app's own actions, placeable with an icon of its own, `guides` (Lucide's `frame`), and in both default lists right of the cursors' well, a space before Copy edit ([The Toolbar](#the-toolbar)). It is a toggle, pressed and its icon in `text_strong` while the guides are on, checked under », and drawn disabled until a photo is live. It is not on the viewer bar.
+
 - **The types,** darktable's ten in its order: Grid, Rules of thirds (the default), Metering, Perspective, Diagonal method, Harmonious triangles, Golden sections, Golden spiral, Golden spiral sections and Golden mean (all guides), each worked out as darktable's draw function does, about the whole photo's centre in points (`guides::lines`). The grid has darktable's defaults, three lines each way and three subdivisions.
 - **Flip:** None, Horizontally, Vertically or Both mirrors the guide about the photo's centre. Only harmonious triangles and the golden guides take one, as darktable's `support_flip` says; for the others Flip's items are drawn disabled, saying so, and the guide is drawn unflipped.
 - **Choosing a type turns the guides on.** A flip leaves them as they are, as darktable's does.
@@ -3255,20 +3261,19 @@ Built (decision 92). darktable's guide lines over the photo, from the reference 
 
 ### The viewer bar
 
-The thin bar along the Viewer's top, `ViewerBar` in the code. Up to the Map toggle it is the same in every layout, the photo's toggles and the Map toggle staying where they are; after it, it is the layout's. Its parts in Photo are built; the Map toggle and Guides' own icon are not.
+The thin bar along the Viewer's top, `ViewerBar` in the code. Up to the Map toggle it is the same in every layout, the photo's toggles and the Map toggle staying where they are; after it, it is the layout's. Its parts in Photo are built but the Map toggle. Guides is the Toolbar's (decision 92, [Guides](#guides)).
 
-- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin, Before and after and Guides, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the zoom, one button showing the scale ([The zoom](#the-zoom)). It counts no photos: the browser bar does ([The browser bar](#the-browser-bar)).
+- **In Photo,** at its start the photo's toggles: Show all selected photos, Proof margin and Before and after, then the Map toggle (later); then the layer being edited and + for a new one; in its middle the values under the cursor; at its end the zoom, one button showing the scale ([The zoom](#the-zoom)). It counts no photos: the browser bar does ([The browser bar](#the-browser-bar)).
   - **Show all selected photos:** on, Photo shows the selected photos side by side; off, the active photo alone ([The Viewer's layouts](#the-viewers-layouts)). On by default. It is enabled whenever a photo is active, since it sets what Photo does once several are selected; View › Show All Selected is the same toggle.
-  - **Guides,** darktable's guide lines drawn over the photo ([Guides](#guides)), the same state as View › Guides ▸'s Guides and its key G. Its message is `photo-guides`. It is to take an icon of its own, thirds over a frame; until then it shows the icon `grid`.
   - **The values under the cursor:** four numbers 0–255, with no swatch. Red, green and blue each in its channel's colour token and grey in the text colour, with no letters; their full names for screen readers.
   - **While a colour picker is on,** its words take the values' place after the layer's buttons and any status, as Rendering… while a zoomed view renders ([pickers.md](pickers.md#on-the-photo)): which picker it is, "Exposure · Exposure", in the text colour, then how to use it a step quieter, by the kinds the picker takes, an area picker's "Click for a small area, or drag one. Drag a corner to resize. Right-click resets the area. Esc ends." (decision 105, planned; built, "Drag an area on the photo. Ctrl-click switches to a point. Right-click resets the area. Esc ends."), each a label to screen readers; how is left out where it does not fit, and both where the name does not (`ViewerBar::picker`). Built.
 - **In Map** (later): the photo's toggles where they are, drawn disabled, since they act on a photo the Viewer does not show; the Map toggle where it is, on, under the pointer to be pressed again; after it, Map's own controls in place of the layer menu, the values and the scale. Show all selected photos stays enabled there, since it sets what Photo does.
 
 #### The Map toggle
 
-A small icon toggle immediately right of Guides that shows the map in the Viewer while it is on; Photo is what the Viewer shows while it is off, so Photo has no button of its own. There is no Grid toggle.
+A small icon toggle immediately right of Before and after that shows the map in the Viewer while it is on; Photo is what the Viewer shows while it is off, so Photo has no button of its own. There is no Grid toggle.
 
-- **Place:** after Guides in reading order in every language, so to its right in a left-to-right one, and before the layer menu; an `IconButton` of the size of the bar's other toggles. In Map it stays where it is, under the pointer to be pressed again.
+- **Place:** after Before and after in reading order in every language, so to its right in a left-to-right one, and before the layer menu; an `IconButton` of the size of the bar's other toggles. In Map it stays where it is, under the pointer to be pressed again.
 - **Icon:** a pin.
 - **A click:** off, it turns on and the Viewer shows the map; on, it turns off and the Viewer shows Photo as it was. The Viewer changes on that frame, with no animation, and the bar after the toggle becomes the new layout's.
 - **States:**
@@ -3279,7 +3284,7 @@ A small icon toggle immediately right of Guides that shows the map in the Viewer
 
   Never disabled while the bar shows, even with no photo active, since the map needs none. The first time Map is turned on it asks before any map tile is fetched; declining leaves Photo shown and the toggle off.
 - **Keys:** Shift+M toggles Map as the button does, and no key goes to Photo alone: E is left free. View › Photo and Map run the same actions ([the default keyboard map](#the-default-keyboard-map), [View](#view)).
-- **Focus and screen readers:** a stop of the viewer bar's F6 region, after Guides; Space or Enter toggles it. It is a toggle button named "Map", pressed while on, with its key. A change of layout is announced, politely, with what the Viewer shows ("Map", "Photo, IMG_2041.ARW"), since with Map off nothing else says Photo.
+- **Focus and screen readers:** a stop of the viewer bar's F6 region, after Before and after; Space or Enter toggles it. It is a toggle button named "Map", pressed while on, with its key. A change of layout is announced, politely, with what the Viewer shows ("Map", "Photo, IMG_2041.ARW"), since with Map off nothing else says Photo.
 - **Narrowing:** it never folds, being the only way to the map on screen.
 - **Undo:** none; a layout is interface state, not a history step, as the menus' rules have it ([Rules](#rules)).
 - **What a script sees:** nothing; the layout is interface state.

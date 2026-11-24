@@ -2357,8 +2357,9 @@ pub static ACTIONS: [Action; 159] = [
 /// the order the Toolbar's set lists them. An action that belongs to a tool takes the icon
 /// its tool offers it with (`ToolDefinition::toolbar`); Import… is here until the Import
 /// tool offers it.
-pub const ICONS: [(ActionId, Icon); 10] = [
+pub const ICONS: [(ActionId, Icon); 11] = [
     (ActionId::IMPORT, Icon::Import),
+    (ActionId::GUIDES, Icon::Guides),
     (ActionId::OPEN, Icon::Photo),
     (ActionId::OPEN_FOLDER, Icon::ChooseFolder),
     (ActionId::SETTINGS, Icon::Settings),

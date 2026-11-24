@@ -422,7 +422,6 @@ viewer-bar = Viewer bar
 photo-show-selected = Show all selected photos
 photo-proof-margin = Proof margin
 photo-before-after = Before and after
-photo-guides = Guides
 guides-show-label = Show guides
 guides-show-full = Show guides
 guides-show-promise = Show the guide overlay while this tool has focus.
@@ -1173,6 +1172,7 @@ action-background-light = Light
 action-background-white = White
 # View › Guides (decision 92): Guides on or off, darktable's guide types, its flips.
 action-guides = Guides
+    .toolbar = Guides
 action-guides-grid = Grid
 action-guides-rules-of-thirds = Rules of thirds
 action-guides-metering = Metering

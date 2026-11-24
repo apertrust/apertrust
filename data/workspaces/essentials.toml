@@ -26,6 +26,8 @@ toolbar = [
     "flexible-space",
     "cursors",
     "flexible-space",
+    "guides",
+    "space",
     "copy-edit",
     "apply-edit",
     "jobs",

@@ -35,7 +35,7 @@ Each tooltip and screen-reader name is the button's full name, darktable's `rota
 
 **The Viewer's zoom** keeps its centre on the same part of the photo through each turn and flip, their undo and the History tab's eye, its mode worked out again for the new shape ([gui.md](../gui.md#when-the-room-or-the-photo-changes)); `shown_bits` gives the app the orientation the frame shows, auto the photo's own.
 
-**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the tool's guides come: Apertrust's guides overlay (the viewer bar's Guides) is global, and Apertrust has no focused tool to show a tool's own guides with.
+**Show guides**, darktable's per-module toggle of the composition guides while the module has focus, kept in darktablerc and never in an edit, with the global guide settings button at its end, is drawn disabled, off, until the tool's guides come: Apertrust's guides overlay (the Toolbar's Guides) is global, and Apertrust has no focused tool to show a tool's own guides with.
 
 **Commands.**
 

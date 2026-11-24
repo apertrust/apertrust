@@ -879,7 +879,7 @@ mod tests {
             Some(ZoomStep::To(Scale::Factor(4.0)))
         );
         assert_eq!(chosen(ViewerBarAction::ZoomIn), Some(ZoomStep::In));
-        assert_eq!(chosen(ViewerBarAction::Guides), None);
+        assert_eq!(chosen(ViewerBarAction::ProofMargin), None);
     }
 
     #[test]

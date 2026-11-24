@@ -2,7 +2,7 @@
 
 ## Context
 
-The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, the cursors' well, Copy edit and Apply edit, the jobs spinner and the save state. As it narrows it folds the actions into » one at a time.
+The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, the cursors' well, Guides, Copy edit and Apply edit, the jobs spinner and the save state. As it narrows it folds the actions into » one at a time.
 
 People want the actions they use on every photo within reach, and tools want buttons of their own there, such as Orientation's rotations. Several things constrain how:
 
@@ -22,19 +22,19 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Platform | The default list, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `flexible-space`, `copy-edit`, `apply-edit`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `flexible-space`, `guides`, `space`, `copy-edit`, `apply-edit`, `jobs`, `assistant` (Phase 6), `save-state` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - There is one list for every platform. The Mac never shows `menu-button` and never takes it out of the list.
 - Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the viewer bar has them. So is Settings….
-- **The cursors' well,** `cursors`, stands between two flexible spaces, centred in the room between the actions at the start and Copy edit and Apply edit at the end ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
+- **The cursors' well,** `cursors`, stands between two flexible spaces, centred in the room between the actions at the start and Guides, Copy edit and Apply edit at the end ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
 
 **What can be placed:**
 
 | Kind | Ids | How many |
 | --- | --- | --- |
 | Parts | `menu-button` (Windows and Linux, drawn as the app's icon or ☰ as the setting Menu button says, [0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), `jobs`, `save-state`, `assistant` (Phase 6), and `cursors`, the whole well of cursors, every group in it ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | One each |
-| The app's actions | Only actions that belong to no tool, pressed or toggled, to which the registry gives an icon: Open…, Open Folder…, Settings…, Full Screen, Zoom to 100%, Zoom to Fit, Jobs (`show-jobs`), Next Photo and Previous Photo; Cull, Before and After, Clipping Warnings and Show in Folder as their actions are built. Import… is here until the Import tool, which then declares it | One each |
+| The app's actions | Only actions that belong to no tool, pressed or toggled, to which the registry gives an icon: Guides, Open…, Open Folder…, Settings…, Full Screen, Zoom to 100%, Zoom to Fit, Jobs (`show-jobs`), Next Photo and Previous Photo; Cull, Before and After, Clipping Warnings and Show in Folder as their actions are built. Import… is here until the Import tool, which then declares it | One each |
 | Tools' actions | A tool's own items, which it declares (Tools' items, below): a processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or a utility's registry action, as History's `undo`; the item's id is the action's | One each |
 | Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
 
@@ -67,7 +67,7 @@ The items declared:
 | Rotate 90° anticlockwise | `tool-flip-rotate_ccw` | Orientation | its button's, `rotate-left` |
 | Rotate 90° clockwise | `tool-flip-rotate_cw` | Orientation | its button's, `rotate-right` |
 
-The app's own, with the icons the registry gives them: `import` (`import`, until the Import tool), `open` (`photo`), `open-folder` (`folder-open`), `settings` (`settings`), `full-screen` (`maximise`), `zoom-100` (`zoom-in`), `zoom-fit` (`zoom-out`), `show-jobs` (`process`), `next-photo` (`chevron`) and `previous-photo` (`back`).
+The app's own, with the icons the registry gives them: `import` (`import`, until the Import tool), `guides` (`guides`), `open` (`photo`), `open-folder` (`folder-open`), `settings` (`settings`), `full-screen` (`maximise`), `zoom-100` (`zoom-in`), `zoom-fit` (`zoom-out`), `show-jobs` (`process`), `next-photo` (`chevron`) and `previous-photo` (`back`).
 
 **Guards.** A status part can be hidden only in its quiet states, and what it guards still works:
 
@@ -114,7 +114,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 - **Every item is reachable elsewhere,** as decision 91 asks: Guides' in View › Guides ▸, which holds the action, a separator, its types, a separator and Flip ▸.
 - **No badge** marks the item. Its tooltip names the menu on a line of its own after its words and keys: "Guides (G)", then "Right-click for the guide type".
 
-**Guides' menu:** the ten guide types of darktable's reference release (`src/gui/guides.c`), the one in use checked: Grid, Rules of thirds, Metering, Perspective, Diagonal method, Harmonious triangles, Golden sections, Golden spiral, Golden spiral sections and Golden mean (all guides); a separator; Flip ▸, None, Horizontally, Vertically and Both, drawn disabled while the type is one darktable never flips. Choosing a type turns the guides on. The type and the flip are the settings `guides.type` and `guides.flip`, at darktable's defaults, Rules of thirds and None. `guides` is one of the app's own actions, placeable with an icon of its own and checked while on, and leaves the viewer bar.
+**Guides' menu:** the ten guide types of darktable's reference release (`src/gui/guides.c`), the one in use checked: Grid, Rules of thirds, Metering, Perspective, Diagonal method, Harmonious triangles, Golden sections, Golden spiral, Golden spiral sections and Golden mean (all guides); a separator; Flip ▸, None, Horizontally, Vertically and Both, drawn disabled while the type is one darktable never flips. Choosing a type turns the guides on. The type and the flip are the settings `guides.type` and `guides.flip`, at darktable's defaults, Rules of thirds and None. `guides` is one of the app's own actions, placeable with an icon of its own and checked while on, by default right of the cursors' well, a space before Copy edit, and not on the viewer bar.
 
 ### Customising
 
@@ -125,7 +125,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   version = 1
   toolbar = ["menu-button", "import", "export", "reset", "undo", "redo",
              "flexible-space", "cursors", "flexible-space",
-             "copy-edit", "apply-edit", "jobs", "save-state"]
+             "guides", "space", "copy-edit", "apply-edit", "jobs", "save-state"]
 
   [[tabs]]
   id = "photos"
@@ -175,7 +175,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 | Rest, under the pointer, pressed, focused | An `IconButton` ([0081](0081-icon-only-buttons-draw-no-plates-on-is-the-filled-icon.md)), the focus ring after keys |
 | Disabled: no photo, a sheet or dialog open, not live, view-only | `text_disabled`, the tooltip saying why; not an empty area |
 | Not built yet | Disabled, its tip "To come" |
-| On (Before and After, Clipping Warnings) | The filled icon in `text_strong`, an AccessKit toggle, pressed |
+| On: any placed action whose menu item is checked, as Guides while the guides are on | The filled icon in `text_strong` where the icon has one, its colour alone where it has not, as Guides'; an AccessKit toggle, pressed; under », its item checked |
 | A tool's item, the tool off | Enabled; pressing it turns the tool on |
 | A tool the workspace leaves out | Enabled; it runs as its button would |
 | A background-only tool while a layer is edited (Phase 4) | Enabled; it acts on the background, and the tooltip says so |
