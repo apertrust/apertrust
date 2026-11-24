@@ -171,6 +171,7 @@ toolbar-menu = Menu
 toolbar-more = Więcej działań
 action-toolbar-labels = Podpisy na pasku narzędzi
 action-customise-toolbar = Dostosuj pasek narzędzi…
+action-reset-toolbar = Resetuj pasek narzędzi
 action-toolbar-hide = Ukryj element paska narzędzi
 toolbar-menu-hide = Ukryj „{ $item }”
 toolbar-item-hidden = { $item }: ukryto

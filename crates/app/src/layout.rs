@@ -42,9 +42,9 @@
 //!   what this build knows and never overwritten.
 //! - **The moves,** [`Move`] (decision 96, step 4): a tool one place up or down in its
 //!   list, pinned or unpinned, moved to another tab, hidden or shown in a tab, display
-//!   order only, and the Toolbar's list as it now is (decision 92), applied to the layout
-//!   as its file will be written ([`Layout::settled`], [`Layout::apply`],
-//!   [`Workspace::apply`]), never per frame.
+//!   order only, and the Toolbar's list as it now is, or taken out by Reset Toolbar
+//!   (decision 92), applied to the layout as its file will be written
+//!   ([`Layout::settled`], [`Layout::apply`], [`Workspace::apply`]), never per frame.
 //! - **Writing** a workspace's file, [`files`]: the moves written whole through the safe
 //!   write once the layout has stood still for a second, at once on a switch and on exit,
 //!   each write applying them to the file as it is on disk then.
@@ -598,6 +598,9 @@ pub enum Move {
     /// not know in their places, written over the file's `toolbar`; its tabs and every
     /// other key stay as the file has them.
     Toolbar(Vec<String>),
+    /// Reset Toolbar (decision 92): the file's `toolbar` list taken out, so the Toolbar
+    /// follows each build's default again; every other key stays as the file has it.
+    ResetToolbar,
 }
 
 impl Move {
@@ -610,7 +613,7 @@ impl Move {
             | Move::Unpin { tool, .. }
             | Move::ToTab { tool, .. }
             | Move::Hide { tool } => Some(tool),
-            Move::Toolbar(_) => None,
+            Move::Toolbar(_) | Move::ResetToolbar => None,
         }
     }
 }
@@ -895,12 +898,15 @@ impl Layout {
                 self.toolbar = Some(list.clone());
                 moved
             }
+            Move::ResetToolbar => self.toolbar.take().is_some(),
         }
     }
 
     /// Writes what a move changes into `table`, a workspace's file as read, the rest of it
     /// kept as it is: `version`, `hidden`, `seen`, `[pinned]` and `[order]` (decision 96),
-    /// and `toolbar` where the layout has a list (decision 92).
+    /// and `toolbar` where the layout has a list, taken out where the file's list is one
+    /// Reset Toolbar took away (decision 92); a `toolbar` that is no list, which the layout
+    /// reads as none, stays.
     /// A list for a tab id it lacks, which no move changes, stays as the file has it, an
     /// item this build skips included.
     pub fn write_into(&self, table: &mut Table) {
@@ -918,8 +924,14 @@ impl Layout {
         table.insert("version".into(), VERSION.into());
         table.insert("hidden".into(), ids(&self.hidden));
         table.insert("seen".into(), ids(&self.seen));
-        if let Some(toolbar) = &self.toolbar {
-            table.insert("toolbar".into(), ids(toolbar));
+        match &self.toolbar {
+            Some(toolbar) => {
+                table.insert("toolbar".into(), ids(toolbar));
+            }
+            None if table.get("toolbar").is_some_and(Value::is_array) => {
+                table.remove("toolbar");
+            }
+            None => {}
         }
         if self.pinned.is_empty() {
             table.remove("pinned");
@@ -1022,7 +1034,7 @@ fn own_ids(folder: &Path, warnings: &mut Vec<String>) -> Vec<String> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Listed {
     pub id: String,
-    /// Its file as read, or a built-in's defaults where it has none.
+    /// Its file as read, or a built-in's defaults with no `toolbar` where it has none.
     pub layout: Layout,
     pub builtin: bool,
     /// Whether its file is a newer build's, as read or as a write found it since
@@ -1059,11 +1071,15 @@ pub struct Workspaces {
 }
 
 impl Workspaces {
-    /// The built-in workspaces as built, with no file.
+    /// The built-in workspaces as built, with no file: each its defaults with no `toolbar`,
+    /// as its first write starts from them ([`files`]), its Toolbar its defaults' list.
     pub fn builtin() -> Workspaces {
         let listed = builtin_ids().map(|id| Listed {
             id: id.to_owned(),
-            layout: Layout::defaults(id).expect("built in"),
+            layout: Layout {
+                toolbar: None,
+                ..Layout::defaults(id).expect("built in")
+            },
             builtin: true,
             newer: false,
         });
@@ -1194,8 +1210,8 @@ pub struct Place {
 pub struct Workspace {
     /// Its id: the one asked for, or Default's where that has no workspace.
     pub id: String,
-    /// Its file as read, or the built-in's defaults where it has none, and as each move has
-    /// left it since ([`Workspace::apply`]).
+    /// Its file as read, or the built-in's defaults with no `toolbar` where it has none,
+    /// and as each move has left it since ([`Workspace::apply`]).
     pub layout: Layout,
     /// Whether it is built in, Default or Essentials.
     pub builtin: bool,
@@ -1239,6 +1255,12 @@ impl Workspace {
     /// The Toolbar's item ids in order (decision 92), as [`Shown::toolbar`] has them.
     pub fn toolbar(&self) -> &[String] {
         &self.shown.toolbar
+    }
+
+    /// Whether its file holds a `toolbar` list, as a Toolbar change writes one, so Reset
+    /// Toolbar can take it out (decision 92).
+    pub fn keeps_toolbar(&self) -> bool {
+        self.layout.toolbar.is_some()
     }
 
     /// The tabs shown.

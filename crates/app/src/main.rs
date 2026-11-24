@@ -2563,7 +2563,7 @@ impl Shell {
         }
         let toolbar = self.workspace.toolbar().iter();
         let list = toolbar.filter(|id| *id != item).cloned().collect();
-        self.move_toolbar(list, ctx);
+        self.move_toolbar(layout::Move::Toolbar(list), ctx);
         let words = translator(ctx);
         let mut args = apertrust_ui::i18n::Args::new();
         args.set(
@@ -2591,11 +2591,11 @@ impl Shell {
         }
     }
 
-    /// Makes `list` the workspace's Toolbar (decision 92), the whole list as it now is, ids
-    /// this build does not know in their places: shown at once, and written into the
-    /// workspace's file as a tab move is, once the layout has stood still.
-    fn move_toolbar(&mut self, list: Vec<String>, ctx: &egui::Context) {
-        let change = layout::Move::Toolbar(list);
+    /// Applies `change` to the workspace's Toolbar (decision 92), the whole list as it now
+    /// is, ids this build does not know in their places, or the list taken out by Reset
+    /// Toolbar: shown at once, and written into the workspace's file as a tab move is, once
+    /// the layout has stood still.
+    fn move_toolbar(&mut self, change: layout::Move, ctx: &egui::Context) {
         if !self.workspace.apply(&change) {
             return;
         }
@@ -2701,7 +2701,7 @@ impl Shell {
                 }
             }
             layout::Move::Hide { .. } => "section-hidden",
-            layout::Move::Toolbar(_) => return String::new(),
+            layout::Move::Toolbar(_) | layout::Move::ResetToolbar => return String::new(),
         };
         words.text_with(message, Some(&args))
     }
@@ -3495,6 +3495,7 @@ impl Shell {
             toolbar_item: None,
             menu_button_hidden: self.drawn_menus
                 && !(self.workspace.toolbar().iter()).any(|id| id == toolbar::MENU_BUTTON),
+            toolbar_kept: self.workspace.keeps_toolbar(),
             panel_tab: self.panel_tab,
             workspace: actions::workspace(&self.workspace.id),
             workspace_given: self.workspace_given,
@@ -4014,9 +4015,10 @@ impl Shell {
                 if !toolbar.iter().any(|id| id == toolbar::MENU_BUTTON) {
                     let first = std::iter::once(toolbar::MENU_BUTTON.to_owned());
                     let list = first.chain(toolbar.iter().cloned()).collect();
-                    self.move_toolbar(list, ctx);
+                    self.move_toolbar(layout::Move::Toolbar(list), ctx);
                 }
             }
+            Intent::ResetToolbar => self.move_toolbar(layout::Move::ResetToolbar, ctx),
             Intent::View(view) => self.view = view,
             Intent::PanelTab(tab) => self.choose_tab(tab),
             Intent::HiddenTab => {
@@ -22440,6 +22442,54 @@ mod tests {
         assert_eq!(read.toolbar(), shown);
         let bundled = layout::Workspace::open(None, layout::DEFAULT).0;
         assert_eq!(bundled.toolbar(), before);
+    }
+
+    /// Decision 92: the toolbar menu's Reset Toolbar is drawn disabled while the
+    /// workspace's file holds no `toolbar` list; once Hide has written one it is enabled,
+    /// and choosing it shows the default Toolbar again, the hidden item back, and takes the
+    /// list out of the file, its tabs kept.
+    #[test]
+    fn reset_toolbar_brings_the_default_toolbar_back() {
+        let folder = settings::testing::Folder::new("toolbar-menu-reset");
+        let files = folder.0.join("workspaces");
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.state_mut().shell.workspace_files = layout::Files::new(files.clone());
+        harness.run();
+        let before = harness.state().shell.workspace.toolbar().to_vec();
+        let reset_disabled = |harness: &mut Harness<'_, Bench>| {
+            let empty = empty_point(harness);
+            right_click_bench(harness, empty);
+            let reset = harness.get_by_role_and_label(Role::MenuItem, "Reset toolbar");
+            reset.accesskit_node().is_disabled()
+        };
+        assert!(reset_disabled(&mut harness));
+        harness.key_press(Key::Escape);
+        harness.run();
+        let undo = harness
+            .get_by_role_and_label(Role::Button, "Undo")
+            .rect()
+            .center();
+        right_click_bench(&mut harness, undo);
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Hide “Undo”")
+            .click();
+        harness.run();
+        assert!(harness.query_by_label("Undo").is_none());
+        assert!(!reset_disabled(&mut harness));
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Reset toolbar")
+            .click();
+        harness.run();
+        assert_eq!(harness.state().shell.workspace.toolbar(), before);
+        harness.get_by_role_and_label(Role::Button, "Undo");
+        harness.state_mut().shell.workspace_files.flush();
+        let text = std::fs::read_to_string(files.join("default.toml")).expect("written");
+        let table: toml::Table = text.parse().expect("TOML");
+        assert!(table.get("toolbar").is_none(), "{text}");
+        assert!(table.get("tabs").is_some(), "{text}");
+        let (read, _) = layout::Workspace::open(Some(&files), layout::DEFAULT);
+        assert_eq!(read.toolbar(), before);
     }
 
     /// Decision 92: Hide from the keys moves the focus to the next item drawn that can take

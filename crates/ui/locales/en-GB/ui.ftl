@@ -230,10 +230,12 @@ toolbar-menu = Menu
 # », holding the actions a narrow Toolbar has no room for.
 toolbar-more = More actions
 # The toolbar menu, on a right-click anywhere on the Toolbar, and View › Panels (decision
-# 92): the words under the icons on or off, and the Customise Toolbar window, drawn
-# disabled with its tip until it is built.
+# 92): the words under the icons on or off, the Customise Toolbar window, drawn disabled
+# with its tip until it is built, and Reset Toolbar, which puts the workspace's Toolbar
+# back to the default list.
 action-toolbar-labels = Toolbar labels
 action-customise-toolbar = Customise toolbar…
+action-reset-toolbar = Reset toolbar
 # Hide "Undo", on the item the menu opened on, $item its name: it leaves the workspace's
 # Toolbar. Show Menu Button puts the menu button back while it is hidden.
 action-toolbar-hide = Hide toolbar item

@@ -442,8 +442,8 @@ static BROWSER_POSITION: Menu = Menu {
 };
 
 /// View › Panels: the Toolbar's Show Menu Button, on Windows and Linux while the menu
-/// button is hidden, Toolbar Labels and Customise Toolbar…, which the toolbar menu holds
-/// too (decision 92).
+/// button is hidden, Toolbar Labels, Customise Toolbar… and Reset Toolbar, which the
+/// toolbar menu holds too (decision 92).
 static PANELS: Menu = Menu {
     title: "menu-panels",
     role: Role::Plain,
@@ -452,6 +452,7 @@ static PANELS: Menu = Menu {
         Entry::Action(ActionId::SHOW_MENU_BUTTON, Platforms::NotMac),
         item(ActionId::TOOLBAR_LABELS),
         item(ActionId::CUSTOMISE_TOOLBAR),
+        item(ActionId::RESET_TOOLBAR),
     ]],
 };
 
@@ -1354,9 +1355,10 @@ fn browser_items(
 /// The toolbar menu (decision 92), on a right-click anywhere on the Toolbar: Hide "Undo"
 /// where it opened on an item, `state.toolbar_item`, named by its words; Show Menu Button
 /// while the menu button is hidden, on Windows and Linux; a line; then Toolbar Labels,
-/// checked while on, and Customise Toolbar…, drawn disabled with its tip until its window
-/// is built. The first two show only where they can run. Each item is its registry
-/// action's; none shows its keys, as context menus show none.
+/// checked while on, Customise Toolbar…, drawn disabled with its tip until its window is
+/// built, and Reset Toolbar, enabled while the workspace's file holds a list. The first two
+/// show only where they can run. Each item is its registry action's; none shows its keys,
+/// as context menus show none.
 fn toolbar_items(
     keymap: &Keymap,
     state: &State,
@@ -1386,7 +1388,11 @@ fn toolbar_items(
     if !entries.is_empty() {
         entries.push(popup::Entry::Separator);
     }
-    let rest = [ActionId::TOOLBAR_LABELS, ActionId::CUSTOMISE_TOOLBAR];
+    let rest = [
+        ActionId::TOOLBAR_LABELS,
+        ActionId::CUSTOMISE_TOOLBAR,
+        ActionId::RESET_TOOLBAR,
+    ];
     entries.extend(rest.into_iter().filter_map(item).map(Into::into));
     entries
 }
@@ -2294,6 +2300,7 @@ mod tests {
             toolbar_labels: true,
             toolbar_item: None,
             menu_button_hidden: true,
+            toolbar_kept: true,
             panel_tab: 0,
             workspace: actions::workspace(crate::layout::DEFAULT),
             workspace_given: false,
@@ -4606,6 +4613,7 @@ mod tests {
                     "—",
                     "Toolbar labels",
                     "Customise toolbar…",
+                    "Reset toolbar",
                 ],
                 "{os:?}"
             );
@@ -4654,8 +4662,9 @@ mod tests {
 
     /// Decision 92: the toolbar menu, named Toolbar, holds Hide "X" on an item with words,
     /// named by them; Show Menu Button while the menu button is hidden, on Windows and Linux
-    /// alone; a line; Toolbar Labels, checked while the labels are on; and Customise
-    /// Toolbar…, drawn disabled with its tip until its window is built. None shows keys.
+    /// alone; a line; Toolbar Labels, checked while the labels are on; Customise Toolbar…,
+    /// drawn disabled with its tip until its window is built; and Reset Toolbar, enabled
+    /// while the workspace's file holds a list. None shows keys.
     #[test]
     fn the_toolbar_menu_holds_its_items_as_their_states_say() {
         let later = Some("Customise Toolbar comes in a later version".to_owned());
@@ -4684,6 +4693,7 @@ mod tests {
                     None,
                     &later,
                 ),
+                line("reset-toolbar", "Reset toolbar", true, None, &None),
             ]
         };
         for labels in [true, false] {
@@ -4717,7 +4727,13 @@ mod tests {
         let ids: Vec<&str> = lines.iter().map(|(id, ..)| id.as_str()).collect();
         assert_eq!(
             ids,
-            ["toolbar-hide", "-", "toolbar-labels", "customise-toolbar"]
+            [
+                "toolbar-hide",
+                "-",
+                "toolbar-labels",
+                "customise-toolbar",
+                "reset-toolbar"
+            ]
         );
         assert_eq!(lines[0].1, "Hide “Rotate 90° clockwise”");
         let save = toolbar_menu(Some("save-state"), &state, OperatingSystem::Mac);
@@ -4730,17 +4746,51 @@ mod tests {
         };
         let lines = toolbar_lines(&toolbar_menu(Some("undo"), &modal, OperatingSystem::Nix));
         let ids: Vec<&str> = lines.iter().map(|(id, ..)| id.as_str()).collect();
-        assert_eq!(ids, ["toolbar-labels", "customise-toolbar"]);
+        assert_eq!(
+            ids,
+            ["toolbar-labels", "customise-toolbar", "reset-toolbar"]
+        );
         assert!(
             lines.iter().all(|(_, _, enabled, ..)| !enabled),
             "{lines:?}"
         );
     }
 
+    /// Decision 92: Reset Toolbar is enabled only while the workspace's file holds a
+    /// `toolbar` list, and disabled, saying why, while `--conf` sets the workspace, as
+    /// Workspace ▸'s items are.
+    #[test]
+    fn reset_toolbar_runs_only_with_a_kept_list() {
+        let reset = |state: &State| {
+            let lines = toolbar_lines(&toolbar_menu(None, state, OperatingSystem::Mac));
+            let line = lines.into_iter().find(|(id, ..)| id == "reset-toolbar");
+            let (_, _, enabled, _, tip) = line.expect("Reset Toolbar");
+            (enabled, tip)
+        };
+        assert_eq!(reset(&everything()), (true, None));
+        let none = State {
+            toolbar_kept: false,
+            ..everything()
+        };
+        assert_eq!(reset(&none), (false, None));
+        for kept in [true, false] {
+            let given = State {
+                toolbar_kept: kept,
+                workspace_given: true,
+                ..everything()
+            };
+            let (enabled, tip) = reset(&given);
+            assert!(!enabled, "kept {kept}");
+            let tip = tip.expect("why");
+            assert!(tip.contains("--conf"), "{tip}");
+        }
+    }
+
     /// Decision 92: View › Panels, in View on every platform, holds the toolbar menu's Show
     /// Menu Button, on Windows and Linux while the menu button is hidden, Toolbar Labels,
-    /// checked from the state, and Customise Toolbar…, disabled with its tip, so each is
-    /// reached without a right-click (decision 91), F10 opening it with no menu button.
+    /// checked from the state, Customise Toolbar…, disabled with its tip, and Reset
+    /// Toolbar, so each is reached without a right-click (decision 91), F10 opening it with
+    /// no menu button.
     #[test]
     fn view_panels_holds_the_toolbar_menu_s_items() {
         let ctx = egui::Context::default();
@@ -4781,6 +4831,7 @@ mod tests {
                 let mut expected = vec![
                     ("toolbar-labels".into(), true, Some(false), None),
                     ("customise-toolbar".into(), false, None, later),
+                    ("reset-toolbar".into(), true, None, None),
                 ];
                 if hidden && os != OperatingSystem::Mac {
                     expected.insert(0, ("show-menu-button".into(), true, None, None));

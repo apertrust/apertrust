@@ -22,10 +22,10 @@
 //! - **A write reads the file again first** and applies the moves made since the last
 //!   write to it as it is then ([`write()`]), so a hand edit made meanwhile stays: each move
 //!   names its tool and tabs by id ([`Move`]), and a Toolbar change is the whole list as it
-//!   now is, written over the file's `toolbar`, the one change that writes it (decision
-//!   92). The rest of the file, its
-//!   tabs, its `name`, a key this build does not know, stays as it is; ids this build does
-//!   not know keep their places ([`Layout::settled`]).
+//!   now is, written over the file's `toolbar`, the one change that writes it, and Reset
+//!   Toolbar takes it out (decision 92). The rest of the file, its tabs, its `name`, a key
+//!   this build does not know, stays as it is; ids this build does not know keep their
+//!   places ([`Layout::settled`]).
 //! - **A built-in workspace** has no file until a person first changes it: its first write
 //!   starts from its bundled file, and so does one whose file was deleted by hand while
 //!   the app runs, the moves not yet written applied to it. A person's own whose file is

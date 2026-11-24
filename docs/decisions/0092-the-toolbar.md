@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, the toolbar menu with View › Panels' items, and an action's own menu, Guides' the first. Planned: the Customise Toolbar window, much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, the toolbar menu with View › Panels' items, Reset Toolbar among them, and an action's own menu, Guides' the first. Planned: the Customise Toolbar window, much later.
 
 ### The list and its defaults
 
@@ -96,7 +96,8 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 2. Show Menu Button, while the menu button is hidden;
 3. a separator;
 4. Toolbar Labels, checked while on;
-5. Customise Toolbar…, drawn disabled until its window is built, its tip "Customise Toolbar comes in a later version".
+5. Customise Toolbar…, drawn disabled until its window is built, its tip "Customise Toolbar comes in a later version";
+6. Reset Toolbar, the registry's `reset-toolbar`, with no default key: it takes the `toolbar` list out of the workspace's file, so the Toolbar follows each build's default again, a hidden item back. It is enabled only while the file holds a list, drawn disabled otherwise and, saying why, while `--conf` sets the workspace, as Workspace ▸ is. It asks for no confirmation: only the Toolbar's order is lost, and the default is what most people have.
 
 **Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens while the menu button is hidden. Show Menu Button is there on Windows and Linux only, the Mac never showing the menu button. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
 
@@ -138,6 +139,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 - A workspace whose file has no `toolbar`, a built-in nobody changed among them, follows each build's default toolbar, so later default items reach anyone who never changed theirs. Only a change to the toolbar writes `toolbar`, the whole list as it then is; a write for a change to the tabs leaves a missing list missing.
 - An id this build does not know, a tool or an action removed or from a newer build, is skipped and kept in the file.
+- **Reset Toolbar,** from the toolbar menu and View › Panels, takes `toolbar` out of the file as a Toolbar change writes it, read again first, the tabs, `pinned`, `order`, `hidden` and every other key kept as the file has them; a built-in's file then holding nothing its bundled file does not stays as it is. Named after the tab bar's Reset Tab (96).
 - A new workspace from the visual editor copies the list, and Workspace ▸'s Restore Defaults, deleting a built-in's file, puts the default back.
 - **Customise Toolbar…**, from the toolbar menu and View › Panels, opens a dedicated window of the dialog host ([0041](0041-dialogs-as-native-modal-windows.md)), built much later; its design is settled when it is built. There is no palette inside the main window.
 
@@ -226,9 +228,9 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the placeable set, the parts, the app's own actions, the tools' items and the spacings, which the Toolbar and the Customise Toolbar window read;
   - the list from the workspace in place of `TOOLBAR`;
   - the guards;
-  - the toolbar menu;
+  - the toolbar menu, with Reset Toolbar, `reset-toolbar`, and `layout::Move::ResetToolbar`;
   - `toolbar.labels` in the settings schema;
-  - Show Menu Button in View › Panels on Windows and Linux;
+  - Show Menu Button in View › Panels on Windows and Linux, and Reset Toolbar there on every platform;
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the declared actions and the icon names, and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.

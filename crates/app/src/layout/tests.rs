@@ -430,15 +430,23 @@ fn a_person_s_own_new_tools_go_by_default_s_tabs_alone() {
     }
 }
 
-/// With no file, the Default workspace is its defaults, and opens on Adjust, which holds
-/// the tools every edit starts with.
+/// With no file, the Default workspace is its defaults, but the Toolbar's list, which only
+/// a Toolbar change writes, its Toolbar the defaults' all the same, and opens on Adjust,
+/// which holds the tools every edit starts with.
 #[test]
 fn the_default_workspace_with_no_file_is_its_defaults() {
     let folder = Folder::new("workspace-none");
     let (workspace, warnings) = Workspace::open(Some(&folder.0), DEFAULT);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(workspace, Workspace::builtin_default());
-    assert_eq!(workspace.layout, default_layout());
+    let defaults = default_layout();
+    assert_eq!(workspace.layout.toolbar, None);
+    assert_eq!(Some(workspace.toolbar()), defaults.toolbar.as_deref());
+    let without = Layout {
+        toolbar: None,
+        ..defaults
+    };
+    assert_eq!(workspace.layout, without);
     assert_eq!(workspace.opening(), workspace.position("adjust").unwrap());
     assert!(!workspace.newer);
     let (none, warnings) = Workspace::open(None, DEFAULT);
@@ -1970,6 +1978,47 @@ fn a_tab_move_leaves_a_file_s_missing_list_missing() {
         let (read, _) = Workspace::open(Some(&folder.0), id);
         assert_eq!(read.toolbar(), TOOLBAR, "{id}");
     }
+}
+
+/// Reset Toolbar takes the file's `toolbar` list out and leaves the rest as the file has
+/// it, a key this build does not know included, the tabs showing what they showed; the
+/// Toolbar shows the default again, a hidden item back, read back at the next start too.
+/// A built-in with no file keeps no list, and a reset of one with none moves nothing
+/// (decision 92).
+#[test]
+fn reset_toolbar_takes_the_file_s_list_out_and_keeps_the_rest() {
+    assert!(!default_workspace().keeps_toolbar());
+    assert!(!default_workspace().apply(&Move::ResetToolbar));
+    let folder = Folder::new("workspace-toolbar-reset");
+    let file = folder.0.join("default.toml");
+    let own = "colour = \"amber\"\ntoolbar = [\"import\", \"cull\", \"redo\"]\n\
+               hidden = [\"grain\"]\n[[tabs]]\nid = \"photos\"\n\
+               [order]\nphotos = [\"export\", \"collections\"]\n";
+    std::fs::write(&file, own).unwrap();
+    let (mut workspace, _) = Workspace::open(Some(&folder.0), DEFAULT);
+    assert!(workspace.keeps_toolbar());
+    assert!(!workspace.toolbar().iter().any(|id| id == "undo"));
+    let (tabs, hidden) = (workspace.shown.tabs.clone(), workspace.shown.hidden.clone());
+    let mut files = Files::new(folder.0.clone());
+    move_in(
+        &mut files,
+        &mut workspace,
+        Move::ResetToolbar,
+        Instant::now(),
+    );
+    assert!(!workspace.keeps_toolbar());
+    assert_eq!(workspace.toolbar(), TOOLBAR);
+    files.flush();
+    let text = std::fs::read_to_string(&file).unwrap();
+    let table: Table = text.parse().unwrap();
+    assert!(table.get("toolbar").is_none(), "{text}");
+    assert_eq!(table["colour"].as_str(), Some("amber"));
+    assert_eq!(parsed(&text).order["photos"], ["export", "collections"]);
+    let (read, warnings) = Workspace::open(Some(&folder.0), DEFAULT);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(!read.keeps_toolbar());
+    assert_eq!(read.toolbar(), TOOLBAR);
+    assert_eq!((read.shown.tabs, read.shown.hidden), (tabs, hidden));
 }
 
 /// A newer build's file takes no Toolbar change.
