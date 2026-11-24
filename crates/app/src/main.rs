@@ -938,6 +938,37 @@ fn widened(inner: [f32; 2], least: [f32; 2]) -> Option<[f32; 2]> {
     (inner[0] < least[0]).then_some([least[0], inner[1]])
 }
 
+/// The main window's least size as last set, in logical pixels ([`window_min`]), and
+/// whether its width is still to be checked against it ([`widened`]): X11 and Wayland
+/// never resize a window to a new least size themselves.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct WindowMin {
+    least: Option<[f32; 2]>,
+    unchecked: bool,
+}
+
+impl WindowMin {
+    /// Takes `least` as the least size; whether it changed, to be set on the window again,
+    /// its width then checked.
+    fn set(&mut self, least: [f32; 2]) -> bool {
+        let changed = self.least.replace(least) != Some(least);
+        self.unchecked |= changed;
+        changed
+    }
+
+    /// The size a window `inner` large is widened to as its width is checked, once: never
+    /// before it shows or while it still has the start window's size (`settling`), nor while
+    /// it is maximised or full screen or about to be (`whole`), whose sizes are not its own,
+    /// the check then left for a later frame.
+    fn check(&mut self, inner: [f32; 2], settling: bool, whole: bool) -> Option<[f32; 2]> {
+        if !self.unchecked || settling || whole {
+            return None;
+        }
+        self.unchecked = false;
+        widened(inner, self.least?)
+    }
+}
+
 /// On macOS and Windows the window is moved where it was once it exists ([`place`]), and
 /// only then maximised, since moving resets it, as egui-winit's `WindowSettings` does for
 /// eframe's own persistence; Linux's window managers place it from the builder.
@@ -1527,9 +1558,9 @@ struct App {
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
-    /// The main window's least size as last set, in logical pixels ([`window_min`]); None
-    /// until set, and again once the start window has set its own.
-    window_min: Option<[f32; 2]>,
+    /// The main window's least size as last set, and whether its width is still to be
+    /// checked against it; unset until set, and again once the start window has set its own.
+    window_min: WindowMin,
     /// The extent of the photo last live, which places the next photo's picture at a zoom
     /// carried past Fit until that photo's values come ([`photo_room`]).
     extent_before: Option<[u32; 2]>,
@@ -4593,7 +4624,7 @@ impl App {
             remembered: Remembered::default(),
             opening_first: None,
             start: start::Window::new(false, settings.scale),
-            window_min: None,
+            window_min: WindowMin::default(),
             extent_before: None,
         };
         // The command line's paths, Finder's files at the launch, which macOS hands over as
@@ -4629,6 +4660,9 @@ impl App {
                 settings.window
             };
             reshape(&cc.egui_ctx, window, &placement, starts);
+            if !starts {
+                app.start.settling = Some(start::SIZE * settings.scale);
+            }
         }
         // Finder's files, at the launch and later, and a click on the Dock icon wake the app
         // as they come.
@@ -6611,7 +6645,7 @@ impl App {
         let window = frame.winit_window();
         if wanted != self.start.shown {
             self.start.shown = wanted;
-            self.window_min = None;
+            self.window_min = WindowMin::default();
             if wanted {
                 self.start.list = start::List::shown();
                 self.start.reshape = true;
@@ -6657,30 +6691,32 @@ impl App {
 
     /// Keeps the main window at least as wide as what the Toolbar just drawn never folds
     /// ([`window_min`]), set again only as that changes: with the list, the interface size
-    /// or the language. A window left narrower as it rises is widened to it ([`widened`]),
-    /// as X11 and Wayland do not do themselves, unless maximised or full screen.
+    /// or the language. A window left narrower is widened to it ([`WindowMin::check`]), as
+    /// X11 and Wayland do not do themselves: at once, or, before it shows, while it still has
+    /// the start window's size or while it is maximised or full screen, once it no longer
+    /// does or is.
     fn follow_window_min(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
         use egui_winit::winit::dpi::LogicalSize;
         let zoom = ctx.zoom_factor();
         let least = window_min(Toolbar::least_width(ctx), zoom);
-        if self.window_min == Some(least) {
-            return;
-        }
         let Some(window) = frame.winit_window() else {
             return;
         };
-        let [width, height] = least.map(f64::from);
-        window.set_min_inner_size(Some(LogicalSize::new(width, height)));
-        // Only as it rises in the main window: the first set, after the start window, comes
-        // with `reshape`'s size, which this frame's size, the start window's, would undo.
-        let rose = self.window_min.replace(least).is_some();
-        let (inner, viewport) =
-            ctx.input(|i| (i.viewport_rect().size() * zoom, i.viewport().clone()));
-        let whole = viewport.maximized == Some(true) || viewport.fullscreen == Some(true);
-        if rose
-            && !whole
-            && let Some(size) = widened(inner.into(), least)
-        {
+        if self.window_min.set(least) {
+            let [width, height] = least.map(f64::from);
+            window.set_min_inner_size(Some(LogicalSize::new(width, height)));
+        }
+        let (inner, whole) = ctx.input(|i| {
+            let viewport = i.viewport();
+            let whole = viewport.maximized == Some(true) || viewport.fullscreen == Some(true);
+            (i.viewport_rect().size() * zoom, whole)
+        });
+        // Not before it shows, after eframe's first frame, since the configure Mutter sends
+        // as it maps the window gives it that frame's size back; nor while it still has the
+        // start window's size, until `reshape`'s comes; nor while it is to be maximised.
+        let settling = ctx.cumulative_frame_nr() < 1 || self.start.settling.is_some();
+        let whole = whole || self.shell.maximise;
+        if let Some(size) = self.window_min.check(inner.into(), settling, whole) {
             let points = egui::Vec2::from(size) / zoom;
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(points));
         }
@@ -13492,6 +13528,34 @@ mod tests {
         assert_eq!(widened([1331.5, 800.0], least), Some([1332.0, 800.0]));
         assert_eq!(widened([1332.0, 700.0], least), None);
         assert_eq!(widened([1600.0, 500.0], least), None);
+    }
+
+    /// The width is checked once a least size is set, the first one too, as a start at a
+    /// large interface size needs (#544): not while the window still has the start window's
+    /// size or is maximised or full screen, but once it is restored, widened only where it
+    /// is narrower, and not again until the least size changes.
+    #[test]
+    fn the_width_is_checked_once_the_window_is_its_own() {
+        let least = [1332.0, 600.0];
+        let narrow = [1000.0, 700.0];
+        let mut min = WindowMin::default();
+        assert_eq!(min.check(narrow, false, false), None, "nothing set yet");
+        assert!(min.set(least), "the first set");
+        assert!(!min.set(least), "the same again");
+        assert_eq!(
+            min.check(narrow, true, false),
+            None,
+            "the start window's size"
+        );
+        assert_eq!(min.check(narrow, false, true), None, "maximised");
+        assert_eq!(min.check(narrow, false, true), None, "still maximised");
+        assert_eq!(min.check(narrow, false, false), Some([1332.0, 700.0]));
+        assert_eq!(min.check(narrow, false, false), None, "checked once");
+        // A rise while maximised, then a restore to a window wide enough.
+        assert!(min.set([1400.0, 600.0]));
+        assert_eq!(min.check([1500.0, 700.0], false, true), None);
+        assert_eq!(min.check([1500.0, 700.0], false, false), None);
+        assert_eq!(min.check(narrow, false, false), None, "checked already");
     }
 
     /// With no place kept, as on the first run, the main window is centred on its monitor,
