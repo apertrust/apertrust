@@ -616,6 +616,8 @@ tool-channelmixerrgb-readout-cct-undefined-promise = Przybliżona skorelowana te
 tool-channelmixerrgb-readout-cct-swatch = To jest kolor oświetlenia sceny przed adaptacją chromatyczną. Stanie się on czystą bielą po wykonaniu adaptacji.
 tool-channelmixerrgb-picker-illuminant-label = Oświetlenie z obszaru
 tool-channelmixerrgb-picker-illuminant-full = Oświetlenie z obszaru obrazu
+tool-channelmixerrgb-cursor-illuminant = Próbnik kalibracji kolorów
+tool-channelmixerrgb-cursor-illuminant-how = Kliknij obszar lub zaznacz go przeciągnięciem
 tool-channelmixerrgb-picker-illuminant-promise = Ustaw balans bieli na wykryty z obszaru
 # Ustawienia miejscowego mapowania kolorów, własne ustawienia darktable, zachowane w
 # ustawieniach i nigdy w edycji, które odczytuje próbnik.

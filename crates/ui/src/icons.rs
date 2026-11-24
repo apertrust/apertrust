@@ -74,6 +74,8 @@ pub enum Icon {
     PickWhiteBalance,
     /// Exposure's picker cursor: the pipette with a dot (decision 104).
     PickExposure,
+    /// Colour calibration's picker cursor: the pipette with a diamond (decision 104).
+    PickColourCalibration,
     /// A quad's line: draw on the photo.
     Line,
     Undo,
@@ -219,7 +221,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 110] = [
+    pub const ALL: [Icon; 111] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -238,6 +240,7 @@ impl Icon {
         Icon::Pan,
         Icon::PickWhiteBalance,
         Icon::PickExposure,
+        Icon::PickColourCalibration,
         Icon::Line,
         Icon::Undo,
         Icon::Redo,
@@ -446,6 +449,9 @@ impl Icon {
             Icon::Pan => derived!("pan", "hand", 16.0),
             Icon::PickWhiteBalance => derived!("pick-white-balance", "pipette", 16.0),
             Icon::PickExposure => derived!("pick-exposure", "pipette", 16.0),
+            Icon::PickColourCalibration => {
+                derived!("pick-colour-calibration", "pipette", 16.0)
+            }
             Icon::Line => own!("line", 14.0),
             Icon::Undo => derived!("undo", "undo-2", 16.0),
             Icon::Redo => derived!("redo", "redo-2", 16.0),

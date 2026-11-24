@@ -79,6 +79,7 @@ tool-channelmixerrgb-readout-cct-daylight-promise = Approximated correlated colo
 tool-channelmixerrgb-readout-cct-black_body-promise = Approximated correlated color temperature. This illuminant can be accurately modeled by a black body spectrum, so its temperature is relevant and meaningful with a Planckian illuminant.
 tool-channelmixerrgb-readout-cct-invalid-promise = Approximated correlated color temperature. This illuminant cannot be accurately modeled by a daylight or black body spectrum, so its temperature is not relevant and meaningful and you need to use a custom illuminant.
 tool-channelmixerrgb-readout-cct-undefined-promise = The approximated correlated color temperature cannot be computed at all, so you need to use a custom illuminant.
+tool-channelmixerrgb-cursor-illuminant = Color calibration picker
 tool-channelmixerrgb-readout-cct-swatch = This is the color of the scene illuminant before chromatic adaptation. This color will be turned into pure white by the adaptation.
 tool-channelmixerrgb-collapsible-area_colour_mapping = Area color mapping
 tool-channelmixerrgb-setting-area_mode-promise = Correction adjusts the illuminant so the input color is mapped to the target. Measure only shows how an input color is mapped by the CAT, and can be used to sample a target.

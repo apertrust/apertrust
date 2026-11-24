@@ -174,7 +174,8 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
 }
 
 /// The built tools' picker cursors (decision 104; `docs/cursors.md`, The API): White
-/// balance's `spot` on K and Exposure's `exposure` with no key, each picking with its
+/// balance's `spot` on K, and Exposure's `exposure` and Colour calibration's `illuminant`
+/// with no key, each picking with its
 /// tool's picker of the same id, each icon one `apertrust-ui` has, and no key on two.
 #[test]
 fn the_built_in_tools_declare_their_picker_cursors() {
@@ -193,6 +194,7 @@ fn the_built_in_tools_declare_their_picker_cursors() {
         [
             ("temperature", "spot", "spot", Some("K")),
             ("exposure", "exposure", "exposure", None),
+            ("channelmixerrgb", "illuminant", "illuminant", None),
         ]
     );
     let all = || TOOLS.iter().flat_map(|tool| tool.definition().tool.cursors);

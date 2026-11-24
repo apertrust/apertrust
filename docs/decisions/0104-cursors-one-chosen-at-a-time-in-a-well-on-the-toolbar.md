@@ -18,7 +18,7 @@ In the well's order, each a group of its own even with one cursor:
 | --- | --- | --- | --- |
 | Select | Select, the default at every start and Esc's target | A click selects a mark on the photo; a drag that starts on a mark moves it, one that starts on empty photo does nothing: Select never pans by a drag, Pan does, or A held with any cursor, and the scroll and the trackpad's swipe pan, and Ctrl+scroll and the pinch zoom, with every cursor | Phase 2; marks to select come with stored samples and masks |
 | Pan | Pan | A drag always moves a zoomed photo, even over a mark | Phase 2 |
-| Pick | White balance, Exposure; each tool's picker's own as its pick is built in the app | Choosing one turns its tool's picker on, which applies at once from the area the picker holds; a click or drag is then that picker's, live, as darktable's | Phase 2 |
+| Pick | White balance, Exposure, Colour calibration (built with its pick, 79.9); each other tool's picker's own as its pick is built in the app | Choosing one turns its tool's picker on, which applies at once from the area the picker holds; a click or drag is then that picker's, live, as darktable's | Phase 2 |
 | Colour picker | Colour picker | Choosing it turns the Colour picker's own picker on, as a point or an area as its Start as says, at that kind's place the picker holds; a click or drag is then that picker's, live, moving the live sample, which writes nothing | Phase 2, with the Colour picker (79.16) |
 | Mask | Brush, Linear gradient, Radial gradient, AI object, Path | The chosen layer's mask, one step a stroke or shape ([0034](0034-layers-masked-tool-instances-in-a-fixed-order.md)) | Phase 4 |
 | Retouch | Heal, Clone | Spots on a retouch layer | Phase 4 |

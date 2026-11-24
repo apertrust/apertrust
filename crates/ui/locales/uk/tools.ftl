@@ -615,6 +615,8 @@ tool-channelmixerrgb-readout-cct-undefined-promise = Наближену коре
 tool-channelmixerrgb-readout-cct-swatch = Це колір джерела світла до хроматичної адаптації. Цей колір адаптацією перетвориться на чисто білий.
 tool-channelmixerrgb-picker-illuminant-label = Освітлювач з області
 tool-channelmixerrgb-picker-illuminant-full = Освітлювач з області зображення
+tool-channelmixerrgb-cursor-illuminant = Піпетка калібрування кольору
+tool-channelmixerrgb-cursor-illuminant-how = Клацніть область або обведіть її перетягуванням
 tool-channelmixerrgb-picker-illuminant-promise = Встановити баланс білого на виявлений з області зображення
 # Налаштування відображення кольору області, власні налаштування darktable, що зберігаються
 # в налаштуваннях і ніколи у правці, які читає піпетка.
