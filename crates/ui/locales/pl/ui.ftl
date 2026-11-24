@@ -902,6 +902,7 @@ action-guides-flip-horizontally = W poziomie
 action-guides-flip-vertically = W pionie
 action-guides-flip-both = W poziomie i pionie
 guides-flip-unavailable = Odwracać można tylko trójkąty harmoniczne i złote prowadnice
+toolbar-guides-menu = Kliknij prawym przyciskiem, aby wybrać typ prowadnic
 key-space = Spacja
 
 ## Tytuły menu; menu aplikacji nazywa się app-name

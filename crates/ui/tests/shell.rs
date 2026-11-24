@@ -534,6 +534,93 @@ fn the_more_menu_opened_with_the_pointer_gives_the_focus_to_its_button() {
     assert_eq!(focused(&harness).as_deref(), Some("More actions"));
 }
 
+/// Decision 92: a button with a menu of its own is, under », a submenu under its name
+/// holding what the app gives it, the action first; an item chosen there is reported as the
+/// button of its id. On the panel its tooltip names the menu on a line of its own.
+#[test]
+fn a_folded_button_with_a_menu_of_its_own_is_a_submenu_under_more() {
+    let with_menu = |ctx: &egui::Context| {
+        (toolbar_entries(ctx, &[]).into_iter())
+            .map(|entry| match entry {
+                ToolbarEntry::Button(button) if button.id() == "guides" => {
+                    let entries = vec![
+                        egui_popup_item("guides", "Guides", Some(false)),
+                        apertrust_ui::popup::Entry::Separator,
+                        egui_popup_item("guides-grid", "Grid", Some(false)),
+                        egui_popup_item("guides-rules-of-thirds", "Rules of thirds", Some(true)),
+                    ];
+                    let ids = vec!["guides", "guides-grid", "guides-rules-of-thirds"];
+                    let tip = "Right-click for the guide type";
+                    ToolbarEntry::Button(button.menu(entries, ids, tip))
+                }
+                entry => entry,
+            })
+            .collect()
+    };
+    let bar = move |width: f32| {
+        Harness::builder()
+            .with_size(egui::vec2(width, 300.0))
+            .with_context_setup(|ctx| {
+                install(ctx);
+                ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
+            })
+            .build_ui_state(
+                move |ui, actions: &mut Vec<ToolbarAction>| {
+                    let bar = Toolbar::new()
+                        .entries(with_menu(ui.ctx()))
+                        .labels(true)
+                        .saved(SaveState::Saved)
+                        .shortcut(ToolbarAction::Button("guides"), "G");
+                    actions.extend(bar.show(ui));
+                },
+                Vec::new(),
+            )
+    };
+    // On the panel: its words, its key, then the menu's line.
+    let mut wide = bar(1400.0);
+    wide.run();
+    wide.get_by_role_and_label(Role::Button, "Guides").hover();
+    wide.run();
+    assert!(
+        wide.query_by_label("Guides (G)\nRight-click for the guide type")
+            .is_some()
+    );
+    // Folded: a submenu, its items chosen as buttons of their ids.
+    let mut narrow = bar(240.0);
+    narrow.run();
+    assert!(
+        narrow
+            .query_by_role_and_label(Role::Button, "Guides")
+            .is_none()
+    );
+    narrow.get_by_label("More actions").click();
+    narrow.run();
+    narrow
+        .get_by_role_and_label(Role::MenuItem, "Guides")
+        .click();
+    narrow.run();
+    let thirds = narrow.get_by_role_and_label(Role::MenuItemCheckBox, "Rules of thirds");
+    assert_eq!(
+        thirds.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    narrow
+        .get_by_role_and_label(Role::MenuItemCheckBox, "Grid")
+        .click();
+    narrow.run();
+    assert_eq!(*narrow.state(), vec![ToolbarAction::Button("guides-grid")]);
+}
+
+/// A popup's item `id` with `text`, checked as `checked` says.
+fn egui_popup_item(id: &str, text: &str, checked: Option<bool>) -> apertrust_ui::popup::Entry {
+    let item = apertrust_ui::popup::Item::new(id, text);
+    match checked {
+        Some(on) => item.checked(on),
+        None => item,
+    }
+    .into()
+}
+
 #[test]
 fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
     // In every language; as on the Mac, with the traffic lights' room, and as on Linux,

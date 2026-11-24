@@ -1189,6 +1189,9 @@ action-guides-flip-vertically = Vertically
 action-guides-flip-both = Both
 # Flip's items' tooltip while the guide type is one darktable never flips.
 guides-flip-unavailable = Only harmonious triangles and the golden guides flip
+# The Toolbar's Guides' tooltip, a line after its words and keys: what its right-click
+# opens (decision 92).
+toolbar-guides-menu = Right-click for the guide type
 # The space bar, as a shortcut names it: "Space", "Ctrl+Space".
 key-space = Space
 

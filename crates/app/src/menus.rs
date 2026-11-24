@@ -328,8 +328,9 @@ static GUIDES_FLIP: Menu = Menu {
     ]],
 };
 
-/// View › Guides: Guides, checked while on, then the types and Flip (decision 92).
-static GUIDES: Menu = Menu {
+/// View › Guides: Guides, checked while on, then the types and Flip (decision 92); » holds
+/// it as Guides' submenu while Guides is folded under it.
+pub static GUIDES: Menu = Menu {
     title: "menu-guides",
     role: Role::Plain,
     on: Platforms::All,
@@ -339,6 +340,68 @@ static GUIDES: Menu = Menu {
         &[Entry::Submenu(&GUIDES_FLIP)],
     ],
 };
+
+/// Guides' own menu on the Toolbar (decision 92): darktable's types, then Flip, View ›
+/// Guides' items but Guides itself, which the button's click is.
+static GUIDES_OWN: Menu = Menu {
+    title: "menu-guides",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[GUIDE_TYPES, &[Entry::Submenu(&GUIDES_FLIP)]],
+};
+
+/// A Toolbar action's own menu (decision 92, An action's own menu), declared as data, as
+/// decision 91's menus are: its items, registry actions, a setting's choices among them
+/// as a checked list; the menu » shows it as, the action first; and the line its tooltip
+/// names it with, a message id.
+pub struct ActionMenu {
+    pub action: ActionId,
+    /// What its right-click, Shift+F10 and the Menu key open, before the toolbar menu's
+    /// entries.
+    pub own: &'static Menu,
+    /// What » holds for it, as a submenu.
+    pub folded: &'static Menu,
+    pub tip: &'static str,
+}
+
+/// The Toolbar's actions with a menu of their own: Guides' alone.
+pub static ACTION_MENUS: [ActionMenu; 1] = [ActionMenu {
+    action: ActionId::GUIDES,
+    own: &GUIDES_OWN,
+    folded: &GUIDES,
+    tip: "toolbar-guides-menu",
+}];
+
+/// The menu of its own the Toolbar's item `id` has, if any.
+pub fn action_menu(id: &str) -> Option<&'static ActionMenu> {
+    ACTION_MENUS.iter().find(|menu| menu.action.0 == id)
+}
+
+/// Every registry action `menu` holds, its submenus' too, in order: the ids an item's
+/// own menu may answer with under ».
+pub fn held(menu: &'static Menu) -> Vec<ActionId> {
+    let entries = menu.groups.iter().flat_map(|group| group.iter());
+    entries
+        .flat_map(|entry| match entry {
+            Entry::Action(id, _) => vec![*id],
+            Entry::Submenu(inner) => held(inner),
+            Entry::System(_) | Entry::Recents | Entry::Workspaces => Vec::new(),
+        })
+        .collect()
+}
+
+/// The entries » holds for the Toolbar's item with `menu`, as the menu button's menu draws
+/// them, with their keys ([`drawn`]).
+pub fn folded(
+    menu: &ActionMenu,
+    os: OperatingSystem,
+    keymap: &Keymap,
+    state: &State,
+    tr: &Translator,
+) -> Vec<popup::Entry> {
+    let (lists, steps) = (Lists::default(), Steps::default());
+    drawn(menu.folded, os, keymap, state, lists, &steps, tr).entries
+}
 
 /// A History step's menu (decision 91), the app's alone: Go to Step and Show Tool, then
 /// the rewrites, Compress up to Here and Truncate after Here.
@@ -1145,12 +1208,23 @@ fn built(
     let steps = Steps::default();
     if let Place::Browser | Place::Toolbar = place {
         let entries = match (place, target) {
+            // An item's own menu first, where its action has one (decision 92).
             (Place::Toolbar, Target::Toolbar { item }) => {
                 let state = State {
                     toolbar_item: *item,
                     ..*state
                 };
-                toolbar_items(keymap, &state, os, tr)
+                let own = item.and_then(action_menu).map(|menu| {
+                    let lists = Lists::default();
+                    let drawn = drawn(menu.own, os, keymap, &state, lists, &steps, tr);
+                    keyless(drawn.entries)
+                });
+                let mut entries = own.unwrap_or_default();
+                if !entries.is_empty() {
+                    entries.push(popup::Entry::Separator);
+                }
+                entries.extend(toolbar_items(keymap, &state, os, tr));
+                entries
             }
             (Place::Toolbar, _) => toolbar_items(keymap, state, os, tr),
             _ => browser_items(keymap, state, os, tr),
@@ -1317,6 +1391,23 @@ fn toolbar_items(
     entries
 }
 
+/// `entries` with no keys, as context menus show none, a submenu's too.
+fn keyless(entries: Vec<popup::Entry>) -> Vec<popup::Entry> {
+    (entries.into_iter())
+        .map(|entry| match entry {
+            popup::Entry::Item(item) => popup::Entry::Item(popup::Item {
+                shortcut: None,
+                ..item
+            }),
+            popup::Entry::Submenu(submenu) => popup::Entry::Submenu(popup::Submenu {
+                entries: keyless(submenu.entries),
+                ..submenu
+            }),
+            other => other,
+        })
+        .collect()
+}
+
 /// The actions a thumbnail's menu hides while several photos are selected, since they act
 /// on one photo alone (decision 91): Reset, whose `Command::Reset` resets the open photo
 /// only, until resetting several is decided.
@@ -1337,6 +1428,10 @@ fn name(place: Place, target: &Target, tr: &Translator) -> String {
     match (place, target) {
         (Place::Surround, _) => tr.text(BACKGROUND.title),
         (Place::Browser, _) => tr.text("browser"),
+        // An item's own menu is named for it, as its submenu under » is.
+        (Place::Toolbar, Target::Toolbar { item: Some(item) }) if action_menu(item).is_some() => {
+            action_menu(item).map_or_default(|menu| tr.text(menu.folded.title))
+        }
         (Place::Toolbar, _) => tr.text("toolbar"),
         (Place::Step, target) => {
             let mut args = Args::new();
@@ -4473,6 +4568,88 @@ mod tests {
         let keymap = Keymap::defaults(os);
         let target = Target::Toolbar { item };
         context(&ctx, Place::Toolbar, &target, &keymap, state, Rect::NOTHING)
+    }
+
+    /// Decision 92: on Guides, the toolbar menu opens Guides' own menu first, named Guides:
+    /// darktable's ten types, the one in use checked, a line, Flip ▸ with its four, a line,
+    /// then the toolbar menu's entries, Hide "Guides" first. None shows its keys. Elsewhere
+    /// on the Toolbar it is the toolbar menu alone.
+    #[test]
+    fn guides_opens_its_own_menu_then_the_toolbar_menu() {
+        use apertrust_ui::guides::{Guide, GuideFlip};
+        let mut state = everything();
+        state.guide = Guide::Perspective;
+        state.guide_flip = GuideFlip::Both;
+        state.menu_button_hidden = false;
+        for os in PLATFORMS {
+            let menu = toolbar_menu(Some("guides"), &state, os);
+            assert_eq!(menu.name, "Guides");
+            let lines = guide_lines(&menu.entries);
+            let words: Vec<&str> = lines.iter().map(|line| line.0.as_str()).collect();
+            assert_eq!(
+                words,
+                [
+                    "Grid",
+                    "Rules of thirds",
+                    "Metering",
+                    "Perspective",
+                    "Diagonal method",
+                    "Harmonious triangles",
+                    "Golden sections",
+                    "Golden spiral",
+                    "Golden spiral sections",
+                    "Golden mean (all guides)",
+                    "—",
+                    "Flip",
+                    "—",
+                    "Hide “Guides”",
+                    "—",
+                    "Toolbar labels",
+                    "Customise toolbar…",
+                ],
+                "{os:?}"
+            );
+            let checked: Vec<&str> = (lines.iter())
+                .filter(|line| line.2 == Some(true))
+                .map(|line| line.0.as_str())
+                .collect();
+            assert_eq!(checked, ["Perspective", "Toolbar labels"]);
+            assert!(lines.iter().all(|line| line.3.is_none()), "keys shown");
+            // Perspective takes no flip: Flip's four are disabled, keyless, saying why.
+            let popup::Entry::Submenu(flip) = &menu.entries[11] else {
+                panic!("no Flip ▸");
+            };
+            assert_eq!(flip.entries.len(), 4);
+            for line in guide_lines(&flip.entries) {
+                assert!(!line.1 && line.3.is_none(), "{line:?}");
+                assert!(line.4.is_some(), "{line:?}");
+            }
+            // The Toolbar's empty area and an item without one: the toolbar menu alone.
+            for item in [None, Some("undo")] {
+                let menu = toolbar_menu(item, &state, os);
+                assert_eq!(menu.name, "Toolbar");
+                assert!(!(guide_lines(&menu.entries).iter()).any(|line| line.0 == "Grid"));
+            }
+        }
+    }
+
+    /// Decision 92 (and 91): every item of an action's own menu on the Toolbar, and of what
+    /// » holds for it, is reachable without a right-click, in the menu bar on every platform;
+    /// » holds the action itself first.
+    #[test]
+    fn every_item_of_an_action_s_own_menu_is_in_the_menu_bar() {
+        for os in PLATFORMS {
+            let placed = placed(os);
+            for menu in &ACTION_MENUS {
+                let own = held(menu.own);
+                assert!(!own.is_empty());
+                for id in own.iter().chain(&held(menu.folded)) {
+                    assert!(placed.contains(id), "{os:?}: {} is in no menu", id.0);
+                }
+                assert_eq!(held(menu.folded).first(), Some(&menu.action));
+                assert!(!own.contains(&menu.action), "{}", menu.action.0);
+            }
+        }
     }
 
     /// Decision 92: the toolbar menu, named Toolbar, holds Hide "X" on an item with words,

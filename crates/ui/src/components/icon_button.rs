@@ -48,6 +48,7 @@ pub struct IconButton<'a> {
     stroke: Option<f32>,
     width: Option<f32>,
     tip: Option<&'a str>,
+    line: Option<&'a str>,
     state: Option<ButtonState>,
     dot: bool,
 }
@@ -85,6 +86,7 @@ impl<'a> IconButton<'a> {
             stroke: None,
             width: None,
             tip: None,
+            line: None,
             state: None,
             dot: false,
         }
@@ -109,6 +111,13 @@ impl<'a> IconButton<'a> {
     /// as the browser bar's Sort names the order ("Sort: capture time, ascending").
     pub fn tip(mut self, tip: &'a str) -> Self {
         self.tip = Some(tip);
+        self
+    }
+
+    /// A line of its tooltip's own, after its words and keys: what a right-click on a
+    /// Toolbar action opens (decision 92).
+    pub fn tip_line(mut self, line: &'a str) -> Self {
+        self.line = Some(line);
         self
     }
 
@@ -216,13 +225,16 @@ impl<'a> IconButton<'a> {
             None => WidgetInfo::labeled(Role::Button, enabled, name),
         });
         let tip = self.tip.unwrap_or(name);
-        let tip = match self.shortcut {
+        let mut tip = match self.shortcut {
             Some(keys) => {
                 report_shortcut(ui, response.id, keys);
                 format!("{tip} ({keys})")
             }
             None => tip.to_owned(),
         };
+        if let Some(line) = self.line {
+            tip = format!("{tip}\n{line}");
+        }
         response.on_hover_text(tip)
     }
 }
