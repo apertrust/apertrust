@@ -37,6 +37,7 @@
 //! X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`, which winit 0.30 does not set (its
 //! parent window is a child confined to the parent, not a transient), `apertrust-display`'s.
 
+use apertrust_ui::components::CaptionStyle;
 use eframe::egui::os::OperatingSystem;
 use egui_winit::winit::window::{Window, WindowAttributes};
 
@@ -97,6 +98,16 @@ pub fn shadowed(os: OperatingSystem, wayland: bool) -> bool {
 /// same on every desktop. The Mac's frames are the system's.
 pub fn draws_frame(os: OperatingSystem) -> bool {
     matches!(os, OperatingSystem::Windows | OperatingSystem::Nix)
+}
+
+/// The style of the close the host draws in a dialog's frame on `os` ([`draws_frame`]):
+/// Linux's on Linux and Windows' on Windows, as the main window's (`CAPTION_STYLE`).
+pub fn caption_style(os: OperatingSystem) -> CaptionStyle {
+    if os == OperatingSystem::Nix {
+        CaptionStyle::Linux
+    } else {
+        CaptionStyle::Windows
+    }
 }
 
 /// `attributes` for the window of a dialog shown as `form` over `main`: on Windows and

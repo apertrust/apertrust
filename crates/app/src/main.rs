@@ -992,6 +992,15 @@ const OWN_TITLE_BAR: bool = cfg!(target_os = "macos");
 /// window keeps its shadow ([`frame_shadow`]).
 const CAPTION_BUTTONS: bool = cfg!(any(target_os = "linux", target_os = "windows"));
 
+/// The style of the caption buttons the app draws ([`CAPTION_BUTTONS`]), on the Toolbar,
+/// a dialog's frame and the start window's: libadwaita's round ones on Linux, every
+/// desktop alike, Windows 11's elsewhere (`docs/gui.md`, Windows' and Linux's frames).
+pub(crate) const CAPTION_STYLE: CaptionStyle = if cfg!(target_os = "linux") {
+    CaptionStyle::Linux
+} else {
+    CaptionStyle::Windows
+};
+
 /// The width of the bands inside the window's edges that resize it where the app draws
 /// its own frame ([`CAPTION_BUTTONS`]), in points; a corner where two meet.
 const RESIZE_BAND: f32 = 6.0;
@@ -3711,7 +3720,7 @@ impl Shell {
         }
         if let Some(maximised) = caption {
             bar = bar
-                .caption_buttons(Some(CaptionStyle::Windows))
+                .caption_buttons(Some(CAPTION_STYLE))
                 .maximised(maximised);
         }
         for (button, keys) in &tips {

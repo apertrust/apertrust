@@ -74,7 +74,7 @@ use std::time::Instant;
 
 use apertrust_display::ColorSpace;
 use apertrust_ui::alert;
-use apertrust_ui::components::{ActivityAction, Button, CaptionStyle, Job, caption_button};
+use apertrust_ui::components::{ActivityAction, Button, Job, caption_button};
 use apertrust_ui::icons::Icon;
 use apertrust_ui::theme;
 use eframe::egui::os::OperatingSystem;
@@ -550,10 +550,11 @@ pub fn draw(ui: &mut egui::Ui, dialog: &mut dyn Dialog) -> Drawn {
 }
 
 /// The frame the host draws at the top of a dialog's window (`platform::draws_frame`),
-/// in `strip`: the close button at its end, in the main window's caption style, which
-/// closes the dialog as its Cancel, and `title`, if given, centred ([`frame_title`]); a
-/// drag on the rest, the title included, moves the window, and a right-click opens the
-/// window's menu. The button comes after the content in the focus order.
+/// in `strip`: the close button at its end, in the main window's caption style
+/// ([`platform::caption_style`]), which closes the dialog as its Cancel, and `title`, if
+/// given, centred ([`frame_title`]); a drag on the rest, the title included, moves the
+/// window, and a right-click opens the window's menu. The button comes after the content
+/// in the focus order.
 fn frame(ui: &mut egui::Ui, strip: egui::Rect, title: Option<&str>) -> (Option<Gesture>, bool) {
     let ctx = ui.ctx().clone();
     let t = theme(&ctx);
@@ -568,15 +569,10 @@ fn frame(ui: &mut egui::Ui, strip: egui::Rect, title: Option<&str>) -> (Option<G
             .max_rect(strip)
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
+    let style = platform::caption_style(ctx.os());
+    end.add_space(style.end_margin());
     let name = apertrust_ui::tr(&ctx, "window-close");
-    let close = caption_button(
-        &mut end,
-        Icon::Close,
-        &name,
-        true,
-        CaptionStyle::Windows,
-        &t,
-    );
+    let close = caption_button(&mut end, Icon::Close, &name, true, style, &t);
     if let Some(title) = title {
         frame_title(ui, strip, close.rect, title);
     }
@@ -2754,8 +2750,8 @@ mod tests {
     }
 
     /// The strip at the top of the window drawn in `harness`, from the window's start to
-    /// the end of its close, the last button so named, and the texts its last frame painted
-    /// in it.
+    /// its end, as far past its close, the last button so named, as the caption style
+    /// keeps it, and the texts its last frame painted in it.
     fn strip<T>(harness: &Harness<'_, T>) -> (egui::Rect, Vec<(String, egui::Rect)>) {
         let close = harness
             .query_all_by_role_and_label(Role::Button, "Close")
@@ -2768,8 +2764,12 @@ mod tests {
             .next()
             .expect("the window's node")
             .rect();
-        let strip =
-            egui::Rect::from_min_max(egui::pos2(window.left(), close.top()), close.right_bottom());
+        let end = platform::caption_style(harness.ctx.os()).end_margin();
+        let half = FRAME / 2.0;
+        let strip = egui::Rect::from_min_max(
+            egui::pos2(window.left(), close.center().y - half),
+            egui::pos2(close.right() + end, close.center().y + half),
+        );
         assert_eq!(strip.height(), FRAME);
         let texts = painted(harness.output())
             .into_iter()
