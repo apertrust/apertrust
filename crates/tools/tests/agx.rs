@@ -15,11 +15,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! AgX's invariants (`docs/tools/agx.md`, Invariants), one test per row, each named
-//! after its row: A0 to A7, the rows a first-pass table has (decision 22) but the first
-//! step, since every photo runs AgX, with the pivot's coordinates, what is not ported and
-//! the pivot's range following the input range (decision 30). The synthetic ramp and
-//! sweep and the small raw run on CI's software GPUs, A3, A4's parameters, A6 and A7 on
-//! the CPU. The raw.pixls.us corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it:
+//! after its row: A0 to A8, the rows a first-pass table has (decision 22) but the first
+//! step, since every photo runs AgX, with the pivot's coordinates, what is not ported,
+//! the pivot's range following the input range (decision 30) and Dynamic range scaling,
+//! which binds nothing. The synthetic ramp and sweep and the small raw run on CI's
+//! software GPUs, A3, A4's parameters, A6 and A7 on the CPU. The raw.pixls.us corpus
+//! runs locally, with `APERTRUST_RAW_CORPUS` naming it:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-tools --test agx -- --ignored --nocapture
@@ -660,9 +661,8 @@ fn a7_the_pivot_s_range_follows_the_input_range_and_a_move_clamps_it() {
 
 // A6: what is not ported.
 
-/// A6: the base primaries' export profile and dynamic range scaling off its default are
-/// refused as not ported, the edit as it was; the export profile's option is listed, and
-/// dynamic range scaling is reported unavailable, as every unported control is.
+/// A6: the base primaries' export profile is refused as not ported, the edit as it was;
+/// its option is listed.
 #[test]
 fn a6_what_is_not_ported_is_refused() {
     let mut edit = Edit::default();
@@ -682,10 +682,35 @@ fn a6_what_is_not_ported_is_refused() {
             option: "export_profile"
         }
     );
-    assert_eq!(
-        refused(edit.set_control(&Agx, SCALING, ControlValue::Number(20.0), &common::photo(),)),
-        ControlError::NotPorted { control: SCALING }
-    );
     assert_eq!(edit, Edit::default());
-    assert!(Agx.definition().control(SCALING).unwrap().unported);
+}
+
+// A8: Dynamic range scaling.
+
+/// A8: Dynamic range scaling, which only the pickers read, moved to 20 % and reset changes
+/// no parameter, no cache key and no frame, and is stored in the edit, read back as
+/// written: its move writes nothing into the range, where darktable's rescales it.
+#[test]
+fn a8_dynamic_range_scaling_is_stored_and_changes_nothing_else() {
+    use apertrust_engine::sidecar;
+    let (picture, image) = ramp();
+    let mut bench = Bench::picture(&picture, image, Pipe::Export);
+    let none = bench.edit(&Edit::default(), Frame);
+    let mut edit = edit_of(&[(SCALING, 20.0)]);
+    let values = edit.tool(AGX).unwrap();
+    assert_eq!(values.number(SCALING), Some(20.0));
+    for id in [BLACK, WHITE, PIVOT] {
+        assert_eq!(values.number(id), None, "{id}");
+    }
+    // No parameter of `agx` set, and, through `exact`, the plan's keys and the frame.
+    let instances = bench.instances(&edit, Frame);
+    let agx = instances.iter().find(|i| id(i) == AGX).unwrap();
+    assert_eq!(agx.params.iter().count(), 0);
+    assert!(exact(&none, &bench.edit(&edit, Frame)), "A8 at 20 %");
+    let xml = sidecar::to_xml(&edit, OPERATIONS, TOOLS, "test");
+    let read = sidecar::from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
+    assert_eq!(read.edit, edit, "{xml}");
+    edit.reset_control(&Agx, SCALING).unwrap();
+    assert_eq!(edit, Edit::default());
+    assert!(exact(&none, &bench.edit(&edit, Frame)), "A8 reset");
 }
