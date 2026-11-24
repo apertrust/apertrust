@@ -43,18 +43,23 @@
 //! default (rule 4 of `docs/tools/README.md`), darktable's scene-referred defaults, and
 //! the binding sets a parameter only while its control is off it, the pivot's while it or
 //! the range is. Dynamic range scaling, which only darktable's pickers and Read exposure
-//! read, is stored and binds nothing. The base primaries' export profile is not ported:
-//! it is drawn disabled and refused. The pickers on the exposures and the pivot are in
-//! the definition, as darktable's page has them, and the renderer draws a quad once what
-//! it runs is built; the four actions are drawn disabled until theirs are. Show curve is
-//! empty until a read-only graph row exists. darktable's presets wait for the header's
-//! presets menu.
+//! read, is stored and binds nothing: the pickers' margin. The base primaries' export
+//! profile is not ported: it is drawn disabled and refused.
+//!
+//! darktable's five pickers pick as its `color_picker_apply` does ([`Agx::pick`]): the
+//! quads on white and black relative exposure, Auto tune levels setting both, a row of
+//! its own with its picker at the end, and the quads on the pivot and its target output.
+//! The three actions, Read exposure, Reset primaries and Set from above, are drawn
+//! disabled until what they run is built. Show curve is empty until a read-only graph row
+//! exists. darktable's presets wait for the presets menu's built-in presets (decision 106).
 
 #![allow(
     clippy::excessive_precision,
     reason = "defaults are copied digit for digit from darktable"
 )]
 
+use apertrust_color::WorkingProfile;
+use apertrust_color::agx_curve::{Curve, CurveSettings, EPSILON};
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
@@ -62,7 +67,8 @@ use crate::definition::{
     ChoiceStyle, Control, ControlKind, Group, GroupKind, Picker, PickerKind, ProcessingDefinition,
     Quad, Range, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, slider_step,
 };
-use crate::{Base, Controls, Owned, ProcessingTool, Setting, ToolValues};
+use crate::pick::{PickKeys, Picked, Reading, Shown};
+use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct Agx;
 
@@ -370,16 +376,20 @@ const fn picked(control: &'static str, picker: &'static str, (min, max): (f32, f
     )
 }
 
-/// darktable's pickers on sliders (`DT_COLOR_PICKER_AREA | DT_COLOR_PICKER_DENOISE`): white
-/// or black relative exposure from the area's largest maximum or smallest minimum, the
-/// pivot kept within the new range; the pivot from the mean's luminance, and with Pivot
-/// target output also the output that keeps its brightness. Auto tune levels, both
-/// exposures at once, is still an action ([`SETTINGS`]).
-static PICKERS: [Picker; 4] = [
+/// Pivot target output, which the `pivot_output` picker writes with the pivot.
+const OUTPUT: &str = "curve_pivot_y_linear_output";
+
+/// darktable's pickers (`DT_COLOR_PICKER_AREA | DT_COLOR_PICKER_DENOISE`), in `gui_init`'s
+/// order: white or black relative exposure from the area's largest maximum or smallest
+/// minimum, and Auto tune levels' both at once, the pivot kept within the new range; the
+/// pivot from the mean's luminance, and with Pivot target output also the output that
+/// keeps the curve's linear output there ([`Agx::pick`]).
+static PICKERS: [Picker; 5] = [
     picker("white", &[WHITE, PIVOT]),
     picker("black", &[BLACK, PIVOT]),
+    picker("range", &[WHITE, BLACK, PIVOT]),
     picker("pivot", &[PIVOT]),
-    picker("pivot_output", &[PIVOT, "curve_pivot_y_linear_output"]),
+    picker("pivot_output", &[PIVOT, OUTPUT]),
 ];
 
 /// A denoised area picker of the tool's input writing `writes`.
@@ -421,10 +431,12 @@ static SETTINGS: [Row; 5] = [
             picked(BLACK, "black", (-20.0, -1.0)),
             // darktable sets only its soft maximum, 0.5; its soft minimum is its hard one.
             soft(SCALING, -50.0, 50.0),
-            // darktable's picker setting both exposures, and its camera button on the same
-            // line.
-            Row::Action {
-                id: "auto_tune_levels",
+            // darktable's labelled line with its picker setting both exposures at the end,
+            // then its camera button, here on a row of its own.
+            Row::Pickers {
+                label: Some("auto_tune_levels"),
+                pickers: &["range"],
+                readout: None,
             },
             Row::Action {
                 id: "read_exposure",
@@ -437,9 +449,7 @@ static SETTINGS: [Row; 5] = [
         rows: &[
             // The pivot's track spans the input range, here its default (`Agx::range`).
             picked(PIVOT, "pivot", (-10.0, 6.5)),
-            Row::Slider(
-                Slider::new("curve_pivot_y_linear_output").quad(Quad::Picker("pivot_output")),
-            ),
+            Row::Slider(Slider::new(OUTPUT).quad(Quad::Picker("pivot_output"))),
             soft("curve_contrast_around_pivot", 0.1, 5.0),
             soft("curve_shoulder_power", 1.0, 5.0),
             soft("curve_toe_power", 1.0, 5.0),
@@ -663,6 +673,123 @@ impl ProcessingTool for Agx {
         }
         settings
     }
+
+    /// darktable's `color_picker_apply` (`agx.c:2657-2690`), on the area at the
+    /// operation's input, working RGB, with `s` Dynamic range scaling over 100:
+    ///
+    /// - **`black`** `log2(max(ε, m) / 0.18) · (1 + s)` of `m` the minimum's smallest
+    ///   channel, held to −20 to −0.1 EV (`_apply_auto_black_exposure`); **`white`** the
+    ///   same of the maximum's largest, held to 0.1 to 20 EV (`_apply_auto_white_exposure`);
+    ///   **`range`** both (`_apply_auto_tune_exposure`). The pivot keeps its exposure,
+    ///   clamped into the new range, as `_update_pivot_x` keeps it; it is stored in EV, so
+    ///   it is written only where the clamp moves it.
+    /// - **`pivot`** at `log2(max(ε, Y) / 0.18)` of the mean's luminance through the working
+    ///   profile, held within the range (`_apply_auto_pivot_x`); **`pivot_output`** the
+    ///   same, and Pivot target output the curve of the values before the pick gives at the
+    ///   new pivot's place, raised to the curve's gamma (`_apply_auto_pivot_xy`): Curve y
+    ///   gamma, or while Keep the pivot on the diagonal is on the gamma the curve computes,
+    ///   which darktable's `gui_changed` keeps in `p->curve_gamma`. The curve's linear
+    ///   output there, before the look, stays what it was; a grey of the area's luminance
+    ///   keeps its brightness in the frame while Keep the pivot on the diagonal is off or
+    ///   the look is at its defaults, since with it on the gamma moves with the pivot.
+    ///
+    /// Curve y gamma is never written, where darktable's writes the gamma it computes while
+    /// Keep the pivot on the diagonal is on (`docs/tools/agx.md`, Deliberate differences;
+    /// decision 63). Nothing is shown.
+    fn pick(
+        &self,
+        picker: &str,
+        reading: &Reading,
+        values: &Controls,
+        _image: &ImageContext,
+        _settings: &[(&str, ControlValue)],
+        _channel: Option<&str>,
+        _last: Option<&Reading>,
+        _keys: PickKeys,
+    ) -> Option<Picked> {
+        let (black, white, pivot) = (
+            values.number(BLACK),
+            values.number(WHITE),
+            values.number(PIVOT),
+        );
+        let scaling = 1.0 + values.number(SCALING) / 100.0;
+        let mut writes = Controls::new();
+        match picker {
+            "black" | "white" | "range" => {
+                let [r, g, b, _] = reading.input.min;
+                let picked_black = (relative_ev(r.min(g).min(b)) * scaling).clamp(-20.0, -0.1);
+                let [r, g, b, _] = reading.input.max;
+                let picked_white = (relative_ev(r.max(g).max(b)) * scaling).clamp(0.1, 20.0);
+                let (mut black, mut white) = (black, white);
+                if picker != "white" {
+                    black = picked_black;
+                    writes.set(BLACK, ControlValue::Number(black));
+                }
+                if picker != "black" {
+                    white = picked_white;
+                    writes.set(WHITE, ControlValue::Number(white));
+                }
+                let kept = pivot.clamp(black, white);
+                if kept != pivot {
+                    writes.set(PIVOT, ControlValue::Number(kept));
+                }
+            }
+            "pivot" | "pivot_output" => {
+                let [r, g, b, _] = reading.input.mean;
+                let luminance = WorkingProfile::linear_rec2020().rgb_to_xyz_d50[1];
+                let y = luminance[0] * r + luminance[1] * g + luminance[2] * b;
+                let picked = relative_ev(y).clamp(black, white);
+                writes.set(PIVOT, ControlValue::Number(picked));
+                if picker == "pivot_output" {
+                    // darktable raises to `p->curve_gamma`, which its `gui_changed` keeps at
+                    // the gamma the curve computes while Keep the pivot on the diagonal is
+                    // on; Curve y gamma here keeps its value, so the curve's own is taken.
+                    let curve = Curve::new(&curve_settings(values));
+                    let at = curve.eval(pivot_x(picked, black, white));
+                    let output = at.powf(curve.gamma);
+                    writes.set(OUTPUT, ControlValue::Number(output * 100.0));
+                }
+            }
+            _ => return None,
+        }
+        Some(Picked {
+            writes,
+            shown: Shown::default(),
+        })
+    }
+}
+
+/// darktable's exposure of `v` relative to mid-grey, floored at its `_epsilon` first:
+/// `log2(max(ε, v) / 0.18)` (`agx.c:1110`, `:1126`, `:1178`).
+fn relative_ev(v: f32) -> f32 {
+    (EPSILON.max(v) / 0.18).log2()
+}
+
+/// What AgX's curve is made from for `values`, every control: the parameters the binding
+/// writes, the pivot's place in the range and the percentages over 100, as `bind` maps
+/// them, so the curve is the one the operation renders.
+fn curve_settings(values: &Controls) -> CurveSettings {
+    let param = |control: &str| {
+        let p = PARAMETERS.iter().find(|p| p.control == control);
+        p.expect("a number control of the curve")
+            .param(values.number(control))
+    };
+    let (black, white) = (values.number(BLACK), values.number(WHITE));
+    CurveSettings {
+        range_black_relative_ev: black,
+        range_white_relative_ev: white,
+        curve_pivot_x: pivot_x(values.number(PIVOT), black, white),
+        curve_pivot_y_linear_output: param(OUTPUT),
+        curve_contrast_around_pivot: param("curve_contrast_around_pivot"),
+        curve_linear_ratio_below_pivot: param("curve_linear_ratio_below_pivot"),
+        curve_linear_ratio_above_pivot: param("curve_linear_ratio_above_pivot"),
+        curve_toe_power: param("curve_toe_power"),
+        curve_shoulder_power: param("curve_shoulder_power"),
+        curve_gamma: param("curve_gamma"),
+        auto_gamma: values.flag("auto_gamma"),
+        curve_target_display_black_ratio: param("curve_target_display_black_ratio"),
+        curve_target_display_white_ratio: param("curve_target_display_white_ratio"),
+    }
 }
 
 #[cfg(test)]
@@ -745,12 +872,7 @@ mod tests {
             .collect();
         assert_eq!(
             actions,
-            [
-                "auto_tune_levels",
-                "read_exposure",
-                "reset_primaries",
-                "set_from_above"
-            ]
+            ["read_exposure", "reset_primaries", "set_from_above"]
         );
         assert!(!DEFINITION.layers && !DEFINITION.auto);
     }
@@ -986,10 +1108,12 @@ mod tests {
         }
     }
 
-    /// darktable's pickers on sliders (`agx.c:1823`, `:1832`, `:2043`, `:2052`), each a
-    /// denoised area: white and black relative exposure, the pivot kept within the new
-    /// range (`:1103-1133`, `:1021-1040`), and the pivot, with its target output too
-    /// (`:1171-1220`). Auto tune levels (`:2072`) is still an action.
+    /// darktable's pickers (`agx.c:1823`, `:1832`, `:2043`, `:2052`, `:2072`), each a
+    /// denoised area: white and black relative exposure and Auto tune levels' both, the
+    /// pivot kept within the new range (`:1103-1160`, `:1021-1040`), and the pivot, with
+    /// its target output too (`:1171-1220`). Auto tune levels' is on a row of pickers of
+    /// its own under its label, as darktable's line has it (`:2068-2076`), and Read
+    /// exposure, on that line in darktable, is still an action of its own.
     #[test]
     fn its_pickers_are_darktable_s() {
         const fn area(
@@ -1007,14 +1131,35 @@ mod tests {
                 settings: &[],
             }
         }
-        const OUTPUT: &str = "curve_pivot_y_linear_output";
         let darktable = [
             area("white", WHITE, &[WHITE, PIVOT]),
             area("black", BLACK, &[BLACK, PIVOT]),
+            area("range", "", &[WHITE, BLACK, PIVOT]),
             area("pivot", PIVOT, &[PIVOT]),
             area("pivot_output", OUTPUT, &[PIVOT, OUTPUT]),
         ];
         assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
+        let rows: Vec<&Row> = DEFINITION
+            .rows()
+            .filter(|row| matches!(row, Row::Pickers { .. } | Row::Action { .. }))
+            .take(2)
+            .collect();
+        assert!(
+            matches!(
+                rows[..],
+                [
+                    Row::Pickers {
+                        label: Some("auto_tune_levels"),
+                        pickers: ["range"],
+                        readout: None,
+                    },
+                    Row::Action {
+                        id: "read_exposure"
+                    },
+                ]
+            ),
+            "{rows:?}"
+        );
     }
 
     /// The pivot's slider follows the input range as darktable's does (decision 30): it
@@ -1051,5 +1196,290 @@ mod tests {
                 range.step
             );
         }
+    }
+
+    /// A reading at the operation's input: the area's mean, and each channel's minimum
+    /// and maximum.
+    fn reading(mean: [f32; 3], min: [f32; 3], max: [f32; 3]) -> Reading {
+        let four = |[r, g, b]: [f32; 3]| [r, g, b, 1.0];
+        Reading {
+            input: crate::pick::Stats {
+                mean: four(mean),
+                min: four(min),
+                max: four(max),
+            },
+            output: None,
+            input_maximum: [1.0; 3],
+        }
+    }
+
+    /// A flat patch of working RGB `rgb`.
+    fn flat(rgb: [f32; 3]) -> Reading {
+        reading(rgb, rgb, rgb)
+    }
+
+    /// Every control: the defaults, with `set` over them.
+    fn values_with(set: &[(&'static str, ControlValue)]) -> Controls {
+        let mut values = DEFINITION.defaults();
+        for (control, value) in set {
+            values.set(control, value.clone());
+        }
+        values
+    }
+
+    fn pick(picker: &str, reading: &Reading, values: &Controls) -> Option<Picked> {
+        let image = crate::testing::image();
+        let keys = PickKeys::default();
+        Agx.pick(picker, reading, values, &image, &[], None, None, keys)
+    }
+
+    /// The controls `picked` writes, sorted.
+    fn written(picked: &Picked) -> Vec<&str> {
+        let mut ids: Vec<&str> = picked.writes.iter().map(|(id, _)| id).collect();
+        ids.sort_unstable();
+        ids
+    }
+
+    fn sorted(mut ids: Vec<&str>) -> Vec<&str> {
+        ids.sort_unstable();
+        ids
+    }
+
+    /// darktable's `_epsilon`, widened.
+    const WIDE_EPSILON: f64 = 1e-6;
+
+    /// darktable's black or white of `v` at Dynamic range scaling `scaling` in percent,
+    /// restated in f64: `clamp(log2(max(ε, v) / 0.18) · (1 + s), low, high)`
+    /// (`agx.c:1103-1133`).
+    fn darktable_exposure(v: f32, scaling: f32, (low, high): (f64, f64)) -> f64 {
+        let s = f64::from(scaling) / 100.0;
+        let ev = (f64::from(v).max(WIDE_EPSILON) / 0.18).log2();
+        (ev * (1.0 + s)).clamp(low, high)
+    }
+
+    const DARKTABLE_BLACK: (f64, f64) = (-20.0, -0.1);
+    const DARKTABLE_WHITE: (f64, f64) = (0.1, 20.0);
+
+    /// darktable's `_luminance_from_profile` restated in f64: the working profile's
+    /// RGB to XYZ D50, linear Rec2020 as lcms builds it, its Y row.
+    fn darktable_luminance([r, g, b]: [f32; 3]) -> f64 {
+        let row = WorkingProfile::linear_rec2020().rgb_to_xyz_d50[1].map(f64::from);
+        row[0] * f64::from(r) + row[1] * f64::from(g) + row[2] * f64::from(b)
+    }
+
+    fn number(picked: &Picked, control: &str) -> f64 {
+        f64::from(picked.writes.number(control))
+    }
+
+    /// Black and white relative exposure from readings whose minimum and maximum differ by
+    /// channel, the minimum's smallest and the maximum's largest, scaled by Dynamic range
+    /// scaling at −50 %, 0, +10 % and +200 %, within 1e-5 EV of darktable's arithmetic
+    /// in f64; Auto tune levels' `range` writing both. The pivot, at 0 EV, stays inside
+    /// each range, so none writes it.
+    #[test]
+    fn black_and_white_are_darktable_s_from_the_extremes_scaled() {
+        let area = reading([0.3, 0.2, 0.25], [0.021, 0.0042, 0.013], [2.4, 1.1, 3.7]);
+        let mut off = 0.0_f64;
+        for scaling in [-50.0, 0.0, 10.0, 200.0] {
+            let values = values_with(&[(SCALING, ControlValue::Number(scaling))]);
+            let black = darktable_exposure(0.0042, scaling, DARKTABLE_BLACK);
+            let white = darktable_exposure(3.7, scaling, DARKTABLE_WHITE);
+            for (picker, want) in [
+                ("black", vec![(BLACK, black)]),
+                ("white", vec![(WHITE, white)]),
+                ("range", vec![(BLACK, black), (WHITE, white)]),
+            ] {
+                let picked = pick(picker, &area, &values).unwrap();
+                let ids = want.iter().map(|(id, _)| *id).collect();
+                assert_eq!(written(&picked), sorted(ids), "{picker} at {scaling} %");
+                for (control, want) in want {
+                    let got = number(&picked, control);
+                    off = off.max((got - want).abs());
+                    assert!(
+                        (got - want).abs() <= 1e-5,
+                        "{picker} at {scaling} %: {control} {got} for {want}"
+                    );
+                }
+                assert_eq!(picked.shown, Shown::default());
+            }
+        }
+        println!("black and white within {off:.1e} EV of darktable's");
+    }
+
+    /// A minimum of 0, or below, is floored at darktable's `_epsilon` before its `log2`,
+    /// −17.46 EV at no scaling, and each of darktable's bounds is reached: black at −20 EV
+    /// and −0.1 EV, white at 0.1 EV and 20 EV.
+    #[test]
+    fn a_pick_floors_at_epsilon_and_reaches_darktable_s_bounds() {
+        let at = |scaling: f32| values_with(&[(SCALING, ControlValue::Number(scaling))]);
+        let exposure = |picker: &str, v: f32, scaling: f32| {
+            let control = if picker == "black" { BLACK } else { WHITE };
+            number(&pick(picker, &flat([v; 3]), &at(scaling)).unwrap(), control)
+        };
+        let floored = exposure("black", 0.0, 0.0);
+        let expected = (WIDE_EPSILON / 0.18).log2();
+        assert!((floored - expected).abs() <= 1e-5, "{floored}");
+        assert!(floored > -20.0, "{floored} is not held at the bound");
+        assert_eq!(exposure("black", -0.3, 0.0), floored);
+        for (picker, v, scaling, bound) in [
+            ("black", 0.0, 200.0, -20.0),
+            ("black", 0.18, 10.0, -0.1),
+            ("black", 1.0, 10.0, -0.1),
+            ("white", 1e6, 10.0, 20.0),
+            ("white", 0.18, 10.0, 0.1),
+            ("white", 0.0, 10.0, 0.1),
+        ] {
+            let got = exposure(picker, v, scaling);
+            assert_eq!(
+                got,
+                f64::from(bound as f32),
+                "{picker} of {v} at {scaling} %"
+            );
+            let darktable = match picker {
+                "black" => darktable_exposure(v, scaling, DARKTABLE_BLACK),
+                _ => darktable_exposure(v, scaling, DARKTABLE_WHITE),
+            };
+            assert!(
+                (got - darktable).abs() <= 1e-6,
+                "{picker}: {got} for {darktable}"
+            );
+        }
+    }
+
+    /// The pivot keeps its exposure as `_update_pivot_x` keeps it: where the new range still
+    /// holds it, no pick writes it; where the range's move leaves it outside, the pick
+    /// writes it at the range's nearer end, the white or black it picked.
+    #[test]
+    fn the_pivot_is_written_only_where_the_new_range_clamps_it() {
+        let pivot_at = |ev: f32| values_with(&[(PIVOT, ControlValue::Number(ev))]);
+        // A white of log2(1.5 / 0.18) · 1.1, about 3.4 EV.
+        let bright = flat([1.5; 3]);
+        let picked = pick("white", &bright, &pivot_at(2.0)).unwrap();
+        assert_eq!(written(&picked), [WHITE]);
+        let picked = pick("white", &bright, &pivot_at(5.0)).unwrap();
+        assert_eq!(written(&picked), sorted(vec![WHITE, PIVOT]));
+        assert_eq!(picked.writes.number(PIVOT), picked.writes.number(WHITE));
+        // A black of log2(0.01 / 0.18) · 1.1, about −4.6 EV.
+        let dark = flat([0.01; 3]);
+        let picked = pick("black", &dark, &pivot_at(-4.0)).unwrap();
+        assert_eq!(written(&picked), [BLACK]);
+        let picked = pick("black", &dark, &pivot_at(-8.0)).unwrap();
+        assert_eq!(written(&picked), sorted(vec![BLACK, PIVOT]));
+        assert_eq!(picked.writes.number(PIVOT), picked.writes.number(BLACK));
+        // Both at once: the pivot held at the end it fell past.
+        let area = reading([0.2; 3], [0.01; 3], [1.5; 3]);
+        let picked = pick("range", &area, &pivot_at(5.0)).unwrap();
+        assert_eq!(written(&picked), sorted(vec![WHITE, BLACK, PIVOT]));
+        assert_eq!(picked.writes.number(PIVOT), picked.writes.number(WHITE));
+        let picked = pick("range", &area, &pivot_at(1.0)).unwrap();
+        assert_eq!(written(&picked), sorted(vec![WHITE, BLACK]));
+    }
+
+    /// The pivot picker sets the pivot at `log2(max(ε, Y) / 0.18)` of the mean's luminance
+    /// through the working profile, within 1e-5 EV of darktable's in f64, held within the
+    /// range: a bright area at white relative exposure, a dark one at black. It writes the
+    /// pivot alone.
+    #[test]
+    fn the_pivot_picker_sets_the_mean_s_exposure_within_the_range() {
+        let values = values_with(&[
+            (BLACK, ControlValue::Number(-6.0)),
+            (WHITE, ControlValue::Number(4.0)),
+        ]);
+        for (rgb, want) in [
+            ([0.18; 3], None),
+            ([0.5, 0.3, 0.1], None),
+            ([0.02, 0.06, 0.4], None),
+            ([30.0, 20.0, 25.0], Some(4.0)),
+            ([0.001, 0.002, 0.001], Some(-6.0)),
+        ] {
+            let picked = pick("pivot", &flat(rgb), &values).unwrap();
+            assert_eq!(written(&picked), [PIVOT]);
+            let y = darktable_luminance(rgb);
+            let darktable = (y.max(WIDE_EPSILON) / 0.18).log2().clamp(-6.0, 4.0);
+            let got = number(&picked, PIVOT);
+            assert!(
+                (got - darktable).abs() <= 1e-5,
+                "{rgb:?}: {got} for {darktable}"
+            );
+            if let Some(end) = want {
+                assert_eq!(got, end, "{rgb:?}");
+            }
+        }
+    }
+
+    /// darktable's curve settings at its scene-referred defaults but those given, its
+    /// parameters as darktable's params hold them (`_set_scene_referred_default_params`).
+    fn darktable_curve(pivot_x: f32, contrast: f32, auto_gamma: bool) -> CurveSettings {
+        CurveSettings {
+            range_black_relative_ev: -10.0,
+            range_white_relative_ev: 6.5,
+            curve_pivot_x: pivot_x,
+            curve_pivot_y_linear_output: 0.18,
+            curve_contrast_around_pivot: contrast,
+            curve_linear_ratio_below_pivot: 0.0,
+            curve_linear_ratio_above_pivot: 0.0,
+            curve_toe_power: 1.5,
+            curve_shoulder_power: 3.3,
+            curve_gamma: 2.2,
+            auto_gamma,
+            curve_target_display_black_ratio: 0.0,
+            curve_target_display_white_ratio: 1.0,
+        }
+    }
+
+    /// Pivot target output: the pivot moved to the area's exposure, and the output the
+    /// curve made from the values before the pick, so with the old pivot, gives the new
+    /// pivot's place, raised to darktable's `p->curve_gamma` (`_apply_auto_pivot_xy`,
+    /// `agx.c:1171-1200`), within 1e-5 EV and 1e-5 in the parameter of darktable's
+    /// arithmetic, restated in f64 around the curve `apertrust-color` ports. With Keep the
+    /// pivot on the diagonal on, darktable's `gui_changed` keeps `p->curve_gamma` at
+    /// `log2(output) / log2(pivot)` (`:1798-1804`), not the stored 2.2, which this tool
+    /// keeps; either way Curve y gamma is never written.
+    #[test]
+    fn the_pivot_output_picker_keeps_the_curve_s_linear_output_and_never_writes_the_gamma() {
+        let mut off = (0.0_f64, 0.0_f64);
+        for auto_gamma in [false, true] {
+            for rgb in [[0.05; 3], [0.6, 0.5, 0.4], [2.0; 3]] {
+                // The pivot at +1 EV, contrast 2.5: the curve before the pick.
+                let values = values_with(&[
+                    (PIVOT, ControlValue::Number(1.0)),
+                    ("curve_contrast_around_pivot", ControlValue::Number(2.5)),
+                    ("auto_gamma", ControlValue::Bool(auto_gamma)),
+                ]);
+                let picked = pick("pivot_output", &flat(rgb), &values).unwrap();
+                assert_eq!(written(&picked), sorted(vec![PIVOT, OUTPUT]));
+                let y = darktable_luminance(rgb);
+                let ev = (y.max(WIDE_EPSILON) / 0.18).log2().clamp(-10.0, 6.5);
+                let x = (ev + 10.0) / 16.5;
+                let before = darktable_curve(11.0 / 16.5, 2.5, auto_gamma);
+                // darktable's `p->curve_gamma` as its `gui_changed` leaves it.
+                let gamma = if auto_gamma {
+                    0.18_f64.log2() / (11.0_f64 / 16.5).log2()
+                } else {
+                    2.2
+                };
+                let curve = |settings: &CurveSettings| {
+                    let at = Curve::new(settings).eval(x as f32);
+                    f64::from(at).powf(gamma)
+                };
+                let want = curve(&before);
+                let got = number(&picked, OUTPUT) / 100.0;
+                off.0 = off.0.max((number(&picked, PIVOT) - ev).abs());
+                off.1 = off.1.max((got - want).abs());
+                assert!((number(&picked, PIVOT) - ev).abs() <= 1e-5, "{rgb:?}");
+                assert!((got - want).abs() <= 1e-5, "{rgb:?}: {got} for {want}");
+                // The curve with the new pivot would give another output.
+                let after = darktable_curve(x as f32, 2.5, auto_gamma);
+                assert!((curve(&after) - want).abs() > 1e-3, "{rgb:?}");
+            }
+        }
+        println!("pivot within {:.1e} EV, output within {:.1e}", off.0, off.1);
+    }
+
+    #[test]
+    fn a_picker_it_does_not_run_gives_nothing() {
+        let values = DEFINITION.defaults();
+        assert_eq!(pick("exposure", &flat([0.18; 3]), &values), None);
+        assert_eq!(pick("", &flat([0.18; 3]), &values), None);
     }
 }
