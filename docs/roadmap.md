@@ -227,7 +227,7 @@ One cursor chosen at a time decides what a press on the photo does (decision 104
 - [x] 104.5 The well shows the picker that is on, whichever door turned it on, and Select, or the cursor the person chose, once it turns off, each turn-off announced with its reason; Esc ends a picker wherever the focus is, but a field being typed in or an open list keeps the first Esc; A held pans over a picker; the crosshair over the photo; "Right-click resets the area." in the viewer bar.
 - [x] 104.6 The picker cursor as a second door to its tool's picker: choosing it sends `On`, never `Once`; disabled with the reason where the picker cannot turn on; Exposure's reference picker gets its cursor; no picker cursor gestures of its own, no last pick's mark and no Show the last pick.
 - [x] 104.7 The label on the picker's area naming its tool, and the pointer's badge, drawn by the overlay.
-- [ ] 104.8 The Colour picker's own group in the well, after Pick, with the Colour picker section (79.16): its cursor on Shift+K, the second door to its picker, and Start as, Point or Area.
+- [ ] 104.8 The Colour picker's own group in the well, after Pick, with the Colour picker tool (79.16): its cursor on Shift+K, the second door to its picker, and Start as, Point or Area.
 
 ### Scopes
 

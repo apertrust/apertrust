@@ -898,7 +898,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **The toolbar** (decision 92; [docs/gui.md](gui.md#customising-the-toolbar)): the assistant's guard with the assistant (Phase 6). Later, the Customise Toolbar window in the dialog host.
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the tool shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the menu button's menu.
-- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other tool's pickers drawn as its pick lands; and the Colour picker section, hidden by default, its place to be decided, with its cursor group in the well, `ColourPickerCursors` through `CursorOwner` (decision 104's 104.8).
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other tool's pickers drawn as its pick lands; and the Colour picker, a utility tool, hidden by default, its place to be decided, with its cursor group in the well, `ColourPickerCursors` through `CursorOwner` (decision 104's 104.8).
 - **One tool model** (decision 93; [docs/gui.md](gui.md#one-tool-model)): a utility's presets, with the presets API every tool shares, its decision first; `overlay` and `pointer`, provided as no-ops, when a utility draws over the photo.
 - **The Import sheet** (decision 86; [docs/gui.md](gui.md#sheets)): its modality, the view's keys and the Toolbar resting under it; each tool's place, the Tools panel or Import, declared and tested.
 - **The Export tool** (decision 90; [docs/gui.md](gui.md#the-export-tool)): the preview's in-view rule; Collections' Import….
@@ -1107,7 +1107,7 @@ From decision 42 ([docs/gui.md](gui.md), Slider values and choices):
 - darktable's fine-control popup as the popup service's `Kind::Slider`, drawn on every platform, opened by Enter, a right-click, Shift+F10 or the Menu key, with `SliderAction::Cancel` on its cancel;
 - `Choice`'s list as the service's dropdown, with darktable's type-to-filter.
 
-From decision 79 ([pickers.md](pickers.md)): the Colour picker section's rows (79.16) and stored samples' marks.
+From decision 79 ([pickers.md](pickers.md)): the Colour picker's rows (79.16) and stored samples' marks.
 
 From decision 104 ([cursors.md](cursors.md#the-well)): a cursor's amounts as slider rows, opened from its chosen face.
 
