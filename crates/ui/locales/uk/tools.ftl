@@ -528,6 +528,8 @@ tool-exposure-picker-reference-label = Еталон
 tool-exposure-picker-reference-full = Задати еталон за ділянкою
 tool-exposure-picker-reference-promise = Задати еталон за ділянкою
 tool-exposure-picker-reference-hint = Виділіть ділянку, яку зберегти як еталон
+tool-exposure-cursor-reference = Піпетка еталона експозиції
+tool-exposure-cursor-reference-how = Клацніть ділянку, яку зберегти як еталон, або обведіть її перетягуванням
 
 ## Калібрування кольору (docs/tools/colour-calibration.md)
 

@@ -529,6 +529,8 @@ tool-exposure-picker-reference-label = Wzorzec
 tool-exposure-picker-reference-full = Ustaw wzorzec z obszaru
 tool-exposure-picker-reference-promise = Ustaw wzorzec z obszaru
 tool-exposure-picker-reference-hint = Przeciągnij po obszarze, który ma zostać wzorcem
+tool-exposure-cursor-reference = Próbnik wzorca ekspozycji
+tool-exposure-cursor-reference-how = Kliknij obszar, który ma zostać wzorcem, lub zaznacz go przeciągnięciem
 
 ## Kalibracja koloru (docs/tools/colour-calibration.md)
 

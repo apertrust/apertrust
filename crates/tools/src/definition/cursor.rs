@@ -21,7 +21,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{DefinitionError, PickerKind, ProcessingDefinition, Row, is_id};
+use super::{DefinitionError, ProcessingDefinition, Row, is_id};
 
 /// One cursor of the well.
 #[derive(Debug, Clone, Copy)]
@@ -35,6 +35,7 @@ pub struct CursorDef {
     pub key: Option<&'static str>,
     /// Its place in its group, 100 apart.
     pub order: u16,
+    /// What it takes on the photo; none for a picker cursor, whose picker's kinds decide.
     pub gestures: &'static [Gesture],
     pub surfaces: &'static [Surface],
     /// Its amounts: setting rows of the settings schema, as a tool's `Row::Setting`.
@@ -83,19 +84,20 @@ pub enum Surface {
     Browser,
 }
 
-/// A tool's picker cursor: a click or a drag picks once with `picker`.
+/// A tool's picker cursor: chosen exactly while `picker` is on; choosing it turns `picker`
+/// on, as the picker's button does, and a press on the photo is the picker's.
 #[derive(Debug, Clone, Copy)]
 pub struct ToolCursor {
+    /// Its declaration, with no gestures: its picker's kinds decide what a press does.
     pub cursor: CursorDef,
-    /// One of the tool's pickers ([`ProcessingDefinition::pickers`]) that writes controls.
+    /// One of the tool's pickers ([`ProcessingDefinition::pickers`]).
     pub picker: &'static str,
 }
 
 impl ProcessingDefinition {
     /// Whether the tool's cursors hold together (`docs/cursors.md`, The API): each has an
-    /// id of its own, picks with one of the tool's pickers that writes controls, each
-    /// picker with one cursor at most, is in Pick, takes a click, an area or both, an area
-    /// only with a picker that takes one, acts on the Viewer alone and has no amounts.
+    /// id of its own, turns on one of the tool's pickers, each picker with one cursor at
+    /// most, is in Pick, declares no gestures, acts on the Viewer alone and has no amounts.
     pub(super) fn check_cursors(&self) -> Result<(), DefinitionError> {
         let mut ids = BTreeSet::new();
         let mut pickers = BTreeSet::new();
@@ -106,24 +108,16 @@ impl ProcessingDefinition {
             if !ids.insert(cursor.id) {
                 return Err(DefinitionError::DuplicateCursor(cursor.id));
             }
-            let Some(found) = self.picker(picker).filter(|found| !found.writes.is_empty()) else {
+            if self.picker(picker).is_none() {
                 return Err(DefinitionError::CursorPicker(cursor.id));
-            };
+            }
             if !pickers.insert(*picker) {
                 return Err(DefinitionError::CursorsOfPicker(picker));
             }
             if cursor.group != CursorGroup::Pick {
                 return Err(DefinitionError::CursorGroup(cursor.id));
             }
-            let takes = |gesture: &Gesture| match gesture {
-                Gesture::Click => true,
-                Gesture::Area => found.kind != PickerKind::Point,
-                _ => false,
-            };
-            let gestures = cursor.gestures;
-            let once = (gestures.iter().enumerate()).all(|(i, g)| !gestures[..i].contains(g));
-            let gestures_hold = !gestures.is_empty() && once && gestures.iter().all(takes);
-            if !gestures_hold {
+            if !cursor.gestures.is_empty() {
                 return Err(DefinitionError::CursorGestures(cursor.id));
             }
             if cursor.surfaces != [Surface::Viewer] {

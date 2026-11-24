@@ -56,9 +56,9 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Computed, Control, ControlKind, CursorDef, CursorGroup, Gesture, Picker,
-    PickerKind, ProcessingDefinition, Quad, Reset, Row, SettingRow, Slider, Space, Surface, Tab,
-    ToolCursor, ToolDefinition, Track, Unit,
+    ChoiceStyle, Computed, Control, ControlKind, CursorDef, CursorGroup, Picker, PickerKind,
+    ProcessingDefinition, Quad, Reset, Row, SettingRow, Slider, Space, Surface, Tab, ToolCursor,
+    ToolDefinition, Track, Unit,
 };
 use crate::pick::{LastPick, Patch, PickKeys, PickWarnings, Picked, Reading, Short, Shown};
 use crate::transfer::Transfer;
@@ -320,7 +320,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         open_at_first: false,
         menus: &[],
         toolbar: &[],
-        cursors: &[CURSOR],
+        cursors: &[CURSOR, REFERENCE_CURSOR],
     },
     version: 3,
     layers: true,
@@ -357,9 +357,9 @@ const PICKER: Picker = Picker {
     words_by: Some("target"),
 };
 
-/// Its picker cursor (decision 104; `docs/cursors.md`): a click or a drag on the photo
-/// picks once with Exposure's picker, its tooltip following Picker target as the picker's
-/// does. No key: E is darktable's Exposure slider.
+/// Its picker cursor (decision 104; `docs/cursors.md`): the second door to Exposure's
+/// picker, which turns it on as its quad does, its tooltip following Picker target as the
+/// picker's does. No key: E is darktable's Exposure slider.
 const CURSOR: ToolCursor = ToolCursor {
     cursor: CursorDef {
         id: "exposure",
@@ -367,11 +367,24 @@ const CURSOR: ToolCursor = ToolCursor {
         icon: "pick-exposure",
         key: None,
         order: 200,
-        gestures: &[Gesture::Click, Gesture::Area],
+        gestures: &[],
         surfaces: &[Surface::Viewer],
         options: &[],
     },
     picker: PICKER.id,
+};
+
+/// The reference picker's cursor (decision 104; `docs/cursors.md`): the second door to
+/// the Reference row's picker, which turns it on as the row's button does. No key, as the
+/// row's button has none.
+const REFERENCE_CURSOR: ToolCursor = ToolCursor {
+    cursor: CursorDef {
+        id: "reference",
+        icon: "pick-exposure-reference",
+        order: 250,
+        ..CURSOR.cursor
+    },
+    picker: REFERENCE_PICKER.id,
 };
 
 /// The reference row's picker (decision 88): an area of the exposure operation's input,

@@ -174,10 +174,11 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
 }
 
 /// The built tools' picker cursors (decision 104; `docs/cursors.md`, The API): White
-/// balance's `spot` on K, and Exposure's `exposure`, Colour calibration's `illuminant` and
-/// Colour balance RGB's four hue pickers' with no key, its advanced fulcrum pickers having
-/// none, each picking with its tool's picker of the same id, each icon one `apertrust-ui`
-/// has, Colour balance RGB's four sharing one, and no key on two.
+/// balance's `spot` on K, and Exposure's `exposure` and `reference`, Colour calibration's
+/// `illuminant` and Colour balance RGB's four hue pickers' with no key, its advanced fulcrum
+/// pickers having none, each turning on its tool's picker of the same id, declaring no
+/// gestures, each icon one `apertrust-ui` has, Colour balance RGB's four sharing one, and no
+/// key on two.
 #[test]
 fn the_built_in_tools_declare_their_picker_cursors() {
     let cursors: Vec<(&str, &str, &str, Option<&str>)> = TOOLS
@@ -195,6 +196,7 @@ fn the_built_in_tools_declare_their_picker_cursors() {
         [
             ("temperature", "spot", "spot", Some("K")),
             ("exposure", "exposure", "exposure", None),
+            ("exposure", "reference", "reference", None),
             ("channelmixerrgb", "illuminant", "illuminant", None),
             ("colorbalancergb", "global_hue", "global_hue", None),
             ("colorbalancergb", "shadows_hue", "shadows_hue", None),
@@ -212,6 +214,11 @@ fn the_built_in_tools_declare_their_picker_cursors() {
     assert_eq!(icons, BTreeSet::from(["pick-colour-balance-rgb"]));
     let all = || TOOLS.iter().flat_map(|tool| tool.definition().tool.cursors);
     for declared in all() {
+        assert!(
+            declared.cursor.gestures.is_empty(),
+            "{}",
+            declared.cursor.id
+        );
         let icon = declared.cursor.icon;
         assert!(
             Icon::ALL.iter().any(|known| known.name() == icon),

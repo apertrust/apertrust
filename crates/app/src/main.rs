@@ -26155,6 +26155,49 @@ mod tests {
         assert_eq!(chosen(&harness), SPOT);
     }
 
+    /// Exposure's Reference cursor turns the Reference row's picker on, as the row's button
+    /// does, a picker that writes no control: the same `On`, with Exposure's settings, the
+    /// cursor chosen as it turns on and named by its own words (decision 104).
+    #[test]
+    fn exposure_s_reference_cursor_turns_its_picker_on() {
+        let reference = PickerRef::Tool {
+            tool: "exposure",
+            picker: "reference",
+        };
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Button, "Pick cursors")
+            .click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Exposure reference picker")
+            .click();
+        harness.run();
+        let settings = harness.state().shell.tool_settings.of("exposure");
+        let button = pickers::pressed(
+            reference,
+            PickerAction::On { area: true },
+            PickKeys::default(),
+            settings,
+        );
+        assert_eq!(picker_commands(&mut harness), [button]);
+        let chosen = harness.state().shell.cursors.chosen();
+        assert_eq!(
+            (chosen.owner, chosen.id),
+            (cursors::Owner::Tool("exposure"), "reference")
+        );
+        let face = harness.get_by_role_and_label(Role::RadioButton, "Exposure reference picker");
+        assert_eq!(
+            face.accesskit_node().toggled(),
+            Some(egui::accesskit::Toggled::True)
+        );
+        assert_eq!(
+            face.accesskit_node().description().as_deref(),
+            Some("Exposure reference picker — Click an area to keep as the reference, or drag one")
+        );
+    }
+
     /// Each face says its cursor's key and what it does, Exposure's following Picker target
     /// (decision 88).
     #[test]
