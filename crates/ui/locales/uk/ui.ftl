@@ -171,6 +171,7 @@ toolbar-menu = Меню
 toolbar-more = Інші дії
 action-toolbar-labels = Підписи на смузі інструментів
 action-customise-toolbar = Налаштувати смугу інструментів…
+action-reset-toolbar = Скинути смугу інструментів
 action-toolbar-hide = Сховати елемент смуги інструментів
 toolbar-menu-hide = Сховати «{ $item }»
 toolbar-item-hidden = { $item }: сховано

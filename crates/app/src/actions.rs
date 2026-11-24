@@ -210,6 +210,9 @@ impl ActionId {
     pub const TOOLBAR_LABELS: ActionId = ActionId("toolbar-labels");
     /// The Customise Toolbar window, drawn disabled until it is built (decision 92).
     pub const CUSTOMISE_TOOLBAR: ActionId = ActionId("customise-toolbar");
+    /// Reset Toolbar: the workspace's file's `toolbar` list taken out, the Toolbar its
+    /// build's default again (decision 92).
+    pub const RESET_TOOLBAR: ActionId = ActionId("reset-toolbar");
     /// The toolbar menu's Hide "X", taking the item its menu opened on out of the
     /// workspace's list (decision 92).
     pub const TOOLBAR_HIDE: ActionId = ActionId("toolbar-hide");
@@ -425,6 +428,9 @@ pub enum Intent {
     ToolbarHide,
     /// The menu button put back at the start of the workspace's Toolbar (decision 92).
     ShowMenuButton,
+    /// The workspace's file's `toolbar` list taken out, the Toolbar its build's default
+    /// again (decision 92).
+    ResetToolbar,
     FullScreen,
     /// The main window, which ends the app as Quit does; a dialog's own window is the
     /// app's to close (`run_action`, in the app's `main`).
@@ -658,6 +664,9 @@ pub struct State {
     /// Whether the app draws the menus here and the workspace's Toolbar leaves the menu
     /// button out, so Show Menu Button can put it back: on Windows and Linux alone.
     pub menu_button_hidden: bool,
+    /// Whether the workspace's file holds a `toolbar` list, which Reset Toolbar takes out
+    /// (decision 92).
+    pub toolbar_kept: bool,
     /// The Tools panel's tab shown, by position, whose item is shown checked.
     pub panel_tab: usize,
     /// The workspace shown, by its action ([`workspace`]), whose item is shown checked.
@@ -926,10 +935,14 @@ fn never(_: &State) -> bool {
 /// Why the action `id` cannot run in `state`, as its menu item's tooltip says, where the
 /// reason is one the person can act on: Discard History… where it would ask and the
 /// platform shows no alert; the Tools panel's positions where `--conf` sets it for this
-/// run, [`SET_BY_CONF`]; Customise Toolbar… until its window is built; Guides' flips while
-/// the guide type is one darktable never flips. The message's id, or none.
+/// run, [`SET_BY_CONF`], and Reset Toolbar where it sets the workspace; Customise Toolbar…
+/// until its window is built; Guides' flips while the guide type is one darktable never
+/// flips. The message's id, or none.
 pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
     if state.panel_position_given && ActionId::TOOLS_PANEL_POSITION.contains(&id) {
+        return Some(SET_BY_CONF);
+    }
+    if state.workspace_given && id == ActionId::RESET_TOOLBAR {
         return Some(SET_BY_CONF);
     }
     if id == ActionId::CUSTOMISE_TOOLBAR {
@@ -1156,7 +1169,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 159] = [
+pub static ACTIONS: [Action; 160] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1851,6 +1864,17 @@ pub static ACTIONS: [Action; 159] = [
         trigger: Trigger::Press,
         available: never,
         emits: Emit::Later,
+    },
+    // While the workspace's file holds a list, unless `--conf` sets the workspace, as a
+    // workspace then cannot be chosen.
+    Action {
+        id: ActionId::RESET_TOOLBAR,
+        message: "action-reset-toolbar",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.toolbar_kept && workspace_available(s),
+        emits: Emit::Intent(Intent::ResetToolbar),
     },
     // macOS keeps F11 for showing the desktop; its own full-screen keys come first there.
     Action {
@@ -3504,6 +3528,7 @@ pub(crate) mod tests {
             toolbar_labels: true,
             toolbar_item: None,
             menu_button_hidden: false,
+            toolbar_kept: false,
             panel_tab: 0,
             workspace: workspace(crate::layout::DEFAULT),
             workspace_given: false,
