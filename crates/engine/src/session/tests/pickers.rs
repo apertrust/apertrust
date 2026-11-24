@@ -818,14 +818,14 @@ fn a_tool_picker_turns_its_tool_on_and_off_as_the_tool_changes_unless_it_keeps()
     assert!(enabled(values(&events)));
     assert!(events.iter().any(|e| matches!(e, Event::Frame(_))));
     assert_eq!(written(&driven.writes()).len(), 1);
-    // Its operation's input read; its pick, none yet, writes nothing.
+    // Its operation's input read; its pick writes the wheel's hue and chroma.
     let picked = driven.picked();
     let parts = tool_parts(&picked);
     assert!(
         matches!(parts[..], [part] if part.input.is_some() && part.output.is_none()),
         "{picked:?}"
     );
-    assert!(!picked.iter().any(|e| matches!(e, Event::Values(_))));
+    assert!(picked.iter().any(|e| matches!(e, Event::Values(_))));
     // A change to its tool turns it off, as darktable's `gui_changed` does.
     let events = driven.run([Command::ResetTool {
         tool: "colorbalancergb".to_owned(),
@@ -2594,14 +2594,27 @@ fn a_one_shot_pick_that_changes_nothing_makes_no_step() {
 }
 
 /// A one-shot pick of a switched tool that is off turns it on in the same step as its
-/// pick, held until then, never a step of its own: Colour balance RGB's hue picker, whose
-/// pick writes nothing yet, makes one step of the tool turned on, and Undo turns it off.
+/// pick, held until then, never a step of its own, and where its pick writes nothing the
+/// step holds the turning on alone: Colour balance RGB's White fulcrum picker on an area
+/// black at the operation's input, exposure's black set at 1, whose `log2` of 0 the
+/// session leaves out, makes one step of the tool turned on, White fulcrum as it was, and
+/// Undo turns it off.
 #[test]
 fn a_one_shot_pick_turns_its_tool_on_in_its_own_step() {
     use crate::history::StepSource;
     let path = scratch("picker-once-switched");
     let mut driven = Driven::new(&[&Sample, &ColourBalanceRgb]);
     driven.open(&path);
+    // The black joins the next step, Sample's grain, after colour balance rgb.
+    let ready = driven.run([
+        Command::Set {
+            operation: "exposure".to_owned(),
+            param: "black".to_owned(),
+            value: Value::Float(1.0),
+        },
+        set("grain", ControlValue::Number(20.0), true),
+    ]);
+    assert!(failures(&ready).is_empty(), "{ready:?}");
     driven.writes();
     let enabled = |values: &Values| {
         (values.tools.iter())
@@ -2611,8 +2624,8 @@ fn a_one_shot_pick_turns_its_tool_on_in_its_own_step() {
     let before = sources(&driven);
     let events = driven.run([once(
         "colorbalancergb",
-        "global_hue",
-        Region::Point([0.5, 0.5]),
+        "white_fulcrum",
+        Region::Point([0.1, 0.1]),
     )]);
     assert!(failures(&events).is_empty(), "{events:?}");
     assert!(enabled(values(&events)));
@@ -2621,6 +2634,10 @@ fn a_one_shot_pick_turns_its_tool_on_in_its_own_step() {
         "{events:?}"
     );
     let picked = driven.picked();
+    let reading = (driven.engine.pickers)
+        .latest_reading("colorbalancergb")
+        .unwrap();
+    assert_eq!(reading.input.max, [0.0; 4], "{reading:?}");
     let history = picked.iter().position(|e| matches!(e, Event::History(_)));
     let ended = picked
         .iter()
@@ -2629,6 +2646,11 @@ fn a_one_shot_pick_turns_its_tool_on_in_its_own_step() {
         history.is_some_and(|h| ended.is_some_and(|e| h < e)),
         "{picked:?}"
     );
+    for event in events.iter().chain(&picked) {
+        if let Event::Values(values) = event {
+            assert_eq!(number(values, "colorbalancergb", "white_fulcrum"), 0.0);
+        }
+    }
     let after = sources(&driven);
     assert_eq!(
         after[before.len()..],
@@ -2877,8 +2899,9 @@ fn saved_steps(driven: &Driven, path: &Path) -> Vec<(crate::history::StepSource,
 
 /// A one-shot pick ended before its reading arrives saves what it turned on as a step of
 /// its own, of source Auto: by `Off`, another photo, a close, a second one-shot, and a
-/// command on the edit, of its tool or another, whose step follows it and never takes it
-/// in.
+/// command on the edit naming its tool, whose step follows it and never takes it in. A
+/// command on another tool saves the turning on the same way but leaves the pick on, so
+/// its pick is a step of its own once its reading arrives.
 #[test]
 fn a_one_shot_pick_ended_early_saves_its_turning_on_as_a_step_of_its_own() {
     use crate::history::StepSource;
@@ -2886,15 +2909,17 @@ fn a_one_shot_pick_ended_early_saves_its_turning_on_as_a_step_of_its_own() {
     let hue = || once("colorbalancergb", "global_hue", Region::Point([0.5, 0.5]));
     let auto = (StepSource::Auto, "colorbalancergb".to_owned());
     let other = scratch("picker-once-early-other");
-    // Each with the tool of the person's step that follows, if any.
-    let cases: [(&str, Command, Option<&str>); 6] = [
-        ("off", picker(PickerCommand::Off), None),
-        ("open", Command::Open(other.clone()), None),
-        ("close", Command::Close, None),
+    // Each with the tool of the person's step that follows, if any, and whether the pick
+    // still writes after it.
+    let cases: [(&str, Command, Option<&str>, bool); 6] = [
+        ("off", picker(PickerCommand::Off), None, false),
+        ("open", Command::Open(other.clone()), None, false),
+        ("close", Command::Close, None, false),
         (
             "once",
             once("sample", "show", Region::Point([0.3, 0.4])),
             None,
+            false,
         ),
         (
             "its tool",
@@ -2905,14 +2930,16 @@ fn a_one_shot_pick_ended_early_saves_its_turning_on_as_a_step_of_its_own() {
                 done: true,
             },
             Some("colorbalancergb"),
+            false,
         ),
         (
             "another tool",
             set("brightness", ControlValue::Number(0.5), true),
             Some("sample"),
+            true,
         ),
     ];
-    for (name, ender, then) in cases {
+    for (name, ender, then, picks) in cases {
         let path = scratch(&format!("picker-once-early-{}", name.replace(' ', "-")));
         driven.open(&path);
         let events = driven.run([hue(), ender]);
@@ -2929,7 +2956,12 @@ fn a_one_shot_pick_ended_early_saves_its_turning_on_as_a_step_of_its_own() {
             .filter(|(source, _)| *source != StepSource::Default)
             .collect();
         let then = then.map(|tool| (StepSource::You, tool.to_owned()));
-        let want: Vec<_> = [auto.clone()].into_iter().chain(then).collect();
+        let after = picks.then(|| auto.clone());
+        let want: Vec<_> = [auto.clone()]
+            .into_iter()
+            .chain(then)
+            .chain(after)
+            .collect();
         assert_eq!(made, want, "{name}");
         remove(&path);
     }
@@ -3346,5 +3378,178 @@ fn colour_calibration_s_readout_follows_the_illuminant() {
     let then = readout(values(&events));
     assert_eq!(Some(then), own(&driven, values(&events)));
     assert_ne!(then, first);
+    remove(&path);
+}
+
+/// Colour balance RGB's controls as `values` report them.
+fn colour_balance(values: &Values) -> Controls {
+    let tool = (values.tools.iter())
+        .find(|tool| tool.tool == "colorbalancergb")
+        .unwrap();
+    let mut controls = Controls::new();
+    for control in &tool.controls {
+        controls.set(control.control, control.value.clone());
+    }
+    controls
+}
+
+/// `On` for Colour balance RGB's picker `id`, an area, `command` held.
+fn on_colour_balance(id: &'static str, command: bool) -> Command {
+    picker(PickerCommand::On {
+        picker: PickerRef::Tool {
+            tool: "colorbalancergb",
+            picker: id,
+        },
+        area: true,
+        keys: PickKeys {
+            command,
+            shift: false,
+        },
+        settings: Vec::new(),
+        channel: None,
+    })
+}
+
+/// Colour balance RGB's Global offset hue picker on the tool off: `On` with Ctrl held
+/// turns it on and writes the area's own hue, darktable's below 0° here, wrapped onto 0°
+/// to 360°, and its chroma, as the tool's pick gives them for the reading the session
+/// measured, a step of source Auto after the turning on's; `On` again with no key held
+/// writes the opposite hue, half a turn away.
+#[test]
+fn colour_balance_rgb_s_hue_picker_turns_it_on_and_writes_its_hue_wrapped() {
+    use crate::history::StepSource;
+    let path = scratch("picker-colour-balance-hue");
+    let mut driven = Driven::new(&[&ColourBalanceRgb]);
+    let steps = |driven: &Driven| {
+        let open = driven.engine.open.as_ref().unwrap();
+        (open.history.log().steps().iter())
+            .map(|step| step.source)
+            .collect::<Vec<_>>()
+    };
+    let enabled = |values: &Values| {
+        (values.tools.iter())
+            .find(|tool| tool.tool == "colorbalancergb")
+            .is_some_and(|tool| tool.enabled)
+    };
+    let opened = driven.open(&path);
+    assert!(!enabled(values(&opened)));
+    let before = steps(&driven);
+    // The tool's own pick of the reading the session measured, `command` held.
+    let expected = |driven: &Driven, command: bool| {
+        let reading = (driven.engine.pickers)
+            .latest_reading("colorbalancergb")
+            .unwrap();
+        let image = &driven.engine.open.as_ref().unwrap().image;
+        let keys = PickKeys {
+            command,
+            shift: false,
+        };
+        let picked = ColourBalanceRgb
+            .pick(
+                "global_hue",
+                reading,
+                &Controls::new(),
+                image,
+                &[],
+                None,
+                None,
+                keys,
+            )
+            .unwrap();
+        (
+            picked.writes.number("global_h"),
+            picked.writes.number("global_c"),
+        )
+    };
+    // Turned on by `On`, a change of its own, then its first reading's pick, another.
+    let mut events = driven.run([on_colour_balance("global_hue", true)]);
+    assert!(enabled(values(&events)));
+    assert_eq!(steps(&driven)[before.len()..], [StepSource::Auto]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let own = colour_balance(values(&events));
+    let (hue, chroma) = expected(&driven, true);
+    assert!(hue < 0.0, "{hue}");
+    assert_eq!(own.number("global_h"), hue.rem_euclid(360.0));
+    assert_eq!(own.number("global_c"), chroma);
+    let after = steps(&driven);
+    assert_eq!(after[..before.len()], before[..]);
+    assert_eq!(after[before.len()..], [StepSource::Auto, StepSource::Auto]);
+
+    // With no key held, the opposite.
+    let mut events = driven.run([on_colour_balance("global_hue", false)]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let opposite = colour_balance(values(&events));
+    let (hue, _) = expected(&driven, false);
+    assert!((0.0..360.0).contains(&hue), "{hue}");
+    assert_eq!(opposite.number("global_h"), hue);
+    let apart = (opposite.number("global_h") - own.number("global_h")).rem_euclid(360.0);
+    assert!((apart - 180.0).abs() < 1e-3, "{apart}");
+    remove(&path);
+}
+
+/// Colour balance RGB's White fulcrum picker on an area that is black at the operation's
+/// input, exposure's black set at 1: `log2` of its luminance, 0, is not finite, so the
+/// session writes nothing for it, and with the tool on already makes no step.
+#[test]
+fn colour_balance_rgb_s_white_fulcrum_of_a_black_area_writes_nothing() {
+    let path = scratch("picker-colour-balance-black");
+    let mut driven = Driven::new(&[&ColourBalanceRgb]);
+    let steps = |driven: &Driven| {
+        let open = driven.engine.open.as_ref().unwrap();
+        open.history.log().steps().len()
+    };
+    driven.open(&path);
+    let events = driven.run([
+        Command::Set {
+            operation: "exposure".to_owned(),
+            param: "black".to_owned(),
+            value: Value::Float(1.0),
+        },
+        Command::SetControl {
+            tool: "colorbalancergb".to_owned(),
+            control: "contrast".to_owned(),
+            value: ControlValue::Number(10.0),
+            done: true,
+        },
+    ]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let before = (steps(&driven), colour_balance(values(&events)));
+    let mut events = driven.run([once(
+        "colorbalancergb",
+        "white_fulcrum",
+        Region::Point([0.1, 0.1]),
+    )]);
+    events.extend(driven.picked());
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let reading = (driven.engine.pickers)
+        .latest_reading("colorbalancergb")
+        .unwrap();
+    assert_eq!(reading.input.max, [0.0; 4], "{reading:?}");
+    let image = &driven.engine.open.as_ref().unwrap().image;
+    let picked = (ColourBalanceRgb)
+        .pick(
+            "white_fulcrum",
+            reading,
+            &Controls::new(),
+            image,
+            &[],
+            None,
+            None,
+            PickKeys::default(),
+        )
+        .unwrap();
+    assert!(!picked.writes.number("white_fulcrum").is_finite());
+    assert!(
+        !events.iter().any(|e| matches!(e, Event::History(_))),
+        "{events:?}"
+    );
+    for event in &events {
+        if let Event::Values(values) = event {
+            assert_eq!(colour_balance(values), before.1);
+        }
+    }
+    assert_eq!(steps(&driven), before.0);
     remove(&path);
 }
