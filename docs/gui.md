@@ -2772,15 +2772,15 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 **A toolbar a person customises** (decision 92; the list, the overflow, the labels and its menu built). The order below is the default of one list of item ids kept for each workspace, `toolbar` in its file (decision 96). Everything but the caption buttons and the Mac's traffic lights may be moved or hidden: the menu button, the save state, the jobs, an assistant's connection and every action ([Customising the Toolbar](#customising-the-toolbar)).
 
 - **Order.**
-  - macOS: the traffic lights; Import…, Export…, Cull, Reset, Undo, Redo; Copy edit and Apply edit; the empty strip that moves the window; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
+  - macOS: the traffic lights; Import…, Export…, Cull, Reset, Undo, Redo; the empty strip that moves the window, the cursors' well in its middle; Copy edit and Apply edit; the jobs spinner ([The jobs window](#the-jobs-window), decision 57), an assistant's connection and the save state ([The edit, saved](#the-edit-saved)).
   - Windows and Linux: the menu button, the app's icon or ☰, with no menu titles (decision 39); the same actions; the empty strip and the same end; minimise, maximise or restore, close.
-  - The common actions sit at the start, right after the traffic lights or the menu button; at the end stand only the save state, the jobs and an assistant's connection, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)). Export… reveals the Export tool in the Tools panel and focuses its button, as Ctrl+E does, rather than opening anything over the photo ([The Export tool](#the-export-tool), decision 90).
+  - The common actions sit at the start, right after the traffic lights or the menu button; at the end stand Copy edit and Apply edit, then the jobs, an assistant's connection and the save state, which report rather than act. The actions keep their words, titles and availability. Export and Apply edit act on every selected photo and say how many in their tooltips ([Selection and the active photo](#selection-and-the-active-photo)). Export… reveals the Export tool in the Tools panel and focuses its button, as Ctrl+E does, rather than opening anything over the photo ([The Export tool](#the-export-tool), decision 90).
   - **Fixed slots.** The jobs spinner and the save state each keep a slot of fixed width, the width of its widest form at the current fold step (the save state's: Saving… or the warning with its word, folded "…" or the sign alone; the spinner's: one button), in that order, reserved whether it shows anything or not. So the spinner coming or going, or the save state changing between nothing, Saving… and Not saved, moves neither the other nor anything else in the panel. While a slot shows nothing it is part of the strip that moves the window.
-  - **The cursors' well** (decision 104; [cursors.md](cursors.md#the-well)): one sunken well of cursors, one button per group, centred between two empty strips after Apply edit, so it stands in the middle of the room between the actions and the status slots. It never folds; the actions fold before it. Its Pick face is a second door to each tool's picker (built, 104.5 and 104.6): chosen exactly while that picker is on, from its button or the well, and back to Select, or to the cursor the person chose, as it turns off. The Colour picker's own picker has its own group after Pick, its face the second door to the Colour picker's header button, on Shift+K (planned with that tool, decision 104's 104.8).
+  - **The cursors' well** (decision 104; [cursors.md](cursors.md#the-well)): one sunken well of cursors, one button per group, centred between two empty strips after Redo, so it stands in the middle of the room between the actions at the start and Copy edit and Apply edit at the end. It never folds; the actions fold before it. Its Pick face is a second door to each tool's picker (built, 104.5 and 104.6): chosen exactly while that picker is on, from its button or the well, and back to Select, or to the cursor the person chose, as it turns off. The Colour picker's own picker has its own group after Pick, its face the second door to the Colour picker's header button, on Shift+K (planned with that tool, decision 104's 104.8).
   - Slideshow and Copy or Apply Parts are not in the Toolbar: they are in View › Slideshow and Edit › Copy or Apply Parts…. Cull arrives with culling in Phase 3, where what it opens is still to be designed; until then it is drawn on the wireframe only.
 - **No layout switcher:** the viewer bar's Map toggle switches the Viewer between Photo and the map ([The viewer bar](#the-viewer-bar)).
 - **No Settings button** in the default: Settings is in the app menu on the Mac and on Ctrl+, (⌘,); on Windows and Linux also last in Edit in the menu button's menu ([the menu bar](#the-menu-bar)). Settings… is offered for the toolbar (decision 92).
-- **Groups** are told apart by space, never a separator line: `spacing.xl`, 16 points, between Redo and Copy edit and, on Windows and Linux, before the caption buttons, against the usual gap between buttons. The menu button stands 8 points before Import, as the actions' groups stand apart.
+- **Groups** are told apart by space, never a separator line: the empty strips round the cursors' well between the actions at the start and Copy edit and Apply edit at the end, and on Windows and Linux `spacing.xl`, 16 points, before the caption buttons, against the usual gap between buttons. The menu button stands 8 points before Import, as the actions' groups stand apart.
 - **The menu button** on Windows and Linux ([The menu button on Windows and Linux](#the-menu-button-on-windows-and-linux)): the app's icon, its rounded square in one colour with the Slider A cut out of it, and a caret, or ☰, as the setting Menu button chooses.
   - Amber marks what is chosen (the tab underline, the active photo's outline, the active curve point), and the Toolbar is part of the photo's surround, so the app's icon stays neutral, in the icons' colours; the cut shows the A and its marker without colour.
   - No mark of its own and no name beside it: About is in the app menu on the Mac and in Help on Windows and Linux ([Help](#help)), and the Mac's app menu, the window's title and About carry the name. The colour mark, the app icon in colour and the full logo are for where the logo stands alone, away from the photo.
@@ -2806,9 +2806,7 @@ With labels:
 
 | Step starts below | Mac, English | Linux, English, the app's icon | Linux, English, ☰ | Mac, Ukrainian | Mac, Polish |
 | --- | --- | --- | --- | --- | --- |
-| The fixed space narrows to 8 points | 744 points | 869 | 858 | 875 | 848 |
-| The fixed space goes | 736 | 861 | 850 | 867 | 840 |
-| Apply edit goes under » | 730 | 855 | 844 | 861 | 834 |
+| Apply edit goes under » | 730 points | 855 | 844 | 861 | 834 |
 | Import…, the last before Undo and Redo, goes under » | 533 | 658 | 647 | 618 | 567 |
 | The status words fold | 481 | 606 | 595 | 564 | 506 |
 | Undo and Redo go under » | 423 | 548 | 537 | 480 | 433 |
@@ -2817,16 +2815,14 @@ Without labels:
 
 | Step starts below | Mac, English | Linux, English, the app's icon | Linux, English, ☰ | Mac, Ukrainian | Mac, Polish |
 | --- | --- | --- | --- | --- | --- |
-| The fixed space narrows to 8 points | 613 points | 738 | 727 | 640 | 628 |
-| The fixed space goes | 605 | 730 | 719 | 632 | 620 |
-| Apply edit goes under » | 599 | 724 | 713 | 626 | 614 |
+| Apply edit goes under » | 599 points | 724 | 713 | 626 | 614 |
 | Import…, the last before Undo and Redo, goes under » | 495 | 620 | 609 | 522 | 510 |
 | The status words fold | 461 | 586 | 575 | 488 | 476 |
 | Undo and Redo go under » | 403 | 528 | 517 | 403 | 403 |
 
 Linux needs 125 points more than the Mac, 114 with ☰, 49 + 146 − 70: the menu button and the 8 points after it, 49 (38 with ☰, which is 11 narrower than the app's icon and its caret); at the end the caption buttons with the 16 points before them, 154, less the Mac's 8-point end margin they replace, 146; less the 70 points by which the traffic lights' room, 78, is wider than the start's 8-point margin. Each step starts 117 points wider than it would without the cursors' well, which never folds: the well, 101 points for Phase 2's Select, Pan and Pick, and the 16 points before it. The test (`the_toolbar_folds_where_gui_md_says`) holds these numbers, with labels and without, the jobs spinner's slot and the well counted as the app draws them, and checks at 500 points, in every language, as on the Mac and on Linux with either menu button, that the default list and one with every part and twelve more actions placed fold no part and leave 24 points of empty panel. The narrowing test checks at every width down to 500, in every language, that those 24 points are left, counted on both sides of the well together, the menu button included.
 
-Never folded: the menu button on Windows and Linux, the save warning's sign, an assistant's connection, the cursors' well, », the caption buttons, and 24 points of empty panel to move the window by. The well stands centred in the room between the actions and the status slots, its slots counted at their widest, so neither a save nor a job moves it.
+Never folded: the menu button on Windows and Linux, the save warning's sign, an assistant's connection, the cursors' well, », the caption buttons, and 24 points of empty panel to move the window by. The well stands centred in the room between the actions at the start and Copy edit and Apply edit at the end, the status slots counted at their widest, so neither a save nor a job moves it.
 
 **The window's minimum width** (built, decision 92) is at least what never folds, so the Toolbar never overlaps itself or the caption buttons and keeps its 24 points. The Toolbar measures it each frame at the scale and language in use, every step taken, a hidden part's guard counted as if it showed so a failure never changes it (`Toolbar::least_width`), and the app keeps the window at least that wide at the interface size, never under its own 960 by 600 pixels, setting it again as the list, the interface size or the language changes, and widening a window left narrower, since X11 and Wayland never resize a window to a new minimum themselves: at once, or, before it shows, while it is maximised or full screen or still has the start window's size, once it shows, is restored or has its own, so a window restored from maximised, or one started straight into the main window at a large interface size, is widened too. With every part placed it is the same in every language, the status words folded; on the Mac it narrows as the interface grows, since the traffic lights' 78 points are fewer of the interface's points:
 
@@ -2847,11 +2843,11 @@ Built (decision 92): tools' items, `ToolDefinition::toolbar`; the set of what ca
 
 | Platform | The default, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `cursors`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `flexible-space`, `copy-edit`, `apply-edit`, `jobs`, `assistant` (Phase 6), `save-state` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - One list for every platform: the Mac never shows `menu-button` and never takes it out of the list.
-- **Drawn** in the list's order: what stands before the first flexible space from the toolbar's start, what stands after the last at its end, and what stands between two in the middle of the room the flexible spaces share, so the default's well is centred between the actions and the status slots. A fixed space is drawn only between two items drawn with no flexible space between; a part or an action listed twice is drawn once.
+- **Drawn** in the list's order: what stands before the first flexible space from the toolbar's start, what stands after the last at its end, and what stands between two in the middle of the room the flexible spaces share, so the default's well is centred between the actions at the start and those at the end. A fixed space is drawn only between two items drawn with no flexible space between; a part or an action listed twice is drawn once.
 - **What can be placed:**
   - the parts `menu-button` (Windows and Linux, drawn as the setting Menu button says), `jobs`, `save-state`, `assistant` and `cursors`, the whole well of cursors (decision 104), one each; a hidden well leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button ([cursors.md](cursors.md#the-well));
   - the app's own actions, only those that belong to no tool, pressed or toggled, to which the registry gives an icon, one each: `open`, `open-folder`, `settings`, `full-screen`, `zoom-100`, `zoom-fit`, `show-jobs`, `next-photo` and `previous-photo`; `import` until the Import tool declares it; Cull, Before and After, Clipping Warnings, Show in Folder and Map Shortcuts (decision 98, [Visual mapping](#visual-mapping)) as their actions are built; Before and After, Clipping Warnings, `zoom-100`, `settings` and Map Shortcuts are not in the default;
@@ -2880,9 +2876,9 @@ Every item of the toolbar menu is reachable from the keys whatever the toolbar s
 ```toml
 # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
 version = 1
-toolbar = ["menu-button", "import", "export", "reset", "undo", "redo", "space",
-           "copy-edit", "apply-edit", "flexible-space", "cursors", "flexible-space",
-           "jobs", "save-state"]
+toolbar = ["menu-button", "import", "export", "reset", "undo", "redo",
+           "flexible-space", "cursors", "flexible-space",
+           "copy-edit", "apply-edit", "jobs", "save-state"]
 
 [[tabs]]
 id = "photos"

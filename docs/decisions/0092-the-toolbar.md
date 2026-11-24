@@ -2,7 +2,7 @@
 
 ## Context
 
-The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, Copy edit and Apply edit, the cursors' well, the jobs spinner and the save state. As it narrows it folds the actions into » one at a time.
+The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, the cursors' well, Copy edit and Apply edit, the jobs spinner and the save state. As it narrows it folds the actions into » one at a time.
 
 People want the actions they use on every photo within reach, and tools want buttons of their own there, such as Orientation's rotations. Several things constrain how:
 
@@ -22,12 +22,12 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Platform | The default list, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `space`, `copy-edit`, `apply-edit`, `flexible-space`, `cursors`, `flexible-space`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `flexible-space`, `copy-edit`, `apply-edit`, `jobs`, `assistant` (Phase 6), `save-state` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - There is one list for every platform. The Mac never shows `menu-button` and never takes it out of the list.
 - Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the viewer bar has them. So is Settings….
-- **The cursors' well,** `cursors`, stands between two flexible spaces, centred in the room between the actions and the status slots ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
+- **The cursors' well,** `cursors`, stands between two flexible spaces, centred in the room between the actions at the start and Copy edit and Apply edit at the end ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
 
 **What can be placed:**
 
@@ -109,9 +109,9 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   ```toml
   # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
   version = 1
-  toolbar = ["menu-button", "import", "export", "reset", "undo", "redo", "space",
-             "copy-edit", "apply-edit", "flexible-space", "cursors", "flexible-space",
-             "jobs", "save-state"]
+  toolbar = ["menu-button", "import", "export", "reset", "undo", "redo",
+             "flexible-space", "cursors", "flexible-space",
+             "copy-edit", "apply-edit", "jobs", "save-state"]
 
   [[tabs]]
   id = "photos"

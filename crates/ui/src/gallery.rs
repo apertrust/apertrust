@@ -3126,8 +3126,8 @@ fn sample_jobs() -> Vec<Job> {
 /// The Toolbar's entries as the app draws the default workspace's list (decision 92), each
 /// button named in `ctx`'s language with its `.toolbar` word as its label, those
 /// `disabled` names drawn disabled: the menu button, Import…, Export…, Reset, Undo and
-/// Redo, which fold last, a space, Copy edit and Apply edit, the cursors' well between two
-/// flexible spaces, the jobs and the save state. Every button but Import… is a tool's
+/// Redo, which fold last, the cursors' well between two flexible spaces, then Copy edit and
+/// Apply edit, the jobs and the save state. Every button but Import… is a tool's
 /// item, Export's or History's, which folds first. The gallery and the design system's
 /// tests draw it.
 pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEntry> {
@@ -3150,12 +3150,11 @@ pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEnt
         button("reset", Icon::Reset),
         button("undo", Icon::Undo),
         button("redo", Icon::Redo),
-        ToolbarEntry::Space,
-        button("copy-edit", Icon::Copy),
-        button("apply-edit", Icon::Apply),
         ToolbarEntry::FlexibleSpace,
         ToolbarEntry::Cursors,
         ToolbarEntry::FlexibleSpace,
+        button("copy-edit", Icon::Copy),
+        button("apply-edit", Icon::Apply),
         ToolbarEntry::Jobs,
         ToolbarEntry::SaveState,
     ]

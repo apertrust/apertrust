@@ -64,9 +64,9 @@ In the well's order. Each group is one button of the well, even a group of one c
 
 ## The well
 
-**Where:** one toolbar item, `cursors`, a part of the Toolbar's (decision 92), centred between two flexible spaces after Apply edit, so it sits in the middle of the room between the actions and the status slots, with the window's drag strip on both sides:
+**Where:** one toolbar item, `cursors`, a part of the Toolbar's (decision 92), centred between two flexible spaces after Redo, so it sits in the middle of the room between the actions at the start and Copy edit and Apply edit at the end, with the window's drag strip on both sides:
 
-`import, export, cull, reset, undo, redo, space, copy-edit, apply-edit, flexible-space, cursors, flexible-space, jobs, assistant, save-state`
+`import, export, cull, reset, undo, redo, flexible-space, cursors, flexible-space, copy-edit, apply-edit, jobs, assistant, save-state`
 
 The well stands where the workspace's list places `cursors` (built), and is drawn nowhere where the list leaves it out. It is client area: a press on it never moves the window, and a double-click never maximises it (`HTCLIENT` on Windows).
 

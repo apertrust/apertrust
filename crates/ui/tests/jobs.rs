@@ -580,16 +580,21 @@ fn the_spinner_has_no_words_so_it_never_folds_and_leaves_room_to_move_the_window
                         folded,
                         "{locale:?}, {width} points, {saved:?}"
                     );
-                    let last = names
-                        .iter()
-                        .filter_map(|name| harness.query_by_label(name))
-                        .map(|node| node.rect().right())
-                        .fold(0.0, f32::max);
+                    // The widest gap between the buttons, the spinner's among them, is the
+                    // empty panel between the actions at the start and those at the end.
                     let rect = spinner_named(&harness, &jobs_name).rect();
+                    let mut shown: Vec<egui::Rect> = (names.iter())
+                        .filter_map(|name| harness.query_by_label(name))
+                        .map(|node| node.rect())
+                        .chain([rect])
+                        .collect();
+                    shown.sort_by(|a, b| a.left().total_cmp(&b.left()));
+                    let empty = (shown.windows(2))
+                        .map(|pair| pair[1].left() - pair[0].right())
+                        .fold(0.0, f32::max);
                     assert!(
-                        rect.left() - last >= 24.0,
-                        "{locale:?}, {width} points, {saved:?}: {last} to {}",
-                        rect.left()
+                        empty >= 24.0,
+                        "{locale:?}, {width} points, {saved:?}: {empty} points empty"
                     );
                     assert!(rect.right() <= width as f32, "{width}");
                     // A button, not a chip: it is as wide as the others.

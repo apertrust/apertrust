@@ -794,19 +794,18 @@ fn what_cannot_be_read_is_skipped() {
 }
 
 /// The Toolbar's default list (decision 92), in both built-in workspaces.
-const TOOLBAR: [&str; 14] = [
+const TOOLBAR: [&str; 13] = [
     "menu-button",
     "import",
     "export",
     "reset",
     "undo",
     "redo",
-    "space",
-    "copy-edit",
-    "apply-edit",
     "flexible-space",
     "cursors",
     "flexible-space",
+    "copy-edit",
+    "apply-edit",
     "jobs",
     "save-state",
 ];

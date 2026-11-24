@@ -140,13 +140,13 @@ fn the_actions_come_first_in_order_and_saved_last() {
             .query_by_role_and_label(Role::Button, "Menu")
             .is_none()
     );
-    // Copy edit and Apply edit are a group of their own, 16 points on, with no line.
-    assert_eq!(rect("Copy edit").left() - rect("Redo").right(), 16.0);
     assert_eq!(rect("Export…").left() - rect("Import…").right(), 2.0);
     assert_eq!(rect("Reset").left() - rect("Export…").right(), 2.0);
-    // The empty strip that moves the window, then the end, where the save state shows
-    // nothing while saving works: no word, no tick.
-    assert!(rect("Apply edit").right() < bar.center().x);
+    // The empty strip that moves the window, then Copy edit and Apply edit at the end,
+    // before the save state, which shows nothing while saving works: no word, no tick.
+    assert!(rect("Redo").right() < bar.center().x);
+    assert!(rect("Copy edit").left() > bar.center().x);
+    assert_eq!(rect("Apply edit").left() - rect("Copy edit").right(), 2.0);
     for word in ["Saved", "Saving…", "Not saved"] {
         assert!(harness.query_by_label(word).is_none(), "{word}");
     }
@@ -248,7 +248,7 @@ fn labels_stand_under_their_icons_in_a_taller_toolbar() {
     }
     let rect = |name: &str| harness.get_by_label(name).rect();
     assert_eq!(rect("Export…").left() - rect("Import…").right(), 2.0);
-    assert_eq!(rect("Copy edit").left() - rect("Redo").right(), 16.0);
+    assert_eq!(rect("Apply edit").left() - rect("Copy edit").right(), 2.0);
     // Off, each button is its icon alone, Import…, Export… and Reset too, and no word
     // shows; the panel is 44 points.
     let mut off = toolbar(&[], false);
@@ -559,10 +559,14 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
                 for width in (500..=1400).rev().step_by(5) {
                     harness.set_size(egui::vec2(width as f32, 120.0));
                     harness.run();
-                    let last = parts
-                        .iter()
+                    let well = harness.get_by_role(Role::RadioGroup).rect();
+                    let shown: Vec<egui::Rect> = (parts.iter())
                         .filter_map(|name| harness.query_by_label(name))
-                        .map(|node| node.rect().right())
+                        .map(|node| node.rect())
+                        .collect();
+                    let last = (shown.iter())
+                        .filter(|rect| rect.right() <= well.left())
+                        .map(|rect| rect.right())
                         .fold(0.0, f32::max);
                     // The save state at the end, before the caption buttons' gap or the
                     // margin.
@@ -573,10 +577,13 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
                         harness.get_by_role(Role::Toolbar).rect().right() - 8.0
                     };
                     assert_eq!(status.right(), edge, "{locale:?}, {width}, {saved:?}");
-                    let end = status.left();
+                    // Copy edit and Apply edit before it, where they show.
+                    let end = (shown.iter())
+                        .filter(|rect| rect.left() >= well.right())
+                        .map(|rect| rect.left())
+                        .fold(status.left(), f32::min);
                     // The cursors' well between them, the empty panel counted on both its
                     // sides together.
-                    let well = harness.get_by_role(Role::RadioGroup).rect();
                     let (before, after) = (well.left() - last, end - well.right());
                     assert!(
                         before >= 0.0 && after >= 0.0 && before + after >= 24.0,
@@ -593,10 +600,9 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
 /// on Windows and Linux, the menu button drawn as `menu` says and the caption buttons at
 /// the end; with the jobs spinner's slot and Phase 2's cursors' well, as the app draws
 /// them, and a failed write, whose words show the status step. Each is the widest Toolbar
-/// that has taken the step, plus one, 1601 for one taken at the widest: the fixed space
-/// narrowed, the fixed space gone, the first action under », every action but Undo and
+/// that has taken the step, plus one: the first action under », every action but Undo and
 /// Redo under », the status words folded, and Undo and Redo under ».
-fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [u32; 6] {
+fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [u32; 4] {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1600.0, 120.0))
         .with_context_setup(move |ctx| {
@@ -618,28 +624,19 @@ fn fold_widths(locale: Locale, menu: Option<MenuButtonStyle>, labels: bool) -> [
             with_well(0, |well| bar.cursors(well).show(ui));
         });
     let words = Translator::new(locale);
-    let [import, redo, copy, more, undo, failed] = [
+    let [import, more, undo, failed] = [
         "action-import",
-        "action-redo",
-        "action-copy-edit",
         "toolbar-more",
         "action-undo",
         "status-not-saved",
     ]
     .map(|id| words.text(id));
-    // The room between Redo and Copy edit, the fixed space's, while both show.
-    let space = |harness: &Harness<'_>| {
-        let redo = harness.query_by_label(&redo)?.rect();
-        Some(harness.query_by_label(&copy)?.rect().left() - redo.right())
-    };
     let sign = 2.0 * Theme::default().spacing.s + Icon::Warning.size();
-    let mut starts = [0; 6];
+    let mut starts = [0; 4];
     for width in (150..=1600).rev() {
         harness.set_size(egui::vec2(width as f32, 120.0));
         harness.run();
         let taken = [
-            space(&harness).is_none_or(|room| room < 16.0),
-            space(&harness).is_none_or(|room| room < 8.0),
             harness.query_by_label(&more).is_some(),
             harness.query_by_label(&import).is_none(),
             harness.get_by_label(&failed).rect().width() == sign,
@@ -783,38 +780,28 @@ fn keeps_every_part<T>(harness: &Harness<'_, T>, locale: Locale, menu: Option<Me
 /// every part placed fold no part and keep 24 points empty.
 #[test]
 fn the_toolbar_folds_where_gui_md_says() {
-    type Case = (Locale, Option<MenuButtonStyle>, [u32; 6], [u32; 6]);
+    type Case = (Locale, Option<MenuButtonStyle>, [u32; 4], [u32; 4]);
     let cases: [Case; 5] = [
         (
             Locale::EnGb,
             None,
-            [744, 736, 730, 533, 481, 423],
-            [613, 605, 599, 495, 461, 403],
+            [730, 533, 481, 423],
+            [599, 495, 461, 403],
         ),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Icon),
-            [869, 861, 855, 658, 606, 548],
-            [738, 730, 724, 620, 586, 528],
+            [855, 658, 606, 548],
+            [724, 620, 586, 528],
         ),
         (
             Locale::EnGb,
             Some(MenuButtonStyle::Menu),
-            [858, 850, 844, 647, 595, 537],
-            [727, 719, 713, 609, 575, 517],
+            [844, 647, 595, 537],
+            [713, 609, 575, 517],
         ),
-        (
-            Locale::Uk,
-            None,
-            [875, 867, 861, 618, 564, 480],
-            [640, 632, 626, 522, 488, 403],
-        ),
-        (
-            Locale::Pl,
-            None,
-            [848, 840, 834, 567, 506, 433],
-            [628, 620, 614, 510, 476, 403],
-        ),
+        (Locale::Uk, None, [861, 618, 564, 480], [626, 522, 488, 403]),
+        (Locale::Pl, None, [834, 567, 506, 433], [614, 510, 476, 403]),
     ];
     for (locale, menu, on, off) in cases {
         let measured = fold_widths(locale, menu, true);
@@ -1246,12 +1233,12 @@ fn title_bar_with(
         )
 }
 
-/// An empty point of the panel: after the last action at its start, well before its end,
-/// where the save state's slot shows nothing at rest.
+/// An empty point of the panel: halfway between the last action at its start, Redo, and
+/// the first at its end, Copy edit.
 fn empty_point<T>(harness: &Harness<'_, T>) -> egui::Pos2 {
-    let apply = harness.get_by_label("Apply edit").rect();
-    let end = harness.get_by_role(Role::Toolbar).rect().right() - 100.0;
-    egui::pos2((apply.right() + end) / 2.0, apply.center().y)
+    let redo = harness.get_by_label("Redo").rect();
+    let copy = harness.get_by_label("Copy edit").rect();
+    egui::pos2((redo.right() + copy.left()) / 2.0, redo.center().y)
 }
 
 fn press(harness: &Harness<'_, Vec<ToolbarAction>>, pos: egui::Pos2, pressed: bool) {
@@ -1396,7 +1383,7 @@ fn title_bar_with_well(width: f32) -> Harness<'static, Vec<ToolbarAction>> {
         )
 }
 
-/// The well sits after Apply edit, a group's gap before it at least, its presses reported
+/// The well sits after Redo, a group's gap before it at least, its presses reported
 /// as the well's; it is no empty area, so neither a drag nor a double-click on it, between
 /// its buttons too, moves or zooms the window, while the strips either side still do.
 #[test]
@@ -1404,8 +1391,8 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
     let mut harness = title_bar_with_well(1200.0);
     harness.run();
     let well = harness.get_by_role(Role::RadioGroup).rect();
-    let apply = harness.get_by_label("Apply edit").rect();
-    assert!(well.left() - apply.right() >= 16.0, "{apply:?}, {well:?}");
+    let redo = harness.get_by_label("Redo").rect();
+    assert!(well.left() - redo.right() >= 16.0, "{redo:?}, {well:?}");
     assert_eq!(well.size(), egui::vec2(101.0, 30.0));
     harness.get_by_label("Pan, A").click();
     harness.run();
@@ -1445,7 +1432,7 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
     );
     assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow]);
     // A right-click on it, between its faces too, asks for the toolbar menu on the well,
-    // the list's eleventh entry (decision 92).
+    // the list's eighth entry (decision 92).
     for at in [between, select.center()] {
         harness.state_mut().clear();
         right_click(&mut harness, at);
@@ -1453,7 +1440,7 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
             [ToolbarAction::ContextMenu(menu)] => menu,
             ref other => panic!("{other:?}"),
         };
-        assert_eq!(menu.entry, Some(10));
+        assert_eq!(menu.entry, Some(7));
     }
 }
 
@@ -1538,7 +1525,12 @@ fn a_right_click_anywhere_asks_for_the_toolbar_menu_with_what_is_under_it() {
         assert_eq!(menus_asked(&harness), vec![(None, empty, None)], "{on}");
         harness.state_mut().clear();
         // The list's places, the menu button first.
-        let buttons = [("Import…", 1), ("Reset", 3), ("Undo", 4), ("Apply edit", 8)];
+        let buttons = [
+            ("Import…", 1),
+            ("Reset", 3),
+            ("Undo", 4),
+            ("Apply edit", 10),
+        ];
         for (name, _) in buttons {
             let control = harness.get_by_label(name).rect().center();
             right_click(&mut harness, control);
