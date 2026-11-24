@@ -74,6 +74,9 @@ pub struct Mirror {
     /// The picker the app turned on, with whether it measures an area, or off (`None`), by
     /// its command's number, until a reading or an end through it says so or it is refused.
     asked: Option<(u64, Option<(PickerRef, bool)>)>,
+    /// The commands the session's last `Event::Picker` is through: where it turned the
+    /// picker off, the command that turned it off.
+    through: Option<u64>,
     /// The region the app sent last, by its command's number, until a reading includes it.
     sent: Option<(u64, Region)>,
     /// Each picker's last point and area this session, as the session keeps them across
@@ -138,6 +141,12 @@ impl Mirror {
         }
     }
 
+    /// The command whose answer the picker on shows (`None`, off): the one the app asked by,
+    /// until the session answers, else the one the session's last report is through.
+    pub fn through(&self) -> Option<u64> {
+        self.asked.map(|(number, _)| number).or(self.through)
+    }
+
     /// The command numbered `number` turned `picker` on, measuring an area where its flag
     /// says, or the picker off (`None`).
     pub fn asked(&mut self, number: u64, picker: Option<(PickerRef, bool)>) {
@@ -179,6 +188,7 @@ impl Mirror {
             (self.places.entry(reading.picker).or_default()).keep(through, reading.region);
         }
         self.reading = reading;
+        self.through = Some(through);
     }
 
     /// The command numbered `number` was refused: what it asked stops showing.

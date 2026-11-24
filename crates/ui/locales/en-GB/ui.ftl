@@ -1504,7 +1504,8 @@ picker-turned-off-why = { $picker } off: { $why }
 picker-turned-replaced = { $before } off: another picker turned on. { $picker } on
 # Why a picker turned off: another photo opened; the photo closed; a control of its tool
 # changed, $control its label; a tool changed, $tool its name; its tool turned off; its
-# tool's section closed; Undo, Redo or a move through the history; the edit reset.
+# tool's section closed; Undo, Redo or a move through the history; the edit reset; the
+# reference it picks toward cleared.
 picker-off-photo = another photo
 picker-off-closed = photo closed
 picker-off-control = { $control } changed
@@ -1513,6 +1514,7 @@ picker-off-tool-off = { $tool } turned off
 picker-off-section = { $tool } closed
 picker-off-history = history changed
 picker-off-reset = edit reset
+picker-off-reference = reference cleared
 
 ## The cursors' well (docs/cursors.md, The well; decision 104). $name is a cursor's name,
 ## $key its key as shortcuts spell it, $how what a press with it does, $group a group's name
