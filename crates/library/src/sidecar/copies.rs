@@ -840,7 +840,7 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
 /// `tool`, `toolVersion`, `enabled`, `kept`, `auto` and `control:` fields, in an
 /// operation's a field other than its `operation`, `schema` and `param:` fields, of
 /// Apertrust's namespace or any other, as a newer build's, or one that is no plain text.
-fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
+pub(crate) fn entry_problems(node: &Node, place: &str, problems: &mut Vec<Problem>) {
     const TOOL: [&str; 5] = ["tool", "toolVersion", "enabled", "kept", "auto"];
     const OPERATION: [&str; 2] = ["operation", "schema"];
     let unknown = |field: &str| Problem::UnknownField {

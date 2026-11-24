@@ -312,6 +312,18 @@ impl Folders {
         self.user_data.join("workspaces")
     }
 
+    /// The folder of one tool's presets, `presets/<tool>` in the user data folder, which
+    /// holds one file per preset, `<Name>.appreset` (decision 106), and may not exist yet.
+    pub fn presets(&self, tool: &str) -> PathBuf {
+        self.user_data.join("presets").join(tool)
+    }
+
+    /// The styles' folder, `styles` in the user data folder, which holds one file per
+    /// style, `<Name>.apstyle` (decision 106), and may not exist yet.
+    pub fn styles(&self) -> PathBuf {
+        self.user_data.join("styles")
+    }
+
     /// The app's start marker, `starting.toml` in the user data folder: written before it
     /// opens its graphics device and removed once its window has drawn, so one found there
     /// says the last start did not finish (decision 82).
@@ -851,6 +863,8 @@ mod tests {
         let chosen = found(choose(given(FLAGS[1], &nested), None, None, None, unasked));
         assert!(nested.is_dir());
         assert_eq!(chosen.settings(), nested.join("settings.toml"));
+        assert_eq!(chosen.presets("exposure"), nested.join("presets/exposure"));
+        assert_eq!(chosen.styles(), nested.join("styles"));
         // The settings file is the store's to write, and nothing of the write check stays.
         assert_eq!(std::fs::read_dir(&nested).expect("there").count(), 0);
         // An existing one is used as it is.

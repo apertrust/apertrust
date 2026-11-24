@@ -94,13 +94,14 @@ mod copies;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use copies::entry_problems;
 pub use copies::{
     ARG_NAMESPACE, COPIES_VERSION, Edits, FIRST_COPY, Note, Problem, SOURCES, Step, VirtualCopy,
     read_edits,
 };
 
 /// What `x:xmptk` says before the build.
-const TOOLKIT: &str = "Apertrust ";
+pub(crate) const TOOLKIT: &str = "Apertrust ";
 
 #[derive(Debug, Error)]
 pub enum SidecarError {
@@ -124,6 +125,14 @@ pub enum Newer {
     Version(u32),
     /// A layout this build supports through Edits, but the legacy Document would lose.
     DocumentLayout(u32),
+    /// A preset's or style's format version above this build's, [`presets::FORMAT_VERSION`]
+    /// (decision 106).
+    ///
+    /// [`presets::FORMAT_VERSION`]: crate::presets::FORMAT_VERSION
+    FormatVersion { version: u32, has: u32 },
+    /// A field of Apertrust's own in a preset or style that this build does not know, or
+    /// does not read as written, so a write would drop it (decision 106).
+    Field(Problem),
     /// A tool version above its definition's, or one that is no whole number, as
     /// written; its controls read by name.
     ToolVersion {
@@ -166,6 +175,10 @@ impl fmt::Display for Newer {
                 f,
                 "uses version {version}, which the legacy document reader cannot preserve"
             ),
+            Newer::FormatVersion { version, has } => {
+                write!(f, "is version {version}, newer than this build's {has}")
+            }
+            Newer::Field(problem) => write!(f, "holds what this build cannot keep ({problem})"),
             Newer::ToolVersion { tool, version, has } => write!(
                 f,
                 "holds {tool} version {version}, newer than this build's {has}"
@@ -502,7 +515,7 @@ fn xmp(build: Option<&str>, more: Vec<Namespace>, properties: Vec<Property>) -> 
 }
 
 /// One of Apertrust's own properties, simple, with its text.
-fn own(local: &str, text: &str) -> Property {
+pub(crate) fn own(local: &str, text: &str) -> Property {
     Property::simple(Name::new("apertrust", NAMESPACE, local), text)
 }
 
@@ -516,7 +529,7 @@ fn own_field<'a>(fields: &'a [Property], local: &str) -> Option<&'a str> {
 
 /// The entries an `rdf:Seq` holds; an item that is neither a tool's nor an operation's
 /// is no entry.
-fn read_entries(node: &Node) -> Vec<Entry> {
+pub(crate) fn read_entries(node: &Node) -> Vec<Entry> {
     node.items()
         .unwrap_or_default()
         .iter()
@@ -525,7 +538,7 @@ fn read_entries(node: &Node) -> Vec<Entry> {
 }
 
 /// `entries` as an `rdf:Seq` of structs, in their order.
-fn entry_list<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Node {
+pub(crate) fn entry_list<'a>(entries: impl IntoIterator<Item = &'a Entry>) -> Node {
     Node::array(
         ArrayKind::Seq,
         entries.into_iter().map(entry_node).collect(),
