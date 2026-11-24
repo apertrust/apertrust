@@ -2,9 +2,9 @@
 
 ## Context
 
-Every tool's header has a presets button, drawn disabled until presets come ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); Export's presets are designed ([0090](0090-export-as-a-photos-tab-tool.md)), Import's too ([0085](0085-import-in-folder-mode.md)); History's ⋯ holds Create a Style…, and the Edit menu Copy Edit, Apply Edit and Save Edit as Style…, all waiting for one model. This record settles that model: where presets and styles are kept, what a file holds, how a file a build cannot fully use is read, and how presets, styles and a copied edit are applied.
+Every tool's header has a presets button, drawn disabled until presets come ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); Export's presets are designed ([0090](0090-export-as-a-photos-tab-tool.md)), Import's too ([0085](0085-import-in-folder-mode.md)); History's ⋯ holds Create a Style…, and the Edit menu Copy Edit, Apply Edit and Save Edit as Style…, all waiting for one model. This record settles that model: where presets and styles are kept, what a file holds, how a file a build cannot fully use is read, how presets, styles and a copied edit are applied, and what a photo remembers of the styles applied to it, so that one can be cleared later.
 
-darktable at the reference release keeps presets and styles in `data.db`, its `presets`, `styles` and `style_items` tables, each module's parameters a C struct blob at its `op_version`, with `.dtpreset` and `.dtstyle` XML only as exports. Apertrust keeps no database as the truth ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), already has an XMP format for a tool's values with versions, migration and a newer build's rules ([0048](0048-the-apxmp-format.md)), and its engine opens no file ([0043](0043-settings-and-apertrusts-folders.md)).
+darktable at the reference release keeps presets and styles in `data.db`, its `presets`, `styles` and `style_items` tables, each module's parameters a C struct blob at its `op_version`, with `.dtpreset` and `.dtstyle` XML only as exports. It remembers a style applied to a photo only as a tag, `darktable|style|<name>` (`src/common/styles.c:965-972`), with no order and nothing to take one off alone; every such tag goes whenever the photo's history is deleted (`src/common/history.c:137-138`), as by Discard History, the lighttable's Undo, which restores a history that way (`src/common/history_snapshot.c:169`), a style applied in overwrite mode (`src/control/jobs/control_jobs.c:1801`, `src/common/styles.c:830`), Compress or Truncate at end 0 (`src/common/history.c:1214`, `:1359`) and an overwriting paste (`:1949`, `:1958`). Apertrust keeps no database as the truth ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md)), already has an XMP format for a tool's values with versions, migration and a newer build's rules ([0048](0048-the-apxmp-format.md)), and its engine opens no file ([0043](0043-settings-and-apertrusts-folders.md)).
 
 ## Decision
 
@@ -97,7 +97,7 @@ The engine turns a file's entries into tool values with the code that reads an e
 - **A preset** replaces its tool's values on the active photo: every control it holds takes its value and marks, every other goes back to its default for the photo, unkept, and a switched tool turns on or off as the entry says. One history step, source You, noted with the preset's name as a message's argument ([0078](0078-undo-redo-and-the-edits-history.md)), sent as a `Command::Step` holding a command that sets a tool's whole values (planned in the engine). Default settings sends `Command::ResetTool`.
 - **A utility's preset** writes its settings through the settings store, as the utility's rows do; it makes no history step, since a utility edits no photo.
 - **`apertrust-cli export --preset NAME`** takes a built-in by its id (`for-sharing`) first, then the person's preset whose name is exactly NAME, then a built-in by its British English name; none is an error listing the presets there are. Its settings apply, its size settings included, though the CLI otherwise never takes the size from `export.size` ([0056](0056-export-as-an-engine-job.md)); any of `--width`, `--height`, `--hq` and `--upscale` given, and every other flag, win over them, so `--preset for-sharing` means 2048 px.
-- **A style** applies its tools as one change: a step of each tool, sharing a batch, of source Style, noted with the style's name (`Command::Step`, [0078](0078-undo-redo-and-the-edits-history.md)). **Append** sets only the style's tools; **Replace** first resets the whole edit, as `Command::Reset` does, then sets them, one Undo for all. The person chooses Append or Replace when applying, Append by default; the file does not store it, as in darktable.
+- **A style** applies its tools as one change: a step of each tool, sharing a batch, of source Style, noted with the style's name, `history-style` (`Command::ApplyStyle`, [below](#the-styles-applied-to-a-photo); [0078](0078-undo-redo-and-the-edits-history.md)). **Append** sets only the style's tools; **Replace** first resets the whole edit, as `Command::Reset` does, then sets them, one Undo for all. The person chooses Append or Replace when applying, Append by default; the file does not store it, as in darktable.
 - **Copy Edit** keeps an unnamed style in the app's memory for the run, never on disk: every tool the active photo's edit holds (values off their defaults, a mark, or a switched tool on), but those unsafe to copy (below). **Apply Edit** applies it as Append, source Style, noted with the photo it was copied from.
 - **On every selected photo,** Apply Edit and a style apply as one batch, one Undo for all, as [history.md](../history.md) plans a batch on several photos, built after the active photo's; a preset applies to the active photo alone, as darktable's do.
 - **No hover preview** in phase 1: a preset or style applies on a click. Phase 2 adds the preview the quality bar asks for ([principles.md](../principles.md), Immediate).
@@ -111,11 +111,68 @@ The engine turns a file's entries into tool values with the code that reads an e
 - **Copy Edit is unchanged by `in_styles`:** it takes every tool the edit holds but those whose `copy_safe` is false, as above.
 - **A tool's Copy Settings and Paste Settings,** in its ⋯ ([0091](0091-context-menus-places-and-tools-items-as-actions.md)), copy one tool: its values as an unnamed preset in memory, pasted onto the same tool of the active photo as one step. `copy_safe` does not apply, since the person names the tool. Phase 2.
 
+### The styles applied to a photo
+
+Planned, with the Styles tool. A photo's edit remembers the styles applied to it, so that the Styles tool can list them and **Clear** can take one off later without undoing what came after it.
+
+- **The list,** newest first: applying a style puts it at the top, and applying one already on it moves it there. Each item holds the style's name as applied, its file name in `<user data>/styles/` then, and, for each tool it set, that tool's whole stored state before it and after it (values, marks, on or off), as entries. A style is on the list by its name, unique among styles, so one renamed or deleted since stays under the name it was applied with: Clear needs nothing from its file. A style renamed away and a new one created under its old name is taken for the one applied, as a person reading the list would take it; matching by name and file name as well would change nothing there, since the new file takes the old file name the rename freed.
+- **Applied again,** a style's item keeps, for each tool that still holds what the earlier application set, the earlier state before it, so Clear goes back to before the style first set that tool; takes, for every other tool it sets, the state just before this application; and keeps the earlier item's tools this application does not set as they were.
+- **Clear** puts back each tool the style set whose stored state is still the item's after state, compared as entries, to its before state, and takes the style off the list. A tool changed since keeps its value. Two styles that set a tool to the same state both count it as theirs: clearing the earlier puts the tool back to before it, though the later is still listed. After a **Replace**, each tool's before state is its reset state, so Clear leaves those tools at their defaults, as the Replace began. It is one change, a step of each tool it puts back, sharing a batch where there are several, source Style, noted `history-clear-style` with the style's name; one Undo takes it back, the list included.
+- **A change that moves the list and no tool,** a Clear whose tools have all changed since or a style applied again whose tools already hold its values, is one step holding the list alone, as is the step Compress writes the list on (below), `Change::None`, its History line reading its note. A change that moves neither makes no step.
+- **The list lives in the log** ([0047](0047-where-edits-live-and-what-the-sidecar-holds.md), [0078](0078-undo-redo-and-the-edits-history.md)), as a tool's state does: the step that changes it holds the whole list after it (`Step::styles`), the last step of a style's change or of a Clear, or Reset's step; the edit's list is the one at the last step up to the end that holds any list, else empty. So Undo and Redo, `GoTo`, Undo's fallback after reopening and Truncate move it with the tools and need nothing of their own: Undo of a style's change puts the list back as it was before it, taking a newly applied style off and a re-applied one back to its earlier place and before state, Redo puts it back, and going to a step inside its batch shows the list before it. **Reset's step,** Replace's too, holds the empty list only where the list was not empty, so Reset and Replace empty it and a photo Reset with no style applied holds no `apertrust:styles`; Discard History leaves no step, so no list. **Compress** takes the list off every step it keeps and, where the edit's list is not empty, writes it on a step of its own after the last step it keeps up to the end, the end then on it: a list-only step, `Change::None`, source Style, noted `history-styles-applied` ("Styles applied", with no argument; the Styles tool shows which), with a new id and Compress's clock. Keeping the step that held the list instead would keep its tool's entry over a later one Compress drops, a reset among them, and change what the photo shows. A log whose end is already on such a step holding the edit's list, as one compressed before, keeps it as it is, so Compress again changes nothing. So a style cleared before Compress stays cleared.
+- **A newer file taken in** ([0052](0052-comparing-two-copies-of-a-sidecar.md)): the steps the session lays have their lists rebuilt by replaying the session's changes of the list, in order, onto the list at the newer log's end. **Every Reset step laid empties it,** whether or not that step stores a list, so the other side's styles never outlive the session's Reset; a step that stores a list replays what it differs by from the list before it in the session's log: a style added or moved to the top is put at the top, any item of its name taken out first, and a style cleared is taken out where the list holds it. Each laid step then holds the list rebuilt, a Reset the empty list where the rebuilt one before it was not empty. **A style replayed** stays at the top, its after states the session's, and each tool's before state is what that tool holds in the joined log just before the step that first set it for this item, an earlier application's for a tool a later one did not set, not what the session recorded: the session applies A, setting X from 0 to 1, while the newer file set X to 2, and the replayed item's before for X is 2; a style already on the rebuilt list is applied again there by the rule above. So the styles the other side applied stay listed beside the session's, as decision 52 keeps each side's change tool by tool.
+- **Only named styles** are listed: Apply Edit, a copied edit with no name or file, and a preset add nothing to it.
+
+**Commands and values.** `ApplyStyle` and `ClearStyle` are commands on the edit, each ending a gesture under way, neither allowed in a `Step` (`NotInStep`), both refused on a photo open for viewing only or not yet live:
+
+- **`ApplyStyle { name, file, mode, tools }`:** the client reads the `.apstyle`, turns each entry into tool values with `sidecar::tool_values`, leaving a parked one out, and sends the name, the file name, `StyleMode::Append` or `Replace`, and the tools' values. The session applies it as `Step { source: Style, note, commands }` would, `Reset` first for Replace, then a `SetTool` for each tool, taking each tool's before state from its own edit, and updates the list in the same change.
+- **`ClearStyle { name }`:** Clear, as above; refused, `UnknownStyle`, where the list holds no style of that name.
+- **`Values::styles`:** the list, newest first, each its name, file name and the ids of the tools it set, which the Styles tool draws.
+
+**In the `.apxmp`,** version 2, a step that changes the list holds `apertrust:styles` after its `apertrust:entries`: an `rdf:Seq` of the list after it, newest first, closed at once (`<rdf:Seq/>`) where the step emptied it. Each item is a struct of `apertrust:name`, `apertrust:file`, a file name and never a path, since the folder differs from one computer to another, and `apertrust:before` and `apertrust:after`, each an `rdf:Seq` of tool entries as version 1 writes them, the same tools in the same order, an entry with no values a tool's reset state. A step that leaves the list as it was holds none, so an edit no style was ever applied to holds none. A step holding the list alone, `Change::None`, writes `apertrust:entries` as an empty `rdf:Seq` (`<rdf:Seq/>`), as every step writes its entries, then its `apertrust:styles`; a reader tells it from a Reset by its entries being empty, its note not `history-reset` and its `apertrust:styles`. The engine's reading of a step today (`sidecar::typed_step`) takes a step of no entry as an empty Reset, so the planned reader changes there; and a step whose entries are all left out as it is read, a retired tool's, stays as `Change::None` where it holds a list, rather than being left out:
+
+```xml
+<apertrust:styles>
+ <rdf:Seq>
+  <rdf:li>
+   <rdf:Description
+     apertrust:name="Warm film"
+     apertrust:file="Warm film.apstyle">
+    <apertrust:before>
+     <rdf:Seq>
+      <rdf:li>
+       <rdf:Description
+         apertrust:tool="grain"
+         apertrust:toolVersion="2"/>
+      </rdf:li>
+     </rdf:Seq>
+    </apertrust:before>
+    <apertrust:after>
+     <rdf:Seq>
+      <rdf:li>
+       <rdf:Description
+         apertrust:tool="grain"
+         apertrust:toolVersion="2"
+         apertrust:enabled="true"
+         control:strength="40"/>
+      </rdf:li>
+     </rdf:Seq>
+    </apertrust:after>
+   </rdf:Description>
+  </rdf:li>
+ </rdf:Seq>
+</apertrust:styles>
+```
+
+- **No version rise:** the file's version rises for removals and changes, never for additions ([0048](0048-the-apxmp-format.md)), so it stays 2.
+- **An older version 2 build** reads `apertrust:styles` as a field of a step it does not write, `Problem::UnknownField`: the photo opens there for viewing only, its caption saying some of its history can't be kept, and nothing is written over it, unless the person chooses Discard History…, which warns first and starts the history afresh without it, as for any field that build cannot keep. Every edit no style was applied to, and every one whose list Compress or Discard History has left with no step holding it, reads in every version 2 build.
+- **A build that has it** reads each before and after entry by decision 48's rules, as every step's entries: an older tool version migrated, a newer one or an unknown tool making the photo view-only. An item that is no struct, one lacking its name or file, a before and an after that differ in their tools, or a name twice in one list is a `sidecar::Problem`, so the photo opens for viewing only rather than lose it.
+
 ### Phases
 
 Presets and styles' own two phases, apart from the project's:
 
-- **Phase 1:** this format and its module; tool presets in every processing tool's header; Export's presets with its two built in and `apertrust-cli export --preset NAME`; creating a style; the Styles tool applying one to the active photo; Copy Edit and Apply Edit on the active photo; then Apply Edit and styles on every selected photo, as one batch.
+- **Phase 1:** this format and its module; tool presets in every processing tool's header; Export's presets with its two built in and `apertrust-cli export --preset NAME`; creating a style; the Styles tool applying one to the active photo, with the styles applied to it and Clear; Copy Edit and Apply Edit on the active photo; then Apply Edit and styles on every selected photo, as one batch.
 - **Phase 2:** the hover preview; darktable's built-in presets; Copy or Apply Parts…; a tool's Copy Settings and Paste Settings; Favourites, editing and duplicating a style; a preset's and a style's actions, with their ids ([0098](0098-actions-and-shortcuts-after-darktable.md)); styles on export and import; `.appreset` and `.apstyle` opened from outside; importing `.dtstyle` and `.dtpreset`; presets applied automatically; `--preset` and `--style` for processing tools on the CLI. Blending and several instances in presets and styles wait for layers (Phase 4).
 
 ## Options considered
@@ -133,12 +190,22 @@ Presets and styles' own two phases, apart from the project's:
 - **Presets in `apertrust-base`,** beside the settings and workspaces: base would need the XMP layer and the entry codec, which are the library's, and the library already depends on base.
 - **A utility preset leaving a setting it lacks as it is:** the result would depend on what was set before, unlike a processing tool's preset.
 - **Unknown setting keys dropped:** a newer build's setting would be lost the first time an older build updated the preset.
+- **darktable's tag, `darktable|style|<name>`:** it has no order, nothing takes one off alone, anything that deletes the history, Undo of one style in the lighttable among them, takes every one off, and it holds nothing Clear could put back.
+- **The list on the virtual copy, beside the log:** a second truth beside the log, which [0047](0047-where-edits-live-and-what-the-sidecar-holds.md) rules out; Undo's fallback after reopening, `GoTo` and Truncate would each need to move it as well.
+- **The list worked out from the steps' notes:** Compress drops a style's steps, and their note with them, while their tools still hold its values; and a tool's before, which the log derives, becomes its reset state after Compress, so Clear would reset what the person had set before the style.
+- **Names alone, without the tools' states:** Clear could only reset the style's tools to their defaults, losing what they held before it, or read the steps before it, which Compress drops.
+- **Before states alone, comparing with the style's file:** the file may be renamed, deleted or changed since; the after states are what the style set on this photo, migrated and clamped.
+- **Only the change on each step, a style added or cleared, replayed:** the fold would replay the log where it looks up each tool's last entry, and Compress, which drops steps, would break the replay.
+- **Clear as a `Step` of `SetTool`s the client builds from `Values::styles`:** a client's mirror can be a batch behind the session, during a gesture or after a newer file is taken in, so it could put back a tool changed since; a `SetTool` cannot take the style off the list, so a command is needed anyway; and every client would repeat the comparison.
+- **A style applied as a `Step` with a command naming it among the `SetTool`s:** the before states and the list's rules would depend on where that command sits; one command keeps them in the session, in one place.
+- **A style applied again taking every before from just before it:** where the photo still held the style's values, Clear would then change nothing yet take the style off.
 - **A style parked whole for one newer entry:** the file is never rewritten, so applying the rest loses nothing, and the notice says what was left out.
 
 ## Consequences
 
 - `apertrust-library` gains its `presets` module, outside the four layers, and `SETTING_NAMESPACE`; the app gains a dependency on it, which the CLI has already; [0054](0054-four-layers-for-the-librarys-code.md) and [library.md](../library.md) name the module beside the layers; with fixtures written back byte for byte; `apertrust-base`'s `Folders` gains `presets(tool)` and `styles()`; `data/presets/` its first files, with their rows in `data/README.md`.
 - The engine gains a command that sets a tool's whole values as one change, allowed inside `Step`, and the reading of an entry into tool values, parked or migrated, through the edit's code.
+- Planned, for the styles applied: the engine gains `ApplyStyle` with `StyleMode`, `ClearStyle` with its refusal `UnknownStyle`, `Step::styles` and `Change::None` in its `history`, and `Values::styles`, and folds, compresses, writes and reads the list with the log; `apertrust_library::sidecar` reads and writes `apertrust:styles` in a step, with a fixture ExifTool and exiv2 read whole; the messages `history-style` and `history-clear-style` in every locale.
 - `apertrust-tools` gains `ProcessingDefinition::copy_safe` and `ProcessingDefinition::in_styles`, each tool's value from its darktable module's flags at the reference release, held by a test.
 - Export's presets are `presets/export/<Name>.appreset` and Import's `presets/import/<Name>.appreset`, with no TOML presets file; `apertrust-export` reads and writes no presets.
-- The docs: [gui.md](../gui.md) (The Export tool, The Import sheet, One tool model), [library.md](../library.md) (what is stored where), [settings.md](../settings.md) (the user data folder), [engine.md](../engine.md) (Export jobs), [crates.md](../crates.md) and the [roadmap](../roadmap.md).
+- The docs: [gui.md](../gui.md) (The Export tool, The Import sheet, One tool model), [history.md](../history.md) (a step's fields, Compress, the commands, the sidecar), [session-protocol.md](../session-protocol.md) and [events.md](../events.md) (the commands and `Values`), [library.md](../library.md) (what is stored where, version 2), [settings.md](../settings.md) (the user data folder), [engine.md](../engine.md) (Export jobs), [crates.md](../crates.md) and the [roadmap](../roadmap.md).
