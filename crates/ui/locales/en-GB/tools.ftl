@@ -577,6 +577,9 @@ tool-exposure-picker-reference-label = Reference
 tool-exposure-picker-reference-full = Set the reference from an area
 tool-exposure-picker-reference-promise = Set the reference from an area
 tool-exposure-picker-reference-hint = Drag over the area to keep as the reference
+# Its picker cursor on the Toolbar (decision 104): its name and how to use it.
+tool-exposure-cursor-reference = Exposure reference picker
+tool-exposure-cursor-reference-how = Click an area to keep as the reference, or drag one
 
 ## Colour calibration (docs/tools/colour-calibration.md): darktable's color calibration,
 ## every tab, the CAT tab first. Its words are darktable's, the adaptation's and the area

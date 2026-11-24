@@ -39,7 +39,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use apertrust_engine::session::{Command, PickerRef, Values};
-use apertrust_tools::{CursorDef, CursorGroup, CursorGroupDef, Gesture, ProcessingTool, Surface};
+use apertrust_tools::{
+    CursorDef, CursorGroup, CursorGroupDef, Gesture, ProcessingTool, Row, Surface,
+};
 use apertrust_ui::components::{CursorWell, CursorWellAction, WellCursor, WellGroup};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Icon, Translator};
@@ -621,8 +623,9 @@ pub enum Press {
 
 /// Whether `entry` can act now, or why not (`docs/cursors.md`, A cursor): the app's own
 /// always; a tool's picker cursor while the photo takes picks, its tool is not hidden by
-/// the History tab's eye, and its picker is ready with the tool's settings, as Exposure's
-/// waits for a reference.
+/// the History tab's eye, its picker is ready with the tool's settings, as Exposure's
+/// waits for a reference, and a reference row's picker while `--conf` gives none of the
+/// reference, which keeps the row's button disabled for the run (decision 43).
 pub fn ready(entry: &Entry, cx: &Context) -> Result<(), String> {
     let (Owner::Tool(tool), Some(picker)) = (entry.cursor.owner, entry.picker) else {
         return AppCursors.ready(entry.cursor.id, cx);
@@ -647,6 +650,22 @@ pub fn ready(entry: &Entry, cx: &Context) -> Result<(), String> {
     {
         let why = apertrust_tools::messages::picker_unavailable(tool, picker);
         return Err(cx.words.text(&why));
+    }
+    let given = |row: &Row| match row {
+        Row::Reference {
+            picker: of,
+            lightness,
+            photo,
+        } => {
+            *of == picker
+                && (cx.settings.overridden(tool, lightness) || cx.settings.overridden(tool, photo))
+        }
+        _ => false,
+    };
+    if found.is_some_and(|found| found.definition().rows().any(given)) {
+        let mut args = Args::new();
+        args.set("flag", apertrust_base::settings::CONF_FLAG);
+        return Err(cx.words.text_with("settings-overridden", Some(&args)));
     }
     Ok(())
 }
@@ -948,8 +967,8 @@ mod tests {
     use apertrust_engine::session::ControlValue;
 
     /// The built-in registry: Select, Pan, then Pick with White balance's cursor before
-    /// Exposure's, Colour calibration's and Colour balance RGB's four hue pickers', in its
-    /// page's order.
+    /// Exposure's two, Colour calibration's and Colour balance RGB's four hue pickers', in
+    /// its page's order.
     #[test]
     fn the_registry_holds_phase_2_s_groups_in_the_well_s_order() {
         let groups: Vec<(CursorGroup, Vec<Cursor>)> = (registry().groups().iter())
@@ -969,6 +988,7 @@ mod tests {
                     vec![
                         tool("temperature", "spot"),
                         tool("exposure", "exposure"),
+                        tool("exposure", "reference"),
                         tool("channelmixerrgb", "illuminant"),
                         tool("colorbalancergb", "global_hue"),
                         tool("colorbalancergb", "shadows_hue"),
@@ -1131,8 +1151,9 @@ mod tests {
     }
 
     /// A picker cursor cannot act, saying why, while the photo takes no pick, while its
-    /// tool is hidden by the History tab's eye, and, for Exposure's, toward a reference with
-    /// none set; Select and Pan always can.
+    /// tool is hidden by the History tab's eye, for Exposure's, toward a reference with
+    /// none set, and for its reference's, while `--conf` gives the reference; Select and
+    /// Pan always can.
     #[test]
     fn a_picker_cursor_says_why_it_cannot_act() {
         let words = Translator::new(apertrust_ui::Locale::EnGb);
@@ -1171,6 +1192,25 @@ mod tests {
         assert_eq!(
             why,
             "Set a reference first, with the picker on the Reference row"
+        );
+        // The reference's own cursor can always turn its picker on, but where `--conf`
+        // gives the reference, which keeps its row's button disabled for the run.
+        let reference_cursor = entry("reference");
+        assert_eq!(
+            ready(&reference_cursor, &cx(None, None, &reference)),
+            Ok(())
+        );
+        let given = vec!["tools.exposure.reference_lightness=60".to_owned()];
+        let overrides = crate::settings::overrides(&given).expect("read");
+        let folder = crate::settings::testing::Folder::new("reference-conf-cursor");
+        let (_, kept) = crate::settings::Keeper::open_with(folder.storage(), &overrides);
+        assert_eq!(
+            ready(&reference_cursor, &cx(None, None, &kept.tool_settings)),
+            Err("Set by --conf for this run".to_owned())
+        );
+        assert_eq!(
+            ready(&exposure, &cx(None, None, &kept.tool_settings)),
+            Ok(())
         );
         for app in [Cursor::SELECT, Cursor::PAN] {
             let entry = registry().entry(app).unwrap();
@@ -1241,6 +1281,12 @@ mod tests {
         };
         assert_eq!(mode.chosen(), exposure);
         mode.follow(Some(REFERENCE_PICKER), Some(1));
+        assert_eq!(mode.chosen().id, "reference");
+        let agx = PickerRef::Tool {
+            tool: "agx",
+            picker: "white",
+        };
+        mode.follow(Some(agx), Some(1));
         assert_eq!(mode.chosen(), Cursor::SELECT);
         // Pan chosen by the person ends it, and stays as it turns off.
         mode.follow(Some(SPOT_PICKER), Some(1));
@@ -1279,8 +1325,18 @@ mod tests {
         };
         assert_eq!(
             turned_words(&words, tools, &reference, Some(1), &values),
-            "Exposure · Reference on"
+            "Exposure reference picker on"
         );
+        // A picker with no cursor: its tool's title and its own name.
+        let agx = Turned {
+            on: Some(PickerRef::Tool {
+                tool: "agx",
+                picker: "white",
+            }),
+            off: None,
+        };
+        let said = turned_words(&words, tools, &agx, Some(1), &values);
+        assert!(said.starts_with("AgX · "), "{said}");
         let off = |why: Option<Ended>| Turned {
             on: None,
             off: Some((

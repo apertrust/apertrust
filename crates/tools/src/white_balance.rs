@@ -57,9 +57,9 @@ use apertrust_plugin::{Camera, ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, CursorDef, CursorGroup, Gesture, Group,
-    GroupKind, Picker, PickerKind, PresetRow, ProcessingDefinition, Reset, Row, Slider, Space,
-    Surface, Tab, ToolCursor, ToolDefinition, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, CursorDef, CursorGroup, Group, GroupKind,
+    Picker, PickerKind, PresetRow, ProcessingDefinition, Reset, Row, Slider, Space, Surface, Tab,
+    ToolCursor, ToolDefinition, Unit, View,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
 use crate::{Base, ControlValue, Controls, Moment, Owned, ProcessingTool, Setting, ToolValues};
@@ -236,8 +236,8 @@ const PICKER: Picker = Picker {
     words_by: None,
 };
 
-/// Its picker cursor (decision 104; `docs/cursors.md`): a click or a drag on the photo
-/// picks once with the picker, on K, free in darktable's defaults.
+/// Its picker cursor (decision 104; `docs/cursors.md`): the picker's second door, which
+/// turns it on as Settings' from image area does, on K, free in darktable's defaults.
 const CURSOR: ToolCursor = ToolCursor {
     cursor: CursorDef {
         id: "spot",
@@ -245,7 +245,7 @@ const CURSOR: ToolCursor = ToolCursor {
         icon: "pick-white-balance",
         key: Some("K"),
         order: 100,
-        gestures: &[Gesture::Click, Gesture::Area],
+        gestures: &[],
         surfaces: &[Surface::Viewer],
         options: &[],
     },

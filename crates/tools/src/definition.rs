@@ -84,8 +84,8 @@ pub struct ToolDefinition {
     /// none for a tool with nothing to offer. A processing tool offers two at most
     /// ([`MOST_ON_TOOLBAR`]), a utility any number.
     pub toolbar: &'static [ToolbarItem],
-    /// Its picker cursors (decision 104; `docs/cursors.md`, The API), each picking once with
-    /// one of its pickers, which the app's well offers in Pick; none for a tool with none,
+    /// Its picker cursors (decision 104; `docs/cursors.md`, The API), each the second door
+    /// to one of its pickers, which the app's well offers in Pick; none for a tool with none,
     /// and for every utility until the Colour readout's design.
     pub cursors: &'static [ToolCursor],
 }
@@ -1475,15 +1475,13 @@ pub enum DefinitionError {
     ToolbarItems,
     #[error("two cursors are called {0}")]
     DuplicateCursor(&'static str),
-    #[error("the cursor {0} names no picker of the tool that writes controls")]
+    #[error("the cursor {0} names no picker of the tool")]
     CursorPicker(&'static str),
     #[error("two cursors pick with the picker {0}; a picker has one cursor at most")]
     CursorsOfPicker(&'static str),
     #[error("the cursor {0} is in a group other than Pick, a tool's cursors' one group")]
     CursorGroup(&'static str),
-    #[error(
-        "the cursor {0} takes no gesture, one twice, one other than a click and an area, or an area its picker does not take"
-    )]
+    #[error("the picker cursor {0} declares gestures, which its picker's kinds decide")]
     CursorGestures(&'static str),
     #[error("the cursor {0} acts somewhere other than the Viewer alone")]
     CursorSurfaces(&'static str),
@@ -1655,10 +1653,9 @@ impl ProcessingDefinition {
     /// pick row names a picker of the tool that writes controls, once. Each context menu
     /// item names one of its actions, once in its place, and no place holds more of
     /// them than it takes ([`check_menus`]). Each toolbar item names one of its actions,
-    /// once, with an icon unless it is a button's, two at most ([`check_toolbar`]). Each cursor has an id of its own and picks
-    /// in Pick with a picker of the tool that writes controls, no picker with two, by a
-    /// click, an area or both, an area only where its picker takes one, on the Viewer
-    /// alone, with no amounts ([`ToolCursor`]).
+    /// once, with an icon unless it is a button's, two at most ([`check_toolbar`]). Each cursor has an id of its own and turns
+    /// on a picker of the tool, in Pick, no picker with two, on the Viewer alone, with no
+    /// gestures and no amounts ([`ToolCursor`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.tool.id) {
             return Err(DefinitionError::Id(self.tool.id));
@@ -3738,7 +3735,7 @@ mod tests {
             icon: "pick",
             key: Some("L"),
             order: 100,
-            gestures: &[Gesture::Click, Gesture::Area],
+            gestures: &[],
             surfaces: &[Surface::Viewer],
             options: &[],
         },
@@ -3780,21 +3777,28 @@ mod tests {
         .check()
     }
 
-    /// A tool's cursor picks with one of its pickers that writes controls, one cursor a
-    /// picker, in Pick, by a click or an area its picker takes, on the Viewer alone, with
-    /// no amounts (`docs/cursors.md`, The API).
+    /// A tool's cursor turns one of its pickers on, one that writes no control among them,
+    /// one cursor a picker, in Pick, on the Viewer alone, with no gestures, which its
+    /// picker's kinds decide, and no amounts (`docs/cursors.md`, The API).
     #[test]
-    fn a_tool_s_cursor_picks_with_one_of_its_pickers() {
+    fn a_tool_s_cursor_turns_one_of_its_pickers_on() {
         let dot = ToolCursor {
             cursor: CursorDef {
                 id: "dot",
-                gestures: &[Gesture::Click],
+                key: None,
                 ..LEVEL_CURSOR.cursor
             },
             picker: "dot",
         };
+        let shown = ToolCursor {
+            cursor: CursorDef {
+                id: "shown",
+                ..dot.cursor
+            },
+            picker: "shown",
+        };
         assert_eq!(with_cursors(&[]), Ok(()));
-        assert_eq!(with_cursors(&[LEVEL_CURSOR, dot]), Ok(()));
+        assert_eq!(with_cursors(&[LEVEL_CURSOR, dot, shown]), Ok(()));
         let with = |change: fn(&mut CursorDef)| {
             let mut cursor = LEVEL_CURSOR;
             change(&mut cursor.cursor);
@@ -3830,11 +3834,6 @@ mod tests {
                 DefinitionError::CursorPicker("level"),
             ),
             (
-                "a picker that writes no control",
-                vec![naming("shown")],
-                DefinitionError::CursorPicker("level"),
-            ),
-            (
                 "two cursors for one picker",
                 vec![LEVEL_CURSOR, with(|c| c.id = "again")],
                 DefinitionError::CursorsOfPicker("level"),
@@ -3845,32 +3844,9 @@ mod tests {
                 DefinitionError::CursorGroup("level"),
             ),
             (
-                "no gesture",
-                vec![with(|c| c.gestures = &[])],
+                "gestures",
+                vec![with(|c| c.gestures = &[Gesture::Click, Gesture::Area])],
                 DefinitionError::CursorGestures("level"),
-            ),
-            (
-                "a gesture twice",
-                vec![with(|c| {
-                    c.gestures = &[Gesture::Click, Gesture::Area, Gesture::Click]
-                })],
-                DefinitionError::CursorGestures("level"),
-            ),
-            (
-                "a stroke",
-                vec![with(|c| c.gestures = &[Gesture::Click, Gesture::Stroke])],
-                DefinitionError::CursorGestures("level"),
-            ),
-            (
-                "an area for a point picker",
-                vec![ToolCursor {
-                    cursor: CursorDef {
-                        gestures: &[Gesture::Click, Gesture::Area],
-                        ..dot.cursor
-                    },
-                    ..dot
-                }],
-                DefinitionError::CursorGestures("dot"),
             ),
             (
                 "no surface",
