@@ -20,40 +20,30 @@
 //! - **The registry** ([`registry`]), made once as the app starts: the app's own cursors,
 //!   Select and Pan ([`AppCursors`], a [`CursorOwner`]), and every tool's picker cursor
 //!   (`ToolDefinition::cursors`), in the well's groups and their order, with each group's
-//!   settings, Pick's Show the last pick among them.
+//!   settings.
 //! - **The mode** ([`Mode`]): the cursor chosen, Select at every start and never saved;
 //!   each group's active cursor, the one its face shows, kept for the run; A held, which
-//!   borrows Pan while it is down; the last pick's mark. It follows the picker on
-//!   ([`Mode::follow`]): a picker with a cursor, whichever door turned it on, chooses that
-//!   cursor, and its turning off chooses Select, or keeps the cursor the person chose;
-//!   screen readers hear it turn on and off, with the reason where the person did not ask
-//!   ([`turned_words`]).
+//!   borrows Pan while it is down. A picker cursor is its picker's second door: choosing
+//!   it asks for its picker on ([`Mode::asked_picker`]), which the app sends as the picker
+//!   button's `On` does. The mode follows the picker on ([`Mode::follow`]): a picker with a
+//!   cursor, whichever door turned it on, chooses that cursor, and its turning off chooses
+//!   Select, or keeps the cursor the person chose; screen readers hear it turn on and off,
+//!   with the reason where the person did not ask ([`turned_words`]).
 //! - **The well's words** ([`Well`]): each group's cursors with their names, keys, what
 //!   they do and why one cannot act now, which the Toolbar draws as `CursorWell`.
-//! - **On the photo** ([`on_photo`]): a picker cursor's click or drag, in the photo's
-//!   coordinates, its area drawn while dragged, and the pointer; Select and Pan pan as the
-//!   built drag does (`docs/gui.md`, Panning), which the Viewer keeps.
-//! - **What a pick sends** ([`finish`]): `PickerCommand::Once` with the tool's settings
-//!   as the app keeps them and the keys held, one step where it changes the edit.
 //!
-//! The engine never hears of cursors: a gesture becomes commands its owner already sends.
+//! On the photo, Select and Pan pan as the built drag does (`docs/gui.md`, Panning), which
+//! the Viewer keeps, and a picker on takes every press, from either door (`pickers.rs`).
+//! The engine never hears of cursors: a cursor sends commands its owner already sends.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use apertrust_engine::session::{
-    Command, ControlValue, PickKeys, PickerCommand, PickerRef, Region, Values,
-};
-use apertrust_tools::{
-    ControlKind, CursorDef, CursorGroup, CursorGroupDef, Gesture, ProcessingTool, Row, SettingRow,
-    SettingWords, Surface, Track,
-};
-use apertrust_ui::components::{
-    CursorWell, CursorWellAction, PickerMarks, PickerPlace, WellCursor, WellGroup, WellSetting,
-};
+use apertrust_engine::session::{Command, PickerRef, Values};
+use apertrust_tools::{CursorDef, CursorGroup, CursorGroupDef, Gesture, ProcessingTool, Surface};
+use apertrust_ui::components::{CursorWell, CursorWellAction, WellCursor, WellGroup};
 use apertrust_ui::i18n::Args;
-use apertrust_ui::overlay::{Mark, Overlay, Point, Weight};
 use apertrust_ui::{Icon, Translator};
-use eframe::egui::{self, CursorIcon, Key, Modifiers, Pos2, Rect, Sense, Vec2, pos2};
+use eframe::egui::{self, Pos2, Rect, Sense, Vec2};
 
 use crate::actions::{ActionId, Keymap};
 use crate::pickers;
@@ -98,31 +88,14 @@ impl Cursor {
     }
 }
 
-/// A finished gesture on the photo, in the photo's coordinates, 0 to 1 across the photo as
-/// export renders it, with the keys held as a pick reads them (`docs/cursors.md`, The API).
-/// The gestures Phase 2's cursors take; a shape, a stroke, points and a photo come with
-/// their cursors.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum CursorInput {
-    Click {
-        at: [f32; 2],
-        keys: PickKeys,
-    },
-    Area {
-        from: [f32; 2],
-        to: [f32; 2],
-        keys: PickKeys,
-    },
-}
-
-/// What a cursor's readiness and its press read of the app this frame.
+/// What a cursor's readiness reads of the app this frame.
 pub struct Context<'a> {
     /// Why no pick can be made on the photo now, in the interface's words: the photo
     /// still opening, or open for viewing only; None where picks are taken.
     pub why: Option<&'a str>,
     /// The tool the History tab's eye hides while it is held, whose picks wait for it.
     pub hidden: Option<&'static str>,
-    /// The tools' settings as the app keeps them, which a pick is sent with.
+    /// The tools' settings as the app keeps them, which a picker's readiness reads.
     pub settings: &'a ToolSettings,
     /// The photo open, which a reference measured on it names as this photo.
     pub photo: Option<&'a std::path::Path>,
@@ -130,7 +103,7 @@ pub struct Context<'a> {
 }
 
 /// What every owner of cursors but a tool implements (`docs/cursors.md`, The API); a tool's
-/// picker cursors share one built-in owner ([`ready`], [`finish`]).
+/// picker cursors share one built-in owner ([`ready`], [`Mode::asked_picker`]).
 pub trait CursorOwner: Sync {
     fn cursors(&self) -> &'static [CursorDef];
     /// The settings of the groups it owns, declared once.
@@ -142,7 +115,7 @@ pub trait CursorOwner: Sync {
 }
 
 /// The app's own cursors: Select and Pan, whose drags are the built pan the Viewer keeps
-/// (`docs/gui.md`, Panning), and the owner of Pick's settings.
+/// (`docs/gui.md`, Panning).
 pub struct AppCursors;
 
 /// Select: Esc, where nothing focused keeps it.
@@ -169,31 +142,9 @@ const PAN: CursorDef = CursorDef {
     options: &[],
 };
 
-/// Pick's setting: Show the last pick on the photo (`cursors.pick.show_last`).
-pub const SHOW_LAST: SettingRow = SettingRow {
-    id: "show_last",
-    kind: ControlKind::Bool { default: true },
-    decimals: 0,
-    track: Track::Plain,
-    key: Some("cursors.pick.show_last"),
-    words: Some(&SettingWords {
-        label: "cursor-setting-pick-show-last",
-        full: None,
-        promise: None,
-        options: &[],
-    }),
-};
-
 impl CursorOwner for AppCursors {
     fn cursors(&self) -> &'static [CursorDef] {
         &[SELECT, PAN]
-    }
-
-    fn groups(&self) -> &'static [CursorGroupDef] {
-        &[CursorGroupDef {
-            group: CursorGroup::Pick,
-            settings: &[Row::Setting(SHOW_LAST)],
-        }]
     }
 
     fn ready(&self, _cursor: &str, _cx: &Context) -> Result<(), String> {
@@ -202,7 +153,7 @@ impl CursorOwner for AppCursors {
 }
 
 /// One cursor of the registry: whose it is, its declaration, and for a tool's, the picker
-/// it picks with.
+/// it turns on.
 #[derive(Clone, Copy, Debug)]
 pub struct Entry {
     pub cursor: Cursor,
@@ -210,16 +161,16 @@ pub struct Entry {
     pub picker: Option<&'static str>,
 }
 
-/// One group of the well, its cursors in their order, and its settings.
+/// One group of the well and its cursors in their order. Its settings join it with the
+/// first group that has some, Copy and apply's.
 #[derive(Debug)]
 pub struct Group {
     pub group: CursorGroup,
     pub cursors: Vec<Entry>,
-    pub settings: &'static [Row],
 }
 
-/// Every owner's cursors and group settings, by group in the well's order, then by
-/// `order`; a group no owner fills is not there.
+/// Every owner's cursors, by group in the well's order, then by `order`; a group no owner
+/// fills is not there. The owners' group settings are checked, none declared twice.
 #[derive(Debug)]
 pub struct Registry {
     groups: Vec<Group>,
@@ -243,7 +194,7 @@ impl Registry {
         tools: &[&dyn ProcessingTool],
     ) -> Result<Registry, RegistryError> {
         let mut entries: Vec<Entry> = Vec::new();
-        let mut settings = BTreeMap::new();
+        let mut settings = BTreeSet::new();
         for owner in owners {
             for def in owner.cursors() {
                 let cursor = Cursor {
@@ -257,7 +208,7 @@ impl Registry {
                 });
             }
             for declared in owner.groups() {
-                if settings.insert(declared.group, declared.settings).is_some() {
+                if !settings.insert(declared.group) {
                     return Err(RegistryError::Settings(declared.group));
                 }
             }
@@ -295,7 +246,6 @@ impl Registry {
                 _ => groups.push(Group {
                     group: entry.def.group,
                     cursors: vec![entry],
-                    settings: settings.get(&entry.def.group).copied().unwrap_or(&[]),
                 }),
             }
         }
@@ -328,9 +278,6 @@ pub fn registry() -> &'static Registry {
     })
 }
 
-/// A tool's values, by control, as the mirror shows them.
-type ToolValues = Vec<(&'static str, ControlValue)>;
-
 /// The cursor mode, the app's state for the run (`docs/cursors.md`, A cursor).
 #[derive(Debug, Clone)]
 pub struct Mode {
@@ -339,16 +286,9 @@ pub struct Mode {
     active: BTreeMap<CursorGroup, Cursor>,
     /// Whether A is held, which borrows Pan while it is down.
     pan_held: bool,
-    /// Pick's Show the last pick on the photo (`cursors.pick.show_last`).
-    pub show_last: bool,
-    /// The one-shot pick whose area shows as the last pick's mark, by its command's number,
-    /// with its tool's values as it was sent, which the live region compares the pick's
-    /// with; until the next pick or another cursor is chosen.
-    last: Option<(u64, ToolValues)>,
-    /// What the live region says of the last pick, once its reading has arrived; and
-    /// whether it has been said.
-    told: String,
-    said: bool,
+    /// The picker cursor the person chose since [`Mode::asked_picker`] last looked, whose
+    /// picker the app turns on: the cursor itself is chosen once the picker is on.
+    turn_on: Option<Cursor>,
     /// The picker on as the well last followed it.
     following: Option<Following>,
     /// Why the picker on is to turn off, as the app knows from the command it sent last
@@ -477,7 +417,7 @@ pub fn cursor_of(picker: PickerRef) -> Option<Cursor> {
 
 impl Mode {
     /// Select chosen, each group's first cursor active.
-    pub fn new(show_last: bool) -> Mode {
+    pub fn new() -> Mode {
         let active = (registry().groups())
             .iter()
             .map(|g| (g.group, g.cursors[0].cursor))
@@ -486,10 +426,7 @@ impl Mode {
             chosen: Cursor::SELECT,
             active,
             pan_held: false,
-            show_last,
-            last: None,
-            told: String::new(),
-            said: false,
+            turn_on: None,
             following: None,
             ending: None,
             chose: false,
@@ -517,12 +454,30 @@ impl Mode {
         self.active.get(&group).copied()
     }
 
-    /// Chooses `cursor`, which becomes its group's active one; another cursor than the one
-    /// chosen takes the last pick's mark away.
+    /// Chooses `cursor`, which becomes its group's active one. A picker cursor is chosen
+    /// exactly while its picker is on, so choosing one asks for its picker instead
+    /// ([`Mode::asked_picker`]), and the mode chooses it as it follows the picker on
+    /// ([`Mode::follow`]).
     pub fn choose(&mut self, cursor: Cursor) {
-        if self.show(cursor) {
+        if registry().entry(cursor).is_some_and(|e| e.picker.is_some()) {
+            self.turn_on = Some(cursor);
+        } else if self.show(cursor) {
+            self.turn_on = None;
             self.chose = true;
         }
+    }
+
+    /// The picker the person's choice of its cursor, since this was last asked, turns on,
+    /// as its button's `On` does, unless it is on already, `active`: its cursor chosen again
+    /// leaves it on (`docs/cursors.md`, Keys).
+    pub fn asked_picker(&mut self, active: Option<PickerRef>) -> Option<PickerRef> {
+        let cursor = self.turn_on.take()?;
+        let picker = registry().entry(cursor)?.picker;
+        let (Owner::Tool(tool), Some(picker)) = (cursor.owner, picker) else {
+            return None;
+        };
+        let picker = PickerRef::Tool { tool, picker };
+        (active != Some(picker)).then_some(picker)
     }
 
     /// Shows `cursor` chosen, the person's choice or the picker's; whether the registry has
@@ -531,9 +486,6 @@ impl Mode {
         let Some(entry) = registry().entry(cursor) else {
             return false;
         };
-        if cursor != self.chosen {
-            self.last = None;
-        }
         self.chosen = cursor;
         self.active.insert(entry.def.group, cursor);
         true
@@ -629,26 +581,11 @@ impl Mode {
         self.pan_held = held;
     }
 
-    /// The one-shot pick numbered `number` was sent, its tool's values being `before`: its
-    /// area becomes the last pick's mark once its reading arrives.
-    pub fn picked(&mut self, number: u64, before: ToolValues) {
-        self.last = Some((number, before));
-        self.said = false;
-    }
-
-    /// The one-shot pick whose area shows as the last pick's mark, by its command's
-    /// number: the last one sent since this cursor was chosen, while Show the last pick is
-    /// on.
-    pub fn last_shown(&self) -> Option<u64> {
-        let (number, _) = self.last.as_ref().filter(|_| self.show_last)?;
-        Some(*number)
-    }
-
     /// What takes a press on the photo this frame (`docs/cursors.md`, A cursor): Pan while
-    /// A is held, over a picker too; a tool's picker while one is on, `picker`, as
-    /// darktable's button has it, the cursor chosen waiting underneath; else the cursor
-    /// chosen: Select's marks, which come with stored samples and masks, and never a pan;
-    /// Pan's drag panning as the built drag does; and a picker cursor picking.
+    /// A is held, over a picker too; a tool's picker while one is on, `picker`, from either
+    /// door, as darktable's button has it; else the cursor chosen: Pan's drag panning as
+    /// the built drag does, and Select's marks, which come with stored samples and masks,
+    /// never a pan.
     pub fn press(&self, picker: bool) -> Press {
         let Some(entry) = registry().entry(self.acting()) else {
             return Press::Pan;
@@ -657,43 +594,29 @@ impl Mode {
             // A held pans over a picker too, darktable's force-pan.
             _ if self.pan_held => Press::Pan,
             _ if picker => Press::Picker,
-            CursorGroup::Select => Press::Select,
             CursorGroup::Pan => Press::Pan,
-            _ => Press::Pick(*entry),
+            // A picker cursor is chosen only while its picker is on, which takes the press.
+            _ => Press::Select,
         }
     }
+}
 
-    /// The last pick not read out yet, by its command's number, and its tool's values
-    /// before it.
-    pub fn to_say(&self) -> Option<(u64, &[(&'static str, ControlValue)])> {
-        let (number, before) = self.last.as_ref().filter(|_| !self.said)?;
-        Some((*number, before.as_slice()))
-    }
-
-    /// The last pick is read out as `text`, politely, once.
-    pub fn say(&mut self, text: String) {
-        self.told = text;
-        self.said = true;
-    }
-
-    /// What the live region says of the last pick.
-    pub fn told(&self) -> &str {
-        &self.told
+impl Default for Mode {
+    fn default() -> Mode {
+        Mode::new()
     }
 }
 
 /// What a press on the photo does this frame ([`Mode::press`]).
 #[derive(Clone, Copy, Debug)]
 pub enum Press {
-    /// The tool's picker on takes it.
+    /// The tool's picker on takes it, from either door.
     Picker,
     /// Select's: a click or a drag on a mark, once marks come; a drag on empty photo does
     /// nothing, never a pan.
     Select,
     /// A drag pans a zoomed photo.
     Pan,
-    /// A picker cursor picks with a click or a drag.
-    Pick(Entry),
 }
 
 /// Whether `entry` can act now, or why not (`docs/cursors.md`, A cursor): the app's own
@@ -726,43 +649,6 @@ pub fn ready(entry: &Entry, cx: &Context) -> Result<(), String> {
         return Err(cx.words.text(&why));
     }
     Ok(())
-}
-
-/// What `entry`'s finished gesture `input` sends: for a tool's picker cursor,
-/// `PickerCommand::Once` with its picker, the region, the keys held and the tool's
-/// settings as the app keeps them (`docs/cursors.md`, On the photo); a click a point, which
-/// the session reads as darktable's click reads it, an area picker reading the area a
-/// press there starts (`Region::pressed`), and a drag the area drawn. Nothing for the app's
-/// own: Select's click on empty photo does nothing, and their drags are the Viewer's pan.
-pub fn finish(entry: &Entry, input: CursorInput, settings: &ToolSettings) -> Option<PickerCommand> {
-    let (Owner::Tool(tool), Some(picker)) = (entry.cursor.owner, entry.picker) else {
-        return None;
-    };
-    let takes = |gesture| entry.def.gestures.contains(&gesture);
-    let (region, keys) = match input {
-        CursorInput::Click { at, keys } if takes(Gesture::Click) => (Region::Point(at), keys),
-        CursorInput::Area { from, to, keys } if takes(Gesture::Area) => {
-            let area = [
-                from[0].min(to[0]),
-                from[1].min(to[1]),
-                from[0].max(to[0]),
-                from[1].max(to[1]),
-            ];
-            (Region::Area(area), keys)
-        }
-        // A drag with a cursor that takes clicks alone is a click where it began.
-        CursorInput::Area { from, keys, .. } if takes(Gesture::Click) => {
-            (Region::Point(from), keys)
-        }
-        _ => return None,
-    };
-    Some(PickerCommand::Once {
-        picker: PickerRef::Tool { tool, picker },
-        region,
-        keys,
-        settings: settings.of(tool),
-        channel: None,
-    })
 }
 
 /// What screen readers hear of `turned` (`docs/cursors.md`, Keyboard and screen readers):
@@ -885,12 +771,11 @@ struct GroupShown {
     name: String,
     cursors: Vec<Shown>,
     active: usize,
-    /// Its toggles, by their words, and whether each is on.
-    settings: Vec<(String, bool)>,
 }
 
 /// The well as this frame draws it (`docs/cursors.md`, The well): each group's cursors with
-/// their words and keys, the active one and the one chosen, and the group's settings.
+/// their words and keys, the active one and the one chosen. A group's settings are drawn
+/// with the first group that has some, Copy and apply's.
 pub struct Well {
     groups: Vec<GroupShown>,
     chosen: Option<usize>,
@@ -930,20 +815,10 @@ impl Well {
             if cursors.iter().any(|c| c.cursor == mode.chosen()) {
                 chosen = Some(g);
             }
-            let settings = (group.settings.iter())
-                .filter_map(|row| match row {
-                    Row::Setting(row) if row.id == SHOW_LAST.id => {
-                        let label = row.words.map_or(row.id, |w| w.label);
-                        Some((words.text(label), mode.show_last))
-                    }
-                    _ => None,
-                })
-                .collect();
             groups.push(GroupShown {
                 name: words.text(&format!("cursor-group-{}", group_name(group.group))),
                 cursors,
                 active,
-                settings,
             });
         }
         Well {
@@ -974,19 +849,9 @@ impl Well {
                     .collect()
             })
             .collect();
-        let settings: Vec<Vec<WellSetting<'_>>> = (self.groups.iter())
-            .map(|group| {
-                (group.settings.iter())
-                    .map(|(name, on)| WellSetting::Toggle { name, on: *on })
-                    .collect()
-            })
-            .collect();
         let groups: Vec<WellGroup<'_>> = (self.groups.iter())
             .zip(&cursors)
-            .zip(&settings)
-            .map(|((group, cursors), settings)| {
-                WellGroup::new(&group.name, cursors, group.active).settings(settings)
-            })
+            .map(|(group, cursors)| WellGroup::new(&group.name, cursors, group.active))
             .collect();
         let mut well = CursorWell::new(&groups);
         if let Some(chosen) = self.chosen {
@@ -1009,9 +874,9 @@ impl Well {
                 let shown = self.groups.get(group)?;
                 Some(Answer::Again(shown.cursors.get(shown.active)?.cursor))
             }
-            // Pick's one setting, Show the last pick.
-            CursorWellAction::Toggle { on, .. } => Some(Answer::ShowLast(on)),
-            CursorWellAction::Amounts { .. } | CursorWellAction::Choice { .. } => None,
+            CursorWellAction::Amounts { .. }
+            | CursorWellAction::Toggle { .. }
+            | CursorWellAction::Choice { .. } => None,
         }
     }
 }
@@ -1019,12 +884,10 @@ impl Well {
 /// What a press in the well asks of the app.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Answer {
-    /// The cursor's action, which chooses it.
+    /// The cursor's action, which chooses it, or for a picker cursor turns its picker on.
     Choose(Cursor),
     /// The chosen cursor's face pressed again: a picker cursor's turns its picker off.
     Again(Cursor),
-    /// Pick's Show the last pick turned on or off.
-    ShowLast(bool),
 }
 
 /// A cursor's name and what a press with it does: the app's `cursor-<id>` and
@@ -1079,202 +942,14 @@ fn group_name(group: CursorGroup) -> &'static str {
     }
 }
 
-/// A picker cursor over the photo this frame ([`on_photo`]).
-pub struct OnPhoto {
-    /// The photo area, the part of the photo shown, which takes the pointer.
-    pub area: Rect,
-    /// The whole photo's rectangle on the screen at the zoom, which the photo's
-    /// coordinates span.
-    pub photo: Rect,
-    /// The whole photo's size in pixels of the frame's scale.
-    pub pixels: [u32; 2],
-    /// Whether the cursor can act; one that cannot takes the press and does nothing.
-    pub ready: bool,
-    /// The cursor acting: another than the one a drag began with gives the drag up.
-    pub cursor: Cursor,
-}
-
-/// What a picker cursor on the photo did this frame.
-#[derive(Debug, Default, PartialEq)]
-pub struct Pressed {
-    /// A gesture finished: a click, or a drag on its release.
-    pub input: Option<CursorInput>,
-    /// While a drag holds the pointer past the photo area's edge, how far past, in points:
-    /// the view moves that far towards it each frame, as a picker's drag does.
-    pub pan: Option<Vec2>,
-}
-
-/// A drag of a picker cursor on the photo, from its press, in the photo's coordinates.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Drag {
-    from: [f32; 2],
-    /// Whether it has moved past egui's drag threshold: a click until then.
-    moved: bool,
-    /// The cursor it began with.
-    cursor: Cursor,
-    /// The pass that last saw it: one skipped, the photo taken by A held or a picker,
-    /// gives it up.
-    pass: u64,
-}
-
-/// The id of a picker cursor's place on the photo.
-fn photo_id() -> egui::Id {
-    egui::Id::unique("apertrust cursor on the photo")
-}
-
-/// A picker cursor over the photo (`docs/cursors.md`, On the photo): the crosshair, or the
-/// not-allowed pointer where it cannot act; a press and release that moves less than
-/// egui's drag threshold is a click at the press, a drag an area from the press to the
-/// release, at least a frame pixel each way, drawn while it is dragged; Esc, another cursor
-/// chosen while it is held, or A held taking the photo, gives it up, sending nothing. It
-/// senses drags alone, and the primary button's but the Mac's Control-click, so the photo's
-/// surround keeps its clicks, the right-click's menu among them.
-pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> Pressed {
-    let ctx = ui.ctx().clone();
-    let id = photo_id();
-    let response = ui.interact(on.area, id, Sense::DRAG);
-    let drag_id = id.with("drag");
-    let mut drag: Option<Drag> = ctx.data(|d| d.get_temp(drag_id));
-    let mut pressed = Pressed::default();
-    let at = |pos: Pos2| {
-        let p = (on.area.clamp(pos) - on.photo.min) / on.photo.size();
-        [p.x.clamp(0.0, 1.0), p.y.clamp(0.0, 1.0)]
-    };
-    if !on.ready {
-        if response.hovered() || response.dragged() {
-            ctx.set_cursor_icon(CursorIcon::NotAllowed);
-        }
-        ctx.data_mut(|d| d.remove::<Drag>(drag_id));
-        return pressed;
-    }
-    if response.hovered() || response.dragged() {
-        ctx.set_cursor_icon(CursorIcon::Crosshair);
-    }
-    let (pos, modifiers, decided) = ui.input(|i| {
-        (
-            i.pointer.interact_pos(),
-            i.modifiers,
-            i.pointer.is_decidedly_dragging(),
-        )
-    });
-    // A touch screen's pinch zooms the photo: the drag its first finger began is given up.
-    let pinching = ui.input(|i| i.multi_touch().is_some());
-    // The primary button's alone, but for the Mac's Control-click: a right-click is the
-    // photo's menu's.
-    let mac = ctx.os() == egui::os::OperatingSystem::Mac;
-    let menu = pickers::mac_right_click(modifiers, mac);
-    if response.drag_started_by(egui::PointerButton::Primary)
-        && !menu
-        && let Some(origin) = ui.input(|i| i.pointer.press_origin())
-    {
-        drag = Some(Drag {
-            from: at(origin),
-            moved: false,
-            cursor: on.cursor,
-            pass: ctx.cumulative_pass_nr(),
-        });
-        // Esc is the gesture's while it lasts, never Select's.
-        response.request_focus();
-        let keeps = egui::EventFilter {
-            escape: true,
-            ..Default::default()
-        };
-        ctx.memory_mut(|m| m.set_focus_lock_filter(id, keeps));
-    }
-    // A press and its release in one frame, as a trackpad's tap may give them, start no
-    // drag: a click where it was pressed.
-    let tapped = ui.input(|i| {
-        let both = i.pointer.primary_pressed() && i.pointer.primary_released();
-        i.pointer.interact_pos().filter(|_| both)
-    });
-    if let Some(origin) = tapped.filter(|o| drag.is_none() && response.interact_rect.contains(*o))
-        && response.contains_pointer()
-        && !menu
-    {
-        let keys = pickers::pick_keys(modifiers);
-        pressed.input = Some(CursorInput::Click {
-            at: at(origin),
-            keys,
-        });
-        return pressed;
-    }
-    // Given up by Esc, a pinch or another cursor chosen while it is held; and where a
-    // pass went by without it, as while A held, which borrows Pan, took the photo, or
-    // egui no longer drags it.
-    let pass = ctx.cumulative_pass_nr();
-    let lost = drag.is_some_and(|d| d.cursor != on.cursor || d.pass + 1 < pass)
-        || (drag.is_some() && !response.dragged() && !response.drag_stopped());
-    let given_up = drag.is_some()
-        && (lost || pinching || ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)));
-    if let Some(now) = &mut drag {
-        now.moved |= decided;
-        now.pass = pass;
-    }
-    let keys = pickers::pick_keys(modifiers);
-    let pixel = [
-        1.0 / on.pixels[0].max(1) as f32,
-        1.0 / on.pixels[1].max(1) as f32,
-    ];
-    if given_up {
-        drag = None;
-        ctx.memory_mut(|m| m.surrender_focus(id));
-    } else if let Some(now) = drag {
-        let to = pos.map(|pos| pickers::at_least_a_pixel(now.from, at(pos), pixel));
-        if response.drag_stopped() {
-            pressed.input = match (now.moved, to) {
-                (true, Some(to)) => Some(CursorInput::Area {
-                    from: now.from,
-                    to,
-                    keys,
-                }),
-                _ => Some(CursorInput::Click { at: now.from, keys }),
-            };
-            drag = None;
-            ctx.memory_mut(|m| m.surrender_focus(id));
-        } else if let (true, Some(to), Some(pos)) = (now.moved, to, pos) {
-            // The area as drawn, at the normal weight with its handles.
-            let area = Rect::from_two_pos(pos2(now.from[0], now.from[1]), pos2(to[0], to[1]));
-            let zoom = on.photo.width() / on.pixels[0].max(1) as f32;
-            let painter = ui.painter_at(on.area);
-            let overlay = Overlay::new(&painter, on.photo, zoom);
-            PickerMarks::new(PickerPlace::Area(area)).paint(&overlay);
-            pressed.pan = Some(pos - on.area.clamp(pos)).filter(|past| *past != Vec2::ZERO);
-        }
-    }
-    ctx.data_mut(|d| match drag {
-        Some(drag) => {
-            d.insert_temp(drag_id, drag);
-        }
-        None => d.remove::<Drag>(drag_id),
-    });
-    pressed
-}
-
-/// Draws the last pick's mark, `region` (`docs/cursors.md`, Group settings): as a stored
-/// area is, secondary and dashed; a point as a stored sample's crosshair.
-pub fn paint_last(ui: &egui::Ui, area: Rect, photo: Rect, pixels: [u32; 2], region: Region) {
-    let zoom = photo.width() / pixels[0].max(1) as f32;
-    let painter = ui.painter_at(area);
-    let overlay = Overlay::new(&painter, photo, zoom);
-    match region {
-        Region::Area([left, top, right, bottom]) => {
-            let area = Rect::from_min_max(pos2(left, top), pos2(right, bottom));
-            overlay.stroke(&Mark::new(Weight::Secondary).rect(area));
-        }
-        Region::Point([x, y]) => {
-            let colour = egui::Color32::TRANSPARENT;
-            overlay.point(pos2(x, y), Point::Stored, colour, Weight::Secondary);
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apertrust_engine::session::ControlValue;
 
     /// The built-in registry: Select, Pan, then Pick with White balance's cursor before
     /// Exposure's, Colour calibration's and Colour balance RGB's four hue pickers', in its
-    /// page's order, Pick holding Show the last pick.
+    /// page's order.
     #[test]
     fn the_registry_holds_phase_2_s_groups_in_the_well_s_order() {
         let groups: Vec<(CursorGroup, Vec<Cursor>)> = (registry().groups().iter())
@@ -1303,8 +978,6 @@ mod tests {
                 ),
             ]
         );
-        let pick = &registry().groups()[2];
-        assert!(matches!(pick.settings, [Row::Setting(row)] if row.id == "show_last"));
     }
 
     /// A cursor declared twice by one owner, a key on two cursors and a group's settings
@@ -1344,13 +1017,16 @@ mod tests {
                 &[]
             }
             fn groups(&self) -> &'static [CursorGroupDef] {
-                AppCursors.groups()
+                &[CursorGroupDef {
+                    group: CursorGroup::Pick,
+                    settings: &[],
+                }]
             }
             fn ready(&self, _: &str, _: &Context) -> Result<(), String> {
                 Ok(())
             }
         }
-        let refused = Registry::new(&[&AppCursors, &Settings], &[]).err();
+        let refused = Registry::new(&[&Settings, &Settings], &[]).err();
         assert_eq!(refused, Some(RegistryError::Settings(CursorGroup::Pick)));
     }
 
@@ -1358,96 +1034,100 @@ mod tests {
     /// active one and stays; A held borrows Pan and gives the cursor back on release.
     #[test]
     fn the_mode_starts_at_select_and_keeps_each_group_s_active_cursor() {
-        let mut mode = Mode::new(true);
+        let mut mode = Mode::new();
         assert_eq!(mode.chosen(), Cursor::SELECT);
-        let spot = Cursor {
-            owner: Owner::Tool("temperature"),
-            id: "spot",
-        };
         let exposure = Cursor {
             owner: Owner::Tool("exposure"),
             id: "exposure",
         };
-        assert_eq!(mode.active(CursorGroup::Pick), Some(spot));
-        mode.choose(exposure);
+        assert_eq!(mode.active(CursorGroup::Pick), Some(spot()));
+        mode.follow(Some(EXPOSURE_PICKER), Some(1));
         assert_eq!(mode.chosen(), exposure);
         assert_eq!(mode.active(CursorGroup::Pick), Some(exposure));
-        mode.choose(Cursor::SELECT);
+        mode.choose(Cursor::PAN);
         assert_eq!(mode.active(CursorGroup::Pick), Some(exposure));
-        mode.choose(exposure);
+        mode.choose(Cursor::SELECT);
         mode.hold_pan(true);
-        assert_eq!((mode.chosen(), mode.acting()), (exposure, Cursor::PAN));
+        assert_eq!(
+            (mode.chosen(), mode.acting()),
+            (Cursor::SELECT, Cursor::PAN)
+        );
         mode.hold_pan(false);
-        assert_eq!(mode.acting(), exposure);
+        assert_eq!(mode.acting(), Cursor::SELECT);
         // A cursor no owner declares changes nothing.
         mode.choose(Cursor {
             owner: Owner::App,
             id: "brush",
         });
-        assert_eq!(mode.chosen(), exposure);
+        assert_eq!(mode.chosen(), Cursor::SELECT);
+    }
+
+    /// A picker cursor chosen, by its face, its list item or its key, asks for its picker
+    /// on, as its button's `On` does, once, and is chosen only as the picker turns on; one
+    /// whose picker is on already asks for nothing, which leaves it on; another cursor
+    /// chosen after it in the same frame asks for none.
+    #[test]
+    fn a_picker_cursor_chosen_asks_for_its_picker_on() {
+        let mut mode = Mode::new();
+        mode.choose(spot());
+        assert_eq!(
+            mode.chosen(),
+            Cursor::SELECT,
+            "chosen as its picker turns on"
+        );
+        assert!(!mode.ends(None));
+        assert_eq!(mode.asked_picker(None), Some(SPOT_PICKER));
+        assert_eq!(mode.asked_picker(None), None, "asked once");
+        mode.follow(Some(SPOT_PICKER), Some(1));
+        assert_eq!(mode.chosen(), spot());
+        // Chosen again while its picker is on: left on.
+        mode.choose(spot());
+        assert_eq!(mode.asked_picker(Some(SPOT_PICKER)), None);
+        assert!(!mode.ends(Some(SPOT_PICKER)));
+        // Another picker's cursor, from White balance's: that picker, its own `On` turning
+        // White balance's off in the session, so nothing ends it first.
+        let exposure = Cursor {
+            owner: Owner::Tool("exposure"),
+            id: "exposure",
+        };
+        mode.choose(exposure);
+        assert!(!mode.ends(Some(SPOT_PICKER)));
+        assert_eq!(mode.asked_picker(Some(SPOT_PICKER)), Some(EXPOSURE_PICKER));
+        // Pan after it in the same frame: Pan, ending the picker, and no picker turned on.
+        mode.choose(exposure);
+        mode.choose(Cursor::PAN);
+        assert_eq!(mode.asked_picker(Some(SPOT_PICKER)), None);
+        assert!(mode.ends(Some(SPOT_PICKER)));
     }
 
     /// Who takes a press on the photo: A held pans, over a picker too; a picker on, from
-    /// every cursor; Pan pans; a picker cursor picks.
+    /// every cursor; Pan pans; Select never does.
     #[test]
     fn a_picker_on_takes_the_photo_then_the_cursor_acting_does() {
-        let spot = Cursor {
-            owner: Owner::Tool("temperature"),
-            id: "spot",
-        };
         let cases = [
             (Cursor::SELECT, false, false, "select"),
             (Cursor::SELECT, true, false, "pan"),
             (Cursor::PAN, false, false, "pan"),
-            (spot, false, false, "pick"),
-            (spot, true, false, "pan"),
             (Cursor::SELECT, false, true, "picker"),
-            (spot, false, true, "picker"),
-            (spot, true, true, "pan"),
+            (spot(), false, true, "picker"),
+            (spot(), true, true, "pan"),
             (Cursor::PAN, false, true, "picker"),
         ];
         for (chosen, held, picker, takes) in cases {
-            let mut mode = Mode::new(true);
+            let mut mode = Mode::new();
             mode.choose(chosen);
+            if chosen == spot() {
+                mode.follow(Some(SPOT_PICKER), Some(1));
+            }
+            assert_eq!(mode.chosen(), chosen);
             mode.hold_pan(held);
             let found = match mode.press(picker) {
                 Press::Picker => "picker",
                 Press::Select => "select",
                 Press::Pan => "pan",
-                Press::Pick(entry) => {
-                    assert_eq!(entry.cursor, chosen);
-                    "pick"
-                }
             };
             assert_eq!(found, takes, "{chosen:?}, A held {held}, picker {picker}");
         }
-    }
-
-    /// The last pick's mark shows while Show the last pick is on, until the next pick, which
-    /// takes its place, or another cursor chosen; the same cursor chosen again keeps it.
-    #[test]
-    fn the_last_pick_shows_until_another_pick_or_cursor() {
-        let spot = Cursor {
-            owner: Owner::Tool("temperature"),
-            id: "spot",
-        };
-        let mut mode = Mode::new(true);
-        mode.choose(spot);
-        assert_eq!(mode.last_shown(), None);
-        mode.picked(4, Vec::new());
-        assert_eq!(mode.last_shown(), Some(4));
-        mode.show_last = false;
-        assert_eq!(mode.last_shown(), None);
-        mode.show_last = true;
-        mode.choose(spot);
-        mode.picked(7, Vec::new());
-        assert_eq!(mode.last_shown(), Some(7));
-        // Read out once.
-        assert_eq!(mode.to_say().map(|(n, _)| n), Some(7));
-        mode.say("Temperature 5003 K".to_owned());
-        assert_eq!((mode.to_say(), mode.told()), (None, "Temperature 5003 K"));
-        mode.choose(Cursor::SELECT);
-        assert_eq!(mode.last_shown(), None);
     }
 
     /// A picker cursor cannot act, saying why, while the photo takes no pick, while its
@@ -1498,188 +1178,6 @@ mod tests {
         }
     }
 
-    /// Esc during a drag gives the gesture up, sending nothing, and the next press picks
-    /// again.
-    #[test]
-    fn esc_gives_a_drag_up() {
-        let area = Rect::from_min_size(pos2(100.0, 100.0), egui::vec2(400.0, 300.0));
-        let mut harness = egui_kittest::Harness::builder()
-            .with_size(egui::vec2(800.0, 600.0))
-            .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
-            .build_ui_state(
-                move |ui, inputs: &mut Vec<CursorInput>| {
-                    let on = OnPhoto {
-                        area,
-                        photo: area,
-                        pixels: [400, 300],
-                        ready: true,
-                        cursor: Cursor::SELECT,
-                    };
-                    inputs.extend(on_photo(ui, &on).input);
-                },
-                Vec::new(),
-            );
-        let (from, to) = (pos2(200.0, 200.0), pos2(300.0, 260.0));
-        harness.hover_at(from);
-        harness.drag_at(from);
-        harness.run();
-        harness.hover_at(to);
-        harness.run();
-        harness.key_press(Key::Escape);
-        harness.run();
-        harness.drop_at(to);
-        harness.run();
-        assert_eq!(*harness.state(), vec![]);
-        harness.hover_at(from);
-        harness.drag_at(from);
-        harness.run();
-        harness.hover_at(to);
-        harness.run();
-        harness.drop_at(to);
-        harness.run();
-        assert_eq!(
-            *harness.state(),
-            vec![CursorInput::Area {
-                from: [0.25, 1.0 / 3.0],
-                to: [0.5, 0.53333336],
-                keys: PickKeys::default(),
-            }]
-        );
-    }
-
-    /// A press and release in one frame, as a trackpad's tap may give them, is a click at
-    /// the press; a right-click picks nothing, the photo's menu keeping it.
-    #[test]
-    fn a_tap_picks_and_a_right_click_does_not() {
-        let area = Rect::from_min_size(pos2(100.0, 100.0), egui::vec2(400.0, 300.0));
-        let mut harness = egui_kittest::Harness::builder()
-            .with_size(egui::vec2(800.0, 600.0))
-            .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
-            .build_ui_state(
-                move |ui, inputs: &mut Vec<CursorInput>| {
-                    let on = OnPhoto {
-                        area,
-                        photo: area,
-                        pixels: [400, 300],
-                        ready: true,
-                        cursor: Cursor::SELECT,
-                    };
-                    inputs.extend(on_photo(ui, &on).input);
-                },
-                Vec::new(),
-            );
-        let at = pos2(300.0, 250.0);
-        let button = |button, pressed| egui::Event::PointerButton {
-            pos: at,
-            button,
-            pressed,
-            modifiers: Modifiers::NONE,
-        };
-        harness.hover_at(at);
-        harness.run();
-        for which in [egui::PointerButton::Secondary, egui::PointerButton::Primary] {
-            for pressed in [true, false] {
-                harness.event(button(which, pressed));
-                harness.run();
-            }
-        }
-        let tap = [
-            button(egui::PointerButton::Primary, true),
-            button(egui::PointerButton::Primary, false),
-        ];
-        harness.input_mut().events.extend(tap);
-        harness.run();
-        let click = CursorInput::Click {
-            at: [0.5, 0.5],
-            keys: PickKeys::default(),
-        };
-        assert_eq!(*harness.state(), vec![click, click]);
-    }
-
-    /// On the Mac a Control-click is a right-click, the photo's menu's: it picks nothing.
-    #[test]
-    fn a_mac_control_click_picks_nothing() {
-        let area = Rect::from_min_size(pos2(100.0, 100.0), egui::vec2(400.0, 300.0));
-        let mut harness = egui_kittest::Harness::builder()
-            .with_size(egui::vec2(800.0, 600.0))
-            .with_os(egui::os::OperatingSystem::Mac)
-            .with_context_setup(|ctx| apertrust_ui::install(ctx, apertrust_ui::Theme::default()))
-            .build_ui_state(
-                move |ui, inputs: &mut Vec<CursorInput>| {
-                    let on = OnPhoto {
-                        area,
-                        photo: area,
-                        pixels: [400, 300],
-                        ready: true,
-                        cursor: Cursor::SELECT,
-                    };
-                    inputs.extend(on_photo(ui, &on).input);
-                },
-                Vec::new(),
-            );
-        let at = pos2(300.0, 250.0);
-        let button = |pressed| egui::Event::PointerButton {
-            pos: at,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Modifiers::CTRL,
-        };
-        harness.hover_at(at);
-        harness.run();
-        for pressed in [true, false] {
-            harness.event_modifiers(button(pressed), Modifiers::CTRL);
-            harness.run();
-        }
-        assert_eq!(*harness.state(), vec![]);
-    }
-
-    /// A picker cursor's click sends a point, its drag the area drawn in any corner order,
-    /// each `Once` with the tool's settings and the keys; Select and Pan send nothing.
-    #[test]
-    fn a_picker_cursor_s_gestures_send_one_shot_picks() {
-        let settings = ToolSettings::new();
-        let spot = registry()
-            .entries()
-            .find(|e| e.cursor.id == "spot")
-            .unwrap();
-        let keys = PickKeys {
-            command: false,
-            shift: true,
-        };
-        let once = |region| PickerCommand::Once {
-            picker: PickerRef::Tool {
-                tool: "temperature",
-                picker: "spot",
-            },
-            region,
-            keys,
-            settings: settings.of("temperature"),
-            channel: None,
-        };
-        let click = CursorInput::Click {
-            at: [0.25, 0.5],
-            keys,
-        };
-        let area = CursorInput::Area {
-            from: [0.6, 0.7],
-            to: [0.2, 0.1],
-            keys,
-        };
-        assert_eq!(
-            finish(spot, click, &settings),
-            Some(once(Region::Point([0.25, 0.5])))
-        );
-        assert_eq!(
-            finish(spot, area, &settings),
-            Some(once(Region::Area([0.2, 0.1, 0.6, 0.7])))
-        );
-        for app in [Cursor::SELECT, Cursor::PAN] {
-            let entry = registry().entry(app).unwrap();
-            assert_eq!(finish(entry, click, &settings), None);
-            assert_eq!(finish(entry, area, &settings), None);
-        }
-    }
-
     const SPOT_PICKER: PickerRef = PickerRef::Tool {
         tool: "temperature",
         picker: "spot",
@@ -1706,7 +1204,7 @@ mod tests {
     /// it ends the picker, but its own cursor chosen again does not, nor the Colour picker's.
     #[test]
     fn the_mode_follows_the_picker_on() {
-        let mut mode = Mode::new(true);
+        let mut mode = Mode::new();
         mode.choose(Cursor::PAN);
         assert!(!mode.ends(None), "no picker on");
         let turned = mode.follow(Some(SPOT_PICKER), Some(1));
@@ -1867,7 +1365,7 @@ mod tests {
     /// picker turned on starts with none.
     #[test]
     fn a_reason_lasts_only_until_its_command_is_answered() {
-        let mut mode = Mode::new(true);
+        let mut mode = Mode::new();
         mode.follow(Some(SPOT_PICKER), Some(1));
         mode.ending(4, Ended::History);
         mode.answered(3);

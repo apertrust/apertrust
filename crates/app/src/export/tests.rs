@@ -3496,16 +3496,13 @@ fn only_the_focused_row_takes_the_wheel() {
 /// chosen only by an Esc with nothing focused.
 #[test]
 fn the_app_s_esc_leaves_the_tool_its_own() {
-    let spot = crate::cursors::Cursor {
-        owner: crate::cursors::Owner::Tool("temperature"),
-        id: "spot",
-    };
+    let pan = crate::cursors::Cursor::PAN;
     let with_keys = || {
         let mut harness = open();
         let os = egui::os::OperatingSystem::Mac;
         let settings = crate::settings::Settings::default();
         let mut shell = crate::Shell::new(&settings, Locale::EnGb, os);
-        shell.cursors.choose(spot);
+        shell.cursors.choose(pan);
         harness.state_mut().shell = Some(Box::new(shell));
         harness.run();
         harness
@@ -3528,11 +3525,11 @@ fn the_app_s_esc_leaves_the_tool_its_own() {
     harness.key_press(egui::Key::Escape);
     settle(&mut harness);
     assert!(focused(&harness, Role::ComboBox, "Target storage"));
-    assert_eq!(chosen(&harness), Some(spot));
+    assert_eq!(chosen(&harness), Some(pan));
     harness.key_press(egui::Key::Escape);
     settle(&mut harness);
     assert!(harness.ctx.memory(|m| m.focused()).is_none());
-    assert_eq!(chosen(&harness), Some(spot));
+    assert_eq!(chosen(&harness), Some(pan));
     // With nothing focused, Esc chooses Select.
     harness.key_press(egui::Key::Escape);
     settle(&mut harness);
@@ -3551,5 +3548,5 @@ fn the_app_s_esc_leaves_the_tool_its_own() {
     harness.run();
     assert!(harness.query_by_role(Role::ListBox).is_none());
     assert!(focused(&harness, Role::TextInput, "Path"));
-    assert_eq!(chosen(&harness), Some(spot));
+    assert_eq!(chosen(&harness), Some(pan));
 }

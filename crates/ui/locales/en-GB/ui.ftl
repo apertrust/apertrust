@@ -1544,8 +1544,6 @@ cursor-pan-how = Drag to pan a zoomed photo, over marks too; or hold A with any 
 cursor-group-select = Select
 cursor-group-pan = Pan
 cursor-group-pick = Pick
-# Pick's setting, in its list: the area a picker cursor last read stays drawn on the photo.
-cursor-setting-pick-show-last = Show the last pick on the photo
 # The well's tooltip while no photo is shown.
 cursor-well-no-photo = Open a photo to choose a cursor
 

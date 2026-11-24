@@ -1168,7 +1168,6 @@ cursor-pan-how = Przeciągnij, aby przesunąć powiększone zdjęcie, także nad
 cursor-group-select = Zaznaczanie
 cursor-group-pan = Przesuwanie
 cursor-group-pick = Próbniki
-cursor-setting-pick-show-last = Pokazuj ostatnią próbkę na zdjęciu
 cursor-well-no-photo = Otwórz zdjęcie, aby wybrać kursor
 
 ## Próbki pipety (docs/pickers.md, Declaring pickers).

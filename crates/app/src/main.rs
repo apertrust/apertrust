@@ -107,8 +107,8 @@ use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
     CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, History,
-    LibraryCommand, PickerCommand, PickerRef, Places, Session, SessionError, StepSource, Values,
-    ViewOnly,
+    LibraryCommand, PickKeys, PickerCommand, PickerRef, Places, Session, SessionError, StepSource,
+    Values, ViewOnly,
 };
 use apertrust_engine::sidecar::Reason;
 use apertrust_engine::view::{FramePlace, Placement};
@@ -1553,8 +1553,6 @@ enum FromToolbar {
     Cursor(cursors::Cursor),
     /// The chosen cursor's face pressed again: a picker cursor's turns its picker off.
     CursorAgain(cursors::Cursor),
-    /// Pick's Show the last pick turned on or off in its list in the cursors' well.
-    ShowLastPick(bool),
 }
 
 /// Where the toolbar menu was asked for (decision 92): the item it was asked on, by its id
@@ -2090,8 +2088,7 @@ struct Shell {
     /// ([`Shell::reveal`]).
     reveal: Option<&'static str>,
     /// The cursor chosen, each group's active one and A held (decision 104): Select at
-    /// every start, never saved; Pick's Show the last pick kept in settings
-    /// (`cursors.pick.show_last`).
+    /// every start, never saved; a picker cursor chosen exactly while its picker is on.
     cursors: cursors::Mode,
     /// Why no pick can be made on the photo now, and the photo open, as the cursors'
     /// readiness reads them, kept up to date by the app before each frame
@@ -2219,7 +2216,7 @@ impl Shell {
             keymap,
             sections: settings.edit.sections.clone(),
             reveal: None,
-            cursors: cursors::Mode::new(settings.show_last_pick),
+            cursors: cursors::Mode::new(),
             pick_why: None,
             pick_photo: None,
             escape_kept: false,
@@ -2831,7 +2828,6 @@ impl Shell {
             tool_settings: self.tool_settings.clone(),
             ask_before_overwrite: self.overwrite.asks(),
             ask_before_discard: self.discard.asks(),
-            show_last_pick: self.cursors.show_last,
         }
     }
 
@@ -3676,7 +3672,6 @@ impl Shell {
             ToolbarAction::Cursors(action) => match well.answer(action)? {
                 cursors::Answer::Choose(cursor) => Some(FromToolbar::Cursor(cursor)),
                 cursors::Answer::Again(cursor) => Some(FromToolbar::CursorAgain(cursor)),
-                cursors::Answer::ShowLast(on) => Some(FromToolbar::ShowLastPick(on)),
             },
             ToolbarAction::MoveWindow => window(TitleBar::Move),
             ToolbarAction::TitleBarDoubleClick => window(TitleBar::DoubleClick),
@@ -3699,9 +3694,10 @@ impl Shell {
         }
     }
 
-    /// Chooses `cursor`, as its face, its line in its group's list or its key asks, unless
-    /// it is a picker cursor that cannot act now, which is never chosen (`docs/cursors.md`,
-    /// A cursor). Its tool's section is neither opened nor scrolled to.
+    /// Chooses `cursor`, as its face, its line in its group's list or its key asks; a
+    /// picker cursor's picker turns on, unless it cannot turn on now, its cursor then never
+    /// chosen, and the cursor is chosen as it does (`docs/cursors.md`, A cursor;
+    /// [`App::follow_chosen_cursor`]). Its tool's section is neither opened nor scrolled to.
     fn choose_cursor(&mut self, cursor: cursors::Cursor, ctx: &egui::Context) {
         let words = translator(ctx);
         let cx = cursors::Context {
@@ -5580,11 +5576,25 @@ impl App {
         self.shell.pick_photo = self.mirror.photo.asked().map(Path::to_owned);
     }
 
-    /// Turns a tool's picker on off where the person chose a cursor other than its own this
-    /// frame, Select by Esc among them, as the well's choice ends it (decision 104).
-    fn end_unchosen_picker(&mut self, ctx: &egui::Context) {
-        if self.shell.cursors.ends(self.mirror.pickers.active()) {
+    /// Does what the person's choice of a cursor this frame asks of the pickers (decision
+    /// 104): a cursor other than the picker on's, Select by Esc among them, turns it off; a
+    /// picker cursor turns its picker on as its button does, the same `On` from the area the
+    /// picker holds, the well choosing the cursor as the picker turns on.
+    fn follow_chosen_cursor(&mut self, ctx: &egui::Context) {
+        let active = self.mirror.pickers.active();
+        if self.shell.cursors.ends(active) {
             self.picker_off(cursors::Ended::Asked, ctx);
+        }
+        if let Some(PickerRef::Tool { tool, picker }) = self.shell.cursors.asked_picker(active) {
+            let action = PickerAction::On { area: true };
+            let keys = PickKeys::default();
+            let change = Change::Picker {
+                tool,
+                picker,
+                action,
+                keys,
+            };
+            self.change(change, ctx);
         }
     }
 
@@ -6467,17 +6477,12 @@ impl App {
                 .details(&details)
                 .show(ui, placed.caption);
         }
-        // The picker on takes the photo; with none, the cursor chosen acts there. A photo
-        // not yet live shows its picture, where a cursor that cannot act says so.
-        let waiting = (placed.as_ref())
-            .filter(|_| photo.is_some() && !live)
-            .map(|placed| (placed.photo, placed.photo, [1, 1]));
-        if self.mirror.pickers.active().is_some() {
-            if let Some((area, photo, pixels)) = picking {
-                self.picker_on_photo(ui, area, photo, pixels);
-            }
-        } else if let Some((area, photo, pixels)) = picking.or(waiting) {
-            self.cursor_on_photo(ui, area, photo, pixels);
+        // The picker on takes the photo, whichever door turned it on; Select's and Pan's
+        // drags are the pan's ([`pan_photo`]).
+        if self.mirror.pickers.active().is_some()
+            && let Some((area, photo, pixels)) = picking
+        {
+            self.picker_on_photo(ui, area, photo, pixels);
         }
         if open {
             zoom_live_region(ui, slot.left_top(), &self.shell.zoom_said);
@@ -6576,79 +6581,6 @@ impl App {
             ui.ctx().request_repaint_after(wait);
         }
         pickers::live_region(ui, area.left_bottom(), self.said.text());
-    }
-
-    /// The cursor chosen over the photo area `area`, the whole photo's rectangle on the
-    /// screen `photo`, `pixels` of the frame's scale, while no picker is on
-    /// (`docs/cursors.md`, On the photo): the last pick's mark where Show the last pick is
-    /// on, read out once; a picker cursor's pointer, its click or drag sent as one
-    /// `PickerCommand::Once`, the view moved by a drag past the area's edge. Select's and
-    /// Pan's drags are the pan's ([`pan_photo`]).
-    fn cursor_on_photo(
-        &mut self,
-        ui: &mut egui::Ui,
-        area: egui::Rect,
-        photo: egui::Rect,
-        pixels: [u32; 2],
-    ) {
-        let words = translator(ui.ctx());
-        let mode = &mut self.shell.cursors;
-        if let Some(number) = mode.last_shown()
-            && let Some(reading) = self.mirror.pickers.once(number)
-        {
-            cursors::paint_last(ui, area, photo, pixels, reading.region);
-        }
-        // What the last pick changed, read out once its reading has come.
-        if let Some((number, before)) = mode.to_say()
-            && let Some(reading) = self.mirror.pickers.once(number)
-        {
-            let tools = self.mirror.tools();
-            let text = pickers::said(reading, before, &self.mirror.values, tools, &words);
-            mode.say(text);
-        }
-        pickers::live_region(ui, area.left_bottom(), mode.told());
-        let cursors::Press::Pick(entry) = mode.press(false) else {
-            return;
-        };
-        let shell = &self.shell;
-        let cx = cursors::Context {
-            why: shell.pick_why.as_deref(),
-            hidden: shell.peeking,
-            settings: &shell.tool_settings,
-            photo: shell.pick_photo.as_deref(),
-            words: &words,
-        };
-        let ready = cursors::ready(&entry, &cx).is_ok();
-        let on = cursors::OnPhoto {
-            area,
-            photo,
-            pixels,
-            ready,
-            cursor: entry.cursor,
-        };
-        let pressed = cursors::on_photo(ui, &on);
-        // Past the area's edge, the view follows the pointer each frame, as a picker's.
-        if let (Some(overshoot), Some(room)) = (pressed.pan, self.shell.room) {
-            let moved = -overshoot * ui.pixels_per_point();
-            let panned = self.shell.zoom.panned(moved, &room);
-            if panned != self.shell.zoom {
-                self.shell.zoom = panned;
-                ui.ctx().request_repaint();
-            }
-        }
-        let settings = &self.shell.tool_settings;
-        let Some(command) =
-            (pressed.input).and_then(|input| cursors::finish(&entry, input, settings))
-        else {
-            return;
-        };
-        let PickerCommand::Once { picker, .. } = command else {
-            return;
-        };
-        let before = pickers::tool_values(picker, &self.mirror.values);
-        let number = self.send_picker(command, ui.ctx());
-        self.mirror.pickers.once_sent(number, picker);
-        self.shell.cursors.picked(number, before);
     }
 
     /// The Viewer's right-click menus, hung from the pointer where `slot` was
@@ -7947,7 +7879,6 @@ impl eframe::App for App {
             Some(FromToolbar::NotSaved) => self.ask_why_not_saved(&ctx),
             Some(FromToolbar::Cursor(cursor)) => self.shell.choose_cursor(cursor, &ctx),
             Some(FromToolbar::CursorAgain(cursor)) => self.cursor_again(cursor, &ctx),
-            Some(FromToolbar::ShowLastPick(on)) => self.shell.cursors.show_last = on,
             None => {}
         }
         // The focus the Toolbar was asked to move this frame, before Hide asks again.
@@ -8014,7 +7945,7 @@ impl eframe::App for App {
         let pointed = self.shell.pointed.take();
         self.run_actions(run, &ctx, &regions);
         self.shell.pointed = pointed;
-        self.end_unchosen_picker(&ctx);
+        self.follow_chosen_cursor(&ctx);
         // The scopes count what the section now shows: its tab, whether it is open, the
         // graph.
         if let Some(command) = self.mirror.scopes.ask(self.shell.scopes_wanted()) {
@@ -18464,23 +18395,23 @@ mod tests {
         }
     }
 
-    /// What the cursors' harness keeps: the zoom, the cursor mode, and the one-shot picks
-    /// a picker cursor sent.
+    /// What the cursors' harness keeps: the zoom, the cursor mode, and whether a picker is
+    /// on, which takes the photo.
     struct Pointing {
         zoomed: zoom::Zoomed,
         mode: cursors::Mode,
-        sent: Vec<PickerCommand>,
-        /// Whether a picker is on, which takes the photo.
         picker: bool,
     }
 
-    /// The photo area as `App::viewer` pans it and hands it to the cursor acting
-    /// (decision 104; `docs/cursors.md`, On the photo): [`PAN_AREA`] at `zoomed` in
-    /// [`ZOOM_ROOM`], the whole photo's rectangle where the zoom places it, a picker
-    /// cursor's gesture sent as `finish` makes it, ready unless `why` says otherwise.
+    /// The photo area as `App::viewer` pans it for the cursor acting (decision 104;
+    /// `docs/cursors.md`, On the photo): [`PAN_AREA`] at `zoomed` in [`ZOOM_ROOM`], `chosen`
+    /// chosen, a picker cursor as its picker turns on.
     fn pointing(zoomed: zoom::Zoomed, chosen: cursors::Cursor) -> Harness<'static, Pointing> {
-        let mut mode = cursors::Mode::new(true);
+        let mut mode = cursors::Mode::new();
         mode.choose(chosen);
+        if chosen == SPOT {
+            mode.follow(Some(SPOT_PICKER), Some(1));
+        }
         Harness::builder()
             .with_size(egui::vec2(1300.0, 940.0))
             .with_pixels_per_point(2.0)
@@ -18491,28 +18422,11 @@ mod tests {
                     let drags = matches!(press, cursors::Press::Pan);
                     let room = &ZOOM_ROOM;
                     pointing.zoomed = pan_photo(ui, PAN_AREA, pointing.zoomed, room, drags);
-                    let placement = room.place(&pointing.zoomed);
-                    let photo = whole_photo(PAN_AREA, &placement, 2.0);
-                    let cursors::Press::Pick(entry) = press else {
-                        return;
-                    };
-                    let on = cursors::OnPhoto {
-                        area: PAN_AREA,
-                        photo,
-                        pixels: placement.size,
-                        ready: true,
-                        cursor: entry.cursor,
-                    };
-                    let input = cursors::on_photo(ui, &on).input;
-                    let settings = settings::ToolSettings::new();
-                    let sent = input.and_then(|input| cursors::finish(&entry, input, &settings));
-                    pointing.sent.extend(sent);
                 },
                 Pointing {
                     zoomed,
                     mode,
-                    sent: Vec::new(),
-                    picker: false,
+                    picker: chosen == SPOT,
                 },
             )
     }
@@ -18523,76 +18437,9 @@ mod tests {
         id: "spot",
     };
 
-    /// A click with White balance's cursor sends one `Once` at the point clicked, in the
-    /// photo's coordinates, at Fit and zoomed, which the session reads as the area a press
-    /// there starts (`Region::pressed`); a drag sends one with the area dragged, on its
-    /// release alone.
-    #[test]
-    fn a_picker_cursor_picks_once_where_it_is_clicked_or_dragged() {
-        use apertrust_engine::session::Region;
-        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
-        for zoomed in [zoom::Zoomed::FIT, hundred] {
-            let mut harness = pointing(zoomed, SPOT);
-            harness.run();
-            let placement = ZOOM_ROOM.place(&zoomed);
-            let photo = whole_photo(PAN_AREA, &placement, 2.0);
-            let at = |x: f32, y: f32| {
-                let p = (egui::pos2(x, y) - photo.min) / photo.size();
-                [p.x, p.y]
-            };
-            let click = egui::pos2(600.0, 400.0);
-            harness.hover_at(click);
-            harness.drag_at(click);
-            harness.run();
-            harness.drop_at(click);
-            harness.run();
-            let sent = std::mem::take(&mut harness.state_mut().sent);
-            let [PickerCommand::Once { region, picker, .. }] = sent.as_slice() else {
-                panic!("{zoomed:?}: {sent:?}");
-            };
-            assert_eq!(*region, Region::Point(at(600.0, 400.0)), "{zoomed:?}");
-            assert_eq!(
-                *picker,
-                PickerRef::Tool {
-                    tool: "temperature",
-                    picker: "spot"
-                }
-            );
-            // The area the session reads: 2 % of the photo's width each way.
-            let aspect = photo.width() / photo.height();
-            let [x, y] = at(600.0, 400.0);
-            let pressed = Region::pressed([x, y], aspect);
-            assert!((pressed[2] - pressed[0] - 0.04).abs() < 1e-6, "{pressed:?}");
-            assert_eq!(harness.state().zoomed, zoomed);
-
-            // A drag: nothing while it is drawn, one pick of the area on its release.
-            let (from, to) = (egui::pos2(500.0, 300.0), egui::pos2(700.0, 500.0));
-            harness.hover_at(from);
-            harness.drag_at(from);
-            harness.run();
-            harness.hover_at(egui::pos2(600.0, 400.0));
-            harness.run();
-            harness.hover_at(to);
-            harness.run();
-            assert!(harness.state().sent.is_empty());
-            harness.drop_at(to);
-            harness.run();
-            let sent = std::mem::take(&mut harness.state_mut().sent);
-            let [from, to] = [at(500.0, 300.0), at(700.0, 500.0)];
-            let area = Region::Area([from[0], from[1], to[0], to[1]]);
-            assert!(
-                matches!(sent.as_slice(), [PickerCommand::Once { region, .. }] if *region == area),
-                "{zoomed:?}: {sent:?}"
-            );
-            // The photo did not move.
-            assert_eq!(harness.state().zoomed, zoomed);
-        }
-    }
-
-    /// Pan's drag pans a zoomed photo as the built drag does; Select's never does, and
-    /// picks nothing; a picker cursor's drag picks and pans nothing; with A held, which
-    /// borrows Pan, Select's and a picker cursor's drags pan, over a picker on too; a picker
-    /// on takes the photo from every cursor otherwise.
+    /// Pan's drag pans a zoomed photo as the built drag does; Select's never does; with A
+    /// held, which borrows Pan, Select's and a picker cursor's drags pan, over a picker on
+    /// too; a picker on takes the photo from every cursor otherwise.
     #[test]
     fn only_pan_and_a_held_pan_by_a_drag() {
         let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
@@ -18606,17 +18453,16 @@ mod tests {
             harness.drop_at(from + egui::vec2(120.0, 0.0));
             harness.run();
         };
-        // The cursor chosen, A held, a picker on; whether the drag pans and whether it picks.
+        // The cursor chosen, A held, a picker on; whether the drag pans.
         let cases = [
-            (cursors::Cursor::SELECT, false, false, false, false),
-            (cursors::Cursor::SELECT, true, false, true, false),
-            (cursors::Cursor::PAN, false, false, true, false),
-            (SPOT, false, false, false, true),
-            (SPOT, true, false, true, false),
-            (cursors::Cursor::SELECT, false, true, false, false),
-            (SPOT, true, true, true, false),
+            (cursors::Cursor::SELECT, false, false, false),
+            (cursors::Cursor::SELECT, true, false, true),
+            (cursors::Cursor::PAN, false, false, true),
+            (cursors::Cursor::SELECT, false, true, false),
+            (SPOT, false, true, false),
+            (SPOT, true, true, true),
         ];
-        for (chosen, held, picker, pans, picks) in cases {
+        for (chosen, held, picker, pans) in cases {
             let mut harness = pointing(hundred, chosen);
             harness.state_mut().mode.hold_pan(held);
             harness.state_mut().picker = picker;
@@ -18625,106 +18471,9 @@ mod tests {
             let state = harness.state();
             let moved = state.zoomed != hundred;
             assert_eq!(moved, pans, "{chosen:?}, A held {held}, picker {picker}");
-            let picked = !state.sent.is_empty();
-            assert_eq!(picked, picks, "{chosen:?}: {:?}", state.sent);
             // A held gives the picker cursor back as it is let go.
             assert_eq!(state.mode.chosen(), chosen);
         }
-    }
-
-    /// A drag that A held takes from a picker cursor, or another cursor chosen while it is
-    /// held, is given up: its release picks nothing and pans nothing, and the next tap picks
-    /// (`docs/cursors.md`, On the photo).
-    #[test]
-    fn a_drag_is_given_up_by_a_held_and_by_another_cursor() {
-        let exposure = cursors::Cursor {
-            owner: cursors::Owner::Tool("exposure"),
-            id: "exposure",
-        };
-        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
-        let (from, to) = (egui::pos2(500.0, 300.0), egui::pos2(700.0, 500.0));
-        for borrow in [true, false] {
-            let mut harness = pointing(hundred, exposure);
-            harness.run();
-            harness.hover_at(from);
-            harness.drag_at(from);
-            harness.run();
-            harness.hover_at(egui::pos2(600.0, 400.0));
-            harness.run();
-            if borrow {
-                harness.state_mut().mode.hold_pan(true);
-                harness.hover_at(egui::pos2(650.0, 450.0));
-                harness.run();
-                harness.state_mut().mode.hold_pan(false);
-            } else {
-                harness.state_mut().mode.choose(SPOT);
-            }
-            harness.hover_at(to);
-            harness.run();
-            harness.drop_at(to);
-            harness.run();
-            harness.hover_at(from);
-            harness.run();
-            let state = harness.state();
-            assert!(state.sent.is_empty(), "A held {borrow}: {:?}", state.sent);
-            assert_eq!(state.zoomed, hundred, "A held {borrow}");
-            // The next tap picks once.
-            harness.drag_at(from);
-            harness.run();
-            harness.drop_at(from);
-            harness.run();
-            assert_eq!(harness.state().sent.len(), 1, "A held {borrow}");
-        }
-    }
-
-    /// Over the photo, a picker cursor shows the crosshair, or the not-allowed pointer where
-    /// it cannot act, a press then sending nothing; Select and Pan keep the pan's hand.
-    #[test]
-    fn a_picker_cursor_s_pointer_is_the_crosshair_or_not_allowed() {
-        let pointer =
-            |harness: &Harness<'_, Pointing>| harness.output().platform_output.cursor_icon;
-        let hundred = zoomed_to(zoom::Scale::Factor(1.0), [0.5, 0.5]);
-        let mut harness = pointing(hundred, SPOT);
-        harness.hover_at(PAN_AREA.center());
-        harness.run();
-        assert_eq!(pointer(&harness), egui::CursorIcon::Crosshair);
-        let mut harness = pointing(hundred, cursors::Cursor::PAN);
-        harness.hover_at(PAN_AREA.center());
-        harness.run();
-        assert_eq!(pointer(&harness), egui::CursorIcon::Grab);
-
-        let mut harness = Harness::builder()
-            .with_size(egui::vec2(800.0, 600.0))
-            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
-            .build_ui_state(
-                |ui, presses: &mut Vec<cursors::CursorInput>| {
-                    let area = egui::Rect::from_min_size(
-                        egui::pos2(100.0, 100.0),
-                        egui::vec2(400.0, 300.0),
-                    );
-                    let on = cursors::OnPhoto {
-                        area,
-                        photo: area,
-                        pixels: [400, 300],
-                        ready: false,
-                        cursor: SPOT,
-                    };
-                    presses.extend(cursors::on_photo(ui, &on).input);
-                },
-                Vec::new(),
-            );
-        let at = egui::pos2(300.0, 250.0);
-        harness.hover_at(at);
-        harness.run();
-        assert_eq!(
-            harness.output().platform_output.cursor_icon,
-            egui::CursorIcon::NotAllowed
-        );
-        harness.drag_at(at);
-        harness.run();
-        harness.drop_at(at);
-        harness.run();
-        assert!(harness.state().is_empty());
     }
 
     #[test]
@@ -22021,7 +21770,6 @@ mod tests {
                                 bench.picker_off();
                             }
                         }
-                        Some(FromToolbar::ShowLastPick(on)) => bench.shell.cursors.show_last = on,
                         Some(FromToolbar::Jobs | FromToolbar::NotSaved) | None => {}
                     }
                     let refocus = bench.shell.toolbar_focus.take().is_some();
@@ -22125,9 +21873,14 @@ mod tests {
                         bench.commands.extend(command);
                     }
                     bench.shell.pointed = pointed;
-                    // Another cursor chosen ends a tool's picker, as `App::ui` has it.
-                    if bench.shell.cursors.ends(bench.mirror.pickers.active()) {
+                    // Another cursor chosen ends a tool's picker, and a picker cursor turns
+                    // its picker on, as `App::follow_chosen_cursor` has it.
+                    let active = bench.mirror.pickers.active();
+                    if bench.shell.cursors.ends(active) {
                         bench.picker_off();
+                    }
+                    if let Some(picker) = bench.shell.cursors.asked_picker(active) {
+                        bench.picker_on(picker);
                     }
                     // Settings asked for goes to the host, as `run_action` hands it on.
                     if std::mem::take(&mut bench.shell.settings) {
@@ -22235,6 +21988,20 @@ mod tests {
     }
 
     impl Bench {
+        /// Sends `On` for `picker` as its button sends it, from the area it holds, shown at
+        /// once as `App::send_picker` shows it.
+        fn picker_on(&mut self, picker: PickerRef) {
+            let PickerRef::Tool { tool, .. } = picker else {
+                return;
+            };
+            let on = PickerAction::On { area: true };
+            let settings = self.shell.tool_settings.of(tool);
+            let command = pickers::pressed(picker, on, PickKeys::default(), settings);
+            self.commands.push(Command::Picker(command));
+            let number = self.commands.len() as u64;
+            self.mirror.pickers.asked(number, Some((picker, true)));
+        }
+
         /// Sends `Off` for the picker on, shown at once as `App::send_picker` shows it.
         fn picker_off(&mut self) {
             self.commands.push(Command::Picker(PickerCommand::Off));
@@ -25773,8 +25540,8 @@ mod tests {
 
     /// The cursors' well on the Toolbar (decision 104; `docs/cursors.md`): Select chosen at
     /// start; each cursor chosen from its face, its group's list and its key, which the
-    /// well shows checked; Esc back to Select; K White balance's; A held borrowing Pan and
-    /// giving the cursor back on release.
+    /// well shows checked, a picker cursor as its picker turns on; Esc back to Select; K
+    /// White balance's; A held borrowing Pan and giving the cursor back on release.
     #[test]
     fn the_cursors_are_chosen_from_the_well_and_their_keys() {
         let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
@@ -25797,9 +25564,10 @@ mod tests {
             harness.run();
             assert_eq!(chosen(&harness), cursors::Cursor::PAN);
             assert!(checked(&harness, "Pan, A"));
-            // Pick's list, its cursors with their keys, then Show the last pick.
+            // Pick's list, its cursors with their keys: Exposure's turns its picker on, which
+            // chooses it.
             harness
-                .get_by_role_and_label(Role::Button, "Pick cursors and settings")
+                .get_by_role_and_label(Role::Button, "Pick cursors")
                 .click();
             harness.run();
             harness
@@ -25830,15 +25598,13 @@ mod tests {
             harness.key_up(Key::A);
             harness.run();
             assert_eq!(harness.state().shell.cursors.acting(), SPOT);
-            // Esc: the chevron its list gave the focus back to takes the first, and the
-            // next, with nothing focused, goes back to Select.
-            harness.key_press(Key::Escape);
-            harness.run();
-            assert_eq!(chosen(&harness), SPOT, "{os:?}");
+            // Esc ends the picker on wherever the focus is, the chevron its list gave the
+            // focus back to among them, and goes back to Select.
             harness.key_press(Key::Escape);
             harness.run();
             assert_eq!(chosen(&harness), cursors::Cursor::SELECT, "{os:?}");
             assert!(checked(&harness, "Select, Esc"));
+            assert_eq!(harness.state().mirror.pickers.active(), None);
         }
     }
 
@@ -25989,16 +25755,20 @@ mod tests {
     fn esc_chooses_select_only_where_nothing_focused_keeps_it() {
         let mut harness = bench(OperatingSystem::Mac);
         harness.run();
-        harness.key_press(Key::K);
+        harness
+            .state_mut()
+            .shell
+            .cursors
+            .choose(cursors::Cursor::PAN);
         harness.run();
-        assert_eq!(harness.state().shell.cursors.chosen(), SPOT);
+        assert_eq!(harness.state().shell.cursors.chosen(), cursors::Cursor::PAN);
         harness
             .get_by_role_and_label(Role::Button, "Exposure")
             .focus();
         harness.run();
         harness.key_press(Key::Escape);
         harness.run();
-        assert_eq!(harness.state().shell.cursors.chosen(), SPOT);
+        assert_eq!(harness.state().shell.cursors.chosen(), cursors::Cursor::PAN);
         harness.key_press(Key::Escape);
         harness.run();
         assert_eq!(
@@ -26036,7 +25806,7 @@ mod tests {
     #[test]
     fn esc_in_a_slider_s_value_field_puts_the_value_back() {
         let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
-        shell.cursors.choose(SPOT);
+        shell.cursors.choose(cursors::Cursor::PAN);
         let mut harness = Harness::builder()
             .with_size(egui::vec2(400.0, 200.0))
             .with_os(OperatingSystem::Mac)
@@ -26073,7 +25843,7 @@ mod tests {
         harness.key_press(Key::Escape);
         harness.run();
         assert_eq!(harness.state().value, 0.0);
-        assert_eq!(harness.state().shell.cursors.chosen(), SPOT);
+        assert_eq!(harness.state().shell.cursors.chosen(), cursors::Cursor::PAN);
         // The slider took the focus back; the next Esc is its, the one after it Select's.
         for _ in 0..3 {
             harness.key_press(Key::Escape);
@@ -26276,8 +26046,8 @@ mod tests {
         ));
     }
 
-    /// A picker cursor that cannot act now is never chosen, by its key either: its face is
-    /// disabled, saying why (`docs/cursors.md`, A cursor).
+    /// A picker cursor that cannot act now is never chosen, by its key either, and turns
+    /// no picker on: its face is disabled, saying why (`docs/cursors.md`, A cursor).
     #[test]
     fn a_picker_cursor_that_cannot_act_is_never_chosen() {
         let mut harness = bench(OperatingSystem::Mac);
@@ -26289,6 +26059,8 @@ mod tests {
             harness.state().shell.cursors.chosen(),
             cursors::Cursor::SELECT
         );
+        assert_eq!(harness.state().mirror.pickers.active(), None);
+        assert!(harness.state().commands.is_empty());
         let face = harness.get_by_role_and_label(Role::RadioButton, "White balance picker, K");
         assert!(face.accesskit_node().is_disabled());
         assert_eq!(
@@ -26297,43 +26069,105 @@ mod tests {
         );
     }
 
-    /// Pick's Show the last pick, on by default, turned off and on from its group's list
-    /// and kept in settings (`cursors.pick.show_last`); each face says its cursor's key and
-    /// what it does, Exposure's following Picker target (decision 88).
+    /// The picker commands sent since the last look.
+    fn picker_commands(harness: &mut Harness<'_, Bench>) -> Vec<PickerCommand> {
+        let commands = std::mem::take(&mut harness.state_mut().commands);
+        (commands.into_iter())
+            .filter_map(|command| match command {
+                Command::Picker(command) => Some(command),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A picker cursor is its picker's second door (decision 104's 104.6; `docs/cursors.md`,
+    /// A cursor): its face, its line in Pick's list and its key each send its picker's `On`,
+    /// as its button does, from the area the picker holds, with the tool's settings, and the
+    /// cursor is chosen as the picker turns on; its key again leaves the picker on, and its
+    /// face again sends `Off`; nothing else is sent.
     #[test]
-    fn show_the_last_pick_is_a_toggle_in_pick_s_list_kept_in_settings() {
+    fn a_picker_cursor_turns_its_picker_on_and_off() {
+        let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
+        let on = |harness: &Harness<'_, Bench>| PickerCommand::On {
+            picker: SPOT_PICKER,
+            area: true,
+            keys: PickKeys::default(),
+            settings: harness.state().shell.tool_settings.of("temperature"),
+            channel: None,
+        };
+        let face = "White balance picker, K";
         let mut harness = bench(OperatingSystem::Mac);
         harness.run();
-        assert!(harness.state().shell.cursors.show_last);
-        for on in [false, true] {
-            harness
-                .get_by_role_and_label(Role::Button, "Pick cursors and settings")
-                .click();
-            harness.run();
-            let item = harness
-                .get_by_role_and_label(Role::MenuItemCheckBox, "Show the last pick on the photo");
-            let shown = item.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True);
-            assert_eq!(shown, !on);
-            item.click();
-            harness.run();
-            assert_eq!(harness.state().shell.cursors.show_last, on);
-            let ctx = harness.ctx.clone();
-            assert_eq!(harness.state().shell.to_settings(&ctx).show_last_pick, on);
-        }
-        let settings = Settings {
-            show_last_pick: false,
-            ..Settings::default()
-        };
-        let mut harness = bench_with(OperatingSystem::Mac, &settings);
+        // Its key.
+        harness.key_press(Key::K);
         harness.run();
-        assert!(!harness.state().shell.cursors.show_last);
+        assert_eq!(picker_commands(&mut harness), [on(&harness)]);
+        assert_eq!(chosen(&harness), SPOT);
+        assert_eq!(harness.state().mirror.pickers.active(), Some(SPOT_PICKER));
+        // Again: left on.
+        harness.key_press(Key::K);
+        harness.run();
+        assert_eq!(picker_commands(&mut harness), []);
+        assert_eq!(chosen(&harness), SPOT);
+        // Its face again: off, and Select.
+        harness
+            .get_by_role_and_label(Role::RadioButton, face)
+            .click();
+        harness.run();
+        assert_eq!(picker_commands(&mut harness), [PickerCommand::Off]);
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+        // Its face, Pick's active cursor, while it is off.
+        harness
+            .get_by_role_and_label(Role::RadioButton, face)
+            .click();
+        harness.run();
+        assert_eq!(picker_commands(&mut harness), [on(&harness)]);
+        assert_eq!(chosen(&harness), SPOT);
+        // Pick's list: Exposure's, whose `On` turns White balance's off in the session.
+        harness
+            .get_by_role_and_label(Role::Button, "Pick cursors")
+            .click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Exposure picker")
+            .click();
+        harness.run();
+        let sent = picker_commands(&mut harness);
+        let exposure = PickerRef::Tool {
+            tool: "exposure",
+            picker: "exposure",
+        };
+        assert!(
+            matches!(sent.as_slice(), [PickerCommand::On { picker, area: true, .. }] if *picker == exposure),
+            "{sent:?}"
+        );
+        assert_eq!(chosen(&harness).id, "exposure");
+        // Then White balance's from the list.
+        harness
+            .get_by_role_and_label(Role::Button, "Pick cursors")
+            .click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "White balance picker")
+            .click();
+        harness.run();
+        assert_eq!(picker_commands(&mut harness), [on(&harness)]);
+        assert_eq!(chosen(&harness), SPOT);
+    }
+
+    /// Each face says its cursor's key and what it does, Exposure's following Picker target
+    /// (decision 88).
+    #[test]
+    fn each_face_says_its_key_and_what_it_does() {
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
         let face = harness.get_by_role_and_label(Role::RadioButton, "White balance picker, K");
         assert_eq!(
             face.accesskit_node().description().as_deref(),
             Some("White balance picker · K — Click a neutral area, or drag one")
         );
         harness
-            .get_by_role_and_label(Role::Button, "Pick cursors and settings")
+            .get_by_role_and_label(Role::Button, "Pick cursors")
             .click();
         harness.run();
         harness
