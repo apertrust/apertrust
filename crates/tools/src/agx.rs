@@ -43,11 +43,12 @@
 //! default (rule 4 of `docs/tools/README.md`), darktable's scene-referred defaults, and
 //! the binding sets a parameter only while its control is off it, the pivot's while it or
 //! the range is. Dynamic range scaling, which only darktable's pickers and Read exposure
-//! read, is not ported, nor is the base primaries' export profile: both are drawn disabled
-//! and refused. The pickers on the exposures and the pivot are in the definition, as
-//! darktable's page has them, and the renderer draws a quad once what it runs is built; the
-//! four actions are drawn disabled until theirs are. Show curve is empty until a read-only
-//! graph row exists. darktable's presets wait for the header's presets menu.
+//! read, is stored and binds nothing. The base primaries' export profile is not ported:
+//! it is drawn disabled and refused. The pickers on the exposures and the pivot are in
+//! the definition, as darktable's page has them, and the renderer draws a quad once what
+//! it runs is built; the four actions are drawn disabled until theirs are. Show curve is
+//! empty until a read-only graph row exists. darktable's presets wait for the header's
+//! presets menu.
 
 #![allow(
     clippy::excessive_precision,
@@ -87,8 +88,10 @@ pub const BLACK: &str = "range_black_relative_ev";
 pub const PIVOT: &str = "curve_pivot_x";
 
 /// Dynamic range scaling: the margin darktable's pickers and Read exposure add to the
-/// range they compute, and by which its `gui_changed` rescales the range. No render reads
-/// it, so the operation has no parameter for it, and it is not ported.
+/// range they compute, stored in the edit as darktable stores it. No render reads it, so
+/// the operation has no parameter for it and the binding sets none. Moving it writes
+/// nothing into the range, where darktable's `gui_changed` rescales it
+/// (`docs/tools/agx.md`, Deliberate differences).
 pub const SCALING: &str = "dynamic_range_scaling";
 
 /// The base primaries, by the operation's choices, darktable's order; the export
@@ -258,10 +261,8 @@ const OUTSETS: [f32; 3] = [0.290776401758, 0.263155400753, 0.045810721815];
 static CONTROLS: [Control; 36] = [
     number(WHITE, (0.1, 20.0), 1.0, 0.1, 6.5, Some(Unit::Ev)),
     number(BLACK, (-20.0, -0.1), 1.0, 0.1, -10.0, Some(Unit::Ev)),
-    Control {
-        unported: true,
-        ..number(SCALING, (-0.5, 2.0), 100.0, 0.5, 0.1, Some(Unit::Percent))
-    },
+    // Read by the pickers alone, so it binds no parameter (`Agx::bind`).
+    number(SCALING, (-0.5, 2.0), 100.0, 0.5, 0.1, Some(Unit::Percent)),
     // Every pivot any range gives: its range for the tool's values is the input range,
     // black to white, as darktable's slider has it (`Agx::range`).
     number(PIVOT, (-20.0, 20.0), 1.0, 0.1, 0.0, Some(Unit::Ev)),
@@ -634,7 +635,7 @@ impl ProcessingTool for Agx {
     /// Each number off its default sets its parameter, the value shown over its factor;
     /// the pivot sets `curve_pivot_x` while it or the range is off its default, from all
     /// three; each toggle and the base primaries set theirs. None, at the defaults, sets
-    /// anything. Dynamic range scaling takes only its default, and sets nothing.
+    /// anything. Dynamic range scaling, which only the pickers read, sets nothing.
     fn bind(&self, values: &ToolValues, _image: &ImageContext, _base: &Base) -> Vec<Setting> {
         let mut settings: Vec<Setting> = PARAMETERS
             .iter()
@@ -886,7 +887,7 @@ mod tests {
     }
 
     #[test]
-    fn the_export_profile_and_dynamic_range_scaling_are_refused() {
+    fn the_export_profile_is_refused() {
         let base = DEFINITION.control(BASE_PRIMARIES).unwrap();
         assert_eq!(
             base.check(&ControlValue::Choice(0)),
@@ -898,13 +899,18 @@ mod tests {
         for working in 1..PRIMARIES.len() as u32 {
             assert_eq!(base.check(&ControlValue::Choice(working)), Ok(()));
         }
+    }
+
+    /// Dynamic range scaling is ported over darktable's whole range and binds nothing: no
+    /// render reads it.
+    #[test]
+    fn dynamic_range_scaling_is_ported_and_binds_nothing() {
         let scaling = DEFINITION.control(SCALING).unwrap();
-        assert!(scaling.unported);
-        assert_eq!(
-            scaling.check(&ControlValue::Number(20.0)),
-            Err(crate::ControlError::NotPorted { control: SCALING })
-        );
-        assert_eq!(scaling.check(&scaling.default()), Ok(()));
+        assert!(!scaling.unported);
+        for shown in [-50.0, 20.0, 200.0] {
+            assert_eq!(scaling.check(&ControlValue::Number(shown)), Ok(()));
+            assert!(bind(&[(SCALING, ControlValue::Number(shown))]).is_empty());
+        }
     }
 
     /// A percentage darktable formats with "%": two digits, the factor of 100.

@@ -6684,8 +6684,8 @@ mod tests {
     }
 
     /// AgX's page as darktable draws it: on Settings, Auto tune levels and Read exposure
-    /// drawn disabled until what they run is built, dynamic range scaling disabled as not
-    /// ported, and the three collapsible groups, Show curve disabled, Advanced curve
+    /// drawn disabled until what they run is built, dynamic range scaling live, and the
+    /// three collapsible groups, Show curve disabled, Advanced curve
     /// parameters showing the gamma only while the pivot is not kept on the diagonal; on
     /// Primaries, while adjustments are on, Reset primaries and the primaries before tone
     /// mapping, Reverse all and Set from above, both actions disabled, and while Reverse
@@ -6709,7 +6709,7 @@ mod tests {
         for action in ["Auto tune levels", "Read exposure"] {
             assert!(disabled(&harness, Role::Button, action), "{action}");
         }
-        assert!(disabled(&harness, Role::Slider, "Dynamic range scaling"));
+        assert!(!disabled(&harness, Role::Slider, "Dynamic range scaling"));
         assert!(!disabled(&harness, Role::Slider, "White relative exposure"));
         assert!(!disabled(&harness, Role::Slider, "Pivot relative exposure"));
         for group in ["Advanced curve parameters", "Look"] {
