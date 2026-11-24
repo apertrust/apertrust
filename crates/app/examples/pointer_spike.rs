@@ -1229,8 +1229,8 @@ mod win {
     use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadTimes};
     use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DestroyCursor, GetIconInfo, GetSystemMetrics, ICONINFO, IDC_ARROW, IMAGE_CURSOR,
-        LR_DEFAULTSIZE, LoadImageW, SM_CXCURSOR, SM_CYCURSOR, SPI_GETCURSORSHADOW,
+        GetIconInfo, GetSystemMetrics, ICONINFO, IDC_ARROW, IMAGE_CURSOR, LR_DEFAULTSIZE,
+        LR_SHARED, LoadImageW, SM_CXCURSOR, SM_CYCURSOR, SPI_GETCURSORSHADOW,
         SystemParametersInfoW,
     };
 
@@ -1384,8 +1384,8 @@ mod win {
 
     pub fn print_values(hwnd: Option<HWND>) {
         let mut lines = Vec::new();
-        // SAFETY: the system's arrow, loaded as a copy and destroyed after; its bitmaps
-        // are the caller's to delete.
+        // SAFETY: the system's arrow, loaded shared (a system cursor loads only with LR_SHARED)
+        // and so never destroyed; its bitmaps are the caller's to delete.
         unsafe {
             let arrow = LoadImageW(
                 std::ptr::null_mut(),
@@ -1393,18 +1393,19 @@ mod win {
                 IMAGE_CURSOR,
                 0,
                 0,
-                LR_DEFAULTSIZE,
+                LR_DEFAULTSIZE | LR_SHARED,
             );
             if arrow.is_null() {
                 lines.push(
-                    "LoadImageW(IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE): failed".to_owned(),
+                    "LoadImageW(IDC_ARROW, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED): failed"
+                        .to_owned(),
                 );
             } else {
                 let mut info: ICONINFO = std::mem::zeroed();
                 if GetIconInfo(arrow, &mut info) != 0 {
                     let mask = bitmap(info.hbmMask);
                     lines.push(format!(
-                        "arrow (LoadImageW IDC_ARROW, LR_DEFAULTSIZE): hotspot ({}, {}), mask {}×{} at {} bpp",
+                        "arrow (LoadImageW IDC_ARROW, LR_DEFAULTSIZE | LR_SHARED): hotspot ({}, {}), mask {}×{} at {} bpp",
                         info.xHotspot, info.yHotspot, mask.bmWidth, mask.bmHeight, mask.bmBitsPixel
                     ));
                     if info.hbmColor.is_null() {
@@ -1425,7 +1426,6 @@ mod win {
                 } else {
                     lines.push("GetIconInfo(arrow): failed".to_owned());
                 }
-                DestroyCursor(arrow);
             }
         }
         lines.push(format!(
