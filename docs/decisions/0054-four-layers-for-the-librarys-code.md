@@ -15,7 +15,9 @@ The library ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.
 | 3. Index | Rules, sorts, pages and full text: one `Index` type, in memory over the open tree, saved per folder tree in the cache ([0055](0055-the-librarys-cache.md)), a Library's search reading its folders' indexes together; always rebuilt from layer 2 | `index`, `listing` |
 | 4. Operations | `LibraryCommand` (about forty) and `LibraryEvent` (about twenty) in the session protocol | `ops` |
 
-Layer 1 alone knows file layouts; layer 3 alone the index's engine.
+Layer 1 alone knows a photo folder's file layouts; layer 3 alone the index's engine.
+
+**Outside the four layers, `presets`:** the presets and styles of the user data folder ([0106](0106-presets-and-styles-as-appreset-and-apstyle-files.md)), files of no photo folder, which the engine never opens ([0043](0043-settings-and-apertrusts-folders.md)). Clients call it directly, as they read `settings.toml`; it uses layer 1's `xmp` and `sidecar`'s entry reading and writing and the pure `listing::browser_order`, and no layer calls it.
 
 **A storage interface waits for a second backend.** The library calls the file system through `std::fs` and `apertrust-base`'s safe write, with the per-folder queues and their deadlines ([0053](0053-finding-folders-and-photos.md)) and the comparison before every write ([0052](0052-comparing-two-copies-of-a-sidecar.md)) above them. Should a second backend come, the server's later, if asked ([0071](0071-a-self-hosted-server-with-sync.md)), every call into a folder's files moves behind one interface under layer 1 and the listing (a folder listed in chunks, a file's facts, a file read whole or a byte range of it, the safe write, rename, move, copy and delete), so nothing above it changes.
 

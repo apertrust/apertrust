@@ -33,6 +33,8 @@ Decisions 46 and 101. The library meets five requirements:
 | Browsing a folder whose drive is away | One thumbnail size per photo kept in the cache, and the index ([Keep Available Offline](#keep-available-offline)) | When a folder is marked Keep Available Offline or is in a Library (Phase 5) |
 | A Library: its folders and its albums across them | `<user data>/libraries/<id>/`, seen only on this computer ([A Library](#a-library)) | New Library… (Phase 5) |
 | A Library that travels, by choice | `.apertrust/libraries/<id>/` in its home folder, one of its own ([A Library that travels](#a-library-that-travels)) | Save Library in a Folder…, or the choice in New Library… (Phase 5) |
+| A tool's presets | One `.appreset` each, `<user data>/presets/<tool>/<Name>.appreset`, XMP holding the `.apxmp`'s tool entries or, for a utility, its settings; the built-in ones in `data/presets/`, embedded (decision 106) | Save as Preset… in the tool's header (planned) |
+| Styles | One `.apstyle` each, `<user data>/styles/<Name>.apstyle`, XMP holding one or more tools' entries; a copied edit only in the app's memory (decision 106) | Create a Style… or Save Edit as Style… (planned) |
 
 ```text
 NAS/Photos/                          a folder, opened as it is
@@ -364,7 +366,9 @@ flowchart TB
 | 3. Index | Rules, sorts, pages and full text: one `Index`, in memory over the open tree, saved per folder tree (decision 55), a Library's search reading its folders' indexes together; always rebuilt from the layers below | `index`, `listing` | The folder's listing and its sidecars read, in memory, built; rules, sorts, pages and full text planned |
 | 4. Operations | `LibraryCommand` (about forty in the end) and `LibraryEvent` (about twenty) in the session protocol | `ops` | Opening and closing a folder, a folder's subfolders for Collections' tree, and its photos' thumbnails and those of photos alone, built |
 
-Layer 1 alone knows file layouts; layer 3 alone the index's engine. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
+Layer 1 alone knows a photo folder's file layouts; layer 3 alone the index's engine. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
+
+**Outside the layers, `presets`** (decision 106, planned): the user data folder's `.appreset` and `.apstyle` files, which belong to no photo folder and which the engine never opens. The app and the CLI call it directly, as they read `settings.toml`, the folders from `apertrust_base::folders::Folders`; it reads and writes over `xmp` with `sidecar`'s entry reading and writing, its field check and `write_xml`, sorts with the pure `listing::browser_order`, and nothing in the four layers calls it.
 
 **A storage interface waits for a second backend** (decision 54). The library reaches the file system through `std::fs`, bulk listing (step 7), cloud placeholders' flags and `apertrust_base::fs`'s safe write, with the per-folder queues and their deadlines (decision 53) and the comparison before every write (decision 52) above them. Should a second backend come, the server's later, if asked ([A server](#a-server)), every call into a folder's files moves behind one interface under layer 1 and the listing, so nothing above it changes.
 
@@ -377,6 +381,7 @@ Layer 1 alone knows file layouts; layer 3 alone the index's engine. Until the mo
 ```mermaid
 flowchart LR
     app["apertrust (the app)"] --> engine["apertrust-engine<br/>session::library, sidecar"]
+    app -->|"presets (planned)"| library
     cli["apertrust-cli"] --> engine
     cli -->|"library scan: Index"| library
     engine -->|"ops, sidecar"| library["apertrust-library"]
@@ -385,7 +390,7 @@ flowchart LR
 ```
 
 - **The engine** depends on the library for `sidecar` and `ops`. Its own `sidecar` module is the typed reading and writing of an edit on top of the library's text layer, with the tool definitions ([engine.md](engine.md#edits)). Its session re-exports `ops` as `session::library`, with `LibraryCommand` and `LibraryEvent`, and serves them ([The API](#the-api)).
-- **The app** reaches the library only through the session: `Command::Library` out, `Event::Library` in.
+- **The app** reaches the library through the session, `Command::Library` out, `Event::Library` in, but for `presets`, which it calls directly (decision 106, planned).
 - **The CLI** runs the library in its own process, with no lock between it and a running app ([The CLI](#the-cli)).
 - The library never depends on the engine, so a client could one day compile its types without it (decision 58).
 

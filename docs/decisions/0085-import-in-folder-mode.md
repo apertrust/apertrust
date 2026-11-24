@@ -114,7 +114,7 @@ A card is a mounted volume with a `DCIM` folder at its top.
 
 ### Presets
 
-The Import tool's presets (20c), from its header's presets button as every tool's, hold every setting of the tool and never the source or the checks; kept in `presets/import.toml`. Default settings first; then two built in, **Original names** (Keep original file name on) and **By capture date** (Subfolder's One for each day taken and the file name `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(SEQUENCE).$(FILE_EXTENSION)`), the rest of each at darktable's defaults; then the person's own. darktable ships none. darktable's own patterns are Default settings, so no preset repeats them.
+The Import tool's presets (20c), from its header's presets button as every tool's, hold every setting of the tool and never the source or the checks; kept as `.appreset` files in `presets/import/` ([0106](0106-presets-and-styles-as-appreset-and-apstyle-files.md)). Default settings first; then two built in, **Original names** (Keep original file name on) and **By capture date** (Subfolder's One for each day taken and the file name `$(EXIF.YEAR)$(EXIF.MONTH)$(EXIF.DAY)_$(SEQUENCE).$(FILE_EXTENSION)`), the rest of each at darktable's defaults; then the person's own. darktable ships none. darktable's own patterns are Default settings, so no preset repeats them.
 
 ### Deliberate differences from darktable
 
@@ -155,7 +155,7 @@ A tool beside a grid, not a list in a dialog; thumbnails always, for the cells i
 
 - `apertrust-library` gains the import: the source's listing, the destination check, the preview and the copy, through `apertrust_base::fs`; `ops` gains the commands and events above, served by the session as jobs.
 - The fingerprint is also computed for the destination check's candidates ([0053](0053-finding-folders-and-photos.md)); the jobs gain the kinds `import-source` and `import` ([0057](0057-jobs-as-darktables-control-jobs.md)).
-- The settings schema gains the owner `import` and the `import.*` keys with step 20a, `import.default_folder` among them, and Settings' Import page its rows; `presets/import.toml` its three built in with 20c.
+- The settings schema gains the owner `import` and the `import.*` keys with step 20a, `import.default_folder` among them, and Settings' Import page its rows; `data/presets/import/` its two built-in files with 20c, Default settings coming from the tool's definition ([0106](0106-presets-and-styles-as-appreset-and-apstyle-files.md)).
 - The app gains the Import sheet on [0086](0086-import-as-a-full-window-sheet.md)'s frame, the Import tool's declaration, and the view-only rule for a card; `apertrust-display` the volumes and, later, eject.
 - `apertrust-cli` gains `import`.
 - [library.md](../library.md#import-in-folder-mode) describes the library's side, [gui.md](../gui.md#the-import-sheet) the sheet, [settings.md](../settings.md) the settings and [roadmap.md](../roadmap.md#the-librarys-steps) the slices; the wireframe's Import sheet board draws it.

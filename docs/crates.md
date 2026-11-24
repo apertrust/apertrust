@@ -370,7 +370,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`
 
 **Execution.** Export orchestration is synchronous and owns the CLI thread until the command ends. It drives each required engine future with `pollster::block_on`; it is not a task on a shared async executor. The direct path deliberately decodes raws, reads sidecars and their modification times, and writes outputs on that thread, serially. The ordinary path submits the session's worker job and blocks while consuming its events. Neither path promises concurrent progress for other work on the CLI thread; clients needing that use the session protocol's jobs.
 
-**Size.** Full size, or darktable-cli's `--width` and `--height` (0, no limit), `--hq` (true) and `--upscale` (false), as `apertrust-export`'s `size` computes them: darktable's export size and its lanczos3 resample, after demosaic or, with `--hq`, before colorout (decision 56, [docs/ports/finalscale.md](ports/finalscale.md)). The size never comes from `export.size`.
+**Size.** Full size, or darktable-cli's `--width` and `--height` (0, no limit), `--hq` (true) and `--upscale` (false), as `apertrust-export`'s `size` computes them: darktable's export size and its lanczos3 resample, after demosaic or, with `--hq`, before colorout (decision 56, [docs/ports/finalscale.md](ports/finalscale.md)). The size never comes from `export.size`, but for the planned `--preset NAME`, whose size settings apply, any of the four flags given winning over them (decision 106).
 
 **Format.** `-o`'s extension chooses it as darktable-cli does (`jpg` or `jpeg`, `png`; case counts), whatever `export.format` says. The file is written with darktable's sRGB profile. The format's options come from the folder's `export.*` settings, as darktable-cli takes them from darktablerc, with `--conf` over them (`apertrust_export::settings::format`):
 
@@ -901,7 +901,7 @@ The session's events enter the app in one place (decision 59, `src/mirror.rs`): 
 - **Slider popups** (decision 42; [docs/gui.md](gui.md), Slider values and choices): a slider popup's cancel sent as `CancelGesture`, the tool shown as reported when the gesture began until a report includes it.
 - Windows' Alt pressed and released alone, opening the menu button's menu.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): each other tool's pickers drawn as its pick lands; and the Colour picker, a utility tool, hidden by default, its place to be decided, with its cursor group in the well, `ColourPickerCursors` through `CursorOwner` (decision 104's 104.8).
-- **One tool model** (decision 93; [docs/gui.md](gui.md#one-tool-model)): a utility's presets, with the presets API every tool shares, its decision first; `overlay` and `pointer`, provided as no-ops, when a utility draws over the photo.
+- **One tool model** (decision 93; [docs/gui.md](gui.md#one-tool-model)): a utility's presets, with the presets API every tool shares, each an `.appreset` file (decision 106); `overlay` and `pointer`, provided as no-ops, when a utility draws over the photo.
 - **The Import sheet** (decision 86; [docs/gui.md](gui.md#sheets)): its modality, the view's keys and the Toolbar resting under it; each tool's place, the Tools panel or Import, declared and tested.
 - **The Export tool** (decision 90; [docs/gui.md](gui.md#the-export-tool)): the preview's in-view rule; Collections' Import….
 
@@ -1271,7 +1271,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 - A leading `~` is the home folder (`~` or `~/…`, never `~user`); a relative folder is taken from the current folder; a missing one is created.
 - One given by flag or variable that cannot be created or written is an `Error` that stops the start, never falling back to the platform's. The platform's own failure is only warned of.
 - For a program that only reads, the CLI, `Folders::find_to_read` creates and probes nothing. One given that is missing or cannot be read is an `Error`; a missing platform folder is left missing.
-- `-d settings` logs the folder and how it was chosen (`Chosen`). `Folders::settings` is its `settings.toml`, `Folders::state` the app's `state.toml`, `Folders::workspaces` its `workspaces/` (decision 96) and `Folders::starting` the app's start marker, `starting.toml` (decision 82). `Folders::platform_user_data` is the platform's folder whichever this run uses, for the app's window title (decision 89).
+- `-d settings` logs the folder and how it was chosen (`Chosen`). `Folders::settings` is its `settings.toml`, `Folders::state` the app's `state.toml`, `Folders::workspaces` its `workspaces/` (decision 96) and `Folders::starting` the app's start marker, `starting.toml` (decision 82). `Folders::platform_user_data` is the platform's folder whichever this run uses, for the app's window title (decision 89). Planned (decision 106): `Folders::presets(tool)`, `presets/<tool>/`, and `Folders::styles()`, `styles/`, each a folder that may not exist yet, as `workspaces()` is.
 - The cache folder (decision 76) is chosen by `--cache-dir` or darktable's `--cachedir` (`CACHE_FLAGS`, read into a `Given`), then `APERTRUST_CACHE_DIR` (`CACHE_VARIABLE`, empty as unset), then `<user data>/cache` when the user data folder was given by flag or variable, then the platform's cache folder, Apertrust Nightly's its own. `~` and a relative folder are taken as for the user data folder; it is never created or probed. `Folders::cache` and `Folders::cache_chosen` (`CacheChosen`) give it, and `-d settings` logs it after the user data folder. `find` and `find_to_read` take it beside the user data folder's `Given`.
 
 ### The safe write
@@ -1353,7 +1353,7 @@ Colour maths shared by operations, and the numerical helpers their ports share o
 Tools (decision 28): what the user edits with, bound to operation parameters. No egui, wgpu, engine or operation crate. [docs/tools/README.md](tools/README.md) holds the rules every tool follows; each tool's page holds its invariants.
 
 - **Built, one tool model's parent** (decision 93, steps 93.1 to 93.6; [gui.md](gui.md#one-tool-model)): `ToolDefinition`, what every tool declares (id, tabs, `before`, `after`, `reset`, `presets`, `open_at_first`, `menus`, `toolbar`, `cursors`), embedded as `tool` in a processing tool's `ProcessingDefinition`, its preset rows `preset_rows`, with the trait `ProcessingTool`, listed in `TOOLS`, and in a utility's `UtilityDefinition`, with `measures`, Scopes, History, Collections and Export in `utility::UTILITIES`, each page its own widgets as custom rows (`Widget::Scopes`, `History`, Collections' `CollectionsTopLine` and `CollectionsGroups`), Export's setting rows in groups with its five custom rows (`utility::export::EXPORT`); each held by `UtilityDefinition::check` (step 93.4) to one untitled tab of rows that edit nothing: settings, labels, groups, `Row::WhenSetting` and custom rows of a utility's widget naming no control, each label, group and setting once, its menus a tool's, its ↺ not `Reset::Tool`; its presets button, where it declares one, drawn disabled until its presets are built, its words `<id>-presets` and `<id>-presets-later`, and its own ↺ named `<id>-reset` (`messages::utility_presets`, `utility_reset`); action rows planned, bound to the registry, refused until then. `Widget::is_utility` tells the two kinds' widgets apart, each check refusing the other's. `messages::of_utility` lists a utility's rows' words, which a test finds translated. `ToolDefinition::setting` finds a setting row wherever the page has it. A setting row may name its key in full and declare its words (`SettingRow::key`, `words`, `SettingWords`, `Word`), a utility's alone, a boolean with two option words a choice of No and Yes (`SettingRow::no_or_yes`); a test fails on a key not in `data/settings.schema.toml`. A utility titles its labels and groups and opens groups at first by its declaration (`UtilityDefinition::titles`, `open`, `title`, `opens`; `utility::opens`). `messages::setting_row` and `setting_row_options` give a setting row's words, declared or implied. `Reset` says what the header's ↺ does: a processing tool's own (`Tool`), a registry action (`Action`, History's `reset`), the utility's own (`Own`) or none (`None`). `open_at_first` says whether a tool's section is open before the person opens or closes it: false for every processing tool and Export, true for Scopes, History and Collections, a test holding them. History's items: Reset in the photo's and a thumbnail's menus, and its ⋯'s four, `compress-history`, `truncate-history`, `create-style` and, in a section of its own, `discard-history`.
-- **Planned, the rest of one tool model** (decision 93): `ToolDefinition` gaining the place once decision 86 is built, and `shortcuts: &'static [ShortcutDef]`, a tool's default shortcuts as plain data of its own, no app type (its node, a control or an action by id, darktable's element and effect words, the trigger as text), which the app converts into its registry's `DefaultShortcut`, so this crate never depends on the app (decision 98); a utility's presets, of every setting its page stores, its custom rows' included, with the presets API every tool shares.
+- **Planned, the rest of one tool model** (decision 93): `ToolDefinition` gaining the place once decision 86 is built, and `shortcuts: &'static [ShortcutDef]`, a tool's default shortcuts as plain data of its own, no app type (its node, a control or an action by id, darktable's element and effect words, the trigger as text), which the app converts into its registry's `DefaultShortcut`, so this crate never depends on the app (decision 98); a utility's presets, of every setting its page stores, its custom rows' included, with the presets API every tool shares (decision 106).
 
 ### The `ProcessingTool` trait
 
@@ -1585,6 +1585,8 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 
 - **Camera presets and tuning** (decision 27): preset rows listing a photo's options after their own under a heading (`PresetRow::camera`, `ProcessingTool::listed`) and taking a tuning addressed like a control (`PresetRow::tuning`, `ProcessingTool::tuning`), `ProcessingTool::preset` given the tuning and the tool's values. Then White balance's camera presets, stored in `preset` by darktable's name, and Finetune ([docs/tools/white-balance.md](tools/white-balance.md), Build).
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): each built tool's `pick`; AgX's Auto tune levels' picker with its row; White balance's button bar with its picker's toggle.
+- **`ProcessingDefinition::copy_safe`** (decision 106), true by default and false for the tools darktable flags `IOP_FLAGS_UNSAFE_COPY`: `flip` (Orientation), `rawprepare` (Raw black/white point) and `temperature` (White balance), and `lens` (Lens correction) with its tool. Copy Edit leaves them out.
+- **`ProcessingDefinition::in_styles`** (decision 106), false by default and true for the tools darktable flags `IOP_FLAGS_INCLUDE_IN_STYLES`: of the built ones `agx` (AgX), `channelmixerrgb` (Colour calibration), `colorbalancergb` (Colour balance RGB), `toneequal` (Tone equalizer), `hazeremoval` (Haze removal), `primaries` (RGB primaries), `grain` (Grain), `soften` (Soften) and `vignette` (Vignetting). Create a Style… starts with only these checked.
 
 ## apertrust-export
 
@@ -1593,8 +1595,9 @@ What an export writes and where, with no GPU (decision 56). The engine's session
 - the export settings as plain data, and their registry, generated by its `build.rs`;
 - darktable's size computation and darktable's variables;
 - the file-on-disk rules: names, On conflict, and a temporary file beside each name, renamed into place, its naming and Windows' rename retry those of `apertrust-base`'s `fs`;
-- the format writers: JPEG through jpeg-encoder (its IJG licence allowed, acknowledged in `CREDITS.md`) and PNG through png, with darktable's sRGB profile, written as lcms2 saves it;
-- the presets file, `presets/export.toml`.
+- the format writers: JPEG through jpeg-encoder (its IJG licence allowed, acknowledged in `CREDITS.md`) and PNG through png, with darktable's sRGB profile, written as lcms2 saves it.
+
+It reads no presets: Export's are to be `.appreset` files, which clients will read through `apertrust-library`'s `presets` and apply through the settings store (decision 106, planned).
 
 ### The writers
 
@@ -1638,7 +1641,7 @@ What an export writes and where, with no GPU (decision 56). The engine's session
 
 ### Planned
 
-The Export tool's presets, For sharing and Full size JPEG among them, and metadata ([docs/gui.md](gui.md#the-build-in-steps), The Export tool).
+The Export tool's presets, For sharing and Full size JPEG among them, as `.appreset` files (decision 106), and metadata ([docs/gui.md](gui.md#the-build-in-steps), The Export tool).
 
 ## apertrust-library
 
@@ -1748,6 +1751,7 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
 - Import in folder mode (decision 85, step 20): a source's listing, the check against Folder's tree and the default folder's (`import.default_folder`), the source left out, by size and camera name (its own or the `xmpMM:PreservedFileName` every renamed copy keeps) then the fingerprint, `PreviewImport` and the copy job in path order, skipping only a byte-for-byte duplicate at its destination, with `LibraryCommand::ListSource`, `CancelListing`, `SourceThumbnails`, `PreviewImport` and `Import` and their events; the `import` settings' statics ([library.md](library.md#import-in-folder-mode)).
 - Include subfolders, a folder's `.apertrust/` albums and smart albums, and Move to… and Copy to… (decision 101, steps 19 to 19d); then, in Phase 5, the saved index, folder records, Libraries, Keep Available Offline and Keep Edits on This Computer (steps 21 to 33).
 - A storage interface only when a second backend comes, the server's, later, if asked (decisions 54 and 71).
+- **Presets and styles** (decision 106), a module `presets` outside the four layers, which the app and the CLI call directly and no layer calls: `.appreset` and `.apstyle` files, XMP holding tool entries as `sidecar::Entry::Tool` and a utility preset's `setting:` values (`SETTING_NAMESPACE`, `https://apertrust.org/ns/xmp/setting/`), parsed and written back byte for byte with `sidecar`'s entry reading and writing, its field check and `sidecar::write_xml`; a folder's files listed in `listing::browser_order`, written, renamed and deleted, a name made a safe file name; the built-in presets of `data/presets/` embedded. The folders are `apertrust-base`'s `Folders::presets(tool)` and `Folders::styles()`.
 
 ## Planned crates
 
