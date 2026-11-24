@@ -669,6 +669,8 @@ mod tests {
                 layers: true,
                 auto: false,
                 switched: false,
+                copy_safe: true,
+                in_styles: false,
                 controls: CONTROLS,
                 preset_rows: &[],
                 views: &[],

@@ -145,6 +145,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     layers: true,
     auto: false,
     switched: false,
+    copy_safe: true,
+    in_styles: false,
     controls: &[
         Control {
             id: "brightness",
@@ -565,6 +567,8 @@ static FAULTY: ProcessingDefinition = ProcessingDefinition {
     layers: false,
     auto: false,
     switched: false,
+    copy_safe: true,
+    in_styles: false,
     controls: &[
         Control {
             id: "stray",
@@ -668,6 +672,8 @@ static DEFAULTLESS: ProcessingDefinition = ProcessingDefinition {
     layers: false,
     auto: false,
     switched: false,
+    copy_safe: true,
+    in_styles: false,
     controls: &[Control {
         id: "amount",
         kind: ControlKind::Number {
@@ -736,6 +742,8 @@ static TWIN: ProcessingDefinition = ProcessingDefinition {
     layers: false,
     auto: false,
     switched: false,
+    copy_safe: true,
+    in_styles: false,
     controls: &[
         Control {
             id: "x",

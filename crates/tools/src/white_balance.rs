@@ -217,6 +217,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::LinearRaw,
         output: Fact::LinearRawSceneReferred,
     }),
+    // src/iop/temperature.c's flags: `IOP_FLAGS_UNSAFE_COPY`, not `_INCLUDE_IN_STYLES`.
+    copy_safe: false,
+    in_styles: false,
 };
 
 /// darktable's picker, "from image area": `dt_color_picker_new_with_cst(self,

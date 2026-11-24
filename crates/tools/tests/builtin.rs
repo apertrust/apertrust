@@ -291,6 +291,43 @@ fn the_built_in_tools_offer_their_toolbar_items() {
     }
 }
 
+/// Each built-in tool carries its darktable module's flags at the reference release
+/// (decision 106): `copy_safe` false where the module has `IOP_FLAGS_UNSAFE_COPY`,
+/// `in_styles` true where it has `IOP_FLAGS_INCLUDE_IN_STYLES`.
+#[test]
+fn the_built_in_tools_carry_darktable_s_copy_and_style_flags() {
+    let unsafe_to_copy = ["flip", "rawprepare", "temperature"];
+    let in_styles = [
+        "agx",
+        "channelmixerrgb",
+        "colorbalancergb",
+        "toneequal",
+        "hazeremoval",
+        "primaries",
+        "grain",
+        "soften",
+        "vignette",
+    ];
+    for tool in TOOLS {
+        let definition = tool.definition();
+        let id = definition.tool.id;
+        assert_eq!(
+            definition.copy_safe,
+            !unsafe_to_copy.contains(&id),
+            "{id}'s copy_safe"
+        );
+        assert_eq!(
+            definition.in_styles,
+            in_styles.contains(&id),
+            "{id}'s in_styles"
+        );
+    }
+    let ids: Vec<&str> = TOOLS.iter().map(|tool| tool.definition().tool.id).collect();
+    for id in unsafe_to_copy.iter().chain(&in_styles) {
+        assert!(ids.contains(id), "{id} is no built-in tool");
+    }
+}
+
 /// What a tool fixes, with no control, is among what it owns, so the refusal that names
 /// it names its owner.
 #[test]
@@ -590,6 +627,8 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
     layers: false,
     auto: false,
     switched: false,
+    copy_safe: true,
+    in_styles: false,
     controls: &[
         Control {
             id: "tone",

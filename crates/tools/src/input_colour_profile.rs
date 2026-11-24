@@ -225,6 +225,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::DefinedByProfile,
         output: Fact::LinearRgbSceneReferred,
     }),
+    // src/iop/colorin.c's flags: neither `IOP_FLAGS_UNSAFE_COPY` nor `_INCLUDE_IN_STYLES`.
+    copy_safe: true,
+    in_styles: false,
 };
 
 /// Every parameter of `colorin`, in its schema's order: the tool is darktable's and owns

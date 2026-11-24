@@ -519,11 +519,11 @@ pub static MENUS: [Menu; 8] = [
         groups: &[
             // Cut, Copy and Paste are to follow as a group of their own.
             &[item(ActionId::UNDO), item(ActionId::REDO)],
-            // Save Edit as Style is to join them.
             &[
                 item(ActionId::COPY_EDIT),
                 item(ActionId::APPLY_EDIT),
                 item(ActionId::COPY_APPLY_PARTS),
+                item(ActionId::SAVE_STYLE),
             ],
             &[item(ActionId::RESET), item(ActionId::DISCARD_HISTORY)],
             &[Entry::Action(ActionId::SETTINGS, Platforms::NotMac)],
@@ -2262,6 +2262,7 @@ mod tests {
             editable: true,
             view_only: false,
             edited: true,
+            styles: true,
             undo: true,
             redo: true,
             compress: true,
@@ -2986,6 +2987,25 @@ mod tests {
         assert!(enabled(ActionId::SETTINGS, &state));
         // Declared, not built: drawn disabled.
         assert!(!enabled(ActionId::COPY_EDIT, &state));
+        // Save Edit as Style… and History's Create a Style…, while the edit makes one
+        // (`styles::can_create`), resting under a modal dialog.
+        for id in [ActionId::SAVE_STYLE, ActionId::CREATE_STYLE] {
+            let action = actions::action(id).expect("declared");
+            assert!(action.enabled(&state), "{}", id.0);
+            let no_style = State {
+                styles: false,
+                ..state
+            };
+            let modal = State {
+                modal: true,
+                ..state
+            };
+            assert!(
+                !action.enabled(&no_style) && !action.enabled(&modal),
+                "{}",
+                id.0
+            );
+        }
         // Next Photo, with a photo to go to.
         assert!(enabled(ActionId::NEXT_PHOTO, &state));
         state.next = false;
@@ -3547,6 +3567,8 @@ mod tests {
             layers: false,
             auto: false,
             switched: false,
+            copy_safe: true,
+            in_styles: false,
             controls: &[],
             preset_rows: &[],
             views: &[],

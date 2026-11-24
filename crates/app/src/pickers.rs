@@ -3186,6 +3186,8 @@ mod tests {
             layers: sample.layers,
             auto: sample.auto,
             switched: sample.switched,
+            copy_safe: true,
+            in_styles: false,
             controls: sample.controls,
             preset_rows,
             views: &[],

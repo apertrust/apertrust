@@ -32,6 +32,8 @@ action-apply-edit = Apply edit
     .toolbar = Apply edit
 action-copy-apply-parts = Copy or apply parts
     .toolbar = Copy or apply parts
+# Edit › Save Edit as Style…: Create a Style…'s dialog, from the Edit menu.
+action-save-style = Save Edit as Style…
 # The Select menu's items, darktable's select all, select none, invert selection and select
 # untouched: they act on the Browser's photos, the folder open's.
 action-select-all = Select all
@@ -199,6 +201,22 @@ presets-name-taken = { $tool } already has a preset with this name
 # The presets built in, by tool, each `preset-<tool>-<id>`: Export's two.
 preset-export-for-sharing = For sharing
 preset-export-full-size-jpeg = Full size JPEG
+
+## Create a Style…: its dialog, from History's options or Edit › Save Edit as Style…
+
+styles-create-title = Create a Style
+# Above a check box for each tool the photo's edit holds.
+styles-tools = Tools
+# The tooltip of a tool not checked at first: its settings are usually the photo's own.
+styles-tool-one-photo = Usually belongs to one photo
+# Under the name, or under the tools, why the style can't be created yet.
+styles-name-empty = A style needs a name
+styles-name-taken = A style already has this name
+styles-no-tool = Choose at least one tool
+styles-create-button = Create
+# Said over the photo once the style is written, $name its name, or why it wasn't, $error.
+style-created = Style “{ $name }” created
+style-not-created = Style “{ $name }” not created: { $error }
 
 ## A slider's marker
 
@@ -1333,13 +1351,13 @@ history-discard = Discard History
 history-preset = Preset { $name }
 history-default-settings = Default settings
 # The History section's options (⋯), as items, each with its tip: Compress History,
-# Truncate History, Create a Style…, which comes with styles, and Discard History…'s tip.
+# Truncate History, Create a Style… and Discard History…'s tip.
 history-options-compress = Compress History
 history-options-truncate = Truncate History
 history-compress-tip = Keeps each tool’s last step up to the chosen one and removes the rest. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
 history-truncate-tip = Removes the steps after the chosen one and keeps the rest as they are. The photo stays as it is, but at Original, where the whole history goes and the photo starts again from its defaults.
 history-options-style = Create a Style…
-history-options-style-later = Styles come in a later version.
+history-options-style-tip = Saves this photo’s edit, or chosen tools of it, as a style for other photos.
 history-discard-tip = Clears the history and puts the photo back as it first opened.
 # The same on an edit part of whose history can't be read, which it starts afresh.
 history-discard-tip-unreadable = Starts the history afresh from the photo as it looks now. What can’t be read is lost.

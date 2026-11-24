@@ -79,8 +79,8 @@
 //!   History is alone in its tab ([`HistoryTool::alone`]);
 //! - its ⋯, the items it declares, registry actions the menu builder lists
 //!   (`menus::options`): Compress History, darktable's compress history stack; Truncate
-//!   History, darktable's Ctrl-click on it, an item of its own; Create a Style…, drawn
-//!   disabled until styles come; and Discard History…, which asks first, as Edit's does,
+//!   History, darktable's Ctrl-click on it, an item of its own; Create a Style…, which
+//!   opens its dialog (`styles`); and Discard History…, which asks first, as Edit's does,
 //!   each available as [`options`] says;
 //! - the eye at the end of a step's line of one tool, under the pointer or with the
 //!   focus: held, by the pointer or Space or Enter, a peek at the photo without the tool
@@ -3681,25 +3681,29 @@ pub(crate) mod tests {
     }
 
     /// The header's ⋯, its declared items: Compress History, Truncate History, an item of
-    /// its own, Create a Style… disabled and Discard History…, each with its tip, each
-    /// running its registry action; where one cannot run it is disabled and runs nothing.
+    /// its own, Create a Style… and Discard History…, each with its tip, each running its
+    /// registry action; where one cannot run it is disabled and runs nothing.
     #[test]
     fn the_options_compress_truncate_and_discard_each_an_item_of_its_own() {
         use crate::actions::ActionId;
         let mut harness = photo_scene(3);
         harness.run();
         open_options(&mut harness);
-        for name in ["Compress History", "Truncate History", "Discard History…"] {
+        for name in [
+            "Compress History",
+            "Truncate History",
+            "Create a Style…",
+            "Discard History…",
+        ] {
             let item = harness.get_by_role_and_label(AccessRole::MenuItem, name);
             assert!(!item.accesskit_node().is_disabled(), "{name}");
         }
-        let style = harness.get_by_role_and_label(AccessRole::MenuItem, "Create a Style…");
-        assert!(style.accesskit_node().is_disabled());
         // ⋯ again closes it.
         open_options(&mut harness);
         for (name, id) in [
             ("Compress History", ActionId::COMPRESS_HISTORY),
             ("Truncate History", ActionId::TRUNCATE_HISTORY),
+            ("Create a Style…", ActionId::CREATE_STYLE),
             ("Discard History…", ActionId::DISCARD_HISTORY),
         ] {
             harness.state_mut().pressed.clear();

@@ -157,6 +157,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::NonLinearRgb,
         output: Fact::LinearRgbDisplayReferred,
     }),
+    // src/iop/tonecurve.c's flags: neither `IOP_FLAGS_UNSAFE_COPY` nor `_INCLUDE_IN_STYLES`.
+    copy_safe: true,
+    in_styles: false,
 };
 
 /// RGB curve's node parameters, `curve_nodes_<curve>_<node>_x` and `_y`, by curve and

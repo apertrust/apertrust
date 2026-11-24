@@ -25,6 +25,7 @@ action-apply-edit = Zastosuj edycję
     .toolbar = Zastosuj edycję
 action-copy-apply-parts = Kopiuj lub zastosuj część
     .toolbar = Części edycji
+action-save-style = Zapisz edycję jako styl…
 action-select-all = Zaznacz wszystko
 action-select-none = Odznacz wszystko
 action-invert-selection = Odwróć zaznaczenie
@@ -138,6 +139,18 @@ presets-name-empty = Preset musi mieć nazwę
 presets-name-taken = Narzędzie { $tool } ma już preset o tej nazwie
 preset-export-for-sharing = Do udostępniania
 preset-export-full-size-jpeg = JPEG w pełnym rozmiarze
+
+## Tworzenie stylu
+
+styles-create-title = Utwórz styl
+styles-tools = Narzędzia
+styles-tool-one-photo = Zwykle dotyczy tylko jednego zdjęcia
+styles-name-empty = Styl musi mieć nazwę
+styles-name-taken = Styl o tej nazwie już istnieje
+styles-no-tool = Wybierz co najmniej jedno narzędzie
+styles-create-button = Utwórz
+style-created = Utworzono styl „{ $name }”
+style-not-created = Nie udało się utworzyć stylu „{ $name }”: { $error }
 
 ## Znacznik suwaka
 
@@ -1021,7 +1034,7 @@ history-options-truncate = Przytnij historię
 history-compress-tip = Zachowuje ostatni krok każdego narzędzia do wybranego i usuwa resztę. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
 history-truncate-tip = Usuwa kroki po wybranym, a resztę zostawia bez zmian. Zdjęcie się nie zmienia, chyba że na Oryginale: wtedy znika cała historia, a zdjęcie zaczyna od nowa od kroków domyślnych.
 history-options-style = Utwórz styl…
-history-options-style-later = Style pojawią się w jednej z kolejnych wersji.
+history-options-style-tip = Zapisuje edycję tego zdjęcia albo wybrane jej narzędzia jako styl do innych zdjęć.
 history-discard-tip = Czyści historię i przywraca zdjęcie do stanu z pierwszego otwarcia.
 history-discard-tip-unreadable = Zaczyna historię od nowa od zdjęcia w obecnym stanie. To, czego nie da się odczytać, przepadnie.
 history-discard-no-alert = Odrzucenie historii najpierw pyta, a tego pytania nie da się tu jeszcze pokazać. Aby odrzucać bez pytania, wyłącz w Ustawieniach „Pytaj przed odrzuceniem historii zdjęcia”.

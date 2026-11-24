@@ -7664,6 +7664,8 @@ mod tests {
         layers: true,
         auto: false,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: &[Control {
             id: "amount",
             kind: ControlKind::Number {
@@ -8135,6 +8137,8 @@ mod tests {
         layers: false,
         auto: false,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: &[
             Control {
                 id: "mode",
@@ -9564,6 +9568,8 @@ mod tests {
         layers: false,
         auto: false,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: &[Control {
             id: "amount",
             kind: ControlKind::Number {
@@ -10586,6 +10592,8 @@ mod tests {
         layers: false,
         auto: false,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: &[
             Control {
                 id: "level",

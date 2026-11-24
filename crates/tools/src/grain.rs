@@ -127,6 +127,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::NonLinearLab,
         output: Fact::NonLinearLabDisplayReferred,
     }),
+    // src/iop/grain.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
+    copy_safe: true,
+    in_styles: true,
 };
 
 /// Every parameter of `grain`: the tool is darktable's and owns them all.

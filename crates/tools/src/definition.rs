@@ -217,6 +217,14 @@ pub struct ProcessingDefinition {
     /// says after the tool's sentence, `tool-<tool>-description`. `None` for a tool that
     /// is not one of darktable's.
     pub facts: Option<crate::about::Facts>,
+    /// Whether Copy Edit takes it (decision 106): false for the tools darktable flags
+    /// `IOP_FLAGS_UNSAFE_COPY` at the reference release, settings that belong to one
+    /// photo; true for every other.
+    pub copy_safe: bool,
+    /// Whether Create a Style… starts with it checked (decision 106): true for the tools
+    /// darktable flags `IOP_FLAGS_INCLUDE_IN_STYLES` at the reference release, those that
+    /// make a look rather than correct one photo; false for every other.
+    pub in_styles: bool,
 }
 
 /// One of the tool's colour pickers (decision 79; `docs/pickers.md`, Declaring
@@ -2678,6 +2686,8 @@ mod tests {
         layers: true,
         auto: false,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: CONTROLS,
         preset_rows: &[],
         views: &[],
@@ -2813,6 +2823,8 @@ mod tests {
         layers: true,
         auto: false,
         switched: false,
+        copy_safe: true,
+        in_styles: false,
         controls: PAGE_CONTROLS,
         preset_rows: &[],
         views: &[],
@@ -4785,6 +4797,8 @@ mod tests {
             layers: true,
             auto: false,
             switched: false,
+            copy_safe: true,
+            in_styles: false,
             controls: &CONTROLS[..1],
             preset_rows: &[],
             views: &[],
@@ -4862,6 +4876,8 @@ mod tests {
             layers: true,
             auto: false,
             switched: false,
+            copy_safe: true,
+            in_styles: false,
             controls,
             preset_rows: &[],
             views: &[],

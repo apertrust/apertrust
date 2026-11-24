@@ -485,6 +485,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::NonLinearRgb,
         output: Fact::NonLinearRgbSceneReferred,
     }),
+    // src/iop/colorbalancergb.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
+    copy_safe: true,
+    in_styles: true,
 };
 
 /// Every parameter of `colorbalancergb`: the tool is darktable's and owns them all.

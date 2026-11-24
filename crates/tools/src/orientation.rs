@@ -159,6 +159,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::GeometricRgb,
         output: Fact::LinearRgbSceneReferred,
     }),
+    // src/iop/flip.c's flags: `IOP_FLAGS_UNSAFE_COPY`, not `_INCLUDE_IN_STYLES`.
+    copy_safe: false,
+    in_styles: false,
 };
 
 static OWNS: [Owned; 1] = [Owned::new(FLIP, ORIENTATION)];

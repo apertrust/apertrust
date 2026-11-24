@@ -157,7 +157,8 @@ impl Slot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
     /// Attached to the main window, which takes no input until it goes: AppKit's sheet on
-    /// the Mac, a modal window elsewhere: a tool preset's name dialog (`presets::NameDialog`).
+    /// the Mac, a modal window elsewhere: a name dialog (`presets::Sheet`), Save as Preset…'s
+    /// and Create a Style…'s.
     Sheet,
     /// A window of its own, centred on the main window, which takes no input until it
     /// goes: Settings' on Windows and Linux.
@@ -194,6 +195,16 @@ pub struct Look {
     pub margin: f32,
 }
 
+impl Look {
+    /// The panel's colour and a large margin: an alert's and a name dialog's.
+    pub fn spaced(t: &apertrust_ui::Theme) -> Look {
+        Look {
+            background: t.colors.panel,
+            margin: t.spacing.l,
+        }
+    }
+}
+
 /// What a dialog's keys do in its own window: each closes it as its Cancel. A key it
 /// leaves alone may be a menu item's, as Close Window takes Cmd+W on the Mac for a
 /// modeless window.
@@ -207,6 +218,16 @@ pub struct Keys {
     pub close_window: bool,
     /// Cmd+., the Mac's cancel, Ctrl+. elsewhere.
     pub cancel: bool,
+}
+
+impl Keys {
+    /// Escape, Close Window and Cancel's keys each close it: an alert's and a name
+    /// dialog's.
+    pub const ALL: Keys = Keys {
+        escape: true,
+        close_window: true,
+        cancel: true,
+    };
 }
 
 /// What one frame of a dialog's content asks of the host.
@@ -302,6 +323,8 @@ pub enum Output {
     Keys(Unread),
     /// What Save as Preset… or Rename… asked as its button was pressed.
     Preset(crate::presets::Asked),
+    /// What Create a Style… asked as Create was pressed.
+    Style(crate::styles::Asked),
 }
 
 /// The key presses a dialog's window left alone in a frame: none of Escape, Cmd+W and

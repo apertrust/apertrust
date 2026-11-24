@@ -667,6 +667,9 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         process: Fact::LinearRgbOrXyz,
         output: Fact::LinearRgbSceneReferred,
     }),
+    // src/iop/channelmixerrgb.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
+    copy_safe: true,
+    in_styles: true,
 };
 
 /// Every parameter of `channelmixerrgb`: the CAT tab's, the mixer's, and `version`.
