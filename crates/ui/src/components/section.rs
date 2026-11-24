@@ -78,8 +78,8 @@ pub struct SectionOutput {
     /// The options button where it opens a menu or is a utility's, by which its menu's
     /// popup is known (`popup::button_menu`), so its caller can close it.
     pub options: Option<egui::Id>,
-    /// The id of the item chosen this frame in the menu an editing tool's presets button
-    /// opens, given by [`Section::presets_menu`].
+    /// The id of the item chosen this frame in the menu the presets button opens, given by
+    /// [`Section::presets_menu`].
     pub preset: Option<String>,
     /// The presets button where it opens a menu, by which its menu's popup is known, as
     /// [`SectionOutput::options`].
@@ -102,16 +102,15 @@ pub struct Section<'a> {
     reset: bool,
     /// A utility's reset button, by its name, where it has one.
     utility_reset: Option<&'a str>,
-    /// A utility's presets button, by its name, whether it can run and what its tooltip
-    /// says, where it has one.
-    utility_presets: Option<(&'a str, bool, &'a str)>,
+    /// A utility's presets button, by its name, where it has one.
+    utility_presets: Option<&'a str>,
     presets: bool,
     options: bool,
     /// What the options button opens, a pull-down of the popup service's, where the
     /// section gives one.
     menu: Option<Vec<Entry>>,
-    /// What an editing tool's presets button opens, built only as it opens, where the
-    /// section gives one.
+    /// What the presets button opens, built only as it opens, where the section gives
+    /// one.
     presets_menu: Option<Entries<'a>>,
     peek: bool,
     not_applied: bool,
@@ -209,10 +208,10 @@ impl<'a> Section<'a> {
     }
 
     /// A utility with a presets button, named `name`, translated, between its reset and its
-    /// options, as the Export tool's header has one (decision 90). `enabled` says whether it
-    /// can run; drawn disabled, its tooltip `tip` says why.
-    pub fn utility_presets(mut self, name: &'a str, enabled: bool, tip: &'a str) -> Self {
-        self.utility_presets = Some((name, enabled, tip));
+    /// options, as the Export tool's header has one (decision 90), able to run as
+    /// [`Self::presets`] says and opening [`Self::presets_menu`] where it is given.
+    pub fn utility_presets(mut self, name: &'a str) -> Self {
+        self.utility_presets = Some(name);
         self
     }
 
@@ -239,8 +238,9 @@ impl<'a> Section<'a> {
         self
     }
 
-    /// An editing tool's presets as a menu its presets button opens, a pull-down of the
-    /// popup service's whose `entries`, translated, are built only as it opens, so a
+    /// The presets as a menu the presets button opens, an editing tool's or a utility's
+    /// ([`Self::utility_presets`]), a pull-down of the popup service's whose `entries`,
+    /// translated, are built only as it opens, so a
     /// folder they list is read then and not every frame: the item chosen comes back as
     /// [`SectionOutput::preset`], in place of [`SectionAction::Presets`]. It opens only
     /// while the button can run ([`Self::presets`]).
@@ -391,15 +391,19 @@ impl<'a> Section<'a> {
                             None if options.clicked() => pressed.push(SectionAction::Options),
                             None => {}
                         }
-                        if let Some((presets, enabled, tip)) = self.utility_presets
-                            && IconButton::new(Icon::Presets, presets)
+                        if let Some(name) = self.utility_presets {
+                            let presets = IconButton::new(Icon::Presets, name)
                                 .width(narrow)
-                                .enabled(enabled)
-                                .tip(tip)
-                                .show(ui)
-                                .clicked()
-                        {
-                            pressed.push(SectionAction::Presets);
+                                .enabled(self.presets)
+                                .show(ui);
+                            match presets_menu {
+                                Some(entries) => {
+                                    presets_id = Some(presets.id);
+                                    preset = pull_down(ui, &presets, name, entries);
+                                }
+                                None if presets.clicked() => pressed.push(SectionAction::Presets),
+                                None => {}
+                            }
                         }
                         if let Some(reset) = self.utility_reset
                             && IconButton::new(Icon::Reset, reset)

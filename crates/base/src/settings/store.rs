@@ -332,6 +332,25 @@ impl Store {
         setting.reset_in(self);
     }
 
+    /// `setting`'s value as [`value`](Store::value) gives it, as text, as `--conf` takes
+    /// it ([`Overrides`]): a text or a choice's id as it is, anything else
+    /// as `settings.toml` writes it. For a utility's preset, which holds its settings as
+    /// text (decision 106). None for an optional setting's none.
+    pub fn text(&self, setting: &dyn Declared) -> Option<String> {
+        Some(match self.value(setting)? {
+            Value::String(text) => text,
+            value => value.to_string(),
+        })
+    }
+
+    /// Sets `setting` to `text`, read as `--conf` reads it, then kept as
+    /// [`set_value`](Store::set_value) keeps it: the reverse of [`text`](Store::text).
+    /// Returns false, changing nothing, for a text its kind cannot read.
+    pub fn set_text(&mut self, setting: &dyn Declared, text: &str) -> bool {
+        super::overrides::value(setting.kind(), text)
+            .is_some_and(|value| self.set_value(setting, &value))
+    }
+
     /// Looks at the settings at `now`: hands what changed to the writer once they have
     /// stood still for [`DELAY`], and otherwise says how long until they will have, for a
     /// look then. A client calls it after each frame's sets.
@@ -1992,6 +2011,31 @@ size = [1280, 800]
         );
         assert_eq!(overrides.value(&SCALE), Some(Value::Float(3.0)));
         assert_eq!(overrides.value(&FACTOR), None);
+    }
+
+    /// A setting as text and back, as a utility's preset holds it: a text or a choice as
+    /// it is, anything else as the file writes it; a text its kind cannot read changes
+    /// nothing.
+    #[test]
+    fn a_setting_s_text_is_what_conf_takes_and_sets_it_back() {
+        let mut store = Store::nowhere(ALL);
+        assert_eq!(store.text(&THEME).as_deref(), Some("dark"));
+        assert_eq!(store.text(&WIDTH).as_deref(), Some("320"));
+        assert_eq!(store.text(&FACTOR), None);
+        for (setting, text) in [
+            (&THEME as &dyn Declared, "high-contrast"),
+            (&TAB, "~/mine"),
+            (&SCALE, "1.5"),
+            (&MAXIMIZED, "true"),
+            (&SIZE, "[1280, 800]"),
+        ] {
+            assert!(store.set_text(setting, text), "{text}");
+            assert_eq!(store.text(setting).as_deref(), Some(text));
+        }
+        assert!(!store.set_text(&SCALE, "big"));
+        assert!(!store.set_text(&THEME, "plaid"));
+        assert_eq!(store.get(&SCALE), 1.5);
+        assert_eq!(store.get(&THEME), Theme::HighContrast);
     }
 
     #[test]

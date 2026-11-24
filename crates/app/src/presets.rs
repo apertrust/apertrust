@@ -30,6 +30,10 @@
 //! - **Save as Preset…** and **Rename…** ask for a name in a dialog of the host's
 //!   ([`NameDialog`]), a sheet on the Mac; **Update** and **Delete** ask first with the
 //!   system's alert (`alerts.rs`), and rest where the platform shows none.
+//! - **A utility's presets,** Export's, are the same pull-down ([`pull_down`]), dialogs
+//!   and alerts over the settings its page stores ([`Settings`]): its built-in presets
+//!   after Default settings ([`builtins`]), then the person's ([`read_settings`]), each
+//!   applied through the settings store with no history step (`export.rs`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -125,14 +129,19 @@ pub enum Why {
     NewerTool(String),
 }
 
-/// One of a tool's preset files as the pull-down lists it.
+/// One of a tool's preset files as the pull-down lists it: a processing tool's, its values
+/// `ToolValues`, or a utility's, its [`Settings`].
 #[derive(Clone, Debug, PartialEq)]
-pub struct Listed {
+pub struct Listed<V = ToolValues> {
     pub name: String,
     pub path: PathBuf,
-    /// Its values, migrated and clamped, or why it is parked.
-    pub values: Result<ToolValues, Why>,
+    /// Its values, a processing tool's migrated and clamped, or why it is parked.
+    pub values: Result<V, Why>,
 }
+
+/// A utility preset's settings (decision 106): each setting's key in full and its value as
+/// text, as `--conf` takes it.
+pub type Settings = Vec<(String, String)>;
 
 /// `tool`'s presets in `folder`, by name in the file browser's order: each file read, its
 /// one entry made the tool's values (`session::tool_values`), or parked, for a newer
@@ -214,6 +223,8 @@ pub fn current(definition: &ProcessingDefinition, state: &ToolState) -> ToolValu
 pub enum Item {
     /// Default settings: `ResetTool`.
     Default,
+    /// The preset built in with this id applied.
+    Builtin(String),
     /// The preset of this name applied.
     Apply(String),
     /// Save as Preset…: the name dialog.
@@ -231,6 +242,7 @@ impl Item {
     pub fn id(&self) -> String {
         match self {
             Item::Default => "preset-default".to_owned(),
+            Item::Builtin(id) => format!("preset-builtin:{id}"),
             Item::Apply(name) => format!("preset-apply:{name}"),
             Item::Save => "preset-save".to_owned(),
             Item::Update(name) => format!("preset-update:{name}"),
@@ -245,26 +257,25 @@ impl Item {
         match id {
             "preset-default" => Some(Item::Default),
             "preset-save" => Some(Item::Save),
-            _ => (named("preset-apply:").map(Item::Apply))
+            _ => (named("preset-builtin:").map(Item::Builtin))
+                .or_else(|| named("preset-apply:").map(Item::Apply))
                 .or_else(|| named("preset-update:").map(Item::Update))
                 .or_else(|| named("preset-rename:").map(Item::Rename))
                 .or_else(|| named("preset-delete:").map(Item::Delete)),
         }
     }
 
-    /// Whether choosing it changes the photo's edit.
+    /// Whether choosing it applies values: Default settings, a built-in preset or the
+    /// person's. A processing tool's then change the photo's edit; Export's change its
+    /// settings alone, and none of a processing tool's is built in yet.
     pub fn edits(&self) -> bool {
-        matches!(self, Item::Default | Item::Apply(_))
+        matches!(self, Item::Default | Item::Builtin(_) | Item::Apply(_))
     }
 }
 
 /// The pull-down of `tool`'s presets, `listed` ([`read`]), with the values `state` holds
-/// now, in `words`: Default settings, ✓ while the tool is at its defaults; a line, then
-/// each preset, ✓ while the tool holds its values, a parked one disabled with why; a line,
-/// then Save as Preset…, Update "…" while the tool's values differ from the chosen
-/// preset's, Rename… and Delete…, the last three on the chosen preset, disabled with
-/// "Choose a preset first" while there is none, and Update and Delete while the platform
-/// cannot ask first.
+/// now, in `words` ([`pull_down`]): Default settings, ✓ while the tool is at its defaults,
+/// then each preset, ✓ while the tool holds its values, a parked one disabled with why.
 pub fn entries(
     tool: &dyn ProcessingTool,
     state: &ToolState,
@@ -275,47 +286,81 @@ pub fn entries(
     let definition = tool.definition();
     let title = words.text(&messages::title(definition.tool.id));
     let at_defaults = matches(definition, state, &ToolValues::new());
+    let lines = (listed.iter())
+        .map(|preset| Line {
+            item: Item::Apply(preset.name.clone()),
+            name: preset.name.clone(),
+            checked: match &preset.values {
+                Ok(values) => Ok(matches(definition, state, values)),
+                Err(why) => Err(parked(words, why, &title)),
+            },
+        })
+        .collect();
+    pull_down(at_defaults, [Vec::new(), lines], menu, words)
+}
+
+/// One preset as the pull-down lists it: its item, its name, and whether the values now
+/// match it, or why it is parked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Line {
+    pub item: Item,
+    pub name: String,
+    pub checked: Result<bool, String>,
+}
+
+/// The pull-down of a tool's presets in `words`, every tool's: Default settings, ✓ while
+/// `at_defaults`; then the built-in presets and the person's, `lines`, each group after a
+/// line, ✓ on one that matches, a parked one disabled with why; a line, then Save as
+/// Preset…, Update "…" while the values differ from the chosen preset's, Rename… and
+/// Delete…, the last three on the person's preset `menu.chosen`, disabled with "Choose a
+/// preset first" while there is none, and Update and Delete while the platform cannot ask
+/// first.
+pub fn pull_down(
+    at_defaults: bool,
+    lines: [Vec<Line>; 2],
+    menu: &Menu,
+    words: &Translator,
+) -> Vec<MenuEntry> {
     let mut entries = vec![MenuEntry::Item(
         MenuItem::new(Item::Default.id(), words.text("presets-default")).checked(at_defaults),
     )];
-    if !listed.is_empty() {
-        entries.push(MenuEntry::Separator);
-    }
-    for preset in listed {
-        let item = MenuItem::new(Item::Apply(preset.name.clone()).id(), preset.name.clone());
-        entries.push(MenuEntry::Item(match &preset.values {
-            Ok(values) => item.checked(matches(definition, state, values)),
-            Err(why) => item
-                .checked(false)
-                .enabled(false)
-                .tip(parked(words, why, &title)),
-        }));
+    for group in &lines {
+        if !group.is_empty() {
+            entries.push(MenuEntry::Separator);
+        }
+        for line in group {
+            let item = MenuItem::new(line.item.id(), line.name.clone());
+            entries.push(MenuEntry::Item(match &line.checked {
+                Ok(checked) => item.checked(*checked),
+                Err(why) => item.checked(false).enabled(false).tip(why.clone()),
+            }));
+        }
     }
     entries.push(MenuEntry::Separator);
     entries.push(MenuEntry::Item(MenuItem::new(
         Item::Save.id(),
         words.text("presets-save"),
     )));
+    let [_, own] = &lines;
     let chosen = (menu.chosen.as_deref())
-        .and_then(|name| listed.iter().find(|preset| preset.name == name))
-        .filter(|preset| preset.values.is_ok());
+        .and_then(|name| own.iter().find(|line| line.name == name))
+        .filter(|line| line.checked.is_ok());
     let first = words.text("presets-choose-first");
     let no_alert = words.text("presets-no-alert");
-    if let Some(preset) = chosen
-        && let Ok(values) = &preset.values
-        && !matches(definition, state, values)
+    if let Some(line) = chosen
+        && line.checked == Ok(false)
     {
         let mut args = Args::new();
-        args.set("name", preset.name.as_str());
+        args.set("name", line.name.as_str());
         let update = words.text_with("presets-update", Some(&args));
-        let item = MenuItem::new(Item::Update(preset.name.clone()).id(), update);
+        let item = MenuItem::new(Item::Update(line.name.clone()).id(), update);
         entries.push(MenuEntry::Item(if menu.alerts {
             item
         } else {
             item.enabled(false).tip(no_alert.clone())
         }));
     }
-    let name = chosen.map(|preset| preset.name.clone()).unwrap_or_default();
+    let name = chosen.map(|line| line.name.clone()).unwrap_or_default();
     let rename = MenuItem::new(
         Item::Rename(name.clone()).id(),
         words.text("presets-rename"),
@@ -340,7 +385,7 @@ pub fn entries(
 }
 
 /// Why a parked preset of the tool titled `title` cannot be applied, in `words`.
-fn parked(words: &Translator, why: &Why, title: &str) -> String {
+pub fn parked(words: &Translator, why: &Why, title: &str) -> String {
     match why {
         Why::Newer => words.text("presets-parked-newer"),
         Why::NewerTool(version) => {
@@ -429,14 +474,20 @@ pub fn rename(
     from: &str,
     to: &str,
 ) -> Result<PathBuf, PresetError> {
-    let preset = find(folder, tool, from).ok_or(PresetError::NotAPreset)?;
-    files::rename(&preset.path, to)
+    files::rename(&path_of(read(folder, tool), from)?, to)
 }
 
 /// Deletes `tool`'s preset `name` in `folder`.
 pub fn delete(folder: &Path, tool: &dyn ProcessingTool, name: &str) -> Result<(), PresetError> {
-    let preset = find(folder, tool, name).ok_or(PresetError::NotAPreset)?;
-    files::delete(&preset.path)
+    files::delete(&path_of(read(folder, tool), name)?)
+}
+
+/// The file of the preset `name` among `listed`.
+fn path_of<V>(listed: Vec<Listed<V>>, name: &str) -> Result<PathBuf, PresetError> {
+    (listed.into_iter())
+        .find(|preset| preset.name == name)
+        .map(|preset| preset.path)
+        .ok_or(PresetError::NotAPreset)
 }
 
 /// The names a new preset of `tool` cannot take in `folder`: its presets' and Default
@@ -445,6 +496,117 @@ pub fn taken(folder: &Path, tool: &dyn ProcessingTool, words: &Translator) -> Ve
     let mut names: Vec<String> = read(folder, tool).into_iter().map(|p| p.name).collect();
     names.push(words.text("presets-default"));
     names
+}
+
+/// The utility `tool`'s presets in `folder`, by name in the file browser's order, each
+/// with its settings, or parked where a newer Apertrust wrote it. A file that holds no
+/// settings of `tool`'s, a processing tool's preset or another utility's, or that cannot
+/// be read, is left out with a warning under `-d settings`.
+pub fn read_settings(folder: &Path, tool: &str) -> Vec<Listed<Settings>> {
+    let listed = files::list(folder, Kind::Preset);
+    for (path, error) in &listed.failed {
+        let path = path.display();
+        tracing::warn!(target: "settings", "preset {path} not read: {error}");
+    }
+    let mut presets = Vec::new();
+    for stored in listed.files {
+        if !stored.entries.is_empty() || stored.settings_tool.as_deref() != Some(tool) {
+            let path = stored.path.display();
+            tracing::warn!(target: "settings", "preset {path} holds no settings of {tool}'s: left out");
+            continue;
+        }
+        let values = match stored.newer() {
+            Some(_) => Err(Why::Newer),
+            None => Ok(stored.settings),
+        };
+        presets.push(Listed {
+            name: stored.name.trim().to_owned(),
+            path: stored.path,
+            values,
+        });
+    }
+    presets
+}
+
+/// The utility `tool`'s presets built in, in their order, each by its id with its
+/// settings (`apertrust_library::presets::builtins`).
+pub fn builtins(tool: &str) -> Vec<(&'static str, Settings)> {
+    (files::builtins(tool).into_iter())
+        .map(|(id, stored)| (id, stored.settings))
+        .collect()
+}
+
+/// The name the preset built in for `tool` as `id` shows, the Fluent message
+/// `preset-<tool>-<id>`, in `words`.
+pub fn builtin_name(tool: &str, id: &str, words: &Translator) -> String {
+    words.text(&format!("preset-{tool}-{id}"))
+}
+
+/// The names a new preset of the utility `tool` cannot take in `folder`: its presets',
+/// Default settings' and its built-in presets', as `words` show them (decision 106).
+pub fn taken_settings(folder: &Path, tool: &str, words: &Translator) -> Vec<String> {
+    let own = read_settings(folder, tool).into_iter().map(|p| p.name);
+    let builtins = (builtins(tool).into_iter()).map(|(id, _)| builtin_name(tool, id, words));
+    let mut names: Vec<String> = own.chain(builtins).collect();
+    names.push(words.text("presets-default"));
+    names
+}
+
+/// Writes `settings`, the utility `tool`'s, as the preset `name` in `folder`, with
+/// `description`, over the file holding that name if there is one, `build` recorded in
+/// it. Returns its path.
+pub fn save_settings(
+    folder: &Path,
+    tool: &str,
+    settings: Settings,
+    (name, description): (&str, Option<&str>),
+    build: &str,
+) -> Result<PathBuf, PresetError> {
+    let mut stored = Stored::new(Kind::Preset, name);
+    stored.description = description.map(str::to_owned);
+    stored.settings_tool = Some(tool.to_owned());
+    stored.settings = settings;
+    files::write(folder, &stored, build)
+}
+
+/// Writes `settings` over the utility `tool`'s preset `name` in `folder`, keeping its
+/// description and, as read, each setting of the file's that `settings` lack: a newer
+/// build's, which this one does not know, or one `--conf` holds for the run (decision
+/// 106). Returns its path.
+pub fn update_settings(
+    folder: &Path,
+    tool: &str,
+    mut settings: Settings,
+    name: &str,
+    build: &str,
+) -> Result<PathBuf, PresetError> {
+    let path = path_of(read_settings(folder, tool), name)?;
+    let stored = (files::list(folder, Kind::Preset).files.into_iter())
+        .find(|stored| stored.path == path)
+        .ok_or(PresetError::NotAPreset)?;
+    for (key, text) in stored.settings {
+        if !settings.iter().any(|(own, _)| *own == key) {
+            settings.push((key, text));
+        }
+    }
+    let named = (name, stored.description.as_deref());
+    save_settings(folder, tool, settings, named, build)
+}
+
+/// Renames the utility `tool`'s preset `from` in `folder` to `to`, everything else in its
+/// file kept. Returns the file's new path.
+pub fn rename_settings(
+    folder: &Path,
+    tool: &str,
+    from: &str,
+    to: &str,
+) -> Result<PathBuf, PresetError> {
+    files::rename(&path_of(read_settings(folder, tool), from)?, to)
+}
+
+/// Deletes the utility `tool`'s preset `name` in `folder`.
+pub fn delete_settings(folder: &Path, tool: &str, name: &str) -> Result<(), PresetError> {
+    files::delete(&path_of(read_settings(folder, tool), name)?)
 }
 
 /// The first name of `title` and a number, 1, 2 and on, that is not `taken`, in `words`

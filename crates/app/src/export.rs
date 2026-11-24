@@ -34,7 +34,14 @@
 //! module supplies to the drawer, and so does it the options not built yet, disabled,
 //! saying why. The rows are one-line rows stacked with no spacing between them, as a
 //! tool's. The header is every tool's (decision 93), drawn from its declaration: ↺, which
-//! applies Default settings, the presets button, drawn disabled until presets come, and ⋯.
+//! applies Default settings, the presets button, and ⋯.
+//!
+//! **Its presets** (decision 106; `presets.rs`) are presets of every setting its page
+//! stores: Default settings, For sharing and Full size JPEG built in, then the person's,
+//! ✓ on the one the settings match, which the Summary's Preset row names, or Custom.
+//! Choosing one sets every setting to the preset's value, or its default where the preset
+//! lacks one, but those `--conf` gives for the run ([`Export::apply`]); the app keeps them
+//! as a row's change, with no history step.
 //!
 //! **Its end** (`end.rs`) is the summary, a collapsible group of its own, the warnings, the
 //! Export button and the line under it with its job's progress.
@@ -69,7 +76,7 @@ use apertrust_export::settings::registry::{
     EXPORT_SIZE_DPI, EXPORT_SIZE_HEIGHT, EXPORT_SIZE_HIGH_QUALITY, EXPORT_SIZE_MODE,
     EXPORT_SIZE_SCALE, EXPORT_SIZE_UPSCALE, EXPORT_SIZE_WIDTH,
 };
-use apertrust_export::settings::{FileFormat, OnConflict, Profile, SizeMode};
+use apertrust_export::settings::{FileFormat, OnConflict, Profile, SizeMode, registry};
 use apertrust_export::size::{self, Request};
 use apertrust_export::variables::{self, PatternError};
 use apertrust_tools::utility::UtilityDefinition;
@@ -82,6 +89,7 @@ use apertrust_ui::i18n::Args;
 use apertrust_ui::{Icon, Theme, Translator, theme, tr, translator};
 use eframe::egui::{self, RichText, Ui, vec2};
 
+use crate::presets::{self, Item, Line, Listed, Menu, Settings};
 use crate::tools::{Change, Head, Note, Pressed};
 use crate::utility::{Context, UtilityTool};
 
@@ -602,6 +610,8 @@ pub struct Drawn {
     /// What the page drawer's rows asked for, for the app to carry out: a setting changed,
     /// by its key in full, routed back to the tool, and Global options opened or closed.
     pub changes: Vec<Change>,
+    /// The item chosen in its presets, for the app to carry out (`App::preset`).
+    pub preset: Option<Item>,
 }
 
 /// The tool's state: the settings it edits and what the session said of them.
@@ -633,6 +643,11 @@ pub struct Export {
     reset: bool,
     /// The keys of its settings `--conf` gives for this run.
     given: BTreeSet<String>,
+    /// Its presets built in, each by its id with the settings it gives (decision 106).
+    builtins: Vec<(&'static str, Values)>,
+    /// The person's presets as last read, each by its name with the settings it gives, or
+    /// why it is parked: the Summary's Preset row names the one in use.
+    own: Vec<(String, Result<Values, presets::Why>)>,
     /// Whether the tool had the focus as its last frame ended, and in a field typed in,
     /// which keeps Esc: what takes its keys ([`Export::keys`]). egui lets go of the focus
     /// as Esc's frame starts, so Esc is the tool's by where the focus stood before it.
@@ -646,6 +661,25 @@ pub struct Export {
     before: Option<egui::Id>,
     /// Whether Ctrl+Return pressed Export this frame, as the button would be.
     keyed: bool,
+}
+
+/// The settings an Export preset's `settings` give over the defaults (decision 106),
+/// applied as `apertrust_export::settings::apply_preset` applies them to a store.
+fn preset_values(settings: &Settings) -> Values {
+    let mut store = Store::nowhere(registry::ALL);
+    apertrust_export::settings::apply_preset(&mut store, settings);
+    Values::read(&store)
+}
+
+/// `preset` with each setting `given` names, one `--conf` gives for the run, at its value
+/// in `now`: what applying `preset` to `now` gives.
+fn kept(mut preset: Values, now: &Values, given: &BTreeSet<String>) -> Values {
+    for key in given {
+        if let Some(value) = now.get(key) {
+            preset.set(key, &value);
+        }
+    }
+    preset
 }
 
 /// Export's declaration, in `UTILITIES` (decision 93).
@@ -689,6 +723,37 @@ impl UtilityTool for Export {
 
     fn given(&self, key: &str) -> bool {
         self.given.contains(key)
+    }
+
+    /// Its presets' pull-down ([`presets::pull_down`]): Default settings, then For sharing
+    /// and Full size JPEG, then the person's presets, the folder read as it opens, ✓ on each
+    /// whose settings these are.
+    fn presets(&self, menu: &Menu) -> Option<crate::utility::Presets> {
+        let (menu, values, given) = (menu.clone(), self.values.clone(), self.given.clone());
+        let builtins = self.builtins.clone();
+        Some(Box::new(move |words: &Translator| {
+            let holds = |preset: &Values| kept(preset.clone(), &values, &given) == values;
+            let builtins = (builtins.iter())
+                .map(|(id, preset)| Line {
+                    item: Item::Builtin((*id).to_owned()),
+                    name: presets::builtin_name(ID, id, words),
+                    checked: Ok(holds(preset)),
+                })
+                .collect();
+            let title = words.text(&format!("section-{ID}"));
+            let own = (presets::read_settings(&menu.folder, ID).into_iter())
+                .map(|preset| Line {
+                    item: Item::Apply(preset.name.clone()),
+                    checked: match &preset.values {
+                        Ok(settings) => Ok(holds(&preset_values(settings))),
+                        Err(why) => Err(presets::parked(words, why, &title)),
+                    },
+                    name: preset.name,
+                })
+                .collect();
+            let at_defaults = holds(&Values::default());
+            presets::pull_down(at_defaults, [builtins, own], &menu, words)
+        }))
     }
 
     /// Its setting row `row`'s value: a choice the option whose id is the one the settings
@@ -883,6 +948,10 @@ impl Export {
             summary: SUMMARY_OPEN,
             reset: false,
             given: BTreeSet::new(),
+            builtins: (presets::builtins(ID).into_iter())
+                .map(|(id, settings)| (id, preset_values(&settings)))
+                .collect(),
+            own: Vec::new(),
             holds: None,
             button: None,
             focus_button: false,
@@ -899,13 +968,53 @@ impl Export {
     /// What Default settings gives: every export setting at darktable's default, but those
     /// `--conf` gives for this run, at their values.
     fn defaults(&self) -> Values {
-        let mut values = Values::default();
-        for key in &self.given {
-            if let Some(kept) = self.values.get(key) {
-                values.set(key, &kept);
-            }
+        kept(Values::default(), &self.values, &self.given)
+    }
+
+    /// The person's presets, `listed` as read from their folder (`presets::read_settings`),
+    /// one of which the Summary's Preset row may name.
+    pub fn set_presets(&mut self, listed: Vec<Listed<Settings>>) {
+        self.own = (listed.into_iter())
+            .map(|preset| (preset.name, preset.values.map(|s| preset_values(&s))))
+            .collect();
+    }
+
+    /// Applies an Export preset whose settings are `settings` (decision 106): every setting
+    /// its page stores at the preset's value, or at its default where the preset lacks it,
+    /// but those `--conf` gives for this run, which keep theirs. Default settings is the
+    /// preset of none.
+    pub fn apply(&mut self, settings: &Settings) {
+        self.values = kept(preset_values(settings), &self.values, &self.given);
+    }
+
+    /// The settings a preset saved now holds (decision 106): every one its page stores, as
+    /// text, but those `--conf` gives for this run, which are not the person's.
+    pub fn preset_settings(&self) -> Settings {
+        let mut store = Store::nowhere(registry::ALL);
+        self.values.write(&mut store);
+        let mut settings = apertrust_export::settings::preset_settings(&store);
+        settings.retain(|(key, _)| !self.given.contains(key));
+        settings
+    }
+
+    /// The preset in use, as the Summary's Preset row names it in `words`: Default
+    /// settings, a built-in preset or the person's, the first whose settings these are,
+    /// else Custom.
+    fn preset_name(&self, words: &Translator) -> String {
+        let holds =
+            |preset: &Values| kept(preset.clone(), &self.values, &self.given) == self.values;
+        if holds(&Values::default()) {
+            return words.text("export-preset-default");
         }
-        values
+        let builtin = self.builtins.iter().find(|(_, preset)| holds(preset));
+        if let Some((id, _)) = builtin {
+            return presets::builtin_name(ID, id, words);
+        }
+        let own = (self.own.iter()).find(|(_, preset)| preset.as_ref().is_ok_and(holds));
+        match own {
+            Some((name, _)) => name.clone(),
+            None => words.text("preset-custom"),
+        }
     }
 
     /// The tool where the platform can, or cannot, ask an alert.
@@ -1005,7 +1114,7 @@ impl Export {
         self.jobs = shown.jobs.clone();
         self.summary = shown.summary;
         // Its ↺ applies Default settings, drawn disabled while they hold; then the presets
-        // button, drawn disabled until presets come, then its options, whose Reset is ↺.
+        // button, then its options, whose Reset is ↺.
         let resettable = self.values != self.defaults();
         self.keys(&ctx);
         let top = ui.cursor().top();
@@ -1043,6 +1152,10 @@ impl Export {
                 choose_folder: has(Page::ChooseFolder) && !self.path_given(),
             },
             changes: drawn.changes,
+            preset: (drawn.pressed.iter()).find_map(|pressed| match pressed {
+                Pressed::Preset(id) => Item::of(id),
+                _ => None,
+            }),
         }
     }
 

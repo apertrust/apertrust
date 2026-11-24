@@ -62,11 +62,9 @@ pub struct ToolDefinition {
     pub after: &'static [Row],
     /// What its header's ↺ does, or none for a header with no ↺.
     pub reset: Reset,
-    /// Whether its header has the presets button: every processing tool's, drawn disabled
-    /// until presets come; a utility's only where it will have presets of its setting rows,
-    /// as Export's, named `<id>-presets` and drawn disabled, its tooltip
-    /// `<id>-presets-later`, until they come with the presets API every tool shares, processing
-    /// and utility alike (decision 93; planned).
+    /// Whether its header has the presets button, opening its presets (decision 106):
+    /// every processing tool's; a utility's only where it has presets of the settings its
+    /// page stores, as Export's, named `<id>-presets`.
     pub presets: bool,
     /// Whether its section is open at first, until the person opens or closes it, which the
     /// app then keeps in `[edit.sections]` and which wins over this (decision 93): false

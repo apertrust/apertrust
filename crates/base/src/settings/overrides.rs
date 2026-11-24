@@ -125,7 +125,7 @@ impl fmt::Debug for Overrides {
 
 /// `text` as `settings.toml` would hold a value of `kind`: a text or a choice's id as it
 /// is; anything else as one TOML value, or None where it is not one.
-fn value(kind: &Kind, text: &str) -> Option<Value> {
+pub(super) fn value(kind: &Kind, text: &str) -> Option<Value> {
     match kind {
         Kind::Text | Kind::Choice(_) => Some(Value::String(text.to_owned())),
         Kind::Boolean | Kind::Number(_) | Kind::List { .. } | Kind::Table { .. } => {

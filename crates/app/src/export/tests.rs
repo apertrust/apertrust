@@ -71,6 +71,10 @@ struct Bench {
     /// The app's shell, whose keys are read before the tool draws and noted after, as the
     /// app's frame reads them, a photo shown: where a test asks for them.
     shell: Option<Box<crate::Shell>>,
+    /// Its presets' folder, as the shell's header gives it, where a test gives one; and
+    /// the items chosen in their pull-down, which the app carries out.
+    presets: Option<Menu>,
+    chosen: Vec<Item>,
 }
 
 /// A stand-in for the folder button's dialog and the disk under it: `folders` are the
@@ -127,13 +131,24 @@ fn home(values: Values) -> Export {
 
 /// `export` in the bench.
 fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harness<'static, Bench> {
+    tool_on(export, which, locale, width, egui::os::OperatingSystem::Mac)
+}
+
+/// `export` in the bench on `os`.
+fn tool_on(
+    export: Export,
+    which: Builtin,
+    locale: Locale,
+    width: f32,
+    os: egui::os::OperatingSystem,
+) -> Harness<'static, Bench> {
     // The photo open is the one the session was asked about, as the tests' answers are for.
     let photo = PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW");
     let mut previews = Previews::default();
     previews.next(Some(&photo), true, export.values(), 0);
     let mut harness = Harness::builder()
         .with_size(egui::vec2(width, 1600.0))
-        .with_os(egui::os::OperatingSystem::Mac)
+        .with_os(os)
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, Theme::builtin(which));
             apertrust_ui::set_locale(ctx, locale);
@@ -175,6 +190,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     open: bench.open,
                     options: options.unwrap_or_default(),
                     enabled: true,
+                    presets: bench.presets.clone(),
                     ..crate::tools::Head::default()
                 };
                 let (mut changes, mut asked) = (Vec::new(), Asked::default());
@@ -192,6 +208,7 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                     bench.shown.summary ^= drawn.toggle_summary;
                     asked = drawn.asked;
                     changes = drawn.changes;
+                    bench.chosen.extend(drawn.preset);
                 });
                 // As the app carries them out: a setting routed back to the tool, kept as
                 // the settings it changed, and Global options opened or closed; then what
@@ -276,6 +293,8 @@ fn tool_of(export: Export, which: Builtin, locale: Locale, width: f32) -> Harnes
                 reveal: false,
                 options: false,
                 shell: None,
+                presets: None,
+                chosen: Vec::new(),
             },
         );
     harness.run();
@@ -2405,9 +2424,11 @@ fn no_explanation_is_a_line_inside_the_tool_it_is_a_tooltip() {
     assert!(says(&harness, "Enter where to put the exported photos."));
 }
 
+/// Its header: ↺, presets and ⋯, in that order; with no folder for presets, as with no user
+/// data folder, the presets button is drawn disabled, as a processing tool's is.
 #[test]
-fn the_header_has_its_reset_a_presets_button_drawn_disabled_and_its_options() {
-    let mut harness = open();
+fn the_header_has_its_reset_its_presets_and_its_options() {
+    let harness = open();
     harness.get_by_role_and_label(Role::Button, "Reset export settings");
     assert!(disabled(&harness, Role::Button, "Export presets"));
     assert!(disabled(&harness, Role::Button, "Export options"));
@@ -2421,15 +2442,273 @@ fn the_header_has_its_reset_a_presets_button_drawn_disabled_and_its_options() {
     };
     assert!(at("Reset export settings") < at("Export presets"));
     assert!(at("Export presets") < at("Export options"));
-    // Pointing at the presets button says why it is off.
-    let presets = harness.get_by_role_and_label(Role::Button, "Export presets");
-    harness.hover_at(presets.rect().center());
-    harness.run_steps(40);
-    assert!(
-        harness
-            .query_by_label("Presets come in a later version")
-            .is_some()
+}
+
+// Its presets (decision 106).
+
+/// A folder of the test's own for Export's presets, emptied first.
+fn presets_folder(name: &str) -> PathBuf {
+    let folder = std::env::temp_dir().join(format!(
+        "apertrust-export-presets-{name}-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&folder);
+    folder
+}
+
+/// The menu of Export's presets in `folder`, `chosen` the preset chosen last.
+fn menu(folder: &Path, chosen: Option<&str>) -> Menu {
+    Menu {
+        folder: folder.to_owned(),
+        chosen: chosen.map(str::to_owned),
+        alerts: true,
+    }
+}
+
+/// What the pull-down of `export`'s presets in `folder` holds, in British English, as
+/// (words, checked, enabled) each.
+fn listed(
+    export: &Export,
+    folder: &Path,
+    chosen: Option<&str>,
+) -> Vec<(String, Option<bool>, bool)> {
+    let build = UtilityTool::presets(export, &menu(folder, chosen)).expect("Export has presets");
+    let words = Translator::new(Locale::EnGb);
+    (build(&words).into_iter())
+        .filter_map(|entry| match entry {
+            apertrust_ui::popup::Entry::Item(item) => Some((item.text, item.checked, item.enabled)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The settings of the preset built in as `id`.
+fn builtin(id: &str) -> Settings {
+    let builtins = presets::builtins(ID).into_iter();
+    builtins.into_iter().find(|(own, _)| *own == id).unwrap().1
+}
+
+/// The preset `name` saved in `folder` from `export`, as Save as Preset… writes it.
+fn save(folder: &Path, export: &Export, name: &str) -> PathBuf {
+    presets::save_settings(folder, ID, export.preset_settings(), (name, None), "0.1.0").unwrap()
+}
+
+#[test]
+fn the_pull_down_lists_default_settings_the_two_built_in_then_the_person_s() {
+    let folder = presets_folder("list");
+    let mut export = home(Values::default());
+    let full =
+        |text: &str, checked: Option<bool>, enabled: bool| (text.to_owned(), checked, enabled);
+    assert_eq!(
+        listed(&export, &folder, None),
+        [
+            full("Default settings", Some(true), true),
+            full("For sharing", Some(false), true),
+            full("Full size JPEG", Some(false), true),
+            full("Save as Preset…", None, true),
+            full("Rename…", None, false),
+            full("Delete…", None, false),
+        ]
     );
+    export.apply(&builtin("full-size-jpeg"));
+    save(&folder, &export, "Web");
+    let items = listed(&export, &folder, Some("Web"));
+    let texts: Vec<&str> = items.iter().map(|(text, ..)| text.as_str()).collect();
+    assert_eq!(
+        texts,
+        [
+            "Default settings",
+            "For sharing",
+            "Full size JPEG",
+            "Web",
+            "Save as Preset…",
+            "Rename…",
+            "Delete…"
+        ]
+    );
+    // ✓ on each the settings match: the built-in and the preset saved from it.
+    let checked: Vec<bool> = items[..4]
+        .iter()
+        .map(|(_, c, _)| *c == Some(true))
+        .collect();
+    assert_eq!(checked, [false, false, true, true]);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn for_sharing_sets_jpeg_2048_and_srgb_and_a_change_makes_it_custom() {
+    let folder = presets_folder("sharing");
+    let values = Values {
+        format: FileFormat::Png,
+        jpeg_quality: 70,
+        width: 640,
+        ..Values::default()
+    };
+    let export = home(values);
+    let mut harness = tool_on(
+        export,
+        Builtin::Dark,
+        Locale::EnGb,
+        PANEL,
+        egui::os::OperatingSystem::Nix,
+    );
+    harness.state_mut().presets = Some(menu(&folder, None));
+    answer(&mut harness, 1, preview());
+    assert!(summary_says(&harness, "Preset Custom"));
+    harness
+        .get_by_role_and_label(Role::Button, "Export presets")
+        .click();
+    settle(&mut harness);
+    harness
+        .get_by_role_and_label(Role::MenuItemCheckBox, "For sharing")
+        .click();
+    settle(&mut harness);
+    let chosen = std::mem::take(&mut harness.state_mut().chosen);
+    assert_eq!(chosen, [Item::Builtin("for-sharing".to_owned())]);
+    // As the app carries it out: every setting the preset's or its default.
+    harness.state_mut().export().apply(&builtin("for-sharing"));
+    settle(&mut harness);
+    let values = held(&mut harness);
+    assert_eq!(
+        values,
+        Values {
+            format: FileFormat::Jpeg,
+            width: 2048,
+            height: 2048,
+            profile: Profile::Srgb,
+            ..Values::default()
+        }
+    );
+    assert!(summary_says(&harness, "Preset For sharing"));
+    // A change of the quality is no preset's.
+    harness
+        .get_by_role_and_label(Role::Slider, "Quality")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::ArrowLeft);
+    settle(&mut harness);
+    assert_eq!(held(&mut harness).jpeg_quality, 94);
+    assert!(summary_says(&harness, "Preset Custom"));
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// A setting `--conf` gives keeps its value as a preset applies, never makes a preset
+/// Custom, and is left out of a preset saved.
+#[test]
+fn a_setting_conf_gives_is_kept_by_a_preset_and_left_out_of_one_saved() {
+    let folder = presets_folder("given");
+    let values = Values {
+        width: 800,
+        ..Values::default()
+    };
+    let mut export = home(values).given(GIVEN.map(str::to_owned));
+    export.apply(&builtin("for-sharing"));
+    assert_eq!((export.values().width, export.values().height), (800, 2048));
+    assert_eq!(
+        export.preset_name(&Translator::new(Locale::EnGb)),
+        "For sharing"
+    );
+    let path = save(&folder, &export, "Mine");
+    let text = std::fs::read_to_string(path).unwrap();
+    for key in GIVEN.iter().chain(["export.ask_before_overwrite"].iter()) {
+        assert!(!text.contains(&format!("setting:{key}=")), "{key}");
+    }
+    assert!(text.contains("setting:export.size.height=\"2048\""));
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// Save, Update, Rename and Delete of a person's preset, as the app carries them out: its
+/// file written, updated with the settings now, the description and a newer build's key
+/// kept, renamed and deleted; the Summary names it while the settings match it.
+#[test]
+fn save_update_rename_and_delete_a_person_s_preset() {
+    let folder = presets_folder("manage");
+    let words = Translator::new(Locale::EnGb);
+    let mut export = home(Values::default());
+    export.apply(&builtin("for-sharing"));
+    let mut settings = export.preset_settings();
+    settings.retain(|(key, _)| key != "export.size.width");
+    settings.push(("export.someday".to_owned(), "1".to_owned()));
+    let named = ("Small", Some("For the forum"));
+    presets::save_settings(&folder, ID, settings, named, "0.1.0").unwrap();
+    export.set_presets(presets::read_settings(&folder, ID));
+    // Its width the default, so it is no longer For sharing's.
+    export.apply(
+        &presets::read_settings(&folder, ID)[0]
+            .values
+            .clone()
+            .unwrap(),
+    );
+    assert_eq!(export.values().width, 0);
+    assert_eq!(export.preset_name(&words), "Small");
+    // Update: the settings now, the description and the unknown key kept.
+    let mut changed = export.values().clone();
+    changed.jpeg_quality = 80;
+    let mut export = home(changed);
+    presets::update_settings(&folder, ID, export.preset_settings(), "Small", "0.1.0").unwrap();
+    let file = presets::read_settings(&folder, ID);
+    let stored =
+        apertrust_library::presets::list(&folder, apertrust_library::presets::Kind::Preset);
+    assert_eq!(
+        stored.files[0].description.as_deref(),
+        Some("For the forum")
+    );
+    let kept = &file[0].values.as_ref().unwrap();
+    assert!(kept.contains(&("export.someday".to_owned(), "1".to_owned())));
+    assert!(kept.contains(&("export.jpeg.quality".to_owned(), "80".to_owned())));
+    export.set_presets(file);
+    assert_eq!(export.preset_name(&words), "Small");
+    // Rename, then Delete.
+    presets::rename_settings(&folder, ID, "Small", "Forum").unwrap();
+    let file = presets::read_settings(&folder, ID);
+    assert_eq!(
+        file.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
+        ["Forum"]
+    );
+    assert!(folder.join("Forum.appreset").is_file());
+    export.set_presets(file);
+    assert_eq!(export.preset_name(&words), "Forum");
+    presets::delete_settings(&folder, ID, "Forum").unwrap();
+    export.set_presets(presets::read_settings(&folder, ID));
+    assert_eq!(export.preset_name(&words), "Custom");
+    // A new preset may not take a built-in's name as shown, nor Default settings'.
+    let taken = presets::taken_settings(&folder, ID, &words);
+    assert_eq!(taken, ["For sharing", "Full size JPEG", "Default settings"]);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The header with its presets' pull-down open, For sharing in use, and the Summary naming
+/// it, in the dark and light themes.
+fn photograph_presets(which: Builtin, name: &str) {
+    let folder = presets_folder(name);
+    let mut export = home(Values::default());
+    save(&folder, &export, "Defaults kept");
+    export.apply(&builtin("for-sharing"));
+    let mut harness = tool_on(
+        export,
+        which,
+        Locale::EnGb,
+        PANEL,
+        egui::os::OperatingSystem::Nix,
+    );
+    harness.state_mut().presets = Some(menu(&folder, None));
+    answer(&mut harness, 1, sized(2048, 1365));
+    harness
+        .get_by_role_and_label(Role::Button, "Export presets")
+        .click();
+    settle(&mut harness);
+    photograph(&mut harness, name);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn the_presets_in_the_dark_theme() {
+    photograph_presets(Builtin::Dark, "export-presets-dark");
+}
+
+#[test]
+fn the_presets_in_the_light_theme() {
+    photograph_presets(Builtin::Light, "export-presets-light");
 }
 
 // The Summary, the warnings, the button and the line under it.

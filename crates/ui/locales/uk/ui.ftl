@@ -136,6 +136,8 @@ presets-save-button = Зберегти
 presets-rename-button = Перейменувати
 presets-name-empty = Шаблону потрібна назва
 presets-name-taken = Інструмент «{ $tool }» уже має шаблон із такою назвою
+preset-export-for-sharing = Для поширення
+preset-export-full-size-jpeg = JPEG у повному розмірі
 
 ## Позначка повзунка
 
@@ -1252,7 +1254,6 @@ pick-warning-short-tip = { $control } досягла межі { $value }
 export-button = Експортувати { photo-count }
 export-reset = Скинути налаштування експорту
 export-presets = Шаблони експорту
-export-presets-later = Шаблони з'являться в одній із наступних версій
 export-preset-default = Типові налаштування
 export-metadata-note = Ця версія ще не записує у файли EXIF, місце зйомки й авторські права.
 export-path-tip-unexact = { $source } → { $pattern }, буде заповнено під час експорту

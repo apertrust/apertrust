@@ -8,7 +8,7 @@ darktable at the reference release keeps presets and styles in `data.db`, its `p
 
 ## Decision
 
-**Presets and styles are files, never a database,** as edits are ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md), [0047](0047-where-edits-live-and-what-the-sidecar-holds.md)). Two file types, both XMP, each one preset or one style, so each can be sent, shared, backed up and synced on its own. All planned, in two phases of their own ([Phases](#phases)).
+**Presets and styles are files, never a database,** as edits are ([0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md), [0047](0047-where-edits-live-and-what-the-sidecar-holds.md)). Two file types, both XMP, each one preset or one style, so each can be sent, shared, backed up and synced on its own. In two phases of their own ([Phases](#phases)): the files, processing tools' presets and Export's are built; Import's presets and styles are planned.
 
 | File | Holds | Where |
 | --- | --- | --- |

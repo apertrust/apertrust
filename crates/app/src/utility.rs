@@ -19,8 +19,8 @@
 //! `ProcessingTool` is `iop_api.h`'s non-GUI half to a processing tool's.
 //!
 //! - **[`UtilityTool`]** is what a utility does: its page's custom rows, each drawn by its
-//!   [`UtilityTool::body`] with the row's widget, and its own ↺, where its declaration says
-//!   so. Its egui code stays in its module (`history`, `scopes`, `library` for
+//!   [`UtilityTool::body`] with the row's widget, its own ↺, where its declaration says
+//!   so, and its presets' pull-down, where it has presets ([`UtilityTool::presets`]). Its egui code stays in its module (`history`, `scopes`, `library` for
 //!   Collections).
 //! - **One [`Context`] for every utility:** the mirror, the settings, the words and the
 //!   frame's commands for the session.
@@ -39,11 +39,13 @@ use apertrust_engine::session::{Command, ControlValue};
 use apertrust_tools::utility::UtilityDefinition;
 use apertrust_tools::{GroupKind, Reset, Row, SettingRow, ToolDefinition, Widget, messages};
 use apertrust_ui::components as parts;
+use apertrust_ui::popup::Entry as MenuEntry;
 use apertrust_ui::{Translator, translator};
 use eframe::egui;
 
 use crate::actions::{self, State};
 use crate::mirror::Mirror;
+use crate::presets::Menu;
 use crate::settings::{Settings, ToolSettings};
 use crate::tools::{self, Change, Head, Note, Pressed, Rows};
 
@@ -76,6 +78,14 @@ pub trait UtilityTool {
 
     /// Its header's ↺, where its declaration's `reset` is its own (`Reset::Own`).
     fn reset(&mut self, _cx: &mut Context<'_>) {}
+
+    /// Its presets' pull-down, where its declaration has presets and the app a folder for
+    /// them, `menu`'s (decision 106): what builds its entries, in the words given, as it
+    /// opens, so its folder is read then and not every frame. None leaves the button drawn
+    /// disabled.
+    fn presets(&self, _menu: &Menu) -> Option<Presets> {
+        None
+    }
 
     /// The value its setting row `row` shows, one naming its key in full, where it keeps
     /// it: its settings are the settings store's, never the tools' (decision 93). None
@@ -133,6 +143,10 @@ pub trait UtilityTool {
     }
 }
 
+/// What builds a utility's presets' pull-down as it opens, in the words given
+/// ([`UtilityTool::presets`]).
+pub type Presets = Box<dyn FnOnce(&Translator) -> Vec<MenuEntry>>;
+
 /// What a utility's section did this frame: what its header asked the app for, its own
 /// ↺ carried out; what the page drawer's rows asked for, a collapsible group opened or
 /// closed; and what its custom rows asked for.
@@ -144,8 +158,9 @@ pub struct Drawn<A> {
 }
 
 /// Draws `tool`'s section, its header from its declaration ([`tools::header`]) as `head`
-/// has it, ↺ drawn disabled unless `resettable`, and, while open, its page ([`rows`]).
-/// Its own ↺ is carried out here ([`UtilityTool::reset`]).
+/// has it, ↺ drawn disabled unless `resettable`, its presets opening the pull-down the
+/// tool builds for `head.presets` ([`UtilityTool::presets`]), and, while open, its page
+/// ([`rows`]). Its own ↺ is carried out here ([`UtilityTool::reset`]).
 pub fn section<T: UtilityTool>(
     ui: &mut egui::Ui,
     tool: &mut T,
@@ -154,19 +169,16 @@ pub fn section<T: UtilityTool>(
     resettable: bool,
 ) -> Drawn<T::Action> {
     let definition = &tool.definition().tool;
-    let [title, reset, name, later] = titles(cx.words, definition);
+    let [title, reset, name] = titles(cx.words, definition);
     let about = about(cx.words, definition);
     let (photo, layout) = (head.photo, head.layout);
     let (mut changes, mut actions) = (Vec::new(), Vec::new());
-    let section = tools::header(
-        definition,
-        &title,
-        &reset,
-        [&name, &later],
-        resettable,
-        about,
-        head,
-    );
+    let presets = (head.presets.as_ref()).and_then(|menu| tool.presets(menu));
+    let mut section = tools::header(definition, &title, &reset, &name, resettable, about, head);
+    if let Some(build) = presets {
+        let words = translator(ui.ctx());
+        section = section.presets(true).presets_menu(move || build(&words));
+    }
     let out = section.show(ui, |ui| (changes, actions) = rows(ui, tool, cx));
     let mut pressed = tools::pressed(ui, definition, &out, photo, layout);
     if pressed.contains(&Pressed::Reset) {
@@ -338,18 +350,10 @@ pub fn header(
     resettable: bool,
 ) -> Vec<Pressed> {
     let words = translator(ui.ctx());
-    let [title, reset, name, later] = titles(&words, definition);
+    let [title, reset, name] = titles(&words, definition);
     let about = about(&words, definition);
     let (photo, layout) = (head.photo, head.layout);
-    let section = tools::header(
-        definition,
-        &title,
-        &reset,
-        [&name, &later],
-        resettable,
-        about,
-        head,
-    );
+    let section = tools::header(definition, &title, &reset, &name, resettable, about, head);
     let out = section.show_header(ui);
     tools::pressed(ui, definition, &out, photo, layout)
 }
@@ -373,17 +377,16 @@ fn about(words: &Translator, definition: &ToolDefinition) -> Option<parts::About
 }
 
 /// The utility `definition`'s title, `section-<id>`, its ↺'s name, and its presets
-/// button's name and tooltip where it has one, else empty.
-fn titles(words: &Translator, definition: &ToolDefinition) -> [String; 4] {
+/// button's name where it has one, else empty.
+fn titles(words: &Translator, definition: &ToolDefinition) -> [String; 3] {
     let title = words.text(&format!("section-{}", definition.id));
     let reset = tools::reset_name(words, definition, &title);
-    // Its presets button's words, where it has one.
-    let [name, later] = if definition.presets {
-        messages::utility_presets(definition.id).map(|id| words.text(&id))
+    let name = if definition.presets {
+        words.text(&messages::utility_presets(definition.id))
     } else {
-        Default::default()
+        String::new()
     };
-    [title, reset, name, later]
+    [title, reset, name]
 }
 
 #[cfg(test)]

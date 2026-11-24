@@ -131,7 +131,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] 93.2. `UtilityTool` in the app, with one `Context`, History, Scopes and Collections implementing it, Collections joining `UTILITIES`.
 - [x] 93.3. One header and ⋯ for every tool in `TOOLS` and `UTILITIES`, from `&ToolDefinition`, History's ⋯ items declared with it, Truncate History an item of its own; Export's with 93.5.
 - [x] 93.4. The utilities on the page model, their widgets as custom rows and `UtilityDefinition::check` refusing a row that edits: Scopes first, then History, then Collections.
-- [x] 93.5. Export on the tool model: Export implements `UtilityTool` and joins `UTILITIES`, drawn with the shared header, its ↺ its own and its presets button drawn disabled, its page custom rows drawing what it drew, so nothing a person sees changes.
+- [x] 93.5. Export on the tool model: Export implements `UtilityTool` and joins `UTILITIES`, drawn with the shared header, its ↺ its own and its presets button, which opens Export's presets (decision 106), its page custom rows drawing what it drew, so nothing a person sees changes.
 - [x] 93.6. Export's page as setting rows naming the `export.*` keys by full key, before Import's sheet shares those rows ([Export](#export)): the page model grows setting rows naming a key in full with their words declared, a utility's settings kept in the store and never sent through `PickerCommand::Settings`, options disabled at run time, a No and Yes style, tooltips and notes the utility supplies, and settings counted in a group; Export's header drawn through the shell's head with its `photo` set.
 
 **The window's parts named by their role** (decision 95): the top, side, central and grid panels become the Toolbar, Tools (the Tools panel), the Viewer and the Browser, the central and grid bars the viewer bar and the browser bar, and Browse Collections; recorded, then one pull request:
@@ -302,7 +302,8 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [ ] phase 1, for 0.1 (#363):
     - [x] the files read and written, `apertrust_library::presets`, and `Folders::presets` and `styles`;
     - [x] tool presets in every processing tool's header: choose, save, update, rename and delete, Update and Delete disabled on Windows until its alerts are built ([gui.md](gui.md#a-tools-presets));
-    - [ ] Export's presets, For sharing and Full size JPEG built in, and `apertrust-cli export --preset NAME`; creating a style; the Styles tool applying one to the active photo; Copy Edit and Apply Edit on the active photo; then Apply Edit and styles on every selected photo, as one batch;
+    - [x] Export's presets, For sharing and Full size JPEG built in, and `apertrust-cli export --preset NAME` ([gui.md](gui.md#its-header-and-presets));
+    - [ ] creating a style; the Styles tool applying one to the active photo; Copy Edit and Apply Edit on the active photo; then Apply Edit and styles on every selected photo, as one batch;
   - [ ] phase 2 (#364): the hover preview; darktable's built-in presets for each ported tool; Copy or Apply Parts…; a tool's Copy Settings and Paste Settings; Favourites, editing and duplicating a style; a preset's and a style's actions, with their ids; styles on export and import; `.appreset` and `.apstyle` files opened from outside; importing darktable's `.dtstyle` and `.dtpreset`; presets applied automatically; `--preset` and `--style` for processing tools on the CLI.
 - [ ] Before and after, and warnings.
 - [ ] Colour calibration's colour checker, darktable's, with its chart data and fit.
@@ -318,10 +319,10 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [ ] The setting rows Import's sheet and the Export tool share: a slider with no kept marker, the path row (labelled for Import, label-less for Export), note, field and size rows, an indented toggle (decisions 86 and 90).
 - [ ] The rest of the Export tool, a utility last in the Photos tab (decision 90; [gui.md](gui.md#the-export-tool)), its page declared as setting rows in decision 93's step 93.6 ([The window and the shell](#the-window-and-the-shell)):
   - [ ] a spike measuring every export row at the Tools panel's 320 points in British English, Ukrainian, Polish and the pseudo-locale;
-  - [x] the groups and the end: Storage options and Format options, always open, and Global options, collapsible and open at first; the path on one line; ↺, the presets button drawn disabled, and ⋯; the Summary group (Preset, File name, Size, Profile, Format, Destination), the warnings, Export N photos in each of its states and a failed export's line (the Summary's preset is Default settings or Custom until presets); names never guessed as exact;
+  - [x] the groups and the end: Storage options and Format options, always open, and Global options, collapsible and open at first; the path on one line; ↺, the presets button and ⋯; the Summary group (Preset, File name, Size, Profile, Format, Destination), the warnings, Export N photos in each of its states and a failed export's line; names never guessed as exact;
   - [x] its page as setting rows naming the `export.*` keys, bound to `apertrust-export`'s settings, its snapshots unchanged (decision 93's step 93.6);
   - [x] the path's folder button, darktable's "select directory": the system's folder chooser, opening where the path is, the folder chosen put before the path's file part;
-  - [ ] its presets, Default settings, For sharing and Full size JPEG built in, then the person's own, with the presets API every tool shares, processing and utility alike, Default settings from the tool's definition and the rest `.appreset` files (decision 106);
+  - [x] its presets, Default settings, For sharing and Full size JPEG built in, then the person's own, in the pull-down every tool's presets share, processing and utility alike, Default settings from the tool's definition and the rest `.appreset` files (decision 106);
   - [x] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row;
   - [x] the preview's answer shown only for its latest request;
   - [ ] the preview sent only while the tool is in view, with `focus` once it covers the whole selection;
@@ -329,7 +330,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [ ] Collections' Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, the Browser's grid with check boxes as its choosing and day headings, a column on the Tools panel's side holding the Import tool, the footer with Help, Keep open, Close and the primary button, its keys and modality, each tool kept to its place; the warning button and the path row's ⌄ among the setting rows; then Import's first slice (the library's step 20a).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
-- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with the presets API every tool shares, processing and utility alike, as darktable's are (decision 106, planned).
+- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17).
 - [ ] Metadata in exported files, and styles applied on export.
 
 ### Culling, metadata and several computers, in folder mode

@@ -48,6 +48,11 @@
 //! Export's, holds the utility's id, `apertrust:tool`, and its settings as the `setting:`
 //! fields of the struct `apertrust:settings` ([`SETTING_NAMESPACE`]).
 //!
+//! The built-in presets, Export's For sharing and Full size JPEG, are the repository's
+//! `data/presets/<tool>/<id>.appreset`, embedded here, the one crate that parses them
+//! (decision 45), so the app and the CLI both have them ([`builtins`]); they are never
+//! copied into the user data folder.
+//!
 //! A file's name is its name made safe for every system ([`file_name`]), numbered where
 //! another file has it. A file a newer Apertrust wrote, of a newer format version or with
 //! a field this build does not know, of any namespace, is read as this build lays it out
@@ -76,6 +81,45 @@ pub const SETTING_NAMESPACE: &str = "https://apertrust.org/ns/xmp/setting/";
 /// The most bytes of a name a file name keeps, before its number and extension, so both
 /// fit in the 255 bytes every system allows.
 const MAX_NAME_BYTES: usize = 200;
+
+/// A preset built in (decision 106): its tool's id, its own id, by which the client names
+/// it (the Fluent message `preset-<tool>-<id>`, `apertrust-cli export --preset <id>`),
+/// and its file, `data/presets/<tool>/<id>.appreset`, whose `apertrust:name` is its
+/// British English name.
+struct Builtin {
+    tool: &'static str,
+    id: &'static str,
+    text: &'static str,
+}
+
+/// Every preset built in, by tool, each tool's in the order its list shows them.
+const BUILTINS: &[Builtin] = &[
+    Builtin {
+        tool: "export",
+        id: "for-sharing",
+        text: include_str!("../../../data/presets/export/for-sharing.appreset"),
+    },
+    Builtin {
+        tool: "export",
+        id: "full-size-jpeg",
+        text: include_str!("../../../data/presets/export/full-size-jpeg.appreset"),
+    },
+];
+
+/// The presets built in for `tool`, in the order its list shows them, each by its id with
+/// its file read; none for a tool that has none. Each reads, as a test holds.
+pub fn builtins(tool: &str) -> Vec<(&'static str, Stored)> {
+    (BUILTINS.iter())
+        .filter(|builtin| builtin.tool == tool)
+        .filter_map(|builtin| match parse(builtin.text, Kind::Preset) {
+            Ok(stored) => Some((builtin.id, stored)),
+            Err(error) => {
+                debug_assert!(false, "the built-in {}: {error}", builtin.id);
+                None
+            }
+        })
+        .collect()
+}
 
 /// Which of the two files.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

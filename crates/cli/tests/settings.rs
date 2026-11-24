@@ -748,3 +748,62 @@ fn the_cache_folder_is_named_and_never_created() {
     assert!(!cache.exists() && !elsewhere.exists());
     assert_eq!(std::fs::read_dir(&current.0).expect("there").count(), 0);
 }
+
+/// `export --preset for-sharing` applies its settings over the file's before the export
+/// reads them, a JPEG within 2048 × 2048 at the default quality, whatever the file held,
+/// and a size flag given wins over its size (decision 106).
+#[test]
+fn export_s_preset_applies_over_the_file_and_a_size_flag_wins() {
+    let file = "version = 1\n[export]\nformat = \"png\"\n\n\
+                [export.jpeg]\nquality = 80\n\n\
+                [export.size]\nmode = \"cm\"\nwidth = 1000\n";
+    let folder = Folder::holding("preset", file);
+    let elsewhere = Folder::new("preset-elsewhere");
+    let dir = folder.0.display().to_string();
+    let out = elsewhere.0.display().to_string();
+    let args = |more: &[&str]| -> Vec<String> {
+        let base = [
+            "--user-data-dir",
+            &dir,
+            "export",
+            "no-such-raw.CR2",
+            "-o",
+            &out,
+        ];
+        (base.iter().chain(more))
+            .map(|arg| arg.to_string())
+            .collect()
+    };
+    let run_with = |more: &[&str]| {
+        let args = args(more);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        run(&args, &elsewhere.0, None)
+    };
+    let (stderr, done) = run_with(&["--preset", "for-sharing"]);
+    assert!(!done, "no raw to export: {stderr}");
+    // The preset's values, whatever the file held: JPEG where it said PNG, the default
+    // quality where it said 80, pixels where it said cm.
+    for value in [
+        "export.format: \"jpeg\", from: ",
+        "export.jpeg.quality: 95, from: ",
+        "export.size.mode: \"pixels\", from: ",
+    ] {
+        let found = stderr
+            .lines()
+            .any(|l| l.contains("[settings] ") && l.contains(value));
+        assert!(found, "{value}: {stderr}");
+    }
+    let line =
+        "--preset for-sharing: size 2048 × 2048 px, scale none, upscale false, high quality false";
+    assert!(logged(&stderr, line), "{stderr}");
+    let (stderr, _) = run_with(&["--preset", "for-sharing", "--width", "1000", "--hq", "1"]);
+    let line =
+        "--preset for-sharing: size 1000 × 2048 px, scale none, upscale false, high quality true";
+    assert!(logged(&stderr, line), "{stderr}");
+    // None named so: an error listing the presets.
+    let (stderr, done) = run_with(&["--preset", "nope"]);
+    assert!(
+        !done && stderr.contains("for-sharing, full-size-jpeg"),
+        "{stderr}"
+    );
+}
