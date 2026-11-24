@@ -35,12 +35,16 @@
 //! planned while it is on. Its first step, on at its defaults, brings the operation's
 //! gamut mapping, as darktable's does.
 //!
-//! The pickers on the hues and the fulcrums are in the definition, as darktable's page
-//! has them; the renderer draws a quad once what it runs is built. Left out until the renderer
-//! can draw them: the luminance
+//! Its six pickers are darktable's, on the four hues and the two fulcrums: a wheel's hue
+//! and chroma from an area, the opposite hue unless Ctrl is held, the white fulcrum from
+//! its maximum's luminance and the contrast grey fulcrum from its mean's
+//! ([`ColourBalanceRgb::pick`]). Left out until the renderer can draw them: the luminance
 //! ranges' graph and the fall-offs' and the mask fulcrum's mask display; and the mask
 //! preview's settings, which are the app's (`docs/tools/README.md`, rule 12).
 
+use apertrust_color::{
+    WorkingProfile, XYZ_D50_TO_D65_CAT16, apply, rad_to_deg, xyz_to_ych, ych_hue,
+};
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
@@ -48,7 +52,10 @@ use crate::definition::{
     ChoiceStyle, Control, ControlKind, Group, GroupKind, Picker, PickerKind, ProcessingDefinition,
     Quad, Reset, Row, Slider, Space, Tab, ToolDefinition, Track, Unit,
 };
-use crate::{Base, Owned, ProcessingTool, Setting, ToolValues, switched_from};
+use crate::pick::{PickKeys, Picked, Reading, Shown};
+use crate::{
+    Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues, switched_from,
+};
 
 pub struct ColourBalanceRgb;
 
@@ -263,6 +270,34 @@ static PICKERS: [Picker; 6] = [
     picker("grey_fulcrum", &["grey_fulcrum"]),
 ];
 
+/// darktable's `ANGLE_SHIFT`: Filmlight Yrg puts red at 330°, so its GUI shows a hue 30°
+/// on, `YRG_RAD_TO_CONVENTIONAL_DEG` (`colorbalancergb.c:48-50`).
+const ANGLE_SHIFT: f32 = -30.0;
+
+/// darktable's `pipe_RGB_to_Ych` (`colorbalancergb.c:1261-1275`): working RGB, linear
+/// Rec2020 as the operation reads it, to XYZ D50 through the working profile, to D65 by
+/// CAT16, then Ych.
+fn ych_of([r, g, b, _]: [f32; 4]) -> [f32; 4] {
+    let xyz = apply(&WorkingProfile::linear_rec2020().rgb_to_xyz_d50, [r, g, b]);
+    xyz_to_ych(apply(&XYZ_D50_TO_D65_CAT16, xyz))
+}
+
+/// A hue picker's hue of Ych `ych`, darktable's: its angle in the GUI's degrees, the
+/// opposite unless `command` is held (`colorbalancergb.c:1288-1290`), from −150° to 390°.
+fn picked_hue(ych: [f32; 4], command: bool) -> f32 {
+    let hue = rad_to_deg(ych_hue(ych)) - ANGLE_SHIFT;
+    if command { hue } else { hue + 180.0 }
+}
+
+/// `value` of `control`'s parameter as the control shows it: a percentage times 100.
+fn shown(control: &str, value: f32) -> ControlValue {
+    let scale = PARAMETERS
+        .iter()
+        .find(|p| p.control == control)
+        .map_or(1.0, |p| p.scale);
+    ControlValue::Number(value * scale)
+}
+
 /// An area picker of the tool's input writing `writes`.
 const fn picker(id: &'static str, writes: &'static [&'static str]) -> Picker {
     Picker {
@@ -476,6 +511,52 @@ impl ProcessingTool for ColourBalanceRgb {
         let rendered = off.values().next().is_some();
         switched_from(values, rendered)
     }
+
+    /// darktable's `color_picker_apply` (`colorbalancergb.c:1278-1338`), on the area's
+    /// mean and each channel's maximum at the operation's input, working RGB, each in Ych
+    /// (`pipe_RGB_to_Ych`), in the controls' units:
+    ///
+    /// - **a hue picker** writes its wheel's hue, the area's opposite, or its own with Ctrl
+    ///   (Cmd on the Mac) held, from −150° to 390° as darktable's, which the session wraps
+    ///   onto 0° to 360°, the same angle; and its chroma, the mean's c times its Y;
+    /// - **White fulcrum** `log2` of the maximum's Y, in EV, not finite for a black maximum,
+    ///   which the session leaves out;
+    /// - **Contrast grey fulcrum** the mean's Y.
+    ///
+    /// darktable bounds none of them: the session holds them to their controls' ranges.
+    /// darktable's `gui_changed` after it repaints the chroma tracks alone, so nothing more
+    /// is written, and nothing is shown.
+    fn pick(
+        &self,
+        picker: &str,
+        reading: &Reading,
+        _values: &Controls,
+        _image: &ImageContext,
+        _settings: &[(&str, ControlValue)],
+        _channel: Option<&str>,
+        _last: Option<&Reading>,
+        keys: PickKeys,
+    ) -> Option<Picked> {
+        let declared = PICKERS.iter().find(|p| p.id == picker)?;
+        let mean = ych_of(reading.input.mean);
+        let mut writes = Controls::new();
+        match declared.writes {
+            ["white_fulcrum"] => {
+                let max = ych_of(reading.input.max);
+                writes.set("white_fulcrum", shown("white_fulcrum", max[0].log2()));
+            }
+            ["grey_fulcrum"] => writes.set("grey_fulcrum", shown("grey_fulcrum", mean[0])),
+            [hue, chroma] => {
+                writes.set(hue, shown(hue, picked_hue(mean, keys.command)));
+                writes.set(chroma, shown(chroma, mean[1] * mean[0]));
+            }
+            _ => return None,
+        }
+        Some(Picked {
+            writes,
+            shown: Shown::default(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -673,6 +754,206 @@ mod tests {
         let defaults: Vec<(&str, ControlValue)> =
             CONTROLS.iter().map(|c| (c.id, c.default())).collect();
         assert!(bind(&defaults).is_empty());
+    }
+
+    // The pickers: darktable's `color_picker_apply` (`colorbalancergb.c:1278-1338`) on
+    // readings made for the test, against its arithmetic in f64.
+
+    const HUE_PICKERS: [&str; 4] = [
+        "global_hue",
+        "shadows_hue",
+        "midtones_hue",
+        "highlights_hue",
+    ];
+
+    /// Working RGB, linear Rec2020: red, green, blue, a skin tone and a cyan.
+    const COLOURS: [[f32; 3]; 5] = [
+        [0.5, 0.05, 0.05],
+        [0.05, 0.4, 0.08],
+        [0.04, 0.06, 0.5],
+        [0.45, 0.3, 0.22],
+        [0.03, 0.26, 0.34],
+    ];
+
+    /// A reading at the operation's input whose mean is `mean` and each channel's maximum
+    /// `max`.
+    fn reading(mean: [f32; 3], max: [f32; 3]) -> Reading {
+        let [r, g, b] = mean;
+        let [mr, mg, mb] = max;
+        Reading {
+            input: crate::pick::Stats {
+                mean: [r, g, b, 1.0],
+                min: [r, g, b, 1.0],
+                max: [mr, mg, mb, 1.0],
+            },
+            output: None,
+            input_maximum: [1.0; 3],
+        }
+    }
+
+    fn pick(picker: &str, reading: &Reading, command: bool) -> Option<Picked> {
+        let image = crate::testing::image();
+        ColourBalanceRgb.pick(
+            picker,
+            reading,
+            &ColourBalanceRgb.defaults(&image),
+            &image,
+            &[],
+            None,
+            None,
+            PickKeys {
+                command,
+                shift: false,
+            },
+        )
+    }
+
+    /// darktable's `pipe_RGB_to_Ych` restated in f64: the working profile's matrix as
+    /// lcms builds it for linear Rec2020, CAT16 to D65, LMS 2006 and Yrg, then its Y, c and
+    /// hue in radians.
+    fn ych_wide(rgb: [f32; 3]) -> [f64; 3] {
+        use apertrust_color::{
+            LMS_TO_GRADING_RGB, Mat3d, PROFILE_D65, REC2020_PRIMARIES, XYZ_D65_TO_LMS_2006,
+            profile_rgb_to_xyz_d50,
+        };
+        let wide = |m: &[[f32; 3]; 3]| m.map(|row| row.map(f64::from));
+        let times = |m: &Mat3d, v: [f64; 3]| -> [f64; 3] {
+            std::array::from_fn(|r| (0..3).map(|c| m[r][c] * v[c]).sum())
+        };
+        let to_xyz = profile_rgb_to_xyz_d50(PROFILE_D65, REC2020_PRIMARIES);
+        let xyz = times(&to_xyz, rgb.map(f64::from));
+        let xyz = times(&wide(&XYZ_D50_TO_D65_CAT16), xyz);
+        let lms = times(&wide(&XYZ_D65_TO_LMS_2006), xyz);
+        let y = 0.68990272 * lms[0] + 0.34832189 * lms[1];
+        let a: f64 = lms.iter().sum();
+        let grading = times(&wide(&LMS_TO_GRADING_RGB), lms.map(|v| v / a));
+        let (r, g) = (grading[0] - 0.21902143, grading[1] - 0.54371398);
+        [y, g.hypot(r), g.atan2(r)]
+    }
+
+    /// darktable's hue in its GUI's degrees, the opposite unless `command`.
+    fn hue_wide(rgb: [f32; 3], command: bool) -> f64 {
+        let hue = ych_wide(rgb)[2].to_degrees() + 30.0;
+        if command { hue } else { hue + 180.0 }
+    }
+
+    fn written(picked: &Picked, control: &str) -> f64 {
+        f64::from(picked.writes.number(control))
+    }
+
+    /// Each hue picker writes the area's opposite hue, or with Ctrl its own, and its chroma
+    /// `c · Y` as a percentage, on red, green, blue, a skin tone and a cyan: within 1e-4°
+    /// in hue and 1e-5 relative in chroma of darktable's arithmetic in f64; darktable's
+    /// hue from −150° to 390°, before the session wraps it.
+    #[test]
+    fn a_hue_picker_writes_the_opposite_hue_or_with_ctrl_its_own_and_its_chroma() {
+        let (mut hue_off, mut chroma_off) = (0.0_f64, 0.0_f64);
+        let (mut below, mut above) = (false, false);
+        for picker in HUE_PICKERS {
+            let writes = DEFINITION.picker(picker).unwrap().writes;
+            let [hue, chroma] = writes else {
+                panic!("{picker}: {writes:?}");
+            };
+            for rgb in COLOURS {
+                let [y, c, _] = ych_wide(rgb);
+                for command in [false, true] {
+                    let picked = pick(picker, &reading(rgb, rgb), command).unwrap();
+                    let mut ids: Vec<&str> = picked.writes.iter().map(|(id, _)| id).collect();
+                    ids.sort_unstable();
+                    let mut want = writes.to_vec();
+                    want.sort_unstable();
+                    assert_eq!(ids, want, "{picker}");
+                    let got = written(&picked, hue);
+                    let expected = hue_wide(rgb, command);
+                    hue_off = hue_off.max((got - expected).abs());
+                    assert!(
+                        (got - expected).abs() <= 1e-4,
+                        "{picker} {rgb:?} {command}: {got} for {expected}"
+                    );
+                    assert!((-150.0..=390.0).contains(&got), "{got}");
+                    below |= got < 0.0;
+                    above |= got > 360.0;
+                    let got = written(&picked, chroma);
+                    let expected = 100.0 * c * y;
+                    chroma_off = chroma_off.max((got - expected).abs() / expected);
+                    assert!(
+                        (got - expected).abs() <= 1e-5 * expected,
+                        "{picker} {rgb:?}: {got} for {expected}"
+                    );
+                    assert_eq!(picked.shown, Shown::default());
+                }
+                // The two are half a turn apart.
+                let opposite = pick(picker, &reading(rgb, rgb), false).unwrap();
+                let own = pick(picker, &reading(rgb, rgb), true).unwrap();
+                let apart = written(&opposite, hue) - written(&own, hue);
+                assert!((apart - 180.0).abs() < 1e-4, "{apart}");
+            }
+        }
+        // Red's and blue's own hues lie below 0°, the cyan's opposite past 360°, as darktable
+        // stores them.
+        assert!(below && above);
+        println!("hue pickers: hue within {hue_off:.1e}°, chroma {chroma_off:.1e} relative");
+    }
+
+    /// A neutral area has no chroma: its own hue then is darktable's for a chroma of 0,
+    /// `atan2(0, 1)` + 30°, and the opposite 180° on.
+    #[test]
+    fn a_neutral_area_picks_no_chroma_and_darktable_s_hue_for_none() {
+        for grey in [0.02, 0.18, 0.9] {
+            let picked = pick("global_hue", &reading([grey; 3], [grey; 3]), false).unwrap();
+            let chroma = written(&picked, "global_c");
+            assert!(chroma.abs() < 1e-5, "{grey}: {chroma}");
+        }
+        // The white's own Yrg, as `ych_to_yrg` gives it for no chroma.
+        let white = apertrust_color::ych_to_yrg([0.18, 0.0, 1.0, 0.0]);
+        let none = apertrust_color::yrg_to_ych(white);
+        assert_eq!(none[1], 0.0);
+        assert_eq!(picked_hue(none, true), 30.0);
+        assert_eq!(picked_hue(none, false), 210.0);
+    }
+
+    /// White fulcrum is `log2` of the luminance of each channel's maximum, in EV, from a
+    /// reading whose maximum is not its mean; Contrast grey fulcrum the mean's luminance as
+    /// a percentage; each within 1e-5 relative of darktable's arithmetic in f64.
+    #[test]
+    fn the_fulcrums_take_the_maximum_s_and_the_mean_s_luminance() {
+        let (mut white_off, mut grey_off) = (0.0_f64, 0.0_f64);
+        for (mean, max) in [
+            ([0.18, 0.18, 0.18], [0.9, 0.7, 0.5]),
+            ([0.45, 0.3, 0.22], [2.5, 1.8, 1.1]),
+            ([0.05, 0.4, 0.08], [0.3, 0.6, 0.12]),
+        ] {
+            let picked = pick("white_fulcrum", &reading(mean, max), false).unwrap();
+            assert_eq!(picked.writes.iter().count(), 1);
+            let got = written(&picked, "white_fulcrum");
+            let expected = ych_wide(max)[0].log2();
+            white_off = white_off.max((got - expected).abs() / expected.abs());
+            assert!(
+                (got - expected).abs() <= 1e-5 * expected.abs(),
+                "{max:?}: {got} for {expected}"
+            );
+            let picked = pick("grey_fulcrum", &reading(mean, max), true).unwrap();
+            assert_eq!(picked.writes.iter().count(), 1);
+            let got = written(&picked, "grey_fulcrum");
+            let expected = 100.0 * ych_wide(mean)[0];
+            grey_off = grey_off.max((got - expected).abs() / expected);
+            assert!(
+                (got - expected).abs() <= 1e-5 * expected,
+                "{mean:?}: {got} for {expected}"
+            );
+        }
+        // A black maximum: `log2` of 0, not finite, which the session leaves out.
+        let picked = pick("white_fulcrum", &reading([0.0; 3], [0.0; 3]), false).unwrap();
+        assert!(!picked.writes.number("white_fulcrum").is_finite());
+        println!("fulcrums: white within {white_off:.1e} relative, grey {grey_off:.1e}");
+    }
+
+    /// A picker the tool does not declare picks nothing.
+    #[test]
+    fn an_unknown_picker_picks_nothing() {
+        let rgb = [0.3, 0.2, 0.1];
+        assert_eq!(pick("hue_angle", &reading(rgb, rgb), false), None);
+        assert_eq!(pick("", &reading(rgb, rgb), true), None);
     }
 
     #[test]

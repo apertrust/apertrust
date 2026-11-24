@@ -17,10 +17,11 @@
 //! Colour balance RGB's invariants (`docs/tools/colour-balance-rgb.md`, Invariants),
 //! one test per row, each named after its row: a switched tool's (decision 32), B0
 //! off, B1 the first step, on at darktable's defaults, B2 moved and reset, B3 the order,
-//! B4 the darktable match, B6 on at darktable's defaults on the CPU and B7 version 1's
-//! edits; B5, on a layer, waits for Phase 4. The synthetic ramp and sweep run on CI's
-//! software GPUs, B4, B6 and B7 on the CPU. The raw.pixls.us corpus runs locally, with
-//! `APERTRUST_RAW_CORPUS` naming it, and darktable's chart with `APERTRUST_TEST_IMAGES`:
+//! B4 the darktable match, B6 on at darktable's defaults on the CPU, B7 version 1's
+//! edits and B8 the pickers; B5, on a layer, waits for Phase 4. The synthetic ramp and
+//! sweep run on CI's software GPUs, B4, B6, B7 and B8 on the CPU. The raw.pixls.us
+//! corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it, and darktable's chart
+//! with `APERTRUST_TEST_IMAGES`:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-tools --test colour_balance_rgb -- --ignored --nocapture
@@ -521,4 +522,118 @@ fn b7_version_1_s_edits_bind_what_they_bound() {
             "{saved:?}"
         );
     }
+}
+
+// B8: the pickers.
+
+/// A flat patch of working RGB `rgb`, as the operation's input reads it.
+fn flat(rgb: [f32; 3]) -> apertrust_tools::pick::Reading {
+    let mean = [rgb[0], rgb[1], rgb[2], 1.0];
+    apertrust_tools::pick::Reading {
+        input: apertrust_tools::pick::Stats {
+            mean,
+            min: mean,
+            max: mean,
+        },
+        output: None,
+        input_maximum: [1.0; 3],
+    }
+}
+
+/// darktable's `pipe_RGB_to_Ych` (`colorbalancergb.c:1261-1275`) restated in f64 on
+/// working RGB `rgb`: its Y and its hue in the GUI's degrees, `ANGLE_SHIFT` taken off.
+fn darktable_y_and_hue(rgb: [f32; 3]) -> (f64, f64) {
+    use apertrust_color::{
+        LMS_TO_GRADING_RGB, Mat3d, PROFILE_D65, REC2020_PRIMARIES, XYZ_D50_TO_D65_CAT16,
+        XYZ_D65_TO_LMS_2006, profile_rgb_to_xyz_d50,
+    };
+    let wide = |m: &[[f32; 3]; 3]| m.map(|row| row.map(f64::from));
+    let times = |m: &Mat3d, v: [f64; 3]| -> [f64; 3] {
+        std::array::from_fn(|r| (0..3).map(|c| m[r][c] * v[c]).sum())
+    };
+    let xyz = times(
+        &profile_rgb_to_xyz_d50(PROFILE_D65, REC2020_PRIMARIES),
+        rgb.map(f64::from),
+    );
+    let lms = times(
+        &wide(&XYZ_D65_TO_LMS_2006),
+        times(&wide(&XYZ_D50_TO_D65_CAT16), xyz),
+    );
+    let y = 0.68990272 * lms[0] + 0.34832189 * lms[1];
+    let a: f64 = lms.iter().sum();
+    let grading = times(&wide(&LMS_TO_GRADING_RGB), lms.map(|v| v / a));
+    let (r, g) = (grading[0] - 0.21902143, grading[1] - 0.54371398);
+    (y, g.atan2(r).to_degrees() + 30.0)
+}
+
+/// How far apart two hues are, the shorter way round.
+fn hue_apart(a: f64, b: f64) -> f64 {
+    let d = (a - b).rem_euclid(360.0);
+    d.min(360.0 - d)
+}
+
+/// B8: on a flat patch of colour, Global offset hue's picker with Ctrl writes the patch's
+/// own hue in darktable's Ych and without it that hue + 180°, the edit holding each wrapped
+/// onto 0° to 360°, and Contrast grey fulcrum's the patch's luminance as a percentage,
+/// each read back from the edit, which the pick turns on: within 1e-4° and 1e-5 relative
+/// of darktable's arithmetic in f64 on the patch, the operation's input. A blue's own hue
+/// and a cyan's opposite are darktable's −95° and 374°, which the edit holds as 265° and
+/// 14°.
+#[test]
+fn b8_a_pick_writes_the_patch_s_hue_and_luminance() {
+    use apertrust_tools::ProcessingTool;
+    use apertrust_tools::pick::PickKeys;
+    let image = common::photo();
+    let (mut hue_off, mut grey_off) = (0.0_f64, 0.0_f64);
+    for rgb in [
+        [0.5, 0.05, 0.05],
+        [0.04, 0.06, 0.5],
+        [0.45, 0.3, 0.22],
+        [0.03, 0.26, 0.34],
+    ] {
+        let (y, own) = darktable_y_and_hue(rgb);
+        match rgb {
+            [0.04, 0.06, 0.5] => assert!(own < 0.0, "{own}"),
+            [0.03, 0.26, 0.34] => assert!(own + 180.0 > 360.0, "{own}"),
+            _ => {}
+        }
+        for (picker, command, control, want) in [
+            ("global_hue", true, "global_h", own.rem_euclid(360.0)),
+            (
+                "global_hue",
+                false,
+                "global_h",
+                (own + 180.0).rem_euclid(360.0),
+            ),
+            ("grey_fulcrum", false, "grey_fulcrum", 100.0 * y),
+        ] {
+            let definition = ColourBalanceRgb.definition();
+            let keys = PickKeys {
+                command,
+                shift: false,
+            };
+            let defaults = ColourBalanceRgb.defaults(&image);
+            let picked = ColourBalanceRgb
+                .pick(picker, &flat(rgb), &defaults, &image, &[], None, None, keys)
+                .unwrap();
+            let mut edit = Edit::default();
+            let declared = definition.picker(picker).unwrap();
+            edit.pick(&ColourBalanceRgb, declared, &picked.writes, &image)
+                .unwrap();
+            assert!(edit.is_on(&ColourBalanceRgb), "{picker}");
+            let values = edit.tool(COLOR_BALANCE).unwrap();
+            let got = f64::from(values.number(control).unwrap());
+            if control == "global_h" {
+                assert!((0.0..360.0).contains(&got), "{rgb:?}: {got}");
+                let off = hue_apart(got, want);
+                hue_off = hue_off.max(off);
+                assert!(off <= 1e-4, "{rgb:?} {command}: {got} for {want}");
+            } else {
+                let off = (got - want).abs() / want;
+                grey_off = grey_off.max(off);
+                assert!(off <= 1e-5, "{rgb:?}: {got} for {want}");
+            }
+        }
+    }
+    println!("B8: hue within {hue_off:.1e}°, grey fulcrum {grey_off:.1e} relative");
 }
