@@ -1016,6 +1016,16 @@ tool-colorbalancergb-picker-white_fulcrum-full = White fulcrum: pick from the ph
 tool-colorbalancergb-picker-white_fulcrum-promise = Pick colour from the photo
 tool-colorbalancergb-picker-grey_fulcrum-full = Contrast grey fulcrum: pick from the photo
 tool-colorbalancergb-picker-grey_fulcrum-promise = Pick colour from the photo
+# The four hue pickers' cursors on the Toolbar (decision 104), each named for its picker;
+# the fulcrums' pickers have none.
+tool-colorbalancergb-cursor-global_hue = Global offset hue picker
+tool-colorbalancergb-cursor-global_hue-how = Click an area, or drag one
+tool-colorbalancergb-cursor-shadows_hue = Shadows lift hue picker
+tool-colorbalancergb-cursor-shadows_hue-how = Click an area, or drag one
+tool-colorbalancergb-cursor-highlights_hue = Highlights gain hue picker
+tool-colorbalancergb-cursor-highlights_hue-how = Click an area, or drag one
+tool-colorbalancergb-cursor-midtones_hue = Power hue picker
+tool-colorbalancergb-cursor-midtones_hue-how = Click an area, or drag one
 
 ## Tone curve (docs/tools/tone-curve.md)
 

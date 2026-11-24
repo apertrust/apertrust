@@ -1273,7 +1273,8 @@ mod tests {
     use super::*;
 
     /// The built-in registry: Select, Pan, then Pick with White balance's cursor before
-    /// Exposure's and Colour calibration's, Pick holding Show the last pick.
+    /// Exposure's, Colour calibration's and Colour balance RGB's four hue pickers', in its
+    /// page's order, Pick holding Show the last pick.
     #[test]
     fn the_registry_holds_phase_2_s_groups_in_the_well_s_order() {
         let groups: Vec<(CursorGroup, Vec<Cursor>)> = (registry().groups().iter())
@@ -1293,7 +1294,11 @@ mod tests {
                     vec![
                         tool("temperature", "spot"),
                         tool("exposure", "exposure"),
-                        tool("channelmixerrgb", "illuminant")
+                        tool("channelmixerrgb", "illuminant"),
+                        tool("colorbalancergb", "global_hue"),
+                        tool("colorbalancergb", "shadows_hue"),
+                        tool("colorbalancergb", "highlights_hue"),
+                        tool("colorbalancergb", "midtones_hue"),
                     ]
                 ),
             ]

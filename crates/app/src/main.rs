@@ -26175,6 +26175,54 @@ mod tests {
         assert_eq!(harness.state().mirror.pickers.active(), None);
     }
 
+    /// Colour balance RGB's pickers in the well (decision 104; `docs/cursors.md`, A cursor):
+    /// a hue picker turned on by its quad makes the well show that picker's cursor, named
+    /// for it; a fulcrum's, an advanced picker with no cursor, leaves the well as it was,
+    /// Select or the cursor the person chose.
+    #[test]
+    fn the_well_shows_a_hue_picker_s_cursor_and_keeps_its_face_for_a_fulcrum_s() {
+        let chosen = |harness: &Harness<'_, Bench>| harness.state().shell.cursors.chosen();
+        let checked = |harness: &Harness<'_, Bench>, name: &str| {
+            let face = harness.get_by_role_and_label(Role::RadioButton, name);
+            face.accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
+        };
+        let on = |harness: &mut Harness<'_, Bench>, picker: Option<&'static str>| {
+            let number = harness.state().commands.len() as u64 + 100;
+            let picker = picker.map(|picker| {
+                let on = PickerRef::Tool {
+                    tool: "colorbalancergb",
+                    picker,
+                };
+                (on, true)
+            });
+            harness.state_mut().mirror.pickers.asked(number, picker);
+            harness.run();
+        };
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.run();
+        on(&mut harness, Some("midtones_hue"));
+        let power = cursors::Cursor {
+            owner: cursors::Owner::Tool("colorbalancergb"),
+            id: "midtones_hue",
+        };
+        assert_eq!(chosen(&harness), power);
+        assert!(checked(&harness, "Power hue picker"));
+        on(&mut harness, None);
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+        // A fulcrum's picker: Select stays, and so does Pan chosen by the person.
+        on(&mut harness, Some("white_fulcrum"));
+        assert_eq!(chosen(&harness), cursors::Cursor::SELECT);
+        assert!(checked(&harness, "Select, Esc"));
+        on(&mut harness, None);
+        harness
+            .get_by_role_and_label(Role::RadioButton, "Pan, A")
+            .click();
+        harness.run();
+        on(&mut harness, Some("grey_fulcrum"));
+        assert_eq!(chosen(&harness), cursors::Cursor::PAN);
+        assert!(checked(&harness, "Pan, A"));
+    }
+
     /// Esc ends a picker on wherever the focus is and chooses Select: from a slider of
     /// another tool at once; from a value being typed in, the first Esc the field's, which
     /// puts the value back, the next the picker's (`docs/cursors.md`, Keys).
