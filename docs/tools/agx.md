@@ -23,12 +23,13 @@ Each control is one `agx` parameter, its id the parameter's name, shown as darkt
 
 | Group | Control | Parameter | Shown as | Range | Step | Decimals | Default | Shows | Ported |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| *Input exposure range*, a label | White relative exposure | `range_white_relative_ev` | EV | 0.1 to 20 EV | 0.1 EV | 2 | 6.5 EV | Always | Yes; its picker to come |
-| | Black relative exposure | `range_black_relative_ev` | EV | −20 to −0.1 EV | 0.1 EV | 2 | −10 EV | Always | Yes; its picker to come |
-| | Dynamic range scaling | `dynamic_range_scaling`, no parameter | %, × 100 | −50 % to +200 % | 0.5 % | 2 | +10 % | Always | No ([below](#what-is-not-ported)) |
-| | Auto tune levels; Read exposure | — (actions) | | | | | | Always | No: drawn disabled |
-| *Basic curve parameters*, a label | Pivot relative exposure | `curve_pivot_x` | EV, against the range | Black to white relative exposure, −10 to +6.5 EV at the defaults, −20 to +20 EV the widest | darktable's for the range's width, 0.1 EV at the defaults | 2 | 0 EV | Always | Yes; its picker to come |
-| | Pivot target output | `curve_pivot_y_linear_output` | %, × 100 | 0 % to 100 % | 1 % | 2 | 18 % | Always | Yes; its picker to come |
+| *Input exposure range*, a label | White relative exposure | `range_white_relative_ev` | EV | 0.1 to 20 EV | 0.1 EV | 2 | 6.5 EV | Always | Yes, with its picker ([below](#the-pickers)) |
+| | Black relative exposure | `range_black_relative_ev` | EV | −20 to −0.1 EV | 0.1 EV | 2 | −10 EV | Always | Yes, with its picker ([below](#the-pickers)) |
+| | Dynamic range scaling | `dynamic_range_scaling`, no parameter | %, × 100 | −50 % to +200 % | 0.5 % | 2 | +10 % | Always | Yes: the pickers' margin, binding nothing ([below](#dynamic-range-scaling)) |
+| | Auto tune levels | — (a row of pickers, `range`) | | | | | | Always | Yes ([below](#the-pickers)) |
+| | Read exposure | — (an action) | | | | | | Always | No: drawn disabled |
+| *Basic curve parameters*, a label | Pivot relative exposure | `curve_pivot_x` | EV, against the range | Black to white relative exposure, −10 to +6.5 EV at the defaults, −20 to +20 EV the widest | darktable's for the range's width, 0.1 EV at the defaults | 2 | 0 EV | Always | Yes, with its picker ([below](#the-pickers)) |
+| | Pivot target output | `curve_pivot_y_linear_output` | %, × 100 | 0 % to 100 % | 1 % | 2 | 18 % | Always | Yes, with its picker ([below](#the-pickers)) |
 | | Contrast | `curve_contrast_around_pivot` | × 1 | 0.1 to 10 | 0.05 | 2 | 3 | Always | Yes |
 | | Shoulder power | `curve_shoulder_power` | × 1 | 0 to 10 | 0.05 | 2 | 3.3 | Always | Yes |
 | | Toe power | `curve_toe_power` | × 1 | 0 to 10 | 0.05 | 2 | 1.5 | Always | Yes |
@@ -77,12 +78,35 @@ Its slider is darktable's for the range (`ProcessingTool::range`, decision 30):
 
 A pivot that a move of the range leaves outside is clamped to the range's nearer end and stored, kept, in the same change, as darktable's `_update_pivot_x` stores it. So lowering black past the pivot and raising it again leaves the pivot where the clamp put it, as in darktable. A pivot outside the range is refused ([A7](#invariants)). The binding still keeps the pivot inside the range, for any value an edit holds.
 
+### Dynamic range scaling
+
+darktable's safety margin for its pickers and Read exposure, which scale the range they compute by it. It is a control, as darktable shows it, over its whole range, −50 % to +200 %, stored in the edit as darktable stores it ([A8](#invariants)).
+
+- **No render reads it,** so the operation has no parameter for it ([../ports/agx.md](../ports/agx.md), Parameters) and the binding sets none: moving it changes no parameter, no cache key and no frame.
+- **The pickers read it** from the tool's values: each exposure a pick writes is scaled by 1 + its value ([below](#the-pickers)).
+- **Moving it writes nothing into the range.** darktable's `gui_changed` rescales black and white relative exposure by `(1 + new) / (1 + previous)` as it moves, a write from one quantity into another that depends on the value it had, which rule 13 and decision 30 leave out ([Deliberate differences](#deliberate-differences)).
+
+### The pickers
+
+darktable's five, each an area picker, denoised, reading the operation's input, working RGB, linear Rec2020 (`DT_COLOR_PICKER_AREA | DT_COLOR_PICKER_DENOISE`), and `Agx::pick` writing what darktable's `color_picker_apply` writes (`agx.c:2657-2690`), each pick one step. `s` is Dynamic range scaling over 100 and ε darktable's `_epsilon`, 10⁻⁶.
+
+| Picker | Where | Writes |
+| --- | --- | --- |
+| `white` | The quad on White relative exposure, "Picks the white point." | `log2(max(ε, m) / 0.18) · (1 + s)` of `m` the area's largest maximum of red, green and blue, held to 0.1 to 20 EV (`_apply_auto_white_exposure`) |
+| `black` | The quad on Black relative exposure, "Picks the black point." | The same of the area's smallest minimum, held to −20 to −0.1 EV (`_apply_auto_black_exposure`) |
+| `range` | Auto tune levels, darktable's labelled line with its picker at the end, a row of pickers (`Row::Pickers`) | Both (`_apply_auto_tune_exposure`) |
+| `pivot` | The quad on Pivot relative exposure | The pivot at `log2(max(ε, Y) / 0.18)` of the mean's luminance through the working profile, held within black and white relative exposure (`_apply_auto_pivot_x`) |
+| `pivot_output` | The quad on Pivot target output | The pivot as `pivot` sets it, and Pivot target output the curve made from the values before the pick, with the old pivot, gives at the new pivot's place, raised to the curve's gamma, so the area keeps its brightness (`_apply_auto_pivot_xy`) |
+
+- **After `white`, `black` or `range`** the pivot keeps its exposure, held within the new range, as `_update_pivot_x` keeps it. The tool stores the pivot in EV, so the pick writes it only where the range's move clamps it.
+- **The curve** for Pivot target output is `apertrust-color`'s `agx_curve`, the one the operation renders, made from the tool's values as the binding maps them: the pivot's place in the range, the percentages over 100, the gamma computed where Keep the pivot on the diagonal is on. The power is the curve's gamma too: Curve y gamma, or while Keep the pivot on the diagonal is on the gamma the curve computes, which darktable's `gui_changed` keeps in `p->curve_gamma` (`agx.c:1798-1804`) and this tool, never writing Curve y gamma, takes from the curve.
+- **Curve y gamma is never written** by a pick, where darktable's writes the gamma it computes while Keep the pivot on the diagonal is on (`:2677-2685`; [Deliberate differences](#deliberate-differences); decision 63).
+- **Each value is held** to its control's range by the session, and one that is not finite is left out. darktable's own bounds above already keep the exposures inside.
+
 ### What is not ported
 
-- **Dynamic range scaling** is darktable's safety margin for its pickers and Read exposure, which scale the range they compute by it. No render reads it, so the operation has no parameter for it ([../ports/agx.md](../ports/agx.md), Parameters). It is a control, as darktable shows it, not ported (`Control::unported`): it takes only its default, +10 %, and is drawn disabled. When it moves, darktable's `gui_changed` also rescales black and white relative exposure by `(1 + new) / (1 + previous)`. That is a write from one quantity into another that depends on the value it had, which rule 13 and decision 30 leave out ([Gaps](#gaps), 2).
 - **The base primaries' Export profile** is listed, drawn disabled and refused, as the operation returns `NotPorted` for it until AgX reads the image context's output profile (decision 26).
-- **The four actions,** Auto tune levels (darktable's picker setting both exposures from an area), Read exposure (its camera button, setting them from the metadata and the Exposure tool), Reset primaries (its menu of Blender-like, Smooth and Unmodified primaries) and Set from above (copying the primaries before tone mapping to after it, insensitive while Reverse all is on), are rows of their own, drawn disabled until what they run is built (`Row::Action`).
-- **The pickers** on white and black relative exposure and on the pivot's two controls are declared in the definition, `white`, `black`, `pivot` and `pivot_output`, area pickers denoised, each named by its slider's quad (`Quad::Picker(id)`), as darktable's page has them ([pickers.md](../pickers.md#declaring-pickers)); the renderer draws a quad once what it runs is built.
+- **The three actions,** Read exposure (darktable's camera button, setting the range from the metadata and the Exposure tool), Reset primaries (its menu of Blender-like, Smooth and Unmodified primaries) and Set from above (copying the primaries before tone mapping to after it, insensitive while Reverse all is on), are rows of their own, drawn disabled until what they run is built (`Row::Action`).
 
 The promises, the tooltips, are darktable's in British English: "Relative exposure above mid-grey (white point)", "Contrast in highlights. Higher values keep the slope nearly constant for longer, at the cost of a more sudden drop near white", and the like. Where a short label is ambiguous, its full name says which group it is in: Look slope, Curve contrast. A script sends `SetControl { tool: "agx", control: "curve_pivot_x", value: 1.0, done: true }`, the pivot at +1 EV over mid-grey.
 
@@ -127,7 +151,7 @@ Audited against darktable's `src/iop/agx.c`, its params and `gui_init`, and agai
 
 ## Invariants
 
-The rows every first-pass table has (decision 22; [README.md](README.md), Rows every table has), but the first step, since every photo runs AgX; then the pivot's coordinates, the one control whose binding computes its parameter, what is not ported, and the pivot's range following the input range (decision 30).
+The rows every first-pass table has (decision 22; [README.md](README.md), Rows every table has), but the first step, since every photo runs AgX; then the pivot's coordinates, the one control whose binding computes its parameter, what is not ported, the pivot's range following the input range (decision 30), Dynamic range scaling, which binds nothing, and the pickers.
 
 | Row | Control | Moved to | Measured | Must | Tolerance | Images |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -137,8 +161,10 @@ The rows every first-pass table has (decision 22; [README.md](README.md), Rows e
 | A3 | On a layer | | The definition | Background only until layers come: the background's tone mapper's parameters are global; with layers a layer's own tone mapper replaces it within the layer's mask, never stacked (decision 33) | Exact | CPU |
 | A4 | The darktable match | Every control set to darktable's value for each golden case, as darktable's slider shows it, unrounded | The parameters bound; the kernel's uniforms from `prepare`; the frame of the sweep through `agx` | darktable's parameters bit for bit, but those the binding's `value / factor` reaches from no f32 value of their control, one f32 step off, each reached by darktable's slider, which rounds to its digits; the kernel's uniforms the golden harness's (`golden::ports::kernel_inputs`) bit for bit where every parameter is; the frame the frame of darktable's parameters set directly | Exact, or one f32 step for an unreachable parameter, its uniforms within 1e-6 relative and its frame within a ΔE2000 max of 0.001 | `agx` (test 0175), `agx-default` (0174, params version 4), `agx-highlights` (0186) and `agx-edges`; the sweep |
 | A5 | The pivot in EV | Pivot, black and white at (0, −10, 8), (1, −6, 6.5), (−2, −12, 3) and (5, −10, 4) EV, each set as the session sets it, the last pivot clamped to white as it moves | `curve_pivot_x`; the frame | `(clamp(pivot, black, white) − black) / (white − black)`, darktable's `_update_pivot_x`: the frame the frame of that parameter set directly | Exact | The ramp |
-| A6 | What is not ported | Base primaries Export profile; dynamic range scaling 20 % | The edit | Each refused as not ported, the edit as it was; dynamic range scaling marked unported, so reported unavailable | Exact | CPU |
+| A6 | What is not ported | Base primaries Export profile | The edit | Refused as not ported, the edit as it was | Exact | CPU |
 | A7 | The pivot's range follows the input range (decision 30) | The pivot at −5 EV, then black to −4 EV; the pivot to −5 EV; black back to −10 EV | The edit; `curve_pivot_x` | Black's move stores the pivot at −4 EV, kept, in the same change, binding `curve_pivot_x` 0; −5 EV refused as outside −4 to +6.5 EV; black's return leaves the pivot at −4 EV, as darktable's `_update_pivot_x` leaves it | Exact | CPU |
+| A8 | Dynamic range scaling | 20 %, then reset | The parameters bound; the plan's cache keys; the frame; the edit and its XMP | No parameter set, the keys and the frame as with no edit, black, white and the pivot unwritten; the edit holds 20 % and reads it back from its XMP; the reset leaves no edit | Exact | The ramp |
+| A9 | The pickers | White over the ramp's brightest EV; black over its darkest; Pivot target output over a flat grey, the ramp's mid-grey and its 2⁻⁴ | The image entering AgX, read as the picker's area; the stored values; the frame | White `log2(max / 0.18) · 1.1` of the area's largest channel, black the same of its smallest, at the default scaling of +10 %; the grey's output in the frame where it was before the pick | 1e-4 EV and 1e-4 output, proposed | The ramp |
 
 A4 is how the tool matches darktable. An untouched tool binds nothing, so the operation runs its defaults, darktable's scene-referred ones, which the operation's tests hold to test 0186's stored parameters field for field. A tool set to a golden case's values renders those parameters, which `apertrust-golden run` checks against darktable-cli's render.
 
@@ -158,8 +184,15 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/agx.rs`, the tool's sour
 | A3 | Holds: the definition works on the background only, with no Auto |
 | A4 | Holds: `agx-default`, `agx-highlights` and `agx-edges` darktable's to the bit; `agx` 27 of 35 parameters to the bit and three one f32 step off, ΔE2000 max 1.4e-4 on the sweep (below) |
 | A5 | Holds, exactly, at all four settings, the last pivot clamped to white and stored there |
-| A6 | Holds, exactly: each refused as not ported, the edit unchanged |
+| A6 | Holds, exactly: refused as not ported, the edit unchanged |
 | A7 | Holds, exactly |
+| A8 | Holds, exactly |
+| A9 | Holds: white 8.6276 EV within 2.1e-7 EV of `log2(max / 0.18) · 1.1` and black −8.8774 EV within 2.7e-7, from the image entering AgX; Pivot target output's grey within 1.4e-5 of its output before the pick, at both greys |
+| By hand | To be filled by the maintainer: darktable 5.6.2's GUI on the 7R V and the X-T5, each of the five pickers on the same areas in both, the values each writes recorded here beside Apertrust's |
+
+The hand check, to fill the last row: open the 7R V and the X-T5 in darktable 5.6.2 and in Apertrust, AgX at its defaults in both; pick the same areas with each picker, a bright one for White relative exposure, a dark one for Black, one area for Auto tune levels, a mid-tone for Pivot relative exposure and Pivot target output, from the defaults each time; note White and Black relative exposure, Pivot relative exposure and Pivot target output each writes. darktable's denoised area, the photo's size and the area's exact place differ, so values agree to a few hundredths of an EV, not to the bit.
+
+The pickers' unit tests in `crates/tools/src/agx.rs` restate darktable's arithmetic in f64: black and white within 1.4e-6 EV of the bound of 1e-5 at Dynamic range scaling −50 %, 0, +10 % and +200 %; the pivot within 7.7e-8 EV and Pivot target output within 4.9e-8 in its parameter, with Keep the pivot on the diagonal off and on, of the bound of 1e-5, Curve y gamma never written.
 
 A4 in detail:
 
@@ -172,8 +205,9 @@ The sliders: none differs from darktable's, the pivot's at the defaults and at f
 
 ## In the panel
 
-- **Two tabs,** Settings and Primaries. On Settings, the Input exposure range label, its three sliders and the two actions, Auto tune levels and Read exposure, drawn disabled; the Basic curve parameters label and its five sliders; then the three collapsible groups, closed at first: Show curve, drawn disabled, its tooltip saying it is to come, as a tab with no rows; Advanced curve parameters, the gamma hidden while Keep the pivot on the diagonal is on; Look.
-- **Dynamic range scaling** is drawn disabled at +10.00 %.
+- **Two tabs,** Settings and Primaries. On Settings, the Input exposure range label, its three sliders, Auto tune levels' row with its picker at the end, and Read exposure, drawn disabled; the Basic curve parameters label and its five sliders; then the three collapsible groups, closed at first: Show curve, drawn disabled, its tooltip saying it is to come, as a tab with no rows; Advanced curve parameters, the gamma hidden while Keep the pivot on the diagonal is on; Look.
+- **Dynamic range scaling** is live, at +10.00 % by default.
+- **The pickers:** a quad on White and Black relative exposure, Pivot relative exposure and Pivot target output, and Auto tune levels' button, each named "…: pick from the photo", its tooltip darktable's words; a press sends `On` with the keys held (`agx_draws_its_five_pickers_and_a_press_sends_on_with_the_keys`). The Settings tab is photographed with Auto tune levels' picker on (`agx-settings-pickers-dark`, `-light`).
 - **On Primaries,** the base primaries list, Export profile drawn disabled, and Disable adjustments; while adjustments are on, Reset primaries, drawn disabled, the Before tone mapping label and its six sliders, the After tone mapping label, Reverse all and Set from above, drawn disabled, and while Reverse all is off the eight sliders after it (`agx_draws_darktable_s_page_its_actions_disabled`).
 - **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
 
@@ -182,31 +216,32 @@ The sliders: none differs from darktable's, the pivot's at the defaults and at f
 What darktable's page has or does that the panel does not yet:
 
 1. **Show curve's graph.** darktable draws the tone mapping curve, read-only, with its pivot, toe and shoulder, in the Show curve section. A definition has no read-only graph row yet, so the group is drawn disabled and closed, its tooltip saying it is to come. Planned, as proposed: a custom widget of the design system's registry drawing `ProcessingTool::curve` for no control, with the operation's curve restated, as the Tone curve's `LumaCurve` is, held to the kernel by a row.
-2. **Dynamic range scaling's write into the range.** Moving it in darktable rescales black and white relative exposure by `(1 + new) / (1 + previous)`, keeping the pivot's exposure: a write between two quantities that depends on the value it replaces, so the order controls were set in would matter, which rule 13 and decision 30 leave out. Once the pickers and Read exposure come, it is their margin only, darktable's computation of the range, with no write into the range when it moves, so the order controls were set in never matters (principle 5): a deliberate difference ([below](#deliberate-differences)), built with the pickers.
-3. **Keep the pivot on the diagonal's write.** While it is on, darktable's `gui_changed` writes Curve y gamma, hidden, to the gamma it computes, so turning it off leaves that gamma; here Curve y gamma keeps the value it had, a deliberate difference ([below](#deliberate-differences)).
-4. **The actions and the pickers** come with what they run, the pickers as [pickers.md](../pickers.md) designs them (decision 79, its pull request 79.11), Auto tune levels a `Row::Pickers`: the pickers on the exposures and the pivot, Auto tune levels, Read exposure, Reset primaries's menu and Set from above. darktable draws Read exposure as a camera button on Auto tune levels' line; here each is a row of its own.
+2. **Dynamic range scaling's write into the range.** Moving it in darktable rescales black and white relative exposure by `(1 + new) / (1 + previous)`, keeping the pivot's exposure: a write between two quantities that depends on the value it replaces, so the order controls were set in would matter, which rule 13 and decision 30 leave out. Here it is the pickers' margin only, darktable's computation of the range, with no write into the range when it moves, so the order controls were set in never matters (principle 5): a deliberate difference ([below](#deliberate-differences)).
+3. **Keep the pivot on the diagonal's write.** While it is on, darktable's `gui_changed` and `color_picker_apply` write Curve y gamma, hidden, to the gamma it computes, so turning it off leaves that gamma; here Curve y gamma keeps the value it had, after a move and after a pick, a deliberate difference ([below](#deliberate-differences)).
+4. **The actions** come with what they run: Read exposure, Reset primaries's menu and Set from above. darktable draws Read exposure as a camera button on Auto tune levels' line; here Auto tune levels is a row of pickers and Read exposure a row of its own.
 5. **The primaries' painted tracks,** darktable's gradients of each primary's hue and purity, wait for the renderer, as RGB primaries' do.
 6. **The curve's warnings:** darktable paints a warning quad on Shoulder power and Toe power when the curve has lost its S shape and the fallback curves take over, under its preference to show them, on by default; it needs a warning quad and the curve's coefficients restated in the tool.
 7. **darktable's presets** wait for the header's presets menu.
 8. **A slider's own reset.** darktable's attenuation, rotation, purity boost and reverse rotation sliders reset to 0 on a double-click, and its two master sliders to 100 %, while its tool reset gives the scene-referred defaults; a control has one default here, the operation's (rule 4), which both a double-click and the tool's reset give.
-9. **The quads' tooltips** ("pick the white point", the pivot pickers' explanations) come with the pickers.
-10. **The tool's tooltip,** darktable's "applies a tone mapping curve. inspired by Blender's AgX tone mapper": a definition implies no message for the tool's own tooltip.
+9. **The tool's tooltip,** darktable's "applies a tone mapping curve. inspired by Blender's AgX tone mapper": a definition implies no message for the tool's own tooltip.
 
 darktable's optional curve tab and its preference to show Look always open are preferences off by default (rule 12): the curve's sections stay on Settings and Look is a collapsible group.
 
 ## Deliberate differences
 
 - **A slider's own reset** ([Gaps](#gaps), 8): the tool's default, where darktable's primaries sliders reset to 0 and its masters to 100 %.
-- **Curve y gamma under Keep the pivot on the diagonal** ([Gaps](#gaps), 3): it keeps the value it had, where darktable's `gui_changed` writes it with the gamma it computes from the pivot and the range, a write between controls of different quantities, which rule 13 refuses since they must commute.
-- **Dynamic range scaling writes nothing into the range** ([Gaps](#gaps), 2): once the pickers and Read exposure come, it is their margin only, where darktable's rescales black and white relative exposure as it moves.
+- **Curve y gamma under Keep the pivot on the diagonal** ([Gaps](#gaps), 3): it keeps the value it had, after a move and after a pick, where darktable's `gui_changed` and `color_picker_apply` write it with the gamma they compute from the pivot and the range, a write between controls of different quantities, which rule 13 refuses since they must commute (decision 63).
+- **Dynamic range scaling writes nothing into the range** ([Gaps](#gaps), 2): it is the pickers' margin only, where darktable's rescales black and white relative exposure as it moves.
 
 ## Design choices
 
 - **Control ids:** the operation's parameter names, as darktable's history names them, `curve_pivot_x` for the pivot in EV among them.
 - **The pivot's range:** darktable's, the input range, its track the same and its step darktable's for the width, through `ProcessingTool::range`. A pivot a range's move leaves outside is clamped and stored (decision 30).
-- **Dynamic range scaling:** a control not ported, taking only +10 %, drawn disabled. darktable stores it in the edit, so it is no setting, and the port spec does not port it; darktable's write into the range is refused by rule 13 ([Gaps](#gaps), 2).
-- **The four actions:** rows of their own kind, `Row::Action`: an action of darktable's that writes controls and is never stored, drawn disabled by the design system's `ActionRow` until what it runs is built.
+- **Dynamic range scaling:** a control binding no parameter, which only the pickers read. darktable stores it in the edit, so it is no setting, and the operation has no parameter for it; darktable's write into the range is refused by rule 13 ([Gaps](#gaps), 2).
+- **The pickers:** darktable's five, each writing what its `color_picker_apply` writes; the pivot stored in EV, so a pick of the range writes it only where the new range clamps it; Pivot target output from `apertrust-color`'s curve, the operation's own, so the area it was picked on keeps its brightness in the frame ([A9](#invariants)).
+- **Auto tune levels:** a row of pickers, `Row::Pickers`, its label at the start and its button at the end, as darktable's line; Read exposure, its camera button on that line, a row of its own.
+- **The three actions:** rows of their own kind, `Row::Action`: an action of darktable's that writes controls and is never stored, drawn disabled by the design system's `ActionRow` until what it runs is built.
 - **Show curve:** a collapsible group with no rows, which `ProcessingDefinition::check` takes, drawn disabled and closed with a titled tab's "to come" tooltip until a read-only graph row exists (`CollapsibleGroup::disabled`).
 - **A4's bound:** bit for bit wherever the binding's `value / factor` reaches darktable's parameter from some value of the control. One f32 step for the three it reaches from none, each proved so and each reached by darktable's slider path, with the frame they render measured. Bindings that round as darktable's slider does are planned before the end of Phase 3 ([Invariants](#invariants)).
-- **Rows:** A0 to A7. No first step, since every photo runs AgX; a row for the pivot's coordinates, one for what is not ported and one for the pivot's range following the input range.
+- **Rows:** A0 to A9. No first step, since every photo runs AgX; a row for the pivot's coordinates, one for what is not ported, one for the pivot's range following the input range, one for Dynamic range scaling and one for the pickers.
 - **In `TOOLS`:** after Raw black/white point, Highlight reconstruction and Demosaic, and before Output colour profile. The Default workspace's Adjust tab lists it after Exposure (decision 38, `TAB_TOOLS`).
