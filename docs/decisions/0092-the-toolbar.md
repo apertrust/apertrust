@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, and the toolbar menu with View › Panels' items. Planned: an action's own menu, Guides' the first, and the Customise Toolbar window, much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, the toolbar menu with View › Panels' items, and an action's own menu, Guides' the first. Planned: the Customise Toolbar window, much later.
 
 ### The list and its defaults
 
@@ -104,9 +104,9 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 ### An action's own menu
 
-**An action may have a menu of its own on the Toolbar,** where a few choices are worth having one click away; most have none. Guides' is the first: a click turns the guides on or off, and its menu chooses their type, as darktable's guides button does. Planned.
+**An action may have a menu of its own on the Toolbar,** where a few choices are worth having one click away; most have none. Guides' is the first: a click turns the guides on or off, and its menu chooses their type, as darktable's guides button does. Built.
 
-- **Declared as data,** as decision 91's menus are, beside the action in the set of what can be placed: its own registry actions, and a setting's choices as a checked list, each choice an action of its own, the one in use checked; a submenu one level deep. The app builds the menu, and only the action chosen runs.
+- **Declared as data,** as decision 91's menus are, in the app's list of the Toolbar's actions with a menu, `menus::ACTION_MENUS`: its own registry actions, and a setting's choices as a checked list, each choice an action of its own, the one in use checked; a submenu one level deep. The app builds the menu, and only the action chosen runs.
 - **Opened** by a right-click, a Control-click on the Mac, Shift+F10, the Menu key or a screen reader's ShowContextMenu on that item, labels on or off.
 - **It holds** its own items first, a separator, then the toolbar menu's entries, Hide "Guides" first, so the toolbar menu stays reachable from every item.
 - **An item without one** opens the toolbar menu, as a right-click anywhere else on the Toolbar does.
@@ -232,7 +232,7 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the declared actions and the icon names, and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
-- **An action's own menu** (planned): in the app, a menu beside an item of the set of what can be placed, built with the toolbar menu's entries after it, as a submenu in », with a test that every item is reachable elsewhere; the `guides` action, an action for each guide type and flip, View › Guides ▸, and `guides.type` and `guides.flip` in the settings schema. In `apertrust-ui`, a `ToolbarButton` with a menu, shown as a submenu in », its tooltip with the menu's line. Decision 91's Toolbar place holds it.
+- **An action's own menu** (built): in the app, `menus::ActionMenu` in `ACTION_MENUS`, its own menu and the one » shows, built with the toolbar menu's entries after it, with a test that every item is reachable elsewhere; the `guides` action, an action for each guide type and flip, View › Guides ▸, and `guides.type` and `guides.flip` in the settings schema. In `apertrust-ui`, `ToolbarButton::menu`, shown as a submenu in », its tooltip with the menu's line (`IconButton::tip_line`). Decision 91's Toolbar place holds it.
 - **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is a part of the list, `cursors`, by default between two flexible spaces; the built narrowing folds the actions before it.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.
 - **The default changes:** every item shows its word under its icon by default, and the narrowing's thresholds change with it.

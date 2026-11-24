@@ -3677,6 +3677,13 @@ impl Shell {
                     if let Some(on) = action.checked(state) {
                         button = button.toggled(on);
                     }
+                    // A menu of its own (decision 92): a submenu under », named in its
+                    // tooltip.
+                    if let Some(menu) = menus::action_menu(action.id.0) {
+                        let entries = menus::folded(menu, ctx.os(), &self.keymap, state, &words);
+                        let ids = menus::held(menu.folded).into_iter().map(|id| id.0);
+                        button = button.menu(entries, ids.collect(), words.text(menu.tip));
+                    }
                     if let Some(tip) = self.keymap.tip(action.id, ctx.os(), &words) {
                         tips.push((ToolbarAction::Button(action.id.0), tip));
                     }
@@ -22560,6 +22567,51 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    /// Decision 92: Shift+F10 on the focused Guides, as its right-click, opens its own menu,
+    /// named Guides, its types and Flip before the toolbar menu's entries; a type chosen
+    /// there turns the guides on, and the focus goes back to Guides. Its tooltip says what
+    /// its right-click opens.
+    #[test]
+    fn the_keys_on_guides_open_its_own_menu_whose_type_turns_the_guides_on() {
+        use apertrust_ui::guides::Guide;
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.state_mut().photo = true;
+        harness.run();
+        let guides = harness.get_by_role_and_label(Role::Button, "Guides");
+        guides.hover();
+        harness.run();
+        assert!(
+            harness
+                .query_by_label("Guides (G)\nRight-click for the guide type")
+                .is_some()
+        );
+        harness
+            .get_by_role_and_label(Role::Button, "Guides")
+            .focus();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::SHIFT, egui::Key::F10);
+        harness.run();
+        let menu = harness.get_by_role_and_label(Role::Menu, "Guides");
+        let first = menu
+            .query_all_by(|node| matches!(node.role(), Role::MenuItem | Role::MenuItemCheckBox))
+            .next()
+            .and_then(|node| node.accesskit_node().label());
+        assert_eq!(first.as_deref(), Some("Grid"));
+        assert!(harness.query_by_label("Hide “Guides”").is_some());
+        harness
+            .get_by_role_and_label(Role::MenuItemCheckBox, "Golden spiral")
+            .click();
+        harness.run();
+        let shell = &harness.state().shell;
+        assert!(shell.guides);
+        assert_eq!(shell.guide.kind, Guide::GoldenSpiral);
+        let focused = harness.ctx.memory(|m| m.focused()).expect("the focus back");
+        let rect = harness.ctx.read_response(focused).expect("drawn").rect;
+        let button = harness.get_by_role_and_label(Role::Button, "Guides").rect();
+        assert!(button.contains(rect.center()), "{rect:?} not on {button:?}");
     }
 
     /// Decision 92: a right-click on the Toolbar's empty area opens the toolbar menu, never

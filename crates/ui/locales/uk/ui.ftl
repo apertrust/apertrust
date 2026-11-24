@@ -900,6 +900,7 @@ action-guides-flip-horizontally = Горизонтально
 action-guides-flip-vertically = Вертикально
 action-guides-flip-both = Обидва
 guides-flip-unavailable = Віддзеркалюються лише гармонійні трикутники та золоті напрямні
+toolbar-guides-menu = Клацніть правою кнопкою, щоб вибрати тип напрямних
 key-space = Пробіл
 
 ## Назви меню; меню застосунку називається app-name

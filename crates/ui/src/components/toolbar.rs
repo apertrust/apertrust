@@ -44,7 +44,9 @@
 //! its empty areas, title bar or not, but the caption buttons and, on the title bar, the
 //! menu button, asks for it with the entry under the pointer, as do the menu key, Shift+F10 and a screen reader's
 //! ShowContextMenu on a focused button, the menu button, the spinner or a face or chevron
-//! of the well ([`ToolbarAction::ContextMenu`]); the app builds it. Where the panel is the
+//! of the well ([`ToolbarAction::ContextMenu`]); the app builds it, a button's own menu's
+//! items first where its action has one, which » shows as a submenu
+//! ([`ToolbarButton::menu`]). Where the panel is the
 //! title bar, a right-click on the menu button asks for the window's menu instead, as on a
 //! title bar's icon ([`ToolbarAction::WindowMenu`]), which also stays on the system's own
 //! key.
@@ -156,7 +158,8 @@ pub enum ToolbarEntry {
 
 /// A button of the Toolbar that runs an action: its icon, drawn at 22 points with labels
 /// on or off, its translated name, its word under its icon while labels are on, whether it
-/// can run now, drawn disabled where it cannot, and for a toggle whether it is on.
+/// can run now, drawn disabled where it cannot, for a toggle whether it is on, and a menu of
+/// its own where its action has one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolbarButton {
     id: &'static str,
@@ -165,8 +168,20 @@ pub struct ToolbarButton {
     label: Option<String>,
     enabled: bool,
     toggled: Option<bool>,
+    menu: Option<OwnMenu>,
     first: bool,
     last: bool,
+}
+
+/// A button's own menu (decision 92; [`ToolbarButton::menu`]).
+#[derive(Clone, Debug, PartialEq)]
+struct OwnMenu {
+    /// What » holds for it, as a submenu.
+    entries: Vec<popup::Entry>,
+    /// The ids its items may answer with, each reported as a button's.
+    ids: Vec<&'static str>,
+    /// The line its tooltip names it with.
+    tip: String,
 }
 
 impl ToolbarButton {
@@ -180,6 +195,7 @@ impl ToolbarButton {
             label: None,
             enabled: true,
             toggled: None,
+            menu: None,
             first: false,
             last: false,
         }
@@ -200,6 +216,32 @@ impl ToolbarButton {
     pub fn toggled(mut self, on: bool) -> Self {
         self.toggled = Some(on);
         self
+    }
+
+    /// A menu of its own (decision 92, An action's own menu): under » the button is a
+    /// submenu under its name holding `entries`, the action itself first as the app builds
+    /// them, an item chosen there reported as [`ToolbarAction::Button`] with its id, one of
+    /// `ids`; on the panel its right-click and menu keys still ask for
+    /// [`ToolbarAction::ContextMenu`], which the app builds with its own items first. `tip`
+    /// names the menu on a line of its own in its tooltip, after its words and keys: "Right-
+    /// click for the guide type". No badge marks it.
+    pub fn menu(
+        mut self,
+        entries: Vec<popup::Entry>,
+        ids: Vec<&'static str>,
+        tip: impl Into<String>,
+    ) -> Self {
+        self.menu = Some(OwnMenu {
+            entries,
+            ids,
+            tip: tip.into(),
+        });
+        self
+    }
+
+    /// The line naming its own menu in its tooltip, if it has one.
+    fn menu_tip(&self) -> Option<&str> {
+        self.menu.as_ref().map(|menu| menu.tip.as_str())
     }
 
     /// Its word under its icon while the Toolbar shows labels ([`Toolbar::labels`]),
@@ -862,6 +904,10 @@ impl<'a> Toolbar<'a> {
                                     .icon_size(action_icon(button.icon))
                                     .stroke(ACTION_STROKE)
                                     .enabled(button.enabled);
+                                let icon = match button.menu_tip() {
+                                    Some(tip) => icon.tip_line(tip),
+                                    None => icon,
+                                };
                                 match button.toggled {
                                     Some(on) => icon.toggled(on),
                                     None => icon,
@@ -897,6 +943,13 @@ impl<'a> Toolbar<'a> {
                             pull_down(ui, &more, &name, || {
                                 (hidden.iter())
                                     .map(|button| {
+                                        // An item with a menu of its own is a submenu.
+                                        if let Some(menu) = &button.menu {
+                                            let name = button.name.as_str();
+                                            let entries = menu.entries.clone();
+                                            return popup::Submenu::new(button.id, name, entries)
+                                                .into();
+                                        }
                                         let mut item =
                                             popup::Item::new(button.id, button.name.as_str())
                                                 .enabled(button.enabled);
@@ -913,9 +966,15 @@ impl<'a> Toolbar<'a> {
                             })
                         })
                         .inner;
-                    let chosen = chosen.and_then(|chosen| hidden.iter().find(|b| b.id == chosen));
-                    if let Some(button) = chosen {
-                        action = Some(ToolbarAction::Button(button.id));
+                    // A button, or an item of one's own menu, by its id.
+                    let chosen = chosen.and_then(|chosen| {
+                        hidden.iter().find_map(|b| {
+                            let ids = b.menu.iter().flat_map(|menu| menu.ids.iter().copied());
+                            std::iter::once(b.id).chain(ids).find(|id| *id == chosen)
+                        })
+                    });
+                    if let Some(id) = chosen {
+                        action = Some(ToolbarAction::Button(id));
                     }
                 }
                 Drawn::Cursors => {
@@ -1560,13 +1619,16 @@ impl<'b> Labelled<'b> {
             Some(on) => WidgetInfo::selected(Role::Button, enabled, on, name),
             None => WidgetInfo::labeled(Role::Button, enabled, name),
         });
-        let tip = match keys {
+        let mut tip = match keys {
             Some(keys) => {
                 report_shortcut(ui, response.id, keys);
                 format!("{name} ({keys})")
             }
             None => name.to_owned(),
         };
+        if let Some(line) = button.menu_tip() {
+            tip = format!("{tip}\n{line}");
+        }
         response.on_hover_text(tip)
     }
 }
