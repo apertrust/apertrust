@@ -207,9 +207,11 @@ tool-agx-control-range_black_relative_ev-promise = Relative exposure below mid-g
 tool-agx-control-dynamic_range_scaling-label = Dynamic range scaling
 tool-agx-control-dynamic_range_scaling-full = Dynamic range scaling
 tool-agx-control-dynamic_range_scaling-promise = Symmetrically increase or decrease the computed dynamic range. Useful to give a safety margin to extreme luminances.
-tool-agx-action-auto_tune_levels-label = Auto tune levels
-tool-agx-action-auto_tune_levels-full = Auto tune levels
-tool-agx-action-auto_tune_levels-promise = Set black and white relative exposure using the selected area.
+# darktable's labelled line with its picker setting both exposures, a row of pickers.
+tool-agx-group-auto_tune_levels = Auto tune levels
+tool-agx-picker-range-label = Auto tune levels
+tool-agx-picker-range-full = Auto tune levels: pick from the photo
+tool-agx-picker-range-promise = Sets black and white relative exposure using the selected area.
 tool-agx-action-read_exposure-label = Read exposure
 tool-agx-action-read_exposure-full = Read exposure
 tool-agx-action-read_exposure-promise = Read exposure from the metadata and the Exposure tool.

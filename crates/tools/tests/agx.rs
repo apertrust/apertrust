@@ -15,12 +15,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! AgX's invariants (`docs/tools/agx.md`, Invariants), one test per row, each named
-//! after its row: A0 to A8, the rows a first-pass table has (decision 22) but the first
+//! after its row: A0 to A9, the rows a first-pass table has (decision 22) but the first
 //! step, since every photo runs AgX, with the pivot's coordinates, what is not ported,
-//! the pivot's range following the input range (decision 30) and Dynamic range scaling,
-//! which binds nothing. The synthetic ramp and sweep and the small raw run on CI's
-//! software GPUs, A3, A4's parameters, A6 and A7 on the CPU. The raw.pixls.us corpus
-//! runs locally, with `APERTRUST_RAW_CORPUS` naming it:
+//! the pivot's range following the input range (decision 30), Dynamic range scaling,
+//! which binds nothing, and the pickers. The synthetic ramp and sweep and the small raw
+//! run on CI's software GPUs, A3, A4's parameters, A6 and A7 on the CPU. The
+//! raw.pixls.us corpus runs locally, with `APERTRUST_RAW_CORPUS` naming it:
 //!
 //! ```sh
 //! cargo test --release -p apertrust-tools --test agx -- --ignored --nocapture
@@ -45,6 +45,7 @@ use apertrust_plugin::{ImageContext, ImageDesc, Kind, Operation, ParamValues, Va
 use apertrust_tools::agx::{
     Agx, BASE_PRIMARIES, BLACK, FLAGS, PARAMETERS, PIVOT, Parameter, SCALING, WHITE, pivot_ev,
 };
+use apertrust_tools::pick::{PickKeys, Reading, Stats};
 use apertrust_tools::{Base, ControlError, ControlValue, Mark, ProcessingTool, Row, TOOLS};
 
 use common::{BEFORE_THE_WORKING_SPACE, Bench, Picture, exact, id, jump, small_raw, sweep};
@@ -713,4 +714,124 @@ fn a8_dynamic_range_scaling_is_stored_and_changes_nothing_else() {
     edit.reset_control(&Agx, SCALING).unwrap();
     assert_eq!(edit, Edit::default());
     assert!(exact(&none, &bench.edit(&edit, Frame)), "A8 reset");
+}
+
+// A9: the pickers on the ramp.
+
+/// What AgX's pickers read: the image entering AgX, from exposure on for a synthetic image.
+#[derive(Debug, Clone, Copy)]
+struct Scene;
+
+impl common::Measure for Scene {
+    fn keep(self, instances: &mut Vec<Instance<'static>>, synthetic: bool) {
+        Frame.keep(instances, synthetic);
+        if let Some(end) = instances.iter().position(|i| id(i) == AGX) {
+            instances.truncate(end);
+        }
+    }
+}
+
+/// darktable's statistics of `pixels`, an area of the image entering AgX, as its picker
+/// reads them undenoised: the mean, in f64, and each channel's minimum and maximum.
+fn reading(pixels: &[[f32; 4]]) -> Reading {
+    let mut sum = [0.0_f64; 4];
+    let (mut min, mut max) = ([f32::MAX; 4], [f32::MIN; 4]);
+    for pixel in pixels {
+        for c in 0..4 {
+            sum[c] += f64::from(pixel[c]);
+            min[c] = min[c].min(pixel[c]);
+            max[c] = max[c].max(pixel[c]);
+        }
+    }
+    Reading {
+        input: Stats {
+            mean: sum.map(|s| (s / pixels.len() as f64) as f32),
+            min,
+            max,
+        },
+        output: None,
+        input_maximum: [1.0; 3],
+    }
+}
+
+/// `picker`'s pick of `area` at the tool's defaults, written into an edit as the session
+/// writes it.
+fn picked(picker: &str, area: &[[f32; 4]], image: &ImageContext) -> Edit {
+    let values = Agx.defaults(image);
+    let keys = PickKeys::default();
+    let reading = reading(area);
+    let picked = (Agx.pick(picker, &reading, &values, image, &[], None, None, keys)).unwrap();
+    let mut edit = Edit::default();
+    let declared = Agx.definition().picker(picker).unwrap();
+    edit.pick(&Agx, declared, &picked.writes, image).unwrap();
+    edit
+}
+
+/// `log2(v / 0.18) · 1.1`, in f64: an exposure at the default Dynamic range scaling,
+/// +10 %.
+fn scaled(v: f32) -> f64 {
+    (f64::from(v) / 0.18).log2() * 1.1
+}
+
+/// A9 on the ramp (proposed tolerances, 1e-4 EV and 1e-4 output): a white pick over its
+/// brightest EV writes `log2(max / 0.18) · 1.1` of its largest channel there, as the image
+/// enters AgX; a black pick over its darkest EV the same of its smallest minimum; and a
+/// Pivot target output pick over a flat grey keeps that grey's output in the frame where
+/// it was before the pick, for the ramp's mid-grey and its 2⁻⁴.
+#[test]
+fn a9_the_pickers_write_darktable_s_values_on_the_ramp() {
+    let (picture, image) = ramp();
+    let mut bench = Bench::picture(&picture, image.clone(), Pipe::Export);
+    let scene = bench.edit(&Edit::default(), Scene).pixels;
+    let steps = common::RAMP_STEPS;
+    let (brightest, darkest) = (&scene[steps - 16..steps], &scene[..16]);
+    let largest = (brightest.iter())
+        .flat_map(|p| p[..3].iter().copied())
+        .fold(f32::MIN, f32::max);
+    let smallest = (darkest.iter())
+        .flat_map(|p| p[..3].iter().copied())
+        .fold(f32::MAX, f32::min);
+    let stored =
+        |edit: &Edit, control: &str| f64::from(edit.tool(AGX).unwrap().number(control).unwrap());
+    let white = stored(&picked("white", brightest, &image), WHITE);
+    let black = stored(&picked("black", darkest, &image), BLACK);
+    let (want_white, want_black) = (scaled(largest), scaled(smallest));
+    println!(
+        "A9: white {white} for {want_white}, black {black} for {want_black}, from {largest} \
+         and {smallest}"
+    );
+    assert!(
+        (white - want_white).abs() <= 1e-4,
+        "{white} for {want_white}"
+    );
+    assert!(
+        (black - want_black).abs() <= 1e-4,
+        "{black} for {want_black}"
+    );
+    // Neither is held at darktable's bounds, so the rule is what is measured.
+    assert!(want_white < 20.0 && want_black > -20.0 && want_black < -0.1);
+
+    let before = bench.edit(&Edit::default(), Frame).pixels;
+    let mut off = 0.0_f32;
+    // The appended mid-grey, and the ramp's 2⁻⁴.
+    for at in [steps, 16 * 12] {
+        let edit = picked("pivot_output", &scene[at..=at], &image);
+        let values = edit.tool(AGX).unwrap();
+        assert!(
+            values.number(PIVOT).is_some_and(|ev| ev != 0.0),
+            "{values:?}"
+        );
+        let after = bench.edit(&edit, Frame).pixels;
+        for c in 0..3 {
+            let moved = (after[at][c] - before[at][c]).abs();
+            off = off.max(moved);
+            assert!(
+                moved <= 1e-4,
+                "pixel {at}: {:?} after {:?}",
+                after[at],
+                before[at]
+            );
+        }
+    }
+    println!("A9: Pivot target output's grey within {off:.1e} of its output before");
 }
