@@ -22156,13 +22156,12 @@ mod tests {
             .any(|v| v.commands.contains(command))
     }
 
-    /// An empty point of the Toolbar: between its last action and its end.
+    /// An empty point of the Toolbar: between Redo, the last action at its start, and the
+    /// cursors' well.
     fn empty_point(harness: &Harness<'_, Bench>) -> egui::Pos2 {
-        let apply = harness.get_by_label("Apply edit").rect();
-        let bar = harness
-            .get_by_role_and_label(Role::Toolbar, "Toolbar")
-            .rect();
-        egui::pos2((apply.right() + bar.right()) / 2.0, apply.center().y)
+        let redo = harness.get_by_label("Redo").rect();
+        let well = harness.get_by_role(Role::RadioGroup).rect();
+        egui::pos2((redo.right() + well.left()) / 2.0, redo.center().y)
     }
 
     #[test]
