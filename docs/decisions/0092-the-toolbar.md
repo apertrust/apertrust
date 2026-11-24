@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, and the toolbar menu with View › Panels' items. Planned: the Customise Toolbar window, much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, and the toolbar menu with View › Panels' items. Planned: an action's own menu, Guides' the first, and the Customise Toolbar window, much later.
 
 ### The list and its defaults
 
@@ -102,6 +102,20 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 **The system's window menu** is no longer on a right-click on the toolbar's empty space on Windows and Linux. It stays on the system's own key, Alt+Space on Windows and GNOME, and on a right-click on the menu button while the toolbar is the title bar, as on a title bar's icon; X11 still has none, and the Mac's conventions are unchanged.
 
+### An action's own menu
+
+**An action may have a menu of its own on the Toolbar,** where a few choices are worth having one click away; most have none. Guides' is the first: a click turns the guides on or off, and its menu chooses their type, as darktable's guides button does. Planned.
+
+- **Declared as data,** as decision 91's menus are, beside the action in the set of what can be placed: its own registry actions, and a setting's choices as a checked list, each choice an action of its own, the one in use checked; a submenu one level deep. The app builds the menu, and only the action chosen runs.
+- **Opened** by a right-click, a Control-click on the Mac, Shift+F10, the Menu key or a screen reader's ShowContextMenu on that item, labels on or off.
+- **It holds** its own items first, a separator, then the toolbar menu's entries, Hide "Guides" first, so the toolbar menu stays reachable from every item.
+- **An item without one** opens the toolbar menu, as a right-click anywhere else on the Toolbar does.
+- **In »,** such an item is a submenu under its words: the action itself, checked while on, a separator, then its own items, so a folded item still runs with a click.
+- **Every item is reachable elsewhere,** as decision 91 asks: Guides' in View › Guides ▸, which holds the action, a separator, its types, a separator and Flip ▸.
+- **No badge** marks the item. Its tooltip names the menu on a line of its own after its words and keys: "Guides (G)", then "Right-click for the guide type".
+
+**Guides' menu:** the ten guide types of darktable's reference release (`src/gui/guides.c`), the one in use checked: Grid, Rules of thirds, Metering, Perspective, Diagonal method, Harmonious triangles, Golden sections, Golden spiral, Golden spiral sections and Golden mean (all guides); a separator; Flip ▸, None, Horizontally, Vertically and Both, drawn disabled while the type is one darktable never flips. Choosing a type turns the guides on. The type and the flip are the settings `guides.type` and `guides.flip`, at darktable's defaults, Rules of thirds and None. `guides` is one of the app's own actions, placeable with an icon of its own and checked while on, and leaves the viewer bar.
+
 ### Customising
 
 - **The workspace's file** is the full way to customise until a window exists, and stays one after it (83, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)): `toolbar` in `<user data>/workspaces/<id>.toml`, and the labels app-wide in `settings.toml`:
@@ -183,6 +197,9 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **One toolbar for the app, or one per layout.** A toolbar suits a task as a workspace's tabs do (83). A layout is what the Viewer shows, not a task.
 - **Labels per workspace, or per item.** Labels are about reading the bar, not about the task. One setting is simpler and folds as one step.
 - **The word beside its icon,** 6 points after it at the body's size. Each item is wider, so the bar folds sooner, and it reads unlike the Tools panel's tab names, which sit under their icons.
+- **A badge or a chevron on an item with a menu of its own,** as the cursors' well's groups have. It widens the item and sets it apart from its neighbours for a menu the tooltip can name, as darktable's guides button's does.
+- **The action's menu in place of the toolbar menu on its item.** Hide and Toolbar Labels would then need another way from the pointer there.
+- **darktable's popover of guide settings on the right-click.** A menu of registry actions keeps every choice reachable from the menu bar and the keys; the overlay's colour, its contrast and the grid's lines come later, in Settings or a popover.
 - **The labels inside the 44-point bar,** 6 points above the icon and 3 below it. It squeezes icon and word together and leaves no room below the word.
 - **Action icons at 16 points,** the viewer bar's size. Beside the Tools panel's 22-point tab icons they read small.
 - **New 22-point icon files,** as `toolbar-more` beside `more`. The icons render at any size from Lucide's grid with the same line, so a second file would only repeat the first.
@@ -215,6 +232,7 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the declared actions and the icon names, and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
+- **An action's own menu** (planned): in the app, a menu beside an item of the set of what can be placed, built with the toolbar menu's entries after it, as a submenu in », with a test that every item is reachable elsewhere; the `guides` action, an action for each guide type and flip, View › Guides ▸, and `guides.type` and `guides.flip` in the settings schema. In `apertrust-ui`, a `ToolbarButton` with a menu, shown as a submenu in », its tooltip with the menu's line. Decision 91's Toolbar place holds it.
 - **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is a part of the list, `cursors`, by default between two flexible spaces; the built narrowing folds the actions before it.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.
 - **The default changes:** every item shows its word under its icon by default, and the narrowing's thresholds change with it.
