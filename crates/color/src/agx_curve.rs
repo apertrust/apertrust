@@ -21,8 +21,8 @@
 //! a shoulder, each a sigmoid or, where the sigmoid cannot bend that way, a power.
 //!
 //! The operation's setup (`apertrust-op-agx`) packs its coefficients for the kernel; the
-//! AgX tool's pickers, which set the pivot from an area, are to evaluate it too
-//! (decision 65). It runs on the CPU, never on a pixel.
+//! AgX tool's Pivot target output picker, which sets the pivot from an area, evaluates it
+//! too (decision 65). It runs on the CPU, never on a pixel.
 //!
 //! The curve is computed in f32 like darktable's, except `_scale`, which works in the
 //! log domain so it stays finite.

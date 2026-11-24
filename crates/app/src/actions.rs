@@ -4965,7 +4965,7 @@ pub(crate) mod tests {
             "tool-flip-rotate_cw",
             "tool-flip-flip_horizontally",
             "tool-flip-flip_vertically",
-            "tool-agx-auto_tune_levels",
+            "tool-agx-read_exposure",
         ] {
             assert!(ids.contains(&id), "{id} in {ids:?}");
         }
@@ -5003,9 +5003,9 @@ pub(crate) mod tests {
         ] {
             assert!(!rotate.enabled(&rest), "{rest:?}");
         }
-        let auto = named("tool-agx-auto_tune_levels").expect("Auto tune levels");
-        assert_eq!(auto.emits, Emit::Later);
-        assert!(!auto.enabled(&everything()));
+        let read = named("tool-agx-read_exposure").expect("Read exposure");
+        assert_eq!(read.emits, Emit::Later);
+        assert!(!read.enabled(&everything()));
     }
 
     #[test]
