@@ -223,9 +223,9 @@ One cursor chosen at a time decides what a press on the photo does (decision 104
 - [x] 104.1 The one-shot pick, 79.17 above.
 - [x] 104.2 The declarations in `apertrust-tools`: `CursorDef`, the groups, `ToolDefinition::cursors` and its checks; White balance's and Exposure's picker cursors and their words; Colour calibration's and Colour balance RGB's four hue pickers' with their picks, a tool's advanced pickers having none.
 - [x] 104.3 The well in the design system: one button per group, its face and its chevron's list of cursors and settings, its states, keys and screen readers, in the gallery.
-- [x] 104.4 The app: Select, the default, Pan and Pick on the Toolbar between two empty strips, the gestures and pointers on the photo, Esc, A held and K, Show the last pick; its picker cursors pick once.
+- [x] 104.4 The app: Select, the default, Pan and Pick on the Toolbar between two empty strips, the pointers on the photo, Esc, A held and K.
 - [x] 104.5 The well shows the picker that is on, whichever door turned it on, and Select, or the cursor the person chose, once it turns off, each turn-off announced with its reason; Esc ends a picker wherever the focus is, but a field being typed in or an open list keeps the first Esc; A held pans over a picker; the crosshair over the photo; "Right-click resets the area." in the viewer bar.
-- [ ] 104.6 The picker cursor as a second door to its tool's picker: choosing it sends `On`, never `Once`; disabled with the reason where the picker cannot turn on; Exposure's reference picker gets its cursor; the picker cursor's own gestures, the last pick's mark and Show the last pick go.
+- [x] 104.6 The picker cursor as a second door to its tool's picker: choosing it sends `On`, never `Once`; disabled with the reason where the picker cannot turn on; Exposure's reference picker gets its cursor; no picker cursor gestures of its own, no last pick's mark and no Show the last pick.
 - [x] 104.7 The label on the picker's area naming its tool, and the pointer's badge, drawn by the overlay.
 - [ ] 104.8 The Colour picker's own group in the well, after Pick, with the Colour picker section (79.16): its cursor on Shift+K, the second door to its picker, and Start as, Point or Area.
 
