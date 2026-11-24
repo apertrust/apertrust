@@ -811,13 +811,13 @@ const TOOLBAR: [&str; 15] = [
     "redo",
     "flexible-space",
     "cursors",
+    "jobs",
+    "save-state",
     "flexible-space",
     "guides",
     "space",
     "copy-edit",
     "apply-edit",
-    "jobs",
-    "save-state",
 ];
 
 /// Both built-in workspaces hold the default list as their Toolbar, every id one this build

@@ -25,13 +25,13 @@ toolbar = [
     "redo",
     "flexible-space",
     "cursors",
+    "jobs",
+    "save-state",
     "flexible-space",
     "guides",
     "space",
     "copy-edit",
     "apply-edit",
-    "jobs",
-    "save-state",
 ]
 
 [[tabs]]
