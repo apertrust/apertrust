@@ -27,8 +27,9 @@
 //! share: the curve interpolation (`curve`), the box mean (`box_filter`, the Rust twin
 //! of `slang/box_filter.slang`), the recursive Gaussian (`gaussian`, of
 //! `slang/gaussian.slang`), the bilinear resampling between grids (`bilinear`, of
-//! `slang/bilinear.slang`), and the tone equalizer's correction curve (`tone_equalizer`),
-//! which its operation's setup and its tool's band graph share.
+//! `slang/bilinear.slang`), the tone equalizer's correction curve (`tone_equalizer`),
+//! which its operation's setup and its tool's band graph share, and AgX's tone curve
+//! (`agx_curve`), which its operation's setup uses and its tool's pickers are to.
 
 #![allow(
     clippy::excessive_precision,
@@ -38,6 +39,7 @@
 use std::f32::consts::PI;
 
 pub mod adaptation;
+pub mod agx_curve;
 pub mod bilinear;
 pub mod box_filter;
 pub mod curve;

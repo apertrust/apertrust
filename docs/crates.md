@@ -1347,6 +1347,7 @@ Colour maths shared by operations, and the numerical helpers their ports share o
 - Each box iteration's radius at the pipe's scale (`box_filter::iterated_radii`, decision 63): r and r + 1 across its passes, so that its variance is the export's, every pass darktable's radius at scale 1. Bloom's and soften's setups take it.
 - darktable's recursive Gaussian (`gaussian.slang`, its coefficients and Rust restatement `gaussian`) and bilinear resampling between grids (`bilinear.slang`, `bilinear`), which the colour equalizer's kernel uses and the tone equalizer's EIGF is to.
 - The tone equalizer's correction curve (`tone_equalizer`): eight Gaussians fitted to the nine bands' gains by least squares in f64, `None` where the fit fails, as `pseudo_solve` can. Its operation's setup and the Tone equalizer tool's band graph share it.
+- AgX's tone curve (`agx_curve`): `Curve::new` of the range and curve settings (`CurveSettings`), in f32 but for `_scale` in the log domain, and `encode` and `eval` as the kernel evaluates them. Its operation's setup packs it; the AgX tool's pickers evaluate it too, planned.
 
 ## apertrust-tools
 

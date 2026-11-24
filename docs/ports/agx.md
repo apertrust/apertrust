@@ -4,7 +4,7 @@ Source: darktable (the reference release, commit 20891f6c6f), `src/iop/agx.c` `c
 
 Status: ported.
 
-- **Code:** the kernel is `slang/agx.slang` in `crates/op/agx`, its setup `src/setup.rs`, with shared helpers in `apertrust-color` (`src/lib.rs` and `slang/color.slang`).
+- **Code:** the kernel is `slang/agx.slang` in `crates/op/agx`, its setup `src/setup.rs`, with shared helpers in `apertrust-color` (`src/lib.rs` and `slang/color.slang`) and the curve's coefficients and evaluation there too (`src/agx_curve.rs`), which the AgX tool's pickers, planned, evaluate too.
 - **Coverage:** every setting of params version 7 except base primaries "export profile", which returns `NotPorted`.
 - **Checks:** all four golden cases pass, and the gradient check passes on every case and on the synthetic sweep (Gradients). Checked on the Apple M4 and the AMD Radeon 780M (below).
 - **Tool:** AgX, darktable's page, in the Default workspace's Adjust tab (decision 38), owning every parameter ([../tools/agx.md](../tools/agx.md)). A tool set to each golden case's values binds its parameters bit for bit but three of `agx`'s, one f32 step off.
