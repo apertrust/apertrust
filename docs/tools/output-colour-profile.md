@@ -74,7 +74,7 @@ O1 in detail: sRGB set renders as no edit, and so does each reset. Linear Rec709
 
 - **No tabs:** Export profile alone, a list drawn disabled at sRGB (web-safe), as darktable's page has only it with its preferences at their defaults (`output_colour_profile_draws_export_profile_at_srgb_disabled`). Disabled, it does not open, so the other profiles are not seen yet.
 - **Once the control is available**, when the display converts from the edit's profile, its list opens: each profile an edit still cannot choose drawn disabled with "Coming in a later version", the nine colorout does not port among them.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 

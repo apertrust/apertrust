@@ -175,7 +175,7 @@ The sliders: none differs from darktable's, the pivot's at the defaults and at f
 - **Two tabs,** Settings and Primaries. On Settings, the Input exposure range label, its three sliders and the two actions, Auto tune levels and Read exposure, drawn disabled; the Basic curve parameters label and its five sliders; then the three collapsible groups, closed at first: Show curve, drawn disabled, its tooltip saying it is to come, as a tab with no rows; Advanced curve parameters, the gamma hidden while Keep the pivot on the diagonal is on; Look.
 - **Dynamic range scaling** is drawn disabled at +10.00 %.
 - **On Primaries,** the base primaries list, Export profile drawn disabled, and Disable adjustments; while adjustments are on, Reset primaries, drawn disabled, the Before tone mapping label and its six sliders, the After tone mapping label, Reverse all and Set from above, drawn disabled, and while Reverse all is off the eight sliders after it (`agx_draws_darktable_s_page_its_actions_disabled`).
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 

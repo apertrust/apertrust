@@ -108,7 +108,7 @@ The viewport on the corpus meets decision 15's target: all 31 corpus raws at eve
 - **Values** show two decimals with their unit, as darktable writes them, in the language's number format: "50.00%", "+0.33 EV". The brightness is signed, as its range spans zero. Screen readers hear the same; the field a click opens holds the number alone (decision 42).
 - **Tracks** are plain, over the whole range, filled from the default: the mix's from 50 %, the brightness's from +0.33 EV.
 - **Keyboard:** every row is a `SliderRow`, stepping by darktable's step, 1 % or 0.01 EV, Shift ten steps and Ctrl a tenth, Option on the Mac, never less than 0.01, the last decimal shown, as darktable's `min_visible`. The value is rounded to the decimals shown before it is sent.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 

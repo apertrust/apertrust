@@ -21,6 +21,8 @@ apertrust-display.workspace = true
 apertrust-engine.workspace = true
 # The Export dialog's settings, its choices, the variables it lists and the size it computes.
 apertrust-export.workspace = true
+# A tool's presets, `.appreset` files read, written, renamed and deleted (decision 106).
+apertrust-library.workspace = true
 apertrust-operations.workspace = true
 # The image context a tool's view of the pending values takes.
 apertrust-plugin.workspace = true

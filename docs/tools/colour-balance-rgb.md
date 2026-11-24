@@ -161,7 +161,7 @@ So darktable UCS leaves neutral and moderately saturated colours where they were
 - **Hues** are drawn on the hue track and unfilled, as darktable draws them, each with its picker's quad, and so are White fulcrum and Contrast grey fulcrum ([The pickers](#the-pickers)): the pipette, filled while its picker is on. The luminance and saturation tracks are drawn plain until the renderer draws those bands (`docs/gui.md`, What the renderer still lacks).
 - **Saturation formula** is a dropdown with both of darktable's options, both ported.
 - **Keyboard:** every row but the formula is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac. A step is never less than 0.01, the last decimal shown, as darktable's `min_visible`, so Ctrl's tenth moves Global offset chroma, whose step is 0.01 %. The step grows as a widened track's span does, as darktable's zoom step makes it. The value is rounded to the two decimals shown before it is sent.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 

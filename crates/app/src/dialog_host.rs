@@ -157,7 +157,7 @@ impl Slot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Form {
     /// Attached to the main window, which takes no input until it goes: AppKit's sheet on
-    /// the Mac, a modal window elsewhere. No dialog uses it yet; the host keeps it.
+    /// the Mac, a modal window elsewhere: a tool preset's name dialog (`presets::NameDialog`).
     Sheet,
     /// A window of its own, centred on the main window, which takes no input until it
     /// goes: Settings' on Windows and Linux.
@@ -300,6 +300,8 @@ pub enum Output {
     LogSized(egui::Vec2),
     /// Key presses a dialog's window left alone, for the app's keymap to read, as Quit's.
     Keys(Unread),
+    /// What Save as Preset… or Rename… asked as its button was pressed.
+    Preset(crate::presets::Asked),
 }
 
 /// The key presses a dialog's window left alone in a frame: none of Escape, Cmd+W and

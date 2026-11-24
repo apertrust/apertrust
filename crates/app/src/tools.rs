@@ -19,9 +19,9 @@
 //! no code of the tool's own.
 //!
 //! - The section is `Section::edits()`: its title, its tabs when it has more than one,
-//!   Auto drawn disabled until Auto runs, presets drawn disabled until presets come, and
-//!   options holding the app's items, the tool's and the layout's. Closed, it shows its
-//!   header alone.
+//!   Auto drawn disabled until Auto runs, presets opening the tool's presets' pull-down
+//!   (`presets.rs`, decision 106), and options holding the app's items, the tool's and the
+//!   layout's. Closed, it shows its header alone.
 //! - Each row is a design-system component: a slider is a `SliderRow`, its track over
 //!   darktable's soft range where the definition gives one, a choice a `Choice` in its
 //!   Blended style, darktable's combobox, with its kept marker (decision 42), or
@@ -173,6 +173,12 @@ pub enum Change {
     /// An item of the tool's ⋯ chosen (decision 93): its registry action, which the app
     /// runs as its keys run it.
     Run(ActionId),
+    /// An item of the tool's presets chosen (decision 106): a preset or Default settings
+    /// applied, or one of the items that manage them.
+    Preset {
+        tool: &'static str,
+        item: crate::presets::Item,
+    },
 }
 
 /// What the shell gives a tool's header each frame (decision 93; `docs/gui.md`, One tool
@@ -200,6 +206,9 @@ pub struct Head {
     pub layout: Option<Placing>,
     /// Where the tool lives, while Find Tool… lists it among the tools found (decision 96).
     pub found: Option<Found>,
+    /// A processing tool's presets, where the app has a folder for them (decision 106):
+    /// its presets button opens their pull-down, else it is drawn disabled.
+    pub presets: Option<crate::presets::Menu>,
 }
 
 impl Head {
@@ -237,14 +246,17 @@ pub enum Pressed {
     Run(ActionId),
     /// An item of ⋯ the tool has not declared yet, by its id: Collections'.
     Own(String),
+    /// An item of a processing tool's presets, by its id ([`crate::presets::Item::of`]).
+    Preset(String),
 }
 
 /// The design system's section for `tool`'s header (decision 93), titled `title`, as `head`
 /// has it: ↺ where the declaration's `reset` is not none, presets where its `presets`
 /// holds, and ⋯ always, holding `head.options`, drawn disabled while it holds nothing. A
 /// processing tool's are an editing tool's three (`Section::edits`), its presets drawn
-/// disabled until presets come; a utility's ↺ is named `reset_name`, and its presets button,
-/// where it has one, is named by the first of `presets` and drawn disabled, its tooltip the
+/// disabled until [`section`] gives them their pull-down; a utility's ↺ is named
+/// `reset_name`, and its presets button, where it has one, is named by the first of
+/// `presets` and drawn disabled, its tooltip the
 /// second, until its presets come with the presets API every tool shares (decision 93;
 /// planned). ↺, and ⋯'s Reset with it, is drawn disabled unless `resettable`. Its tooltip
 /// says `about`, where the tool says anything, and after its title it says where it lives
@@ -296,7 +308,8 @@ pub fn header<'a>(
 /// declaration's `reset` says, and the item chosen in ⋯, a registry action or one of its
 /// own, its Reset as ↺, unless the photo ⋯ acts on is no longer `photo`, the open of the
 /// photo now: ⋯, opened for the photo before, then closes, and its choice is dropped.
-/// Presets and an empty ⋯ are drawn disabled, nothing behind them yet.
+/// An item chosen in a processing tool's presets comes as [`Pressed::Preset`]; an empty ⋯
+/// is drawn disabled, nothing behind it yet.
 ///
 /// What it asks of the layout, where `layout` places it in the workspace, goes to the
 /// shell apart, by the tool's id ([`layout_asked`]): Alt+↑ and Alt+↓ on its focused
@@ -333,9 +346,11 @@ pub fn pressed(
         })
         .collect();
     if replaced {
-        if let Some(button) = out.options {
+        for button in [out.options, out.presets].into_iter().flatten() {
             popup::close(ui.ctx(), popup::button_menu(button));
         }
+    } else if let Some(id) = &out.preset {
+        pressed.push(Pressed::Preset(id.clone()));
     } else if let Some(id) = out.chosen.as_deref() {
         match crate::menus::chosen(id) {
             // The layout's, on this tool, whatever photo is open.
@@ -1014,8 +1029,9 @@ fn equalizer_curve(
 /// session reports unavailable, and for a switched tool unless it is edited, as one off
 /// never is (decision 32), whose section screen readers describe as not applied. While
 /// `opening` holds the tooltip of a photo opening, read-only until it is live (decision
-/// 77), hovering its rows says why. Its colour pickers are drawn as `pickers` says.
-/// Returns what the user did.
+/// 77), hovering its rows says why. Its colour pickers are drawn as `pickers` says. Its
+/// presets button opens the pull-down of `head.presets`, the folder read as it opens, while
+/// `editable`, and is drawn disabled otherwise. Returns what the user did.
 #[expect(
     clippy::too_many_arguments,
     reason = "the app's own state for the section, each part apart"
@@ -1058,6 +1074,7 @@ pub fn section(
     let about = about(&words, id, definition.facts.as_ref());
     let (photo, layout) = (head.photo, head.layout);
     let reset = editable && resettable;
+    let presets = head.presets.clone().filter(|_| editable);
     let mut section = header(
         &definition.tool,
         &title,
@@ -1068,6 +1085,13 @@ pub fn section(
         head,
     )
     .not_applied(!state.enabled);
+    if let Some(menu) = presets {
+        let words = std::sync::Arc::clone(&words);
+        section = section.presets(true).presets_menu(move || {
+            let listed = crate::presets::read(&menu.folder, tool);
+            crate::presets::entries(tool, state, &listed, &menu, &words)
+        });
+    }
     if tabs.len() > 1 {
         section = section
             .tabs(&tabs, selected)
@@ -1113,6 +1137,10 @@ pub fn section(
             Pressed::Tab(tab) => Change::Tab { tool: id, tab },
             Pressed::Reset => Change::ResetTool { tool: id },
             Pressed::Run(action) => Change::Run(action),
+            Pressed::Preset(chosen) => match crate::presets::Item::of(&chosen) {
+                Some(item) => Change::Preset { tool: id, item },
+                None => continue,
+            },
             // A processing tool's ⋯ holds its declared items alone.
             Pressed::Own(_) => continue,
         });
@@ -3699,8 +3727,10 @@ mod tests {
         assert!(harness.query_by_label("Clip highlights").is_none());
     }
 
+    /// With no presets folder given and no ⋯ entries, as with no user data folder, the
+    /// presets and options buttons are drawn disabled and do nothing; there is no Auto.
     #[test]
-    fn presets_and_options_are_drawn_disabled_and_there_is_no_auto_button() {
+    fn without_a_presets_folder_or_options_both_are_disabled_and_there_is_no_auto() {
         let mut harness = panel(&Exposure, untouched(&Exposure));
         harness.run();
         for name in ["Exposure presets", "Exposure options"] {
@@ -8048,6 +8078,25 @@ mod tests {
         );
         picked.apply(Some(&picked_as(7, 61.0)));
         assert_eq!(picked.patch("exposure").map(|p| p.lch[0]), Some(61.0));
+        // A preset applied, inside its step, takes its own tool's away.
+        let preset = crate::presets::apply("exposure", "Bright", Default::default());
+        assert_eq!(Picked::clears(&preset), Some(Some("exposure".to_owned())));
+        picked.sent(9, Picked::clears(&preset));
+        assert!(picked.patch("exposure").is_none());
+        // A step changing two tools takes every tool's, not the first's alone.
+        let reset = |tool: &str| Command::ResetTool {
+            tool: tool.to_owned(),
+        };
+        let step = |commands| Command::Step {
+            source: apertrust_engine::session::StepSource::You,
+            note: None,
+            commands,
+        };
+        let two = step(vec![reset("agx"), reset("exposure"), reset("agx")]);
+        assert_eq!(Picked::clears(&two), Some(None));
+        let one = step(vec![reset("agx"), reset("agx")]);
+        assert_eq!(Picked::clears(&one), Some(Some("agx".to_owned())));
+        assert_eq!(Picked::clears(&step(Vec::new())), None);
     }
 
     /// `Settings` completes a change on the edit, whose write Quit waits for, whatever picker

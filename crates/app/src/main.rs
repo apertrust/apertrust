@@ -74,6 +74,7 @@ mod mirror;
 mod paths;
 mod pickers;
 mod popups;
+mod presets;
 mod recents;
 mod recovery;
 mod restart;
@@ -112,7 +113,7 @@ use apertrust_engine::session::{
 };
 use apertrust_engine::sidecar::Reason;
 use apertrust_engine::view::{FramePlace, Placement};
-use apertrust_tools::ToolDefinition;
+use apertrust_tools::{ProcessingTool, ToolDefinition};
 use apertrust_ui::components::{
     ActivityAction, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
     CaptionStyle, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
@@ -543,6 +544,8 @@ fn main() -> eframe::Result {
         .and_then(|folders| open_cache(folders.cache()));
     // The folders as Settings › Storage shows them.
     let storage_folders = storage::Folders::of(folders.as_ref(), export::places().home);
+    // The tools' presets, in the user data folder (decision 106).
+    let presets = presets::Presets::new(folders.clone());
     // The window's device is the engine's, so it is created from the engine's instance,
     // built from the same options, so the two load the same backends (decision 82), its
     // Direct3D 12 shader compiler included, and with the engine's needs. A display handle
@@ -654,7 +657,7 @@ fn main() -> eframe::Result {
                     engine_gate,
                     engine,
                     cache,
-                    (recents, workspaces, workspace, folder),
+                    (recents, workspaces, workspace, folder, presets),
                     storage_folders,
                     app_host,
                     kept,
@@ -1502,6 +1505,8 @@ struct App {
     export_folder: export::folder::Looking,
     /// The photo Discard History was asked for, until its question is answered.
     discarding: Option<alerts::Discarding>,
+    /// The tool and preset Update or Delete asked about, until its alert is answered.
+    preset_asked: Option<(&'static str, String)>,
     /// Whether Quit waits for the open dialog's answer ([`hold_for_panel`]).
     quit_held: bool,
     /// The alert asked and not yet answered (`docs/gui.md`, Dialogs and alerts).
@@ -1928,6 +1933,9 @@ const ZOOM_MENU: [(ViewerBarAction, ActionId); 5] = [
 /// The shell's own state (`docs/gui.md`, A frame), part of it kept in settings.
 struct Shell {
     view: View,
+    /// The tools' presets' folder and the preset each last had applied or saved this run
+    /// (decision 106).
+    presets: presets::Presets,
     /// The workspaces read as the app started, which View › Workspace lists (decision 96).
     workspaces: layout::Workspaces,
     /// The workspace the Tools panel shows, its layout worked out as it was read
@@ -2182,6 +2190,7 @@ impl Shell {
             .unwrap_or(system);
         Shell {
             view: View::Edit,
+            presets: presets::Presets::default(),
             workspaces: layout::Workspaces::builtin(),
             workspace,
             kept_workspace: settings.workspace.clone(),
@@ -3117,8 +3126,8 @@ impl Shell {
     /// What `definition`'s header is given by the shell (decision 93): its section open as
     /// kept, or as declared at first, peeking while `peek` holds, ⋯ holding its declared
     /// items as the menu builder lists them, then the layout's ([`Shell::layout_head`]),
-    /// with the keymap's keys, enabled as `state` says, and while Find Tool… is open where
-    /// the tool lives ([`Shell::found`]).
+    /// with the keymap's keys, enabled as `state` says, while Find Tool… is open where
+    /// the tool lives ([`Shell::found`]), and for a processing tool its presets.
     fn head(
         &self,
         ctx: &egui::Context,
@@ -3134,6 +3143,12 @@ impl Shell {
             photo: None,
             layout: None,
             found: self.found(ctx, definition.id),
+            presets: (definition.reset == apertrust_tools::Reset::Tool)
+                .then(|| {
+                    let alerts = dialog_host::platform::shows_alerts(ctx.os());
+                    self.presets.menu(definition.id, alerts)
+                })
+                .flatten(),
         };
         head.with_layout(self.layout_head(ctx, definition.id, state))
     }
@@ -3176,7 +3191,10 @@ impl Shell {
             match pressed {
                 tools::Pressed::Toggle => self.toggle_section(&history::declared().tool),
                 tools::Pressed::Run(id) => run = Some(id),
-                tools::Pressed::Tab(_) | tools::Pressed::Reset | tools::Pressed::Own(_) => {}
+                tools::Pressed::Tab(_)
+                | tools::Pressed::Reset
+                | tools::Pressed::Own(_)
+                | tools::Pressed::Preset(_) => {}
             }
         }
         for action in actions {
@@ -4466,11 +4484,12 @@ impl App {
         gate: SubmitGate,
         engine: apertrust_engine::settings::Options,
         cache: Option<Arc<Cache>>,
-        (recents, workspaces, workspace, folder): (
+        (recents, workspaces, workspace, folder, presets): (
             Recents,
             layout::Workspaces,
             layout::Workspace,
             Option<PathBuf>,
+            presets::Presets,
         ),
         storage_folders: storage::Folders,
         dialogs: dialog_host::Host,
@@ -4496,6 +4515,7 @@ impl App {
             ),
             recents,
             workspaces,
+            presets,
             workspace_files: folder.map_or_else(layout::Files::nowhere, |folder| {
                 // A newer build's file found while the window rests: a frame to say so.
                 let ctx = cc.egui_ctx.clone();
@@ -4637,6 +4657,7 @@ impl App {
             export_previews: export::Previews::default(),
             export_folder: export::folder::Looking::default(),
             discarding: None,
+            preset_asked: None,
             quit_held: false,
             alerts: alerts::Alerts::default(),
             quit: alerts::Guard::default(),
@@ -4940,6 +4961,7 @@ impl App {
             alerts::Then::Nothing => {
                 self.again.declined();
                 self.discarding = None;
+                self.preset_asked = None;
                 // The app stays: a restart asked with Quit is asked no more.
                 if purpose == alerts::Purpose::Quit {
                     self.restart.cancel();
@@ -4960,6 +4982,8 @@ impl App {
                 self.discard_step(step, ctx);
             }
             alerts::Then::Leave => self.quit_again = true,
+            alerts::Then::UpdatePreset => self.preset_confirmed(true),
+            alerts::Then::DeletePreset => self.preset_confirmed(false),
             alerts::Then::Told => {}
         }
     }
@@ -5317,6 +5341,7 @@ impl App {
                 | Change::ApplyPreset { .. }
                 | Change::Action { .. }
                 | Change::Step(_)
+                | Change::Preset { .. }
                 | Change::Picker {
                     action: PickerAction::On { .. },
                     ..
@@ -5396,6 +5421,7 @@ impl App {
             Change::Tab { .. } => self.panels.apply(&change),
             // An item of the tool's ⋯, run where it can run then, as its keys run it.
             Change::Run(id) => self.run_actions([id], ctx, &[]),
+            Change::Preset { tool, item } => self.preset(tool, item, ctx),
             Change::Picker {
                 tool,
                 picker,
@@ -5491,6 +5517,127 @@ impl App {
             ctx,
         );
         number
+    }
+
+    /// What an item of `tool`'s presets does (decision 106; `presets.rs`): Default settings
+    /// and a preset applied as one history step each, Save as Preset… and Rename… their
+    /// dialog, Update and Delete their alert first. A preset that has gone or is parked by
+    /// the time it is chosen is not applied.
+    fn preset(&mut self, tool: &'static str, item: presets::Item, ctx: &egui::Context) {
+        let (Some(folder), Some(found)) = (self.shell.presets.folder(tool), self.tool(tool)) else {
+            return;
+        };
+        let words = apertrust_ui::translator(ctx);
+        let title = words.text(&apertrust_tools::messages::title(tool));
+        match item {
+            presets::Item::Default => {
+                let number = self.send_edit(presets::default_settings(tool));
+                self.pend(number, Pending::ResetTool { tool });
+            }
+            presets::Item::Apply(name) => match presets::find(&folder, found, &name) {
+                Some(presets::Listed {
+                    values: Ok(values), ..
+                }) => {
+                    self.send_edit(presets::apply(tool, &name, values));
+                    self.shell.presets.choose(tool, &name);
+                }
+                _ => tracing::warn!(target: "settings", "{tool}'s preset {name} cannot be applied"),
+            },
+            presets::Item::Save => {
+                let taken = presets::taken(&folder, found, &words);
+                let name = presets::free_name(&title, &taken, &words);
+                let dialog = presets::NameDialog::save(tool, title, taken, name);
+                self.dialogs.open(dialog, None, ctx);
+            }
+            presets::Item::Rename(name) => {
+                let taken = presets::taken(&folder, found, &words);
+                let dialog = presets::NameDialog::rename(tool, title, taken, name);
+                self.dialogs.open(dialog, None, ctx);
+            }
+            presets::Item::Update(ref name) | presets::Item::Delete(ref name) => {
+                let name = name.clone();
+                let update = matches!(item, presets::Item::Update(_));
+                let (purpose, request) = if update {
+                    (
+                        alerts::Purpose::UpdatePreset,
+                        alerts::update_preset_request(ctx, &name),
+                    )
+                } else {
+                    (
+                        alerts::Purpose::DeletePreset,
+                        alerts::delete_preset_request(ctx, &name),
+                    )
+                };
+                let asked = self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
+                if asked == dialog_host::Ask::Shown {
+                    self.preset_asked = Some((tool, name));
+                }
+            }
+        }
+    }
+
+    /// What Save as Preset… or Rename… asked as its button was pressed: the tool's values now
+    /// written as a preset, or its preset renamed, which is then the one Update, Rename…
+    /// and Delete… act on. A file that cannot be written is logged under `-d settings`.
+    fn preset_named(&mut self, asked: presets::Asked) {
+        let tool = match &asked {
+            presets::Asked::Save { tool, .. } | presets::Asked::Rename { tool, .. } => *tool,
+        };
+        let (Some(folder), Some(found)) = (self.shell.presets.folder(tool), self.tool(tool)) else {
+            return;
+        };
+        let (done, name) = match &asked {
+            presets::Asked::Save {
+                name, description, ..
+            } => {
+                let Some(state) = self.mirror.values.tools.iter().find(|s| s.tool == tool) else {
+                    return;
+                };
+                let build = apertrust_base::program!().version;
+                let named = (name.as_str(), description.as_deref());
+                (
+                    presets::save(&folder, found, state, named, build).map(drop),
+                    name,
+                )
+            }
+            presets::Asked::Rename { from, to, .. } => {
+                (presets::rename(&folder, found, from, to).map(drop), to)
+            }
+        };
+        match done {
+            Ok(()) => self.shell.presets.choose(tool, name),
+            Err(error) => tracing::warn!(target: "settings", "{tool}'s preset {name}: {error}"),
+        }
+    }
+
+    /// The alert asked for `tool`'s preset `name` answered yes: Update writes the tool's
+    /// values now over it, Delete removes it, so it is gone from the list at once.
+    fn preset_confirmed(&mut self, update: bool) {
+        let Some((tool, name)) = self.preset_asked.take() else {
+            return;
+        };
+        let (Some(folder), Some(found)) = (self.shell.presets.folder(tool), self.tool(tool)) else {
+            return;
+        };
+        let done = if update {
+            let Some(state) = self.mirror.values.tools.iter().find(|s| s.tool == tool) else {
+                return;
+            };
+            let build = apertrust_base::program!().version;
+            presets::update(&folder, found, state, &name, build).map(drop)
+        } else {
+            presets::delete(&folder, found, &name).map(|()| self.shell.presets.forget(tool, &name))
+        };
+        if let Err(error) = done {
+            tracing::warn!(target: "settings", "{tool}'s preset {name}: {error}");
+        }
+    }
+
+    /// The processing tool `id`, among the mirror's.
+    fn tool(&self, id: &str) -> Option<&'static dyn ProcessingTool> {
+        (self.mirror.tools().iter())
+            .find(|tool| tool.definition().tool.id == id)
+            .copied()
     }
 
     /// Sends a command that changes the edit: the Toolbar's save state waits for the
@@ -8118,6 +8265,9 @@ impl eframe::App for App {
         for asked in taken.log {
             self.log_asked(asked, ctx);
         }
+        for asked in taken.presets {
+            self.preset_named(asked);
+        }
         self.log_saved(ctx);
         // The app's keys pressed in a dialog's own window, Quit among them.
         self.run_actions(taken.actions, ctx, &[]);
@@ -8821,6 +8971,7 @@ fn take_dialogs(
     let mut actions = Vec::new();
     let mut settings = Vec::new();
     let mut storage = Vec::new();
+    let mut presets = Vec::new();
     for output in dialogs.outputs() {
         match output {
             dialog_host::Output::Keys(keys) => actions.extend(actions::read_from_dialog(
@@ -8843,6 +8994,7 @@ fn take_dialogs(
                 shell.log.size = Some([size.x.round(), size.y.round()]);
             }
             dialog_host::Output::Log(asked) => log.push(asked),
+            dialog_host::Output::Preset(asked) => presets.push(asked),
         }
     }
     let held = hold_close(ctx, dialogs);
@@ -8853,6 +9005,7 @@ fn take_dialogs(
         storage,
         jobs,
         log,
+        presets,
         actions,
     }
 }
@@ -8883,6 +9036,8 @@ struct Taken {
     jobs: Vec<apertrust_ui::components::ActivityAction>,
     /// What the log window asked, in order.
     log: Vec<log_window::Asked>,
+    /// What Save as Preset… and Rename… asked, in order.
+    presets: Vec<presets::Asked>,
     /// The actions the app's keys asked for in a dialog's own window, in order.
     actions: Vec<ActionId>,
 }
@@ -23456,7 +23611,9 @@ mod tests {
                                 discard_step(d, step, &ctx);
                             }
                             alerts::Then::Leave => d.quit_again = true,
-                            alerts::Then::Told => {}
+                            alerts::Then::UpdatePreset
+                            | alerts::Then::DeletePreset
+                            | alerts::Then::Told => {}
                         }
                     }
                     if d.quit_held && d.alerts.pending() != Some(alerts::Purpose::Overwrite) {

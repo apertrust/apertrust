@@ -330,7 +330,9 @@ impl Picked {
     /// history, the edit's reset, and Compress, Truncate and Discard History, after which
     /// darktable reloads the history and so its modules' `gui_update` too
     /// (`dt_dev_history_truncate`, `src/develop/develop.c:1860`);
-    /// `Some(Some(tool))` one tool's, for its reset; `None` for any other command.
+    /// `Some(Some(tool))` one tool's, for its reset and for its whole values set, as a
+    /// preset sets them; a `Step`'s, what its commands take, every tool's where they take
+    /// more than one tool's; `None` for any other command.
     pub fn clears(command: &Command) -> Option<Option<String>> {
         match command {
             Command::Undo
@@ -340,7 +342,15 @@ impl Picked {
             | Command::Compress { .. }
             | Command::Truncate { .. }
             | Command::DiscardHistory => Some(None),
-            Command::ResetTool { tool } => Some(Some(tool.clone())),
+            Command::ResetTool { tool } | Command::SetTool { tool, .. } => Some(Some(tool.clone())),
+            Command::Step { commands, .. } => {
+                let mut cleared = commands.iter().filter_map(Picked::clears);
+                let first = cleared.next()?;
+                match cleared.all(|other| other == first) {
+                    true => Some(first),
+                    false => Some(None),
+                }
+            }
             _ => None,
         }
     }

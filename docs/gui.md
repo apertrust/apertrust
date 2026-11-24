@@ -27,7 +27,7 @@ Steps 1 to 5 of the [build order](#build-order) are built, step 6 has its render
 - Translation, with British and American English, Ukrainian, Polish and the pseudo-locale, and the check for literal strings ([Translation](#translation)).
 - The controls in `crates/ui/src/components`: the slider row, icon button, segmented control, choice list, colour swatches and value field, with AccessKit on in the app and interaction tests for each ([Components](#components)).
 - The painted widgets: [the curve](#the-curve), [the equalizer](#the-equalizer) and [the scopes](#the-scopes) (the histogram, the waveform, the RGB parade and the vectorscope). The app's Scopes section is pinned in the editing tabs and fed by the engine's counts for all four.
-- The section frame (header, buttons, [the header's tooltip](#the-headers-tooltip), tabs, plain and collapsible groups, peeking with H) and the Tools panel's tab bar, body and edge ([Tool panels from definitions](#tool-panels-from-definitions), [The Tools panel](#the-tools-panel)).
+- The section frame (header, buttons, [the header's tooltip](#the-headers-tooltip), tabs, plain and collapsible groups, peeking with H), and [a tool's presets](#a-tools-presets) from its header's presets button and the Tools panel's tab bar, body and edge ([Tool panels from definitions](#tool-panels-from-definitions), [The Tools panel](#the-tools-panel)).
 - The shell's parts: `Toolbar`, `ViewerBar` and `Browser`, with interaction tests and a snapshot at a full window's width ([The shell](#the-shell)).
 - The app as that shell, with one raw open: the engine renders it on its own thread through the viewport pipe, every ported operation from the saved edit, and a paint callback draws each frame pixel for pixel (decision 17), scaled only while the window resizes (decision 18); the scale's zoom from Small to 1600%, 100% the detail pipeline's render, panning by the pointer and by Alt with the arrows, the position marks, and the photo a focus stop while zoomed, the zoom carried across photos and kept through Orientation's turns ([The zoom](#the-zoom), its five steps).
 - The tool panel renderer (`crates/app/src/tools.rs`), which draws any processing tool's section from its definition, with every tool of the first pass built so far; every tool's header and ⋯ drawn from its `ToolDefinition`, and each utility's page by its `UtilityTool` ([one tool model](#one-tool-model), decision 93), Export's section still by `export.rs`.
@@ -1291,7 +1291,7 @@ Every dialog is a proper system modal window, and every confirmation the system'
 
 - The dialog host, `crates/app/src/dialog_host.rs`, on every platform: every dialog is built one way ([How a dialog is built now](#how-a-dialog-is-built-now)).
 - Settings: a modeless window of its own on the Mac, a modal window of the host on Windows and Linux.
-- The sheet on the Mac, started from the run loop. No dialog uses it yet; the host keeps it.
+- The sheet on the Mac, started from the run loop: Save as Preset… and Rename… of [a tool's presets](#a-tools-presets) use it.
 - The jobs window, modeless ([The jobs window](#the-jobs-window)).
 - The alerts on the Mac, `NSAlert` as a sheet, and on Linux, Apertrust's drawn alert in a dialog window, with Export's overwrite question and the quit alert as their first confirmations ([The alerts](#the-alerts)).
 - Wayland's parent relationship, with modality kept by the app. Windows' owner disabling and X11's native modality are [still to build](#still-to-build).
@@ -1392,6 +1392,7 @@ The host draws any dialog the same way (`dialog_host::draw`, which the tests run
 | Dialog | Asks for | macOS | Windows | Linux | Escape, Cmd+W, Cmd+. |
 | --- | --- | --- | --- | --- | --- |
 | Export | Sheet | AppKit's sheet | Modal | Modal | All three close it |
+| Save as Preset…, Rename Preset | Sheet | AppKit's sheet | Modal | Modal | All three close it, Escape from the name field too |
 | Settings | Modeless on the Mac, Modal elsewhere | Modeless, where it was last left | Modal, with Close | Modal, with Close | Escape alone, but on the Mac, where none (Cmd+W is Close Window's) |
 | The jobs window | Modeless | Modeless, where it was last left | The same | The same | None (Cmd+W is Close Window's on the Mac) |
 
@@ -3189,6 +3190,32 @@ A section's header takes no right-click, a tool's or a utility's, nor Shift+F10 
 
 **The ways back:** Esc during a drag; the opposite move; ⋮ › Processing Order; ⋮ › Reset Tab, the tab's layout as it shipped: a section it brings back leaves any other tab whose defaults lack it, so a move out of the tab is undone while Scopes, shipped in several tabs, stay in each; a section it takes out goes to its default place where no other tab holds it; floating sections stay floating, one whose tab no longer holds it docking later at its default place; Dock All Floating Panels, in ⋮ and View › Panels; Workspace ▸'s Restore Defaults, planned, deleting a built-in workspace's file. Reset Tab also takes the tools it brings back out of the Hidden tab, and a tool it takes out that no other tab holds goes to its default tabs the workspace has, else it is hidden, but a floating one, which stays floating (decision 96).
 
+#### A tool's presets
+
+Every processing tool's header has a presets button (decision 106, its phase 1; `crates/app/src/presets.rs`). It is a menu button named "Exposure presets", expanded while open, and opens a pull-down from the popup service, like ⋯: native on the Mac, drawn elsewhere (decision 40). The folder is read as it opens, `<user data>/presets/<tool>/`, through `apertrust_library::presets`; nothing watches it.
+
+```text
+Default settings
+──────────────────
+✓ Bright interiors
+  Night street
+  Old look              (parked: disabled, why as its tooltip)
+──────────────────
+Save as Preset…
+Update "Bright interiors"   (only while the values differ from it)
+Rename…
+Delete…
+```
+
+- **Default settings,** built in, first: the tool's reset, `ResetTool`, as one history step noted "Default settings" (`history-default-settings`). ✓ while the tool is at its defaults.
+- **The person's presets,** by name in the file browser's order. ✓ before each whose values the tool holds now. Choosing one sends `Step { source: You, note: history-preset with its name, commands: [SetTool] }`: one step, which History lists under the tool's title with the note in its tooltip, and one Undo.
+- **Matching:** a preset matches when, for every control, the tool's value is the preset's, or its default where the preset holds none, its mark is the preset's, and a switched tool is on or off as the preset says. A value at its default counts as unset.
+- **Parked:** a file a newer Apertrust wrote (a format version or a field this build does not know, or a value at the tool's version this build cannot keep) or one for a newer version of its tool is listed disabled, its tooltip saying why ("Made by a newer Apertrust", "Made for a newer Exposure: version 3"). A file of another tool, or holding no one tool, is left out with a warning under `-d settings`.
+- **Save as Preset…** opens a dialog of the dialog host (decision 41), a sheet on the Mac: Name, focused, filled with the tool's title and the first free number ("Exposure 1"), and Description, optional; Save, the default, and Cancel. An empty name, or one the tool's presets or Default settings already have, disables Save and says why under the field. Saving writes `<Name>.appreset` with the tool's values off their defaults, every mark, and `enabled` for a switched tool that is on.
+- **Update "<name>", Rename… and Delete…** act on the preset applied or saved last on this tool in this run; with none, Rename… and Delete… are disabled with "Choose a preset first". Update shows only while the values differ from it. Update asks "Update the preset "<name>" with the tool's current values?" (Update, Cancel) and Delete "Delete the preset "<name>"?" (Delete, destructive, and Cancel, the default), as darktable's "update preset?" and "delete preset?", both the system's alerts; where the platform shows no alert yet, Windows, both are disabled with why. Rename… is the name dialog with Name alone.
+- **Keys:** ↑ and ↓ move through the list, Return chooses and Esc closes, as any pull-down; every item is reachable without a pointer. No item has a default shortcut, and none is a registry action yet: a preset's actions are phase 2 (decision 98).
+- **Not yet:** a hover preview, darktable's built-in presets, F2 on an item to rename it, Export's presets and styles.
+
 ### The photo frame
 
 The Viewer's photo is for looking: nothing is drawn on it, and its marks and controls sit in a caption under it. Built for the one photo the app shows; several photos are Phase 3's.
@@ -3673,7 +3700,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 | Processing tool | `ProcessingDefinition`, embedding it, with controls, version, switched, layers, Auto, preset rows (`preset_rows`), views, pickers and facts | `ProcessingTool`, run by the engine's session | `dt_iop_module_so_t`, `iop_api.h`'s non-GUI half |
 | Utility | `UtilityDefinition`, embedding it, with `measures`, each in `utility::UTILITIES`: Scopes, History, Collections and Export | `UtilityTool`, in the app (`crates/app/src/utility.rs`): `body`, one of its custom rows drawn each frame with the row's `Widget`, and `reset`, provided as a no-op | `dt_lib_module_t`, `lib_api.h` |
 
-- **One header and ⋯** in the app take `&ToolDefinition` and build `apertrust-ui`'s `Section`, which keeps no tool types (decision 36; `tools::header`, `tools::pressed`): ↺ where its `reset` is not `Reset::None`, presets where `presets` holds, ⋯ always, holding the app's editing items and its declared items at `Place::Options` as the menu builder lists them (`menus::options`, [Context menus](#context-menus)), drawn disabled while it holds nothing; its Reset enabled as ↺ is and running as ↺ does. ↺ is a processing tool's `ResetTool` (`Reset::Tool`), a registry action (`Reset::Action`, History's `reset`), the utility's own `UtilityTool::reset` (`Reset::Own`, Export's Default settings, named `<id>-reset`, `export-reset`), or absent (Scopes, Collections). Every processing tool has presets, drawn disabled until presets come; a utility may declare `presets`, its button named `<id>-presets` and drawn disabled, its tooltip `<id>-presets-later`, until its presets come with the presets API every tool shares (planned), as Export's is; an app test holds them. A choice in ⋯ made for one photo is dropped once another opens, and ⋯ closes.
+- **One header and ⋯** in the app take `&ToolDefinition` and build `apertrust-ui`'s `Section`, which keeps no tool types (decision 36; `tools::header`, `tools::pressed`): ↺ where its `reset` is not `Reset::None`, presets where `presets` holds, ⋯ always, holding the app's editing items and its declared items at `Place::Options` as the menu builder lists them (`menus::options`, [Context menus](#context-menus)), drawn disabled while it holds nothing; its Reset enabled as ↺ is and running as ↺ does. ↺ is a processing tool's `ResetTool` (`Reset::Tool`), a registry action (`Reset::Action`, History's `reset`), the utility's own `UtilityTool::reset` (`Reset::Own`, Export's Default settings, named `<id>-reset`, `export-reset`), or absent (Scopes, Collections). Every processing tool has presets, its button opening their pull-down ([A tool's presets](#a-tools-presets)); a utility may declare `presets`, its button named `<id>-presets` and drawn disabled, its tooltip `<id>-presets-later`, until its presets come with the presets API every tool shares (planned), as Export's is; an app test holds them. A choice in ⋯ made for one photo is dropped once another opens, and ⋯ closes.
 - **A tool's section starts as it declares** (`ToolDefinition::open_at_first`): every processing tool closed; of the utilities, Collections, Scopes and History open, and Export closed, Export… and Ctrl+E opening it. A state the person chose, kept by the tool's id in `[edit.sections]`, always wins over it (`Shell::section_open`, the one place the header's `tools::Head::open` comes from); no module of the app holds a default of its own. Tests hold each tool's default and a kept state winning both ways.
 - **History's ⋯** holds, after the app's Reset, four declared items, registry actions: Compress History (`compress-history`), Truncate History (`truncate-history`), an item of its own, Create a Style… (`create-style`, drawn disabled until styles come) and, apart, Discard History… (`discard-history`), each saying in its tip what it does (`actions::options_tip`) and enabled from the photo's history (`history::options`) through the actions' state.
 - **Collections' ⋯** holds its own items, Show in Finder and, for photos alone, Open This Folder, not yet registry actions, given to the header beside its declared items, of which it has none; and Collections' header has no tooltip yet, its sentence a design question of its own.
@@ -3684,7 +3711,7 @@ Every tool, a processing tool or a utility, has one header, one page and one ⋯
 
 **Planned,** the rest of the model:
 
-- **Presets of every tool** come from one presets API that processing tools and utilities share, as darktable's presets are (`src/common/presets.c`, `src/gui/presets.c`), each preset an `.appreset` file (decision 106); a utility's are presets of the settings its page stores, its custom rows' included, Export's the first. Until then every presets button is drawn disabled.
+- **Presets of every tool** come from one presets API that processing tools and utilities share, as darktable's presets are (`src/common/presets.c`, `src/gui/presets.c`), each preset an `.appreset` file (decision 106); a utility's are presets of the settings its page stores, its custom rows' included. A processing tool's are built ([A tool's presets](#a-tools-presets)); until a utility's are, its presets button is drawn disabled.
 
 | Tool | Its page |
 | --- | --- |
@@ -3922,7 +3949,7 @@ Over a section's header, its chevron, title and empty space, never its buttons, 
 
 `crates/app/src/tools.rs` draws any tool's section from its definition and the mirror's values, with no code of the tool's own.
 
-- **The section** is `Section::edits()` with the tool's title, its tabs when it has more than one (the tab shown is the app's state for the run), presets drawn disabled until presets come, and options holding Reset, Copy Settings and Paste Settings, then the layout's items ([Context menus](#context-menus)); no Advanced controls toggle (decision 29). Whether it is open is the shell's, kept in settings by the tool's id (`Shell::section_open`), else as the tool declares it at first, closed for every processing tool (`ToolDefinition::open_at_first`, decision 93), on its first tab.
+- **The section** is `Section::edits()` with the tool's title, its tabs when it has more than one (the tab shown is the app's state for the run), presets opening the tool's presets ([A tool's presets](#a-tools-presets)), and options holding Reset, Copy Settings and Paste Settings, then the layout's items ([Context menus](#context-menus)); no Advanced controls toggle (decision 29). Whether it is open is the shell's, kept in settings by the tool's id (`Shell::section_open`), else as the tool declares it at first, closed for every processing tool (`ToolDefinition::open_at_first`, decision 93), on its first tab.
 - **A switched tool that is off** (decision 32) is drawn as any other, its controls at darktable's defaults as the session reports them, with no dimming and no switch: it is transparent to the person.
   - A switched tool's reset is available only while the session reports it edited (`ToolState::edited`, which a switched tool is while it is on), and at once while a change turning it on is pending, on a photo that can be edited. Every other tool's reset is available on a photo that can be edited, as before; it follows the same rule once kept marks count as edited. The kept marker beside each control set is the other cue.
   - To AccessKit the section is described as "Not applied" (`section-not-applied`, through `Section::not_applied`) while the session reports it off (`ToolState::enabled` false), and not while a pending change turns it on.

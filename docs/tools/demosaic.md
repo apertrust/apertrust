@@ -130,7 +130,7 @@ D5 in the panel (`demosaic_draws_darktable_s_rows_for_the_photo_s_method`):
 - **The method** is a live list of the sensor's methods, RCD or Markesteijn 1-pass chosen, the unported drawn disabled; another sensor's method an edit holds comes last, chosen and disabled, "Not available for this photo".
 - **Colour smoothing and Match greens** are lists, live, Disabled the one option ported, the others listed disabled, as Vignetting's Dithering is.
 - **Capture sharpen** is a toggle row drawn disabled, off.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 

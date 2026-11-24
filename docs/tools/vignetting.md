@@ -117,7 +117,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/vignetting.rs`. The synt
 - **Automatic ratio** is a toggle row, **Dithering** a list, its two noises listed disabled.
 - **The width/height ratio** is drawn disabled while automatic ratio is on, its value kept.
 - **Keyboard:** every slider is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac, never less than the last decimal shown. The value is rounded to the decimals shown before it is sent.
-- **While closed** the section shows its title and buttons; its presets and options are drawn disabled until something is behind them.
+- **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
 
 ## Gaps
 

@@ -115,6 +115,28 @@ collapsible-group-active = { $group } (активне)
 preset-custom = Власні
 preset-option-unavailable = Недоступно для цього знімка
 
+## A tool's presets
+
+presets-default = Типові налаштування
+presets-save = Зберегти як шаблон…
+presets-update = Оновити «{ $name }»
+presets-rename = Перейменувати…
+presets-delete = Видалити…
+presets-choose-first = Спершу виберіть шаблон
+presets-no-alert = Ця дія спершу питає, а показати запитання тут поки неможливо.
+presets-parked-newer = Створено новішою версією Apertrust
+presets-parked-tool = Створено для новішої версії інструмента «{ $tool }»: версія { $version }
+presets-save-title = Зберегти як шаблон
+presets-rename-title = Перейменувати шаблон
+presets-name = Назва
+presets-new-name = { $tool } { $number }
+presets-description = Опис
+presets-description-hint = Необов’язково
+presets-save-button = Зберегти
+presets-rename-button = Перейменувати
+presets-name-empty = Шаблону потрібна назва
+presets-name-taken = Інструмент «{ $tool }» уже має шаблон із такою назвою
+
 ## Позначка повзунка
 
 slider-kept = Зафіксовано: ви встановили це значення, тож Авто та Зіставлення його не змінюють. Клацніть, щоб звільнити.
@@ -987,6 +1009,8 @@ history-go-to-step = Перехід до кроку
 history-compress = Стиснення історії
 history-truncate = Обрізання історії
 history-discard = Відкидання історії
+history-preset = Шаблон { $name }
+history-default-settings = Типові налаштування
 history-options-compress = Стиснути історію
 history-options-truncate = Обрізати історію
 history-compress-tip = Залишає останній крок кожного інструмента до вибраного й вилучає решту. Знімок не змінюється, окрім як на «Оригіналі»: там уся історія зникає, і знімок починає знову з типових кроків.
@@ -1427,3 +1451,9 @@ alert-discard-title = Відкинути історію цього знімка?
 alert-discard-message = Знімок повернеться до того, яким він відкрився вперше, а його історію буде очищено. Її можна повернути командою Редагування › Скасувати, доки знімок відкритий.
 alert-discard-unreadable-message = Частину історії цієї обробки не вдається прочитати. Відкидання почне її наново від знімка, яким він є зараз, а те, що не вдається прочитати, буде втрачено назавжди. Щоб зберегти це, спершу скопіюйте { $file }.
 alert-discard-button = Відкинути історію
+alert-preset-update-title = Оновити шаблон «{ $name }» поточними значеннями інструмента?
+alert-preset-update-message = Його файл буде замінено.
+alert-preset-update-button = Оновити
+alert-preset-delete-title = Видалити шаблон «{ $name }»?
+alert-preset-delete-message = Його файл буде вилучено.
+alert-preset-delete-button = Видалити
