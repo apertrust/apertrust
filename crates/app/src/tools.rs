@@ -467,15 +467,16 @@ pub fn reset_name(words: &Translator, tool: &ToolDefinition, title: &str) -> Str
 
 /// The tools whose pickers the panel draws: those whose pick is built, each joining with
 /// it (`docs/pickers.md`, The plan): Exposure's, White balance's, turned on from Settings,
-/// Colour calibration's, on its readout row, and Colour balance RGB's six quads. Until
-/// then a tool's quad, its picker rows' buttons and its patches' input are not drawn, as a
-/// quad with nothing behind it is not, and a preset option that turns its picker on is
-/// drawn disabled.
+/// Colour calibration's, on its readout row, Colour balance RGB's six quads, and AgX's
+/// four quads and Auto tune levels' row. Until then a tool's quad, its picker rows'
+/// buttons and its patches' input are not drawn, as a quad with nothing behind it is not,
+/// and a preset option that turns its picker on is drawn disabled.
 pub const PICKING: &[&str] = &[
     "exposure",
     "temperature",
     "channelmixerrgb",
     "colorbalancergb",
+    "agx",
 ];
 
 /// The colour pickers as a section draws them.
@@ -8514,6 +8515,133 @@ mod tests {
             });
             harness.run();
             harness.snapshot(format!("colour-balance-rgb-pickers-{theme}"));
+            results.extend_harness(&mut harness);
+        }
+    }
+
+    /// AgX as a section draws it, its pickers drawn, on its Settings tab, the picker `on`
+    /// on.
+    struct Toned {
+        on: Option<PickerRef>,
+        changes: Vec<Change>,
+    }
+
+    /// AgX's section in `which`, open on Settings.
+    fn toned(which: Builtin) -> Harness<'static, Toned> {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 620.0))
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+            .build_ui_state(
+                |ui, toned: &mut Toned| {
+                    let panel = theme(ui.ctx()).colors.panel;
+                    ui.painter()
+                        .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                    let pickers = Pickers {
+                        drawn: PICKING,
+                        on: toned.on,
+                        ..Pickers::NONE
+                    };
+                    let changes = section(
+                        ui,
+                        &Agx,
+                        &untouched(&Agx),
+                        Head {
+                            open: true,
+                            ..Head::default()
+                        },
+                        &Panels::default(),
+                        &|_: &str| GROUP_OPEN,
+                        true,
+                        None,
+                        &pickers,
+                    );
+                    toned.changes.extend(changes);
+                },
+                Toned {
+                    on: None,
+                    changes: Vec::new(),
+                },
+            );
+        harness.run();
+        harness
+    }
+
+    /// AgX's five pickers, darktable's: the quads on white and black relative exposure, on
+    /// the pivot and on its target output, and Auto tune levels' button at the end of its
+    /// labelled row, each named by its picker, its tooltip darktable's words; a press sends
+    /// `On` with the keys held. Dynamic range scaling, the pickers' margin, is live, and
+    /// Read exposure still drawn disabled.
+    #[test]
+    fn agx_draws_its_five_pickers_and_a_press_sends_on_with_the_keys() {
+        let mut harness = toned(Builtin::Dark);
+        let pickers: Vec<String> = harness
+            .query_all_by_role(Role::Button)
+            .filter_map(|node| node.accesskit_node().label())
+            .filter(|label| label.ends_with(": pick from the photo"))
+            .collect();
+        assert_eq!(
+            pickers,
+            [
+                "White relative exposure: pick from the photo",
+                "Black relative exposure: pick from the photo",
+                "Auto tune levels: pick from the photo",
+                "Pivot relative exposure: pick from the photo",
+                "Pivot target output: pick from the photo",
+            ]
+        );
+        let tip = |harness: &Harness<'_, Toned>, label: &str| {
+            let node = harness.get_by_role_and_label(Role::Button, label);
+            node.accesskit_node().description().unwrap_or_default()
+        };
+        assert_eq!(
+            tip(&harness, "White relative exposure: pick from the photo"),
+            "Picks the white point."
+        );
+        assert_eq!(
+            tip(&harness, "Auto tune levels: pick from the photo"),
+            "Sets black and white relative exposure using the selected area."
+        );
+        assert!(harness.query_by_label("Auto tune levels").is_some());
+        let slider = harness.get_by_role_and_label(Role::Slider, "Dynamic range scaling");
+        assert!(!slider.accesskit_node().is_disabled());
+        let read = harness.get_by_role_and_label(Role::Button, "Read exposure");
+        assert!(read.accesskit_node().is_disabled());
+
+        harness
+            .get_by_role_and_label(Role::Button, "White relative exposure: pick from the photo")
+            .click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Button, "Auto tune levels: pick from the photo")
+            .click_modifiers(Modifiers::COMMAND);
+        harness.run();
+        let pressed = |picker, command| Change::Picker {
+            tool: "agx",
+            picker,
+            action: PickerAction::On { area: command },
+            keys: PickKeys {
+                command,
+                shift: false,
+            },
+        };
+        assert_eq!(
+            harness.state().changes,
+            [pressed("white", false), pressed("range", true)]
+        );
+    }
+
+    /// AgX's Settings tab with its pickers drawn, Auto tune levels' on, in each theme.
+    #[test]
+    fn agx_s_settings_with_its_pickers() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = toned(which);
+            harness.state_mut().on = Some(PickerRef::Tool {
+                tool: "agx",
+                picker: "range",
+            });
+            harness.run();
+            harness.snapshot(format!("agx-settings-pickers-{theme}"));
             results.extend_harness(&mut harness);
         }
     }
