@@ -74,7 +74,7 @@ use std::time::Instant;
 
 use apertrust_display::ColorSpace;
 use apertrust_ui::alert;
-use apertrust_ui::components::{ActivityAction, Button, Job, caption_button};
+use apertrust_ui::components::{ActivityAction, Button, CaptionStyle, Job, caption_button};
 use apertrust_ui::icons::Icon;
 use apertrust_ui::theme;
 use eframe::egui::os::OperatingSystem;
@@ -569,7 +569,14 @@ fn frame(ui: &mut egui::Ui, strip: egui::Rect, title: Option<&str>) -> (Option<G
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     let name = apertrust_ui::tr(&ctx, "window-close");
-    let close = caption_button(&mut end, Icon::Close, &name, true, &t);
+    let close = caption_button(
+        &mut end,
+        Icon::Close,
+        &name,
+        true,
+        CaptionStyle::Windows,
+        &t,
+    );
     if let Some(title) = title {
         frame_title(ui, strip, close.rect, title);
     }

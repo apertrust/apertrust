@@ -115,11 +115,11 @@ use apertrust_engine::view::{FramePlace, Placement};
 use apertrust_tools::ToolDefinition;
 use apertrust_ui::components::{
     ActivityAction, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
-    CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle, PanelBody,
-    PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction, Placed,
-    SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle, Toolbar, ToolbarAction,
-    ToolbarButton, ToolbarEntry, ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom,
-    browser_lines, browser_thickness,
+    CaptionStyle, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
+    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
+    PickerAction, Placed, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle,
+    Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ToolsPanelPosition, ViewMarks, ViewerBar,
+    ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -3710,7 +3710,9 @@ impl Shell {
             bar = bar.title_bar(true).start_inset(inset);
         }
         if let Some(maximised) = caption {
-            bar = bar.caption_buttons(true).maximised(maximised);
+            bar = bar
+                .caption_buttons(Some(CaptionStyle::Windows))
+                .maximised(maximised);
         }
         for (button, keys) in &tips {
             bar = bar.shortcut(*button, keys);
