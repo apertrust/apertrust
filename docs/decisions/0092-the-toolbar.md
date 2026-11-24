@@ -22,12 +22,12 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Platform | The default list, today's order |
 | --- | --- |
-| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `flexible-space`, `guides`, `space`, `copy-edit`, `apply-edit`, `jobs`, `assistant` (Phase 6), `save-state` |
+| macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `jobs`, `assistant` (Phase 6), `save-state`, `flexible-space`, `guides`, `space`, `copy-edit`, `apply-edit` |
 | Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - There is one list for every platform. The Mac never shows `menu-button` and never takes it out of the list.
 - Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the viewer bar has them. So is Settings….
-- **The cursors' well,** `cursors`, stands between two flexible spaces, centred in the room between the actions at the start and Guides, Copy edit and Apply edit at the end ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
+- **The cursors' well,** `cursors`, stands between two flexible spaces at the start of the middle group, the jobs spinner and the save state after it, which they centre in the room between the actions at the start and Guides, Copy edit and Apply edit at the end ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
 
 **What can be placed:**
 
@@ -125,8 +125,8 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
   version = 1
   toolbar = ["menu-button", "import", "export", "reset", "undo", "redo",
-             "flexible-space", "cursors", "flexible-space",
-             "guides", "space", "copy-edit", "apply-edit", "jobs", "save-state"]
+             "flexible-space", "cursors", "jobs", "save-state", "flexible-space",
+             "guides", "space", "copy-edit", "apply-edit"]
 
   [[tabs]]
   id = "photos"
