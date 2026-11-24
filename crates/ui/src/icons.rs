@@ -98,8 +98,11 @@ pub enum Icon {
     ProofMargin,
     /// The viewer bar: before and after.
     BeforeAfter,
-    /// The viewer bar's Guides: a grid over the photo, until it has an icon of its own.
+    /// A grid of thirds in a frame: a tool's guide settings, and a tab of a person's own with
+    /// no icon.
     Grid,
+    /// The Toolbar's Guides (decision 92): guide lines crossing.
+    Guides,
     /// A new layer.
     Plus,
     ZoomIn,
@@ -226,7 +229,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 113] = [
+    pub const ALL: [Icon; 114] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -260,6 +263,7 @@ impl Icon {
         Icon::ProofMargin,
         Icon::BeforeAfter,
         Icon::Grid,
+        Icon::Guides,
         Icon::Plus,
         Icon::ZoomIn,
         Icon::ZoomOut,
@@ -475,6 +479,7 @@ impl Icon {
             Icon::ProofMargin => own!("proof-margin", 16.0),
             Icon::BeforeAfter => derived!("before-after", "square-split-horizontal", 16.0),
             Icon::Grid => derived!("grid", "grid-3x3", 16.0),
+            Icon::Guides => derived!("guides", "frame", 16.0),
             Icon::Plus => derived!("plus", "plus", 14.0),
             // Their files mirrored, the lens at the top right and the handle at the bottom left.
             Icon::ZoomIn => derived!("zoom-in", "zoom-in", 16.0),

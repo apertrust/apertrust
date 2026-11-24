@@ -17,7 +17,8 @@
 //! Edit's thin bar over the photo, and the caption under it (`docs/gui.md`, The shell).
 //!
 //! On the left: the view toggles (every selected photo, the proof margin, before and
-//! after, the guides), then the layer being edited and + for a new one. In the middle: the
+//! after; the guides are the Toolbar's, decision 92), then the layer being edited and +
+//! for a new one. In the middle: the
 //! values under the cursor, or while a colour picker is on, which picker it is and how to
 //! use it (`docs/pickers.md`, On the photo). On the right: the zoom, one button showing
 //! the scale, which opens darktable's zoom menu (`src/libs/navigation.c`): Small, Fit and
@@ -80,7 +81,6 @@ pub enum ViewerBarAction {
     ShowSelected,
     ProofMargin,
     BeforeAfter,
-    Guides,
     /// Open the layer menu.
     Layers,
     NewLayer,
@@ -96,7 +96,6 @@ pub struct ViewerBar<'a> {
     show_selected: Toggle,
     proof_margin: Toggle,
     before_after: Toggle,
-    guides: Toggle,
     layer: &'a str,
     layers: bool,
     values: Option<[u8; 3]>,
@@ -148,7 +147,6 @@ impl<'a> ViewerBar<'a> {
             show_selected: Toggle::default(),
             proof_margin: Toggle::default(),
             before_after: Toggle::default(),
-            guides: Toggle::default(),
             layer,
             layers: false,
             values: None,
@@ -189,12 +187,10 @@ impl<'a> ViewerBar<'a> {
         show_selected: Toggle,
         proof_margin: Toggle,
         before_after: Toggle,
-        guides: Toggle,
     ) -> Self {
         self.show_selected = show_selected;
         self.proof_margin = proof_margin;
         self.before_after = before_after;
-        self.guides = guides;
         self
     }
 
@@ -288,12 +284,6 @@ impl<'a> ViewerBar<'a> {
                             "photo-before-after",
                             self.before_after,
                             ViewerBarAction::BeforeAfter,
-                        ),
-                        (
-                            Icon::Grid,
-                            "photo-guides",
-                            self.guides,
-                            ViewerBarAction::Guides,
                         ),
                     ] {
                         if IconButton::new(icon, &tr(&ctx, id))

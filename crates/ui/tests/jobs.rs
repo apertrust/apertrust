@@ -549,6 +549,7 @@ fn the_spinner_has_no_words_so_it_never_folds_and_leaves_room_to_move_the_window
         "action-reset",
         "action-undo",
         "action-redo",
+        "action-guides",
         "action-copy-edit",
         "action-apply-edit",
     ];

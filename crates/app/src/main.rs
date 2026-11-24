@@ -3668,11 +3668,15 @@ impl Shell {
                     let (name, word) = placed.words.map_or_default(|message| {
                         (words.text(message), toolbar::word(&words, message))
                     });
-                    let button = ToolbarButton::new(action.id.0, placed.icon?, name)
+                    let mut button = ToolbarButton::new(action.id.0, placed.icon?, name)
                         .label(word)
                         .enabled(can(action))
                         .folds_first(placed.folds_first())
                         .folds_last(TOOLBAR_LAST.contains(&action.id));
+                    // On while what it turns on is, as its menu item's check mark says.
+                    if let Some(on) = action.checked(state) {
+                        button = button.toggled(on);
+                    }
                     if let Some(tip) = self.keymap.tip(action.id, ctx.os(), &words) {
                         tips.push((ToolbarAction::Button(action.id.0), tip));
                     }
@@ -6221,7 +6225,7 @@ impl App {
             _ => None,
         };
         let layer = tr(ui.ctx(), "layer-image");
-        // Until the photo is live, nothing acts on it: no guides, proof margin or zoom
+        // Until the photo is live, nothing acts on it: no proof margin or zoom
         // (decision 77).
         let live = self.mirror.live();
         let open = photo.is_some() && live;
@@ -6287,7 +6291,6 @@ impl App {
                 Toggle::new(false, false),
                 Toggle::new(self.shell.proof_margin, open),
                 Toggle::new(false, false),
-                Toggle::new(self.shell.guides, open),
             )
             .zoom_enabled(open)
             .steps(steps[0], steps[1])
@@ -6305,7 +6308,6 @@ impl App {
                 self.shell.proof_margin = !self.shell.proof_margin;
                 ui.ctx().request_repaint();
             }
-            Some(ViewerBarAction::Guides) => self.shell.guides = !self.shell.guides,
             // A menu's entry zooms about the view's centre.
             Some(chosen) if zoom::chosen(chosen).is_some() => {
                 self.shell.choose_zoom(ui.ctx(), chosen);
@@ -17595,7 +17597,6 @@ mod tests {
                                 Toggle::new(false, false),
                                 Toggle::new(false, false),
                                 Toggle::new(false, false),
-                                Toggle::new(false, false),
                             )
                             .status(rendering.as_deref())
                             .show(ui);
@@ -22485,6 +22486,44 @@ mod tests {
         let id = harness.ctx.memory(|m| m.focused()).expect("the focus kept");
         let rect = harness.ctx.read_response(id).expect("drawn").rect;
         assert!(harness.state().regions[1].contains(rect.center()));
+    }
+
+    /// Decision 92: Guides is on the Toolbar, after the cursors' well, a toggle pressed
+    /// while the guides are on: its click and G turn them on and off, and with no photo it is
+    /// drawn disabled. The viewer bar has none.
+    #[test]
+    fn guides_on_the_toolbar_is_a_toggle_pressed_while_on() {
+        let mut harness = bench(OperatingSystem::Mac);
+        harness.state_mut().photo = false;
+        harness.run();
+        let guides = |harness: &Harness<'_, Bench>| {
+            let node = harness.get_by_role_and_label(Role::Button, "Guides");
+            let node = node.accesskit_node();
+            (node.is_disabled(), node.toggled())
+        };
+        assert_eq!(guides(&harness), (true, Some(Toggled::False)));
+        harness.state_mut().photo = true;
+        harness.run();
+        assert_eq!(guides(&harness), (false, Some(Toggled::False)));
+        let well = harness.get_by_role(Role::RadioGroup).rect();
+        let button = harness.get_by_role_and_label(Role::Button, "Guides").rect();
+        assert!(button.left() > well.right(), "{button:?}, {well:?}");
+        harness
+            .get_by_role_and_label(Role::Button, "Guides")
+            .click();
+        harness.run();
+        assert!(harness.state().shell.guides);
+        harness.run();
+        assert_eq!(guides(&harness), (false, Some(Toggled::True)));
+        harness.key_press(Key::G);
+        harness.run();
+        assert!(!harness.state().shell.guides);
+        assert_eq!(
+            harness
+                .query_all_by_role_and_label(Role::Button, "Guides")
+                .count(),
+            1
+        );
     }
 
     /// Decision 92: a right-click on the Toolbar's empty area opens the toolbar menu, never

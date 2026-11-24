@@ -1502,7 +1502,6 @@ struct Demo {
     /// The shell: whether the menu button's menu is to open by itself
     /// ([`Gallery::with_menu_open`]), the viewer bar's toggles and scale, and the Browser.
     open_menu: bool,
-    guides: bool,
     proof: bool,
     zoom: Zoom,
     active: Option<usize>,
@@ -1610,7 +1609,6 @@ impl Default for Demo {
                 },
             ],
             open_menu: false,
-            guides: false,
             proof: false,
             zoom: Zoom::Percent(400.0),
             active: Some(5),
@@ -3126,9 +3124,9 @@ fn sample_jobs() -> Vec<Job> {
 /// The Toolbar's entries as the app draws the default workspace's list (decision 92), each
 /// button named in `ctx`'s language with its `.toolbar` word as its label, those
 /// `disabled` names drawn disabled: the menu button, Import…, Export…, Reset, Undo and
-/// Redo, which fold last, the cursors' well between two flexible spaces, then Copy edit and
-/// Apply edit, the jobs and the save state. Every button but Import… is a tool's
-/// item, Export's or History's, which folds first. The gallery and the design system's
+/// Redo, which fold last, the cursors' well between two flexible spaces, then Guides, a
+/// space, Copy edit and Apply edit, the jobs and the save state. Every button but Import…
+/// and Guides, the app's own, is a tool's item, Export's or History's, which folds first. The gallery and the design system's
 /// tests draw it.
 pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEntry> {
     let words = crate::translator(ctx);
@@ -3140,7 +3138,7 @@ pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEnt
             .unwrap_or_else(|| name.clone());
         let button = ToolbarButton::new(id, icon, name).label(label);
         let button = button.enabled(!disabled.contains(&id));
-        let button = button.folds_first(id != "import");
+        let button = button.folds_first(!["import", "guides"].contains(&id));
         ToolbarEntry::Button(button.folds_last(["undo", "redo"].contains(&id)))
     };
     vec![
@@ -3153,6 +3151,8 @@ pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEnt
         ToolbarEntry::FlexibleSpace,
         ToolbarEntry::Cursors,
         ToolbarEntry::FlexibleSpace,
+        button("guides", Icon::Guides),
+        ToolbarEntry::Space,
         button("copy-edit", Icon::Copy),
         button("apply-edit", Icon::Apply),
         ToolbarEntry::Jobs,
@@ -3241,7 +3241,6 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
             Toggle::new(false, true),
             Toggle::new(demo.proof, true),
             Toggle::new(false, false),
-            Toggle::new(demo.guides, true),
         )
         .layers(true)
         .values(Some([142, 128, 113]))
@@ -3253,7 +3252,6 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         .show(ui)
     {
         match action {
-            ViewerBarAction::Guides => demo.guides = !demo.guides,
             ViewerBarAction::ProofMargin => demo.proof = !demo.proof,
             ViewerBarAction::Zoom(zoom) => demo.zoom = zoom,
             other => demo.last = format!("Viewer bar: {other:?}"),

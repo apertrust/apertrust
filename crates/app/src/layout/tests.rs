@@ -794,7 +794,7 @@ fn what_cannot_be_read_is_skipped() {
 }
 
 /// The Toolbar's default list (decision 92), in both built-in workspaces.
-const TOOLBAR: [&str; 13] = [
+const TOOLBAR: [&str; 15] = [
     "menu-button",
     "import",
     "export",
@@ -804,6 +804,8 @@ const TOOLBAR: [&str; 13] = [
     "flexible-space",
     "cursors",
     "flexible-space",
+    "guides",
+    "space",
     "copy-edit",
     "apply-edit",
     "jobs",
