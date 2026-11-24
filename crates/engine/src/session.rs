@@ -3413,9 +3413,14 @@ impl Engine {
             // Values follow every change asked for, failed or not, so a client's own
             // value is replaced by the engine's either way.
             values |= on_edit(&command);
-            // The tool a command changes: a tool's colour picker on turns off as its
-            // tool changes.
-            let changes = changed_tool(&command);
+            // The tools a command changes, a `Step`'s each of its commands': a tool's
+            // colour picker on turns off as its tool changes.
+            let changes: Vec<_> = match &command {
+                Command::Step { commands, .. } => {
+                    commands.iter().filter_map(changed_tool).collect()
+                }
+                command => changed_tool(command).into_iter().collect(),
+            };
             // A tool's picker on, and its tool's state, before a move through the history
             // or a rewrite of it: one that changes the tool turns its picker off.
             let moved_from = history_move(&command)
@@ -3608,7 +3613,7 @@ impl Engine {
             };
             match result {
                 Ok(()) => {
-                    if let Some(tool) = changes {
+                    for tool in changes {
                         self.picker_tool_changed(tool.as_deref(), &mut events);
                     }
                     if let Some((tool, before)) = moved_from
