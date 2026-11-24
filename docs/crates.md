@@ -1533,8 +1533,8 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 - Its Master, 4 ways and Masks tabs, with every `gui_init` control in darktable's order under its labels, in its plain groups (decision 100).
 - Each control is one `colorbalancergb` parameter; a percentage is the parameter times 100, `contrast` and `grey_fulcrum` at 18.45 % among them. darktable UCS is the default formula (decision 22).
 - Switched (decision 32), version 2, at the defaults it had: it plans `colorbalancergb` while it is on, as in darktable.
-- The luminance ranges graph and the mask display wait for the renderer, and the pickers, in the definition, for their pick ([pickers.md](pickers.md), decision 79).
-- B4 holds the tool's values to darktable's golden cases' parameters; B6 and B7 hold it on at darktable's defaults and version 1's edits.
+- Its six pickers pick as darktable's do, the four hues with cursors in the well ([pickers.md](pickers.md), decisions 79 and 104); the luminance ranges graph and the mask display wait for the renderer.
+- B4 holds the tool's values to darktable's golden cases' parameters; B6 and B7 hold it on at darktable's defaults and version 1's edits; B8 holds a pick to darktable's Ych.
 
 #### Tone curve
 
