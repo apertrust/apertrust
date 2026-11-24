@@ -22616,7 +22616,7 @@ mod tests {
 
     /// Decision 92: a right-click on the Toolbar's empty area opens the toolbar menu, never
     /// the window's, which stays on the system's own key; its Toolbar Labels turns the
-    /// labels off, and on again, at once, the Toolbar 44 points tall without them and 56
+    /// labels off, and on again, at once, the Toolbar 44 points tall without them and 62
     /// with, and Customise Toolbar… is drawn disabled.
     #[test]
     fn a_right_click_on_the_toolbar_opens_the_toolbar_menu_and_never_the_window_s() {
@@ -22648,7 +22648,7 @@ mod tests {
             harness.run();
             assert_eq!(harness.state().shell.toolbar_labels, on);
             let bar = harness.get_by_role(Role::Toolbar).rect();
-            assert_eq!(bar.height(), if on { 56.0 } else { 44.0 });
+            assert_eq!(bar.height(), if on { 62.0 } else { 44.0 });
             assert_eq!(Toolbar::height(&theme(&harness.ctx), on), bar.height());
         }
     }

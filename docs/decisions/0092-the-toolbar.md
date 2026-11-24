@@ -160,10 +160,10 @@ The toolbar is measured every frame at the current scale and language, and gives
 ### Labels
 
 - **Labels by default, under the icons,** as the Tools panel's tab names are under theirs. Toolbar Labels is one app-wide setting, `toolbar.labels`, on by default. It is in View › Panels, the toolbar menu and Settings › General. Off, each item is its icon alone.
-- **The Toolbar's height:** 44 points with labels off, the themes' `toolbar`; 56 with labels on, the themes' `toolbar_labelled`. The height follows the setting alone, never the window's width.
+- **The Toolbar's height:** 44 points with labels off, the themes' `toolbar`; 62 with labels on, the themes' `toolbar_labelled`. The height follows the setting alone, never the window's width.
 - **An action's icon is 22 points,** labels on or off, as the Tools panel's tabs' icons: every `ToolbarButton`, the app's actions and tools' items alike, drawn by `Icon::paint` at that size with its 1.25-point line, from the same files. An icon that keeps a box of its own, Full Screen's, keeps its size.
 - **Labels off,** each action is a 32-point button with its icon at its centre.
-- **A labelled item:** 8 points from the bar's top to the 22-point icon in `text_secondary`, 4 points, then the word on its line, centred, at the caption size (`text.caption`, 11 points, a 14-point line), Regular, in `text`, as the tab names are set, and 8 points below it. The item is as wide as its word or its icon, the wider, with 8 points at each side.
+- **A labelled item:** 11 points from the bar's top to the 22-point icon in `text_secondary`, 4 points, then the word on its line, centred, at the caption size (`text.caption`, 11 points, a 14-point line), Regular, in `text`, as the tab names are set, and 11 points below it, the margins the icon has above and below without labels. The item is as wide as its word or its icon, the wider, with 8 points at each side.
 - **Everything else keeps its size, centred in the bar,** labels on or off: the menu button, the cursors' well and its buttons, », the jobs spinner, the save state, the caption buttons, which run its whole height, and the Mac's traffic lights.
 - **The word** is the action's message's new `.toolbar` attribute where it has one, else the message: short, one line. A test fails on a word over 96 points at the caption size. Ukrainian's Copy edit and Apply edit need a `.toolbar` form.
 - **Tooltips** always give the words and the first key ("Undo Exposure · Ctrl+Z"), labels on or off. A tool's item is prefixed by its tool's title ("Orientation: Rotate 90° clockwise").
@@ -220,7 +220,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **Decision 91:** the Toolbar is an app-only place, `Toolbar`, holding the toolbar menu.
 - **Decisions 83 and 96:** a workspace also holds its `toolbar` list, in its file.
 - **Decision 36:** a registry action that belongs to no tool may carry an icon, which makes it a candidate, and its message a `.toolbar` word; the themes have a size for the labelled Toolbar, `toolbar_labelled`.
-- **Decision 39:** the Mac's traffic lights are centred in the Toolbar at whichever height it has, so the close button's centre is 28 points from the window's left and top edges with labels on and 22 with them off.
+- **Decision 39:** the Mac's traffic lights are centred in the Toolbar at whichever height it has, so the close button's centre is 31 points from the window's left and top edges with labels on and 22 with them off.
 - **`apertrust-ui`:** `Toolbar` draws a list of items, with spaces, the overflow and labels, in place of its fixed parts, and » in place of ⋯ More actions. It knows parts and items only as plain data. `Toolbar::height` gives its height for the labels setting, which the app sizes the Toolbar's panel and places the traffic lights by; `IconButton::icon_size` draws an action's icon at 22 points.
 - **The app:**
   - the placeable set, the parts, the app's own actions, the tools' items and the spacings, which the Toolbar and the Customise Toolbar window read;
