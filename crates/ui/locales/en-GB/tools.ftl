@@ -668,6 +668,9 @@ tool-channelmixerrgb-readout-cct-undefined-promise = The approximated correlated
 tool-channelmixerrgb-readout-cct-swatch = This is the colour of the scene illuminant before chromatic adaptation. This colour will be turned into pure white by the adaptation.
 tool-channelmixerrgb-picker-illuminant-label = Illuminant from area
 tool-channelmixerrgb-picker-illuminant-full = Illuminant from an image area
+# Its picker cursor on the Toolbar (decision 104): its name and how to use it.
+tool-channelmixerrgb-cursor-illuminant = Colour calibration picker
+tool-channelmixerrgb-cursor-illuminant-how = Click an area, or drag one
 tool-channelmixerrgb-picker-illuminant-promise = Set white balance to detected from area
 
 # The area colour mapping's settings, darktable's own, kept in settings and never in an

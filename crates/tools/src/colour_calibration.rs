@@ -61,9 +61,9 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, Picker, PickerKind,
-    ProcessingDefinition, ReadoutDef, Reset, Row, SettingRow, Slider, Space, Tab, ToolDefinition,
-    Track, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, CursorDef, CursorGroup, Gesture, Group,
+    GroupKind, Picker, PickerKind, ProcessingDefinition, ReadoutDef, Reset, Row, SettingRow,
+    Slider, Space, Surface, Tab, ToolCursor, ToolDefinition, Track, Unit, View,
 };
 use crate::pick::{AreaMode, Patch, PickKeys, Picked, Reading, Readout, Shown};
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
@@ -407,6 +407,22 @@ const PICKER: Picker = Picker {
     words_by: None,
 };
 
+/// Its picker cursor (decision 104; `docs/cursors.md`): a click or a drag on the photo
+/// picks with the picker, as its button does. No key: darktable's picker has none.
+const CURSOR: ToolCursor = ToolCursor {
+    cursor: CursorDef {
+        id: "illuminant",
+        group: CursorGroup::Pick,
+        icon: "pick-colour-calibration",
+        key: None,
+        order: 300,
+        gestures: &[Gesture::Click, Gesture::Area],
+        surfaces: &[Surface::Viewer],
+        options: &[],
+    },
+    picker: PICKER.id,
+};
+
 /// darktable's readout row, `hbox(approx_cct, expand(illum_color), color_picker)`
 /// (`channelmixerrgb.c:4472-4491`): the light's correlated colour temperature and what
 /// models it, `_update_approx_cct`, its colour, `_illuminant_color_draw`, and the picker.
@@ -633,7 +649,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         open_at_first: false,
         menus: &[],
         toolbar: &[],
-        cursors: &[],
+        cursors: &[CURSOR],
     },
     version: 1,
     // Background only until Phase 4's layers (`docs/tools/colour-calibration.md`).
