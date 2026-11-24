@@ -67,11 +67,12 @@ use apertrust_plugin::{Operation, ParamValues};
 use apertrust_tools::{
     ControlValue, Mark, ProcessingDefinition, ProcessingTool, ToolValues, check,
 };
+use thiserror::Error;
 
-use apertrust_library::sidecar::{self as text, Document, Entry, FIRST_COPY, VirtualCopy};
+use apertrust_library::sidecar::{self as text, Document, FIRST_COPY, VirtualCopy};
 pub use apertrust_library::sidecar::{
-    CONTROL_NAMESPACE, COPIES_VERSION, Edits, NAMESPACE, Newer, PARAM_NAMESPACE, Problem, Reason,
-    SidecarError, ViewOnly, path_for, photo_for, read_fingerprint, write_xml,
+    CONTROL_NAMESPACE, COPIES_VERSION, Edits, Entry, NAMESPACE, Newer, PARAM_NAMESPACE, Problem,
+    Reason, SidecarError, ViewOnly, path_for, photo_for, read_fingerprint, write_xml,
 };
 pub(crate) use apertrust_library::sidecar::{file_name, writer};
 
@@ -392,6 +393,75 @@ fn read_entry(
             });
             (entry, newer)
         }
+    }
+}
+
+/// Why a file's tool entry is not used (decision 106): a preset or a style holding it is
+/// listed but cannot be applied, and is never rewritten.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum Parked {
+    /// A newer Apertrust's version of the tool: a `toolVersion` above this build's, or
+    /// none that is a whole number, as written, or, at this build's version, a control,
+    /// mark or `enabled` this build cannot keep or a value out of range or unreadable
+    /// ([`Newer::Control`], [`Newer::Enabled`]), as the edit's reading makes such an edit
+    /// view-only.
+    #[error("made by a newer Apertrust's version of the tool, {version:?}")]
+    NewerTool { version: String },
+    /// A tool this build neither has nor has retired: a newer Apertrust's.
+    #[error("made by a newer Apertrust: a tool this build does not have")]
+    UnknownTool,
+    /// A tool Apertrust has retired (`apertrust_tools::RETIRED`), an older build's.
+    #[error("a tool Apertrust has retired")]
+    Retired,
+    /// An operation's entry, which only an edit holds, never a tool's values.
+    #[error("an operation's parameters, not a tool's values")]
+    NotATool,
+}
+
+/// A file's tool entry as a tool's values (decision 106), the tool's id with them: read as
+/// an edit's entry is ([`from_xml_at`]), with the same parse, the migration of an older
+/// tool version (`ProcessingTool::migrate`), its migrated values clamped to each control's
+/// range, and a switched tool's on or off, each warning logged; a current version's value
+/// out of range parks the entry. `tools` are the tools this build has,
+/// `retired` the ids of those it has retired (`apertrust_tools::RETIRED`). A preset or a
+/// style holds such entries, which [`crate::session::Command::SetTool`] applies.
+pub fn tool_values(
+    entry: &Entry,
+    tools: &[&dyn ProcessingTool],
+    retired: &[&str],
+) -> Result<(String, ToolValues), Parked> {
+    let Entry::Tool {
+        tool,
+        version,
+        kept,
+        auto,
+        enabled,
+        controls,
+    } = entry
+    else {
+        return Err(Parked::NotATool);
+    };
+    let (mut read, mut warnings) = (Edit::default(), Vec::new());
+    let newer = read_tool(
+        &mut read,
+        &mut warnings,
+        (tools, retired),
+        (tool, version.as_deref()),
+        [(kept.clone(), Mark::Kept), (auto.clone(), Mark::Auto)],
+        (enabled.clone(), controls.clone()),
+    );
+    for warning in &warnings {
+        tracing::warn!(target: "settings", "{warning}");
+    }
+    let known = tools.iter().any(|m| m.definition().tool.id == tool);
+    match newer {
+        Some(Newer::Tool(_)) => Err(Parked::UnknownTool),
+        Some(Newer::ToolVersion { version, .. }) => Err(Parked::NewerTool { version }),
+        Some(_) => Err(Parked::NewerTool {
+            version: version.clone().unwrap_or_default(),
+        }),
+        None if !known => Err(Parked::Retired),
+        None => Ok((tool.clone(), read.tools.remove(tool).unwrap_or_default())),
     }
 }
 
@@ -1366,6 +1436,65 @@ pub(crate) mod tests {
         // A tool the build has wins over a retired id it took again.
         let loaded = from_xml(&xml, OPERATIONS, TOOLS, &["look", "lens"]).unwrap();
         assert_eq!(loaded.edit.tools["look"].number("strength"), Some(0.5));
+    }
+
+    /// A preset's or a style's tool entry (decision 106) is read as an edit's: an older
+    /// version migrated and its numbers clamped; a newer version, a number out of range at
+    /// this version, a tool this build does not have, a retired one and an operation's entry
+    /// parked, each saying why.
+    #[test]
+    fn a_tool_entry_becomes_its_values_migrated_or_is_parked() {
+        let entry = |tool: &str, version: &str, controls: &[(&str, &str)]| Entry::Tool {
+            tool: tool.to_owned(),
+            version: Some(version.to_owned()),
+            kept: vec!["strength".to_owned()],
+            auto: Vec::new(),
+            enabled: None,
+            controls: (controls.iter())
+                .map(|(id, text)| ((*id).to_owned(), (*text).to_owned()))
+                .collect(),
+        };
+        // Look's version 1 called strength amount; 1.5 is past its range's top.
+        let older = entry("look", "1", &[("amount", "1.5"), ("style", "hard")]);
+        let (tool, values) = tool_values(&older, TOOLS, &[]).unwrap();
+        let mut migrated = ToolValues::new();
+        migrated.set("strength", ControlValue::Number(1.0));
+        migrated.set("style", ControlValue::Choice(1));
+        migrated.set_mark("strength", Some(Mark::Kept));
+        assert_eq!((tool.as_str(), values), ("look", migrated));
+        let newer = entry("look", "3", &[("strength", "0.5")]);
+        assert_eq!(
+            tool_values(&newer, TOOLS, &[]),
+            Err(Parked::NewerTool {
+                version: "3".to_owned()
+            })
+        );
+        // A number out of range at this version is a newer build's, as the edit's reading
+        // makes it view-only: parked, not clamped.
+        let out_of_range = entry("look", "2", &[("strength", "1.5")]);
+        assert_eq!(
+            tool_values(&out_of_range, TOOLS, &[]),
+            Err(Parked::NewerTool {
+                version: "2".to_owned()
+            })
+        );
+        // A control this version lacks, at this version: a newer build's too.
+        let unknown_control = entry("look", "2", &[("grain", "0.5")]);
+        assert_eq!(
+            tool_values(&unknown_control, TOOLS, &[]),
+            Err(Parked::NewerTool {
+                version: "2".to_owned()
+            })
+        );
+        let lens = entry("lens", "1", &[("amount", "1")]);
+        assert_eq!(tool_values(&lens, TOOLS, &[]), Err(Parked::UnknownTool));
+        assert_eq!(tool_values(&lens, TOOLS, &["lens"]), Err(Parked::Retired));
+        let operation = Entry::Operation {
+            operation: "fake".to_owned(),
+            schema: Some(2),
+            params: vec![("amount".to_owned(), "1".to_owned())],
+        };
+        assert_eq!(tool_values(&operation, TOOLS, &[]), Err(Parked::NotATool));
     }
 
     /// An edit Exposure's version 1 saved, with the Contrast and Pivot it once had: its

@@ -140,7 +140,9 @@ pub use apertrust_plugin::Value;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_tools::check::{self, ToolError};
 use apertrust_tools::{Base, ControlKind, Controls, Moment, ProcessingTool};
-pub use apertrust_tools::{ControlValue, LabelValue, Mark, Range, Setting, ValueFormat};
+pub use apertrust_tools::{
+    ControlValue, LabelValue, Mark, Range, Setting, ToolValues, ValueFormat,
+};
 use thiserror::Error;
 
 use crate::compute::{ComputeError, GpuImage, POLL_INTERVAL, Timings};
@@ -166,7 +168,7 @@ use crate::raw_histogram;
 use crate::scopes::Meter;
 pub use crate::scopes::{Graphs, Reading};
 use crate::sidecar;
-pub use crate::sidecar::ViewOnly;
+pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_values};
 pub use crate::view::{FramePlace, Placement, View, ViewScale};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
@@ -235,6 +237,18 @@ pub enum Command {
     ResetControl { tool: String, control: String },
     /// Every control of a tool back to its default: the header's reset.
     ResetTool { tool: String },
+    /// A tool's values become exactly `values` as one change, as a preset, a style or an
+    /// applied edit sets them (decision 106; [`sidecar::tool_values`] reads them from a
+    /// file's entry): each control `values` holds takes its value and its mark, every other
+    /// goes back to its default, unmarked, and a switched tool is on or off as `values`
+    /// says, off holding its marks alone (decision 32). A tool the session lacks, a control
+    /// it lacks, a value of another kind and a choice's option the photo does not list are
+    /// refused, as [`Command::SetControl`] refuses them; a number outside its range is
+    /// brought inside, as a saved edit's is as it is read. Its values are the tool's own,
+    /// so they take no follow writes, as [`Command::ApplyPreset`]'s take none; the tool is
+    /// redrawn, as darktable's `gui_update` runs after a preset. It completes a change,
+    /// one step of the tool, which saves the edit.
+    SetTool { tool: String, values: ToolValues },
     /// Cancel the gesture under way on a tool, as a slider popup's cancel does
     /// (decision 42). A gesture is a run of `SetControl { done: false }` on one tool;
     /// any other command on the edit, refused or not, ends it as completed, while a
@@ -334,10 +348,10 @@ pub enum Command {
     /// history step of each tool they write, in the order written, sharing a batch where
     /// there are several, as the app sends its changes of several commands and an assistant
     /// one request. A `Reset` inside is one step noted `history-reset`, not with `note`.
-    /// It holds only `SetControl`, `ResetControl`, `ResetTool`, `Keep`, `ApplyPreset`,
-    /// `Set` and `Reset`, applied in order, all or none: one refused refuses the whole,
-    /// which changes nothing, naming its index ([`SessionError::InStep`]), and any other
-    /// command inside is refused so ([`SessionError::NotInStep`]). [`StepSource::Default`]
+    /// It holds only `SetControl`, `ResetControl`, `ResetTool`, `SetTool`, `Keep`,
+    /// `ApplyPreset`, `Set` and `Reset`, applied in order, all or none: one refused refuses
+    /// the whole, which changes nothing, naming its index ([`SessionError::InStep`]), and any
+    /// other command inside is refused so ([`SessionError::NotInStep`]). [`StepSource::Default`]
     /// is the session's alone, refused ([`SessionError::DefaultSource`]), and so is a `Step`
     /// holding nothing ([`SessionError::EmptyStep`]), both before the gesture under way is
     /// touched.
@@ -623,6 +637,7 @@ fn changed_tool(command: &Command) -> Option<Option<String>> {
         Command::SetControl { tool, .. }
         | Command::ResetControl { tool, .. }
         | Command::ResetTool { tool }
+        | Command::SetTool { tool, .. }
         | Command::CancelGesture { tool }
         | Command::Keep { tool, .. }
         | Command::ApplyPreset { tool, .. } => Some(Some(tool.clone())),
@@ -3962,6 +3977,19 @@ impl Engine {
                 self.remember_redrawn(Some(&tool), changed);
                 (changed, true)
             }
+            Command::SetTool { tool, values } => {
+                let changed = self.change(|edit, tools, _, image| {
+                    let found = edit::tool(tools, &tool)?;
+                    for warning in edit.set_tool(found, &values, image)? {
+                        tracing::warn!(target: "pipe", "{warning}");
+                    }
+                    edit.redraw(&[found], image);
+                    Ok(())
+                })?;
+                // darktable's preset runs `gui_update` once its parameters are written.
+                self.remember_redrawn(Some(&tool), changed);
+                (changed, true)
+            }
             Command::Keep {
                 tool,
                 control,
@@ -6540,6 +6568,7 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
 mod tests {
     mod history;
     mod selection;
+    mod set_tool;
     mod view;
 
     use std::sync::mpsc::Receiver;
@@ -10834,6 +10863,10 @@ mod tests {
                 kept: true,
             },
             apply("grainy"),
+            Command::SetTool {
+                tool: "sample".to_owned(),
+                values: ToolValues::new(),
+            },
             Command::Set {
                 operation: "exposure".to_owned(),
                 param: "black".to_owned(),

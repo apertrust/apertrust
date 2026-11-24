@@ -1016,6 +1016,7 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
         Command::SetControl { done, .. } => done.then_some((StepSource::You, None)),
         Command::ResetControl { .. }
         | Command::ResetTool { .. }
+        | Command::SetTool { .. }
         | Command::Keep { .. }
         | Command::ApplyPreset { .. } => Some((StepSource::You, None)),
         // Its step is noted `history-reset` as it is made.
@@ -1097,6 +1098,7 @@ fn writes(command: &Command, tool: &str) -> bool {
         Command::SetControl { tool: named, .. }
         | Command::ResetControl { tool: named, .. }
         | Command::ResetTool { tool: named }
+        | Command::SetTool { tool: named, .. }
         | Command::Keep { tool: named, .. }
         | Command::ApplyPreset { tool: named, .. } => named == tool,
         Command::Reset => true,
@@ -1112,6 +1114,7 @@ fn wrote(command: &Command) -> Vec<Wrote> {
         Command::SetControl { tool, .. }
         | Command::ResetControl { tool, .. }
         | Command::ResetTool { tool }
+        | Command::SetTool { tool, .. }
         | Command::Keep { tool, .. }
         | Command::ApplyPreset { tool, .. } => vec![Wrote::Tool(tool.clone())],
         Command::Set { operation, .. } => vec![Wrote::Operation(operation.clone())],
@@ -1123,7 +1126,7 @@ fn wrote(command: &Command) -> Vec<Wrote> {
 /// The target `command` writes, which a change merges by: a control a `SetControl` or
 /// `ResetControl` names, a preset row an `ApplyPreset` names, or a `Step`'s one command's;
 /// `None` for a change of several, as a `Step` of several commands, or of none, as a tool
-/// reset, a keep, a `Set` or `Reset`.
+/// reset, a tool's values set whole, a keep, a `Set` or `Reset`.
 fn target(command: &Command) -> Option<Target> {
     match command {
         Command::SetControl { tool, control, .. } | Command::ResetControl { tool, control } => {
@@ -1151,6 +1154,7 @@ fn in_step(command: &Command) -> bool {
         Command::SetControl { .. }
             | Command::ResetControl { .. }
             | Command::ResetTool { .. }
+            | Command::SetTool { .. }
             | Command::Keep { .. }
             | Command::ApplyPreset { .. }
             | Command::Set { .. }

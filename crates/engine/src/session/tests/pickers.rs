@@ -853,6 +853,16 @@ fn a_tool_picker_turns_its_tool_on_and_off_as_the_tool_changes_unless_it_keeps()
     let events = driven.run([set("grain", ControlValue::Number(30.0), true)]);
     assert!(matches!(readings(&events)[..], [None]), "{events:?}");
     assert_eq!(end(&events), Some(driven.engine.applied));
+    // So does its tool's values set whole, as a preset sets them.
+    driven.run([on_tool("spread", true)]);
+    driven.picked();
+    let events = driven.run([Command::SetTool {
+        tool: "sample".to_owned(),
+        values: ToolValues::new(),
+    }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(matches!(readings(&events)[..], [None]), "{events:?}");
+    assert_eq!(end(&events), Some(driven.engine.applied));
     // `Off` ends it through itself.
     driven.run([on_tool("show", true)]);
     driven.picked();
