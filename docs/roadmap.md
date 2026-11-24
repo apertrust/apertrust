@@ -298,7 +298,9 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [ ] Sigmoid and Filmic RGB as tone mappers, one per edit (their processing is ported; decision 33).
 - [ ] Lens correction (from the corrections the raw carries, then Lensfun's), chromatic aberrations and crop.
 - [ ] Diffuse or sharpen, and sharpen.
-- [ ] darktable's presets and styles; copy and apply an edit.
+- [ ] Presets and styles, as `.appreset` and `.apstyle` files (decision 106):
+  - [ ] phase 1, for 0.1 (#363): the files read and written; tool presets in every processing tool's header; Export's presets, For sharing and Full size JPEG built in, and `apertrust-cli export --preset NAME`; creating a style; the Styles tool applying one to the active photo; Copy Edit and Apply Edit on the active photo; then Apply Edit and styles on every selected photo, as one batch;
+  - [ ] phase 2 (#364): the hover preview; darktable's built-in presets for each ported tool; Copy or Apply Parts…; a tool's Copy Settings and Paste Settings; Favourites, editing and duplicating a style; a preset's and a style's actions, with their ids; styles on export and import; `.appreset` and `.apstyle` files opened from outside; importing darktable's `.dtstyle` and `.dtpreset`; presets applied automatically; `--preset` and `--style` for processing tools on the CLI.
 - [ ] Before and after, and warnings.
 - [ ] Colour calibration's colour checker, darktable's, with its chart data and fit.
 - [ ] Show mask: one way to see a tool's mask on the photo, for every tool with a mask button, never saved in the edit.
@@ -316,7 +318,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [x] the groups and the end: Storage options and Format options, always open, and Global options, collapsible and open at first; the path on one line; ↺, the presets button drawn disabled, and ⋯; the Summary group (Preset, File name, Size, Profile, Format, Destination), the warnings, Export N photos in each of its states and a failed export's line (the Summary's preset is Default settings or Custom until presets); names never guessed as exact;
   - [x] its page as setting rows naming the `export.*` keys, bound to `apertrust-export`'s settings, its snapshots unchanged (decision 93's step 93.6);
   - [x] the path's folder button, darktable's "select directory": the system's folder chooser, opening where the path is, the folder chosen put before the path's file part;
-  - [ ] its presets, Default settings, For sharing and Full size JPEG built in, then the person's own, with the presets API every tool shares, processing and utility alike, whose decision comes first;
+  - [ ] its presets, Default settings, For sharing and Full size JPEG built in, then the person's own, with the presets API every tool shares, processing and utility alike, Default settings from the tool's definition and the rest `.appreset` files (decision 106);
   - [x] the keys: Export Again on Ctrl+Shift+E, Ctrl+Return, Esc, the focus on the button after the reveal, and the wheel on the focused row;
   - [x] the preview's answer shown only for its latest request;
   - [ ] the preview sent only while the tool is in view, with `focus` once it covers the whole selection;
@@ -324,7 +326,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [ ] Collections' Import…, opening the Import sheet.
 - [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, the Browser's grid with check boxes as its choosing and day headings, a column on the Tools panel's side holding the Import tool, the footer with Help, Keep open, Close and the primary button, its keys and modality, each tool kept to its place; the warning button and the path row's ⌄ among the setting rows; then Import's first slice (the library's step 20a).
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
-- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with the presets API every tool shares, processing and utility alike, as darktable's are, which needs a decision of its own first (planned).
+- [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17); the presets themselves come with the presets API every tool shares, processing and utility alike, as darktable's are (decision 106, planned).
 - [ ] Metadata in exported files, and styles applied on export.
 
 ### Culling, metadata and several computers, in folder mode
