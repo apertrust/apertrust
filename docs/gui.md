@@ -1204,7 +1204,7 @@ Decision 91; its first slice is built. A right-click menu opens only in a named 
 | The jobs window's rows (`Job`) | No | Cancel, Show in Folder, Copy Error, each only where its job allows it ([The jobs window](#the-jobs-window)) | Built |
 | The Tools panel's tab bar (`TabBar`), a tab's icon or its empty end | No | Find Tool…, Show Hidden Tools, Workspace ▸ (ending in Restore Defaults), —, Reset Tab, Processing Order; the same items in the Tools panel's ⋮ ([The tab bar's menu](#the-tab-bars-menu)) | Decision 96's step 5 |
 | A layer, the scopes | No | — | With them |
-| The Toolbar, an item or its empty areas (`Toolbar`) | No | The toolbar menu: Hide "Undo", Show Menu Button, —, Toolbar Labels, Customise Toolbar… ([The Toolbar](#the-toolbar), decision 92) | Built |
+| The Toolbar, an item or its empty areas (`Toolbar`) | No | The toolbar menu: Hide "Undo", Show Menu Button, —, Toolbar Labels, Customise Toolbar… ([The Toolbar](#the-toolbar), decision 92); on an item with a menu of its own, its items, —, then the toolbar menu's: Guides' types, —, Flip ▸, —, Hide "Guides" and the rest ([An action's own menu](#an-actions-own-menu)) | Built; an action's own menu planned |
 
 A place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.
 
@@ -2867,7 +2867,7 @@ Built (decision 92): tools' items, `ToolDefinition::toolbar`; the set of what ca
 | The cursors | Every cursor keeps its action and key, and its work its tool's own button; the cursor chosen stays chosen |
 | Everything | The toolbar is all empty area and still moves the window |
 
-**The toolbar menu** (built), `Place::Toolbar`, the app's alone ([Context menus](#context-menus)): a right-click anywhere on the toolbar, on an item or on empty space, title bar or not, on every platform, a Control-click on the Mac anywhere but » and the cursors' well, which take it as their own click, never the toolbar menu's, or Shift+F10, the Menu key or a screen reader's ShowContextMenu on a focused button, opens it; the caption buttons, the platform's, take none, and a right-click on the menu button, while the toolbar is the title bar, opens the window's menu instead, as on a title bar's icon, Shift+F10 and the Menu key on it still opening the toolbar menu. It holds Hide "Undo" (on an item with words: a button, the menu button, the cursors' well or the jobs spinner, never the save warning), which takes the id out of the workspace's list as the file holds it, ids this build does not know kept in their places; Show Menu Button (while the menu button is hidden, on Windows and Linux), which puts `menu-button` back at the list's start; a separator; Toolbar Labels, checked while on; Customise Toolbar…, drawn disabled with "Customise Toolbar comes in a later version" until its window is built. The system's window menu stays on the system's own key, Alt+Space on Windows and GNOME, and the menu button's right-click; X11 has none.
+**The toolbar menu** (built), `Place::Toolbar`, the app's alone ([Context menus](#context-menus)): a right-click anywhere on the toolbar, on an item or on empty space, title bar or not, on every platform, a Control-click on the Mac anywhere but » and the cursors' well, which take it as their own click, never the toolbar menu's, or Shift+F10, the Menu key or a screen reader's ShowContextMenu on a focused button, opens it; the caption buttons, the platform's, take none, and a right-click on the menu button, while the toolbar is the title bar, opens the window's menu instead, as on a title bar's icon, Shift+F10 and the Menu key on it still opening the toolbar menu. It holds Hide "Undo" (on an item with words: a button, the menu button, the cursors' well or the jobs spinner, never the save warning), which takes the id out of the workspace's list as the file holds it, ids this build does not know kept in their places; Show Menu Button (while the menu button is hidden, on Windows and Linux), which puts `menu-button` back at the list's start; a separator; Toolbar Labels, checked while on; Customise Toolbar…, drawn disabled with "Customise Toolbar comes in a later version" until its window is built. The system's window menu stays on the system's own key, Alt+Space on Windows and GNOME, and the menu button's right-click; X11 has none. An item with a menu of its own opens its own items before the toolbar menu's ([An action's own menu](#an-actions-own-menu), planned).
 
 Every item of the toolbar menu is reachable from the keys whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that focused item, the others in View › Panels, which F10 opens while the menu button is hidden. A toolbar with nothing focusable, which F6 skips, has nothing in its menu that only it reaches.
 
@@ -2925,6 +2925,17 @@ labels = true
 | A tool or action gone in a later build | Not drawn; its id kept in the file |
 
 **Scripts** see nothing new: an item sends the command its action sends.
+
+#### An action's own menu
+
+Planned (decision 92). An action may have a menu of its own on the Toolbar, where a few choices are worth one click away; most have none. Guides' is the first: a click turns the guides on or off, a right-click chooses their type, as darktable's guides button does.
+
+- **Declared as data,** as decision 91's menus: beside the action in the set of what can be placed, its own registry actions and a setting's choices as a checked list, each choice an action, the one in use checked; a submenu one level deep. The app builds it.
+- **Opened** by a right-click, a Control-click on the Mac, Shift+F10, the Menu key or a screen reader's ShowContextMenu on the item, labels on or off.
+- **It holds** its own items, a separator, then the toolbar menu's entries, Hide "Guides" first: Grid … Golden mean (all guides), —, Flip ▸, —, Hide "Guides", Show Menu Button where it shows, —, Toolbar Labels, Customise Toolbar…. An item without one opens the toolbar menu.
+- **In »** it is a submenu under its words: the action, checked while on, —, its own items.
+- **Reachable elsewhere,** as decision 91 asks: Guides' items in View › Guides ▸, which holds Guides, —, the types, —, Flip ▸.
+- **No badge:** the tooltip names the menu on a line of its own, "Guides (G)", then "Right-click for the guide type".
 
 ### The Tools panel
 
