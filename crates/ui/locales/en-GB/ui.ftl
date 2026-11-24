@@ -1171,6 +1171,24 @@ action-background-dark = Dark
 action-background-medium = Medium
 action-background-light = Light
 action-background-white = White
+# View › Guides (decision 92): Guides on or off, darktable's guide types, its flips.
+action-guides = Guides
+action-guides-grid = Grid
+action-guides-rules-of-thirds = Rules of thirds
+action-guides-metering = Metering
+action-guides-perspective = Perspective
+action-guides-diagonal-method = Diagonal method
+action-guides-harmonious-triangles = Harmonious triangles
+action-guides-golden-sections = Golden sections
+action-guides-golden-spiral = Golden spiral
+action-guides-golden-spiral-sections = Golden spiral sections
+action-guides-golden-mean = Golden mean (all guides)
+action-guides-flip-none = None
+action-guides-flip-horizontally = Horizontally
+action-guides-flip-vertically = Vertically
+action-guides-flip-both = Both
+# Flip's items' tooltip while the guide type is one darktable never flips.
+guides-flip-unavailable = Only harmonious triangles and the golden guides flip
 # The space bar, as a shortcut names it: "Space", "Ctrl+Space".
 key-space = Space
 
@@ -1217,6 +1235,8 @@ menu-interface-size = Interface Size
 menu-sort-by = Sort By
 menu-thumbnail-size = Thumbnail Size
 menu-background = Background
+menu-guides = Guides
+menu-guides-flip = Flip
 menu-browser-position = Browser Position
 menu-tools-panel-position = Tools Panel Position
 # A submenu of File, and its item for a recent whose name another shares: with the

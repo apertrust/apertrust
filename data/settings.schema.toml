@@ -372,6 +372,26 @@ decimals = 1
 default = 1.2
 applies = "after-restart"
 
+# The guides drawn over the photo while Guides is on (decision 92; docs/gui.md, Guides):
+# darktable's guide type, rules of thirds by default, and its flip, none by default, which
+# only harmonious triangles and the golden guides take. darktable keeps them per view and
+# its flip per type; Apertrust keeps one of each for the app, and choosing a type turns the
+# guides on, which darktable's does not. Chosen from View › Guides and the Toolbar's Guides,
+# not on a page of the Settings dialog.
+[guides.type]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::guides::Guide"
+default = "rules-of-thirds"
+applies = "at-once"
+
+[guides.flip]
+owner = "app"
+kind = "choice"
+type = "apertrust_ui::guides::GuideFlip"
+default = "none"
+applies = "at-once"
+
 # Edit's Tools panel tab, by its id, as earlier builds kept it: read only where state.toml
 # holds no tab for the Default workspace, for its move there (decision 96), then left as
 # it is; never written.

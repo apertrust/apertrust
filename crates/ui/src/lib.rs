@@ -30,6 +30,7 @@ pub mod calculator;
 pub mod components;
 pub mod fonts;
 pub mod gallery;
+pub mod guides;
 pub mod i18n;
 pub mod icons;
 pub mod overlay;

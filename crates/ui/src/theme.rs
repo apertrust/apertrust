@@ -366,10 +366,6 @@ pub struct Colors {
     /// A layer's mask over the photo.
     #[serde(with = "hex")]
     pub mask_overlay: Color32,
-    /// Guides over the photo, such as the grid: translucent and neutral, since they lie on
-    /// the photo whatever the theme.
-    #[serde(with = "hex")]
-    pub guides: Color32,
     /// The on-photo overlay's line (`docs/gui.md`, On-photo overlays): white at 80%, drawn
     /// over `overlay_halo`, so a mark reads on any photo with no colour of the interface's;
     /// a label's text too. darktable's picker line (`src/views/darkroom.c:447`).
@@ -1105,7 +1101,6 @@ impl Theme {
             ("clip_shadows", c.clip_shadows),
             ("clip_highlights", c.clip_highlights),
             ("mask_overlay", c.mask_overlay),
-            ("guides", c.guides),
             ("overlay_line", c.overlay_line),
             ("overlay_halo", c.overlay_halo),
             ("frame_ring", c.frame_ring),

@@ -1999,7 +1999,10 @@ struct Shell {
     panel_width: Option<f32>,
     /// Where the Tools panel is, at the window's right or left, kept app-wide.
     panel_position: ToolsPanelPosition,
+    /// Whether the guides are drawn over the photo, Guides, for this run (decision 92).
     guides: bool,
+    /// Which guides, and their flip, kept app-wide: `guides.type` and `guides.flip`.
+    guide: settings::Guides,
     proof_margin: bool,
     /// The photo's zoom and its retained centre (`docs/gui.md`, The zoom's centre): Fit as
     /// the app starts and on a way in ([`fit_view`]), carried to another photo as the
@@ -2199,6 +2202,7 @@ impl Shell {
             panel_width: settings.panel_width,
             panel_position: settings.panel_position,
             guides: false,
+            guide: settings.guides,
             proof_margin: false,
             zoom: zoom::Zoomed::FIT,
             room: None,
@@ -2847,6 +2851,7 @@ impl Shell {
             panel_position: self.panel_position,
             panel_width: self.panel_width,
             viewer: self.viewer,
+            guides: self.guide,
             workspace: self.kept_workspace.clone(),
             edit: settings::ViewState {
                 sections: self.sections.clone(),
@@ -3507,6 +3512,9 @@ impl Shell {
             // The app's, from the folder it shows ([`App::shell_state`]).
             shown: false,
             background: Background::of(theme(ctx).colors.photo_surround),
+            guides: self.guides,
+            guide: self.guide.kind,
+            guide_flip: self.guide.flip,
             escape_kept: self.escape_kept,
         }
     }
@@ -4065,6 +4073,13 @@ impl Shell {
                 self.viewer.background = Some(background);
                 apertrust_ui::set_theme(ctx, self.look());
             }
+            Intent::Guides => self.guides = !self.guides,
+            // A type chosen is a type to see: the guides turn on with it.
+            Intent::GuideType(kind) => {
+                self.guide.kind = kind;
+                self.guides = true;
+            }
+            Intent::GuideFlip(flip) => self.guide.flip = flip,
             // About the pointer where it is over the photo, else the view's centre.
             Intent::Zoom(step) => {
                 let pointer = ctx.pointer_hover_pos();
@@ -7069,8 +7084,6 @@ impl App {
         frame: &Frame,
         placement: &Placement,
     ) {
-        let ppp = ui.pixels_per_point();
-        let snap = |v: f32| (v * ppp).round() / ppp;
         // Cut to the area, and to the slot should a frame still be larger than it.
         let painter = ui.painter_at(area.intersect(slot));
         let overview = (frame.overview.as_ref()).map(|o| [o.width, o.height]);
@@ -7082,14 +7095,9 @@ impl App {
         let size = [frame.width, frame.height];
         viewport::paint(&painter, area, &frame.buffer, size, shown);
         if self.shell.guides {
-            // Thirds of the whole photo, one physical pixel wide.
-            let stroke = egui::Stroke::new(1.0 / ppp, theme(ui.ctx()).colors.guides);
-            for k in [1.0, 2.0] {
-                let x = snap(whole.left() + whole.width() * k / 3.0);
-                let y = snap(whole.top() + whole.height() * k / 3.0);
-                painter.vline(x, whole.y_range(), stroke);
-                painter.hline(whole.x_range(), y, stroke);
-            }
+            // darktable's guides over the whole photo, in the overlay's line.
+            let guide = self.shell.guide;
+            apertrust_ui::guides::draw(&painter, whole, guide.kind, guide.flip);
         }
     }
 }
@@ -19901,6 +19909,58 @@ mod tests {
         assert_eq!(settings.viewer.background, Some(Background::White));
     }
 
+    /// Decision 92: Guides turns the guides on and off with a photo live, a type chosen
+    /// turns them on, a flip waits for a type that takes one, and the type and flip are
+    /// kept, darktable's rules of thirds unflipped until then; nothing runs with no photo.
+    #[test]
+    fn a_guide_type_turns_the_guides_on_and_is_kept_with_its_flip() {
+        use apertrust_ui::guides::{Guide, GuideFlip};
+        let folder = settings::testing::Folder::new("guides-kept");
+        let (mut keeper, settings) = Keeper::open(folder.storage());
+        let ctx = egui::Context::default();
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        prepare(&ctx, &shell, 1.0);
+        let checked = |state: &State, id| actions::action(id).and_then(|a| a.checked(state));
+        let state = shell.state(&ctx, true, false);
+        assert_eq!((state.guides, state.guide), (false, Guide::RulesOfThirds));
+        assert_eq!(checked(&state, ActionId::GUIDE_TYPES[1]), Some(true));
+        // With no photo, nothing.
+        let none = shell.state(&ctx, false, false);
+        shell.run(ActionId::GUIDES, &none, &ctx, &[]);
+        shell.run(ActionId::GUIDE_TYPES[7], &none, &ctx, &[]);
+        assert!(!shell.guides);
+        assert_eq!(shell.guide.kind, Guide::RulesOfThirds);
+        // Guides on and off.
+        shell.run(ActionId::GUIDES, &state, &ctx, &[]);
+        assert!(shell.guides);
+        let state = shell.state(&ctx, true, false);
+        assert_eq!(checked(&state, ActionId::GUIDES), Some(true));
+        shell.run(ActionId::GUIDES, &state, &ctx, &[]);
+        assert!(!shell.guides);
+        // Rules of thirds takes no flip.
+        let state = shell.state(&ctx, true, false);
+        let flip = actions::action(ActionId::GUIDE_FLIPS[3]).expect("Both");
+        assert!(!flip.enabled(&state));
+        assert_eq!(
+            actions::why_unavailable(ActionId::GUIDE_FLIPS[3], &state),
+            Some("guides-flip-unavailable")
+        );
+        // The golden spiral, chosen, turns them on and takes one.
+        shell.run(ActionId::GUIDE_TYPES[7], &state, &ctx, &[]);
+        assert!(shell.guides);
+        let state = shell.state(&ctx, true, false);
+        assert_eq!(checked(&state, ActionId::GUIDE_TYPES[7]), Some(true));
+        assert_eq!(checked(&state, ActionId::GUIDE_TYPES[1]), Some(false));
+        shell.run(ActionId::GUIDE_FLIPS[3], &state, &ctx, &[]);
+        let state = shell.state(&ctx, true, false);
+        assert_eq!(checked(&state, ActionId::GUIDE_FLIPS[3]), Some(true));
+        keeper.frame(std::time::Instant::now(), &shell.to_settings(&ctx));
+        keeper.flush();
+        let (_, settings) = Keeper::open(folder.storage());
+        assert_eq!(settings.guides.kind, Guide::GoldenSpiral);
+        assert_eq!(settings.guides.flip, GuideFlip::Both);
+    }
+
     #[test]
     fn the_browser_s_rows_are_kept_and_never_more_than_half_the_window() {
         use apertrust_ui::components::{ThumbnailSize, browser_height};
@@ -28249,8 +28309,9 @@ mod tests {
             menu_line(&harness, check, "Zoom to 100%"),
             (true, keys("Z"), Some(Toggled::False))
         );
-        // Then Sort By, its checks the Browser's sort, resting with no photos shown.
-        for _ in 0..4 {
+        // Then, past Guides, Sort By, its checks the Browser's sort, resting with no photos
+        // shown.
+        for _ in 0..5 {
             harness.key_press(Key::ArrowDown);
         }
         harness.key_press(Key::ArrowRight);
