@@ -1347,7 +1347,7 @@ Colour maths shared by operations, and the numerical helpers their ports share o
 - Each box iteration's radius at the pipe's scale (`box_filter::iterated_radii`, decision 63): r and r + 1 across its passes, so that its variance is the export's, every pass darktable's radius at scale 1. Bloom's and soften's setups take it.
 - darktable's recursive Gaussian (`gaussian.slang`, its coefficients and Rust restatement `gaussian`) and bilinear resampling between grids (`bilinear.slang`, `bilinear`), which the colour equalizer's kernel uses and the tone equalizer's EIGF is to.
 - The tone equalizer's correction curve (`tone_equalizer`): eight Gaussians fitted to the nine bands' gains by least squares in f64, `None` where the fit fails, as `pseudo_solve` can. Its operation's setup and the Tone equalizer tool's band graph share it.
-- AgX's tone curve (`agx_curve`): `Curve::new` of the range and curve settings (`CurveSettings`), in f32 but for `_scale` in the log domain, and `encode` and `eval` as the kernel evaluates them. Its operation's setup packs it; the AgX tool's pickers evaluate it too, planned.
+- AgX's tone curve (`agx_curve`): `Curve::new` of the range and curve settings (`CurveSettings`), in f32 but for `_scale` in the log domain, and `encode` and `eval` as the kernel evaluates them. Its operation's setup packs it; the AgX tool's Pivot target output picker evaluates it too.
 
 ## apertrust-tools
 
@@ -1469,8 +1469,10 @@ darktable's AgX, the tone mapper.
 - Each control is one `agx` parameter, its percentages and degrees as darktable's sliders show them.
 - The pivot is stored in EV and written as `curve_pivot_x` from it and the range, so moving the range keeps the pivot's exposure. Its range, track and step are darktable's for the input range (`ProcessingTool::range`, decision 30). A pivot a range's move leaves outside is clamped and stored.
 - Every default is the operation's, darktable's scene-referred one, so the binding sets a parameter only off it.
-- Not ported: dynamic range scaling, which no render reads, and the export profile. Auto tune levels, Read exposure, Reset primaries and Set from above are drawn disabled.
-- A7: the pivot clamped by black's move and refused outside the range. A4 binds the four golden AgX cases' parameters bit for bit, but for three of `agx`'s, which the binding's `value / factor` lands one f32 step from, where darktable's rounding to its digits reaches them; a sweep's ΔE2000 max is 1.4e-4.
+- Dynamic range scaling is stored and binds nothing, as no render reads it: the pickers' margin, its move writing nothing into the range.
+- Its five pickers (`Agx::pick`, decision 79): white and black relative exposure from the area's extremes, scaled by Dynamic range scaling within darktable's bounds, Auto tune levels setting both on a row of pickers, the pivot kept at its exposure and written only where the new range clamps it; the pivot from the mean's luminance, and Pivot target output from `apertrust-color`'s AgX curve as it was before the pick. Curve y gamma is never written.
+- Not ported: the export profile. Read exposure, Reset primaries and Set from above are drawn disabled.
+- A7: the pivot clamped by black's move and refused outside the range. A4 binds the four golden AgX cases' parameters bit for bit, but for three of `agx`'s, which the binding's `value / factor` lands one f32 step from, where darktable's rounding to its digits reaches them; a sweep's ΔE2000 max is 1.4e-4. A8: Dynamic range scaling changes no parameter, key or frame. A9: the pickers write darktable's values on the ramp, and Pivot target output keeps the picked grey's output.
 
 #### Output colour profile
 
@@ -1585,7 +1587,7 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 ### Planned
 
 - **Camera presets and tuning** (decision 27): preset rows listing a photo's options after their own under a heading (`PresetRow::camera`, `ProcessingTool::listed`) and taking a tuning addressed like a control (`PresetRow::tuning`, `ProcessingTool::tuning`), `ProcessingTool::preset` given the tuning and the tool's values. Then White balance's camera presets, stored in `preset` by darktable's name, and Finetune ([docs/tools/white-balance.md](tools/white-balance.md), Build).
-- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each built tool's `pick`; AgX's Auto tune levels' picker with its row; White balance's button bar with its picker's toggle.
+- **Colour pickers** (decision 79; [pickers.md](pickers.md)): each built tool's `pick`; White balance's button bar with its picker's toggle.
 
 ## apertrust-export
 
