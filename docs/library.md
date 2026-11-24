@@ -33,7 +33,7 @@ Decisions 46 and 101. The library meets five requirements:
 | Browsing a folder whose drive is away | One thumbnail size per photo kept in the cache, and the index ([Keep Available Offline](#keep-available-offline)) | When a folder is marked Keep Available Offline or is in a Library (Phase 5) |
 | A Library: its folders and its albums across them | `<user data>/libraries/<id>/`, seen only on this computer ([A Library](#a-library)) | New Library… (Phase 5) |
 | A Library that travels, by choice | `.apertrust/libraries/<id>/` in its home folder, one of its own ([A Library that travels](#a-library-that-travels)) | Save Library in a Folder…, or the choice in New Library… (Phase 5) |
-| A tool's presets | One `.appreset` each, `<user data>/presets/<tool>/<Name>.appreset`, XMP holding the `.apxmp`'s tool entries or, for a utility, its settings; the built-in ones in `data/presets/`, embedded (decision 106) | Save as Preset… in the tool's header (planned) |
+| A tool's presets | One `.appreset` each, `<user data>/presets/<tool>/<Name>.appreset`, XMP holding the `.apxmp`'s tool entries or, for a utility, its settings; the built-in ones in `data/presets/`, embedded (decision 106) | Save as Preset… in the tool's header's presets pull-down |
 | Styles | One `.apstyle` each, `<user data>/styles/<Name>.apstyle`, XMP holding one or more tools' entries; a copied edit only in the app's memory (decision 106) | Create a Style… or Save Edit as Style… (planned) |
 
 ```text
@@ -368,7 +368,7 @@ flowchart TB
 
 Layer 1 alone knows a photo folder's file layouts; layer 3 alone the index's engine. Until the model exists, `ops::open` calls `Index::build` directly, and the index reads its sidecars through `sidecar`.
 
-**Outside the layers, `presets`** (decision 106; the module built, `crates/library/src/presets.rs`, and the app's side for a processing tool's presets, `crates/app/src/presets.rs`; its built-in presets, utilities' presets, styles and the CLI's side planned): the user data folder's `.appreset` and `.apstyle` files, which belong to no photo folder and which the engine never opens. The app and the CLI call it directly, as they read `settings.toml`, the folders from `apertrust_base::folders::Folders`; it reads and writes over `xmp` with `sidecar`'s entry reading and writing, its field check and `write_xml`, sorts with the pure `listing::browser_order`, and nothing in the four layers calls it. It reads, writes, lists, renames and deletes the files as text and knows nothing of what their values mean; the engine turns the entries into tool values, as it does an edit's (`session::tool_values`, built).
+**Outside the layers, `presets`** (decision 106; the module built, `crates/library/src/presets.rs`, with Export's built-in presets, the app's side for a processing tool's presets and Export's, `crates/app/src/presets.rs`, and the CLI's `export --preset`; styles planned): the user data folder's `.appreset` and `.apstyle` files, which belong to no photo folder and which the engine never opens. The app and the CLI call it directly, as they read `settings.toml`, the folders from `apertrust_base::folders::Folders`; it reads and writes over `xmp` with `sidecar`'s entry reading and writing, its field check and `write_xml`, sorts with the pure `listing::browser_order`, and nothing in the four layers calls it. It reads, writes, lists, renames and deletes the files as text and knows nothing of what their values mean; the engine turns the entries into tool values, as it does an edit's (`session::tool_values`, built).
 
 - **The folders,** in the user data folder: `presets/<tool>/<Name>.appreset`, one preset of one tool, `Folders::presets(tool)`; `styles/<Name>.apstyle`, one style of one or more tools, `Folders::styles()`. Either may not exist yet.
 - **The format** is decision 106's: XMP whose root holds `apertrust:preset` or `apertrust:style`, the format version (`presets::FORMAT_VERSION`, 1), `apertrust:name` and an optional `apertrust:description`; then `apertrust:tools`, tool entries written by the `.apxmp`'s own code, so the same values give the same bytes; and, for a utility's preset, Export's, `apertrust:settings`, the utility's id, `apertrust:tool`, then its `setting:` fields in `presets::SETTING_NAMESPACE`, `https://apertrust.org/ns/xmp/setting/`. A switched tool off is an entry with no `apertrust:enabled` and no values.
@@ -389,7 +389,7 @@ Layer 1 alone knows a photo folder's file layouts; layer 3 alone the index's eng
 ```mermaid
 flowchart LR
     app["apertrust (the app)"] --> engine["apertrust-engine<br/>session::library, sidecar"]
-    app -->|"presets (planned)"| library
+    app -->|"presets"| library
     cli["apertrust-cli"] --> engine
     cli -->|"library scan: Index"| library
     engine -->|"ops, sidecar"| library["apertrust-library"]
@@ -398,7 +398,7 @@ flowchart LR
 ```
 
 - **The engine** depends on the library for `sidecar` and `ops`. Its own `sidecar` module is the typed reading and writing of an edit on top of the library's text layer, with the tool definitions ([engine.md](engine.md#edits)). Its session re-exports `ops` as `session::library`, with `LibraryCommand` and `LibraryEvent`, and serves them ([The API](#the-api)).
-- **The app** reaches the library through the session, `Command::Library` out, `Event::Library` in, but for `presets`, which it calls directly (decision 106, planned).
+- **The app** reaches the library through the session, `Command::Library` out, `Event::Library` in, but for `presets`, which it calls directly (decision 106).
 - **The CLI** runs the library in its own process, with no lock between it and a running app ([The CLI](#the-cli)).
 - The library never depends on the engine, so a client could one day compile its types without it (decision 58).
 

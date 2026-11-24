@@ -53,7 +53,7 @@ The promises, the tooltips, are darktable's in British English: "The radii scale
 
 A script sends `SetControl { tool: "vignette", control: "brightness", value: -0.5, done: true }`, and `apertrust-cli edit --set vignette.brightness=-0.5` does the same.
 
-**Presets:** darktable's lomo (fall-off from 40 % over 100 %, brightness −1, saturation +0.5, the ratio fixed at 1, shape 1), planned with the header's presets menu.
+**Presets:** darktable's lomo (fall-off from 40 % over 100 %, brightness −1, saturation +0.5, the ratio fixed at 1, shape 1), planned with darktable's built-in presets in presets' phase 2 (decision 106).
 
 ### Sliders against darktable
 

@@ -206,8 +206,9 @@ pub struct Head {
     pub layout: Option<Placing>,
     /// Where the tool lives, while Find Tool… lists it among the tools found (decision 96).
     pub found: Option<Found>,
-    /// A processing tool's presets, where the app has a folder for them (decision 106):
-    /// its presets button opens their pull-down, else it is drawn disabled.
+    /// A tool's presets, a processing tool's or a utility's, where the app has a folder for
+    /// them (decision 106): its presets button opens their pull-down, else it is drawn
+    /// disabled.
     pub presets: Option<crate::presets::Menu>,
 }
 
@@ -246,26 +247,24 @@ pub enum Pressed {
     Run(ActionId),
     /// An item of ⋯ the tool has not declared yet, by its id: Collections'.
     Own(String),
-    /// An item of a processing tool's presets, by its id ([`crate::presets::Item::of`]).
+    /// An item of a tool's presets, by its id ([`crate::presets::Item::of`]).
     Preset(String),
 }
 
 /// The design system's section for `tool`'s header (decision 93), titled `title`, as `head`
 /// has it: ↺ where the declaration's `reset` is not none, presets where its `presets`
 /// holds, and ⋯ always, holding `head.options`, drawn disabled while it holds nothing. A
-/// processing tool's are an editing tool's three (`Section::edits`), its presets drawn
-/// disabled until [`section`] gives them their pull-down; a utility's ↺ is named
-/// `reset_name`, and its presets button, where it has one, is named by the first of
-/// `presets` and drawn disabled, its tooltip the
-/// second, until its presets come with the presets API every tool shares (decision 93;
-/// planned). ↺, and ⋯'s Reset with it, is drawn disabled unless `resettable`. Its tooltip
+/// processing tool's are an editing tool's three (`Section::edits`); a utility's ↺ is named
+/// `reset_name`, and its presets button, where it has one, `presets`. The presets are drawn
+/// disabled until [`section`], or `utility::section`, gives them their pull-down (decision
+/// 106). ↺, and ⋯'s Reset with it, is drawn disabled unless `resettable`. Its tooltip
 /// says `about`, where the tool says anything, and after its title it says where it lives
 /// while Find Tool… lists it (`head.found`).
 pub fn header<'a>(
     tool: &ToolDefinition,
     title: &'a str,
     reset_name: &'a str,
-    presets: [&'a str; 2],
+    presets: &'a str,
     resettable: bool,
     about: Option<parts::About>,
     mut head: Head,
@@ -294,8 +293,7 @@ pub fn header<'a>(
         Reset::None => section,
     };
     if tool.presets && tool.reset != Reset::Tool {
-        let [name, later] = presets;
-        section = section.utility_presets(name, false, later);
+        section = section.utility_presets(presets).presets(false);
     }
     if head.options.is_empty() {
         section.options(false)
@@ -308,7 +306,7 @@ pub fn header<'a>(
 /// declaration's `reset` says, and the item chosen in ⋯, a registry action or one of its
 /// own, its Reset as ↺, unless the photo ⋯ acts on is no longer `photo`, the open of the
 /// photo now: ⋯, opened for the photo before, then closes, and its choice is dropped.
-/// An item chosen in a processing tool's presets comes as [`Pressed::Preset`]; an empty ⋯
+/// An item chosen in a tool's presets comes as [`Pressed::Preset`]; an empty ⋯
 /// is drawn disabled, nothing behind it yet.
 ///
 /// What it asks of the layout, where `layout` places it in the workspace, goes to the
@@ -1076,16 +1074,8 @@ pub fn section(
     let (photo, layout) = (head.photo, head.layout);
     let reset = editable && resettable;
     let presets = head.presets.clone().filter(|_| editable);
-    let mut section = header(
-        &definition.tool,
-        &title,
-        "",
-        ["", ""],
-        reset,
-        Some(about),
-        head,
-    )
-    .not_applied(!state.enabled);
+    let mut section = header(&definition.tool, &title, "", "", reset, Some(about), head)
+        .not_applied(!state.enabled);
     if let Some(menu) = presets {
         let words = std::sync::Arc::clone(&words);
         section = section.presets(true).presets_menu(move || {

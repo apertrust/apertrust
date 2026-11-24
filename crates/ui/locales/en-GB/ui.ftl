@@ -196,6 +196,9 @@ presets-rename-button = Rename
 # Under the name, why it can't be taken: $tool is the tool's title.
 presets-name-empty = A preset needs a name
 presets-name-taken = { $tool } already has a preset with this name
+# The presets built in, by tool, each `preset-<tool>-<id>`: Export's two.
+preset-export-for-sharing = For sharing
+preset-export-full-size-jpeg = Full size JPEG
 
 ## A slider's marker
 
@@ -1655,7 +1658,6 @@ pick-warning-short-tip = { $control } reached its end of { $value }
 export-button = Export { photo-count }
 export-reset = Reset export settings
 export-presets = Export presets
-export-presets-later = Presets come in a later version
 export-preset-default = Default settings
 export-metadata-note = This version writes no EXIF, location or copyright into exported files.
 export-path-tip-unexact = { $source } → { $pattern }, filled in as it is exported

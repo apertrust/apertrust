@@ -2683,11 +2683,12 @@ fn tools_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
                 "Vignette",
             ];
             // A utility with a reset and presets of its own, as the Export tool's header: its
-            // reset, its presets button drawn disabled, and its options.
+            // reset, its presets button, and its options.
             let out = Section::new("Export", open[7])
                 .utility_reset("Reset export")
                 .reset(false)
-                .utility_presets("Export presets", false, "Presets come in a later version")
+                .utility_presets("Export presets")
+                .presets(false)
                 .options(false)
                 .peek(peek)
                 .show(ui, |_| {});

@@ -391,8 +391,8 @@ fn a_utility_s_reset_sits_before_its_options() {
 }
 
 /// A utility given a presets button, as the Export tool's header has, draws it between its
-/// reset and its options, reporting `Presets` while it can run and drawn disabled, with its
-/// tooltip saying why, while it cannot.
+/// reset and its options, reporting `Presets` while it can run and drawn disabled while it
+/// cannot; given its presets' menu, it opens it and reports the item chosen.
 #[test]
 fn a_utility_s_presets_button_sits_between_its_reset_and_its_options() {
     let utility = |enabled: bool| {
@@ -403,7 +403,8 @@ fn a_utility_s_presets_button_sits_between_its_reset_and_its_options() {
                 move |ui, actions: &mut Vec<SectionAction>| {
                     let out = Section::new("Export", false)
                         .utility_reset("Reset export")
-                        .utility_presets("Export presets", enabled, "Presets come later")
+                        .utility_presets("Export presets")
+                        .presets(enabled)
                         .options(false)
                         .show(ui, |_| {});
                     actions.extend(out.actions);
@@ -435,6 +436,41 @@ fn a_utility_s_presets_button_sits_between_its_reset_and_its_options() {
     presets.click();
     harness.run();
     assert!(harness.state().is_empty());
+}
+
+/// A utility's presets given their menu open it, built as it opens, and report the item
+/// chosen in place of `Presets`.
+#[test]
+fn a_utility_s_presets_menu_opens_and_reports_the_item_chosen() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(400.0, 200.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, (actions, chosen): &mut (Vec<SectionAction>, Vec<String>)| {
+                let out = Section::new("Export", false)
+                    .utility_presets("Export presets")
+                    .presets(true)
+                    .presets_menu(|| {
+                        vec![
+                            Item::new("preset-default", "Default settings").into(),
+                            Item::new("preset-builtin:for-sharing", "For sharing").into(),
+                        ]
+                    })
+                    .options(false)
+                    .show(ui, |_| {});
+                actions.extend(out.actions);
+                chosen.extend(out.preset);
+            },
+            (Vec::new(), Vec::new()),
+        );
+    harness.run();
+    harness.get_by_label("Export presets").click();
+    harness.run();
+    harness.get_by_label("For sharing").click();
+    harness.run();
+    let (actions, chosen) = harness.state();
+    assert!(actions.is_empty());
+    assert_eq!(*chosen, ["preset-builtin:for-sharing"]);
 }
 
 /// The header's last button's ink, not its box, ends where the rows do, `body_margin` from

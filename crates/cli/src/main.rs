@@ -25,7 +25,9 @@
 //! comes first (wgpu's `WGPU_BACKEND` before `--backend`, decision 82), then
 //! `--conf KEY=VALUE`, which sets one for the run and is never written, then the file.
 //! `export` takes from the export settings what darktable-cli takes from darktablerc, the
-//! format's options, and its own flags give the rest (decision 56).
+//! format's options, and its own flags give the rest (decision 56); `export --preset`
+//! applies an Export preset over them first, a built-in or one in the user data folder's
+//! `presets/export/` (decision 106).
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -65,6 +67,7 @@ use apertrust_export::settings::registry::{
 use apertrust_export::settings::{self as export_settings, FileFormat, SizeMode};
 use apertrust_export::size::Request;
 use apertrust_export::{Format, Places, png, variables};
+use apertrust_library::presets;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_raw::{CfaColor, Pixels, Rect};
 use apertrust_tools::{Control, ControlKind, ControlValue, Mark, ProcessingTool, ToolValues};
@@ -314,7 +317,8 @@ enum Command {
     /// export.png.bit_depth and .compression, by default 8 and 5; in the cm and inch size
     /// modes a JPEG's density is export.size.dpi. --conf export.… sets one for the run. At
     /// full resolution, or within --width and --height as darktable-cli sizes it: the size
-    /// comes from these flags alone, as darktable-cli's, never from export.size.
+    /// comes from these flags alone, as darktable-cli's, never from export.size, but with
+    /// --preset, whose size settings apply, these flags winning over them.
     /// Where the files go is File on disk, as darktable-cli has it: -o is a pattern of
     /// darktable's variables, over export.disk.path, and export.disk.on_conflict decides
     /// what happens to a file already there (create unique filename, overwrite, overwrite
@@ -332,36 +336,33 @@ enum Command {
         /// With several files and no variable, `_$(SEQUENCE)` is added.
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// The largest width in pixels, as darktable-cli's --width; 0 for no limit.
-        #[arg(long, default_value_t = 0)]
-        width: u32,
-        /// The largest height in pixels, as darktable-cli's --height; 0 for no limit.
-        #[arg(long, default_value_t = 0)]
-        height: u32,
+        /// Apply an Export preset over the export settings first, every setting it holds
+        /// and the defaults for the rest, its size included, the other flags winning over
+        /// it: a built-in by its id (for-sharing, full-size-jpeg), else the user data
+        /// folder's preset of exactly this name, else a built-in by its English name. None
+        /// is an error listing them.
+        #[arg(long, value_name = "NAME")]
+        preset: Option<String>,
+        /// The largest width in pixels, as darktable-cli's --width; 0 for no limit, by
+        /// default, or the preset's.
+        #[arg(long)]
+        width: Option<u32>,
+        /// The largest height in pixels, as darktable-cli's --height; 0 for no limit, by
+        /// default, or the preset's.
+        #[arg(long)]
+        height: Option<u32>,
         /// High quality resampling, as darktable-cli's --hq (0, 1, false or true): every
         /// operation before output colour at full resolution and the resample just
         /// before it; otherwise the resample after demosaic. True by default, as in
-        /// darktable-cli.
-        #[arg(
-            long,
-            value_name = "BOOL",
-            default_value = "true",
-            value_parser = parse_bool,
-            action = clap::ArgAction::Set
-        )]
-        hq: bool,
+        /// darktable-cli, or the preset's.
+        #[arg(long, value_name = "BOOL", value_parser = parse_bool)]
+        hq: Option<bool>,
         /// Allow upscaling, as darktable-cli's --upscale (0, 1, false or true): a size
         /// larger than the image grows it, up to 100 times; a side left at 0 takes the
-        /// photo's own, as darktable-cli has it, so a single limit never upscales. False
-        /// by default.
-        #[arg(
-            long,
-            value_name = "BOOL",
-            default_value = "false",
-            value_parser = parse_bool,
-            action = clap::ArgAction::Set
-        )]
-        upscale: bool,
+        /// photo's own, as darktable-cli has it, so a single limit never upscales, without
+        /// --preset. False by default, or the preset's.
+        #[arg(long, value_name = "BOOL", value_parser = parse_bool)]
+        upscale: Option<bool>,
         #[command(flatten)]
         flags: SetFlags,
         /// Leave an operation out; repeat for more.
@@ -596,6 +597,7 @@ fn main() -> Result<()> {
         Command::Export {
             files,
             output,
+            preset,
             width,
             height,
             hq,
@@ -607,20 +609,33 @@ fn main() -> Result<()> {
             runs,
             tile,
         } => {
-            let store = store();
+            let mut store = store();
+            if let Some(name) = &preset {
+                let presets = folders.as_ref().map(|folders| folders.presets("export"));
+                let settings = export_preset(name, presets.as_deref())?;
+                export_settings::apply_preset(&mut store, &settings);
+            }
             let engine = engine(&store, adapter, backend);
+            let sizes = Sizes {
+                width,
+                height,
+                hq,
+                upscale,
+            };
+            let request = sizes.request(preset.is_some().then_some(&store));
+            if let Some(name) = &preset {
+                let Request { width, height, .. } = request;
+                let (upscale, hq) = (request.upscale, request.high_quality);
+                let scale = request.scale.as_deref().unwrap_or("none");
+                tracing::debug!(
+                    target: "settings",
+                    "--preset {name}: size {width} × {height} px, scale {scale}, upscale {upscale}, high quality {hq}"
+                );
+            }
             export_all(
                 &files,
                 output.as_deref(),
-                &Request {
-                    width,
-                    height,
-                    scale: None,
-                    upscale,
-                    high_quality: hq,
-                    // darktable-cli's rules, not its export module's.
-                    dialog: false,
-                },
+                &request,
                 &store,
                 &flags,
                 &skips,
@@ -1685,6 +1700,84 @@ fn interval_ms(value: &str) -> Result<f64, String> {
         }
         _ => Err(format!("milliseconds above 0, not '{value}'")),
     }
+}
+
+/// The size flags of `export`, `--width`, `--height`, `--hq` and `--upscale`, each
+/// where given, to make the size it asks for with or without a preset.
+struct Sizes {
+    width: Option<u32>,
+    height: Option<u32>,
+    hq: Option<bool>,
+    upscale: Option<bool>,
+}
+
+impl Sizes {
+    /// The size `export` asks for: as darktable-cli's flags give it, each at darktable-cli's
+    /// default where not given, and its rules; or, with a preset applied to `preset`'s
+    /// store, the size its settings ask for, as the Export tool asks it, each flag given
+    /// winning over it, a width or height given ending a scale and the export module's
+    /// rule, so a single limit given never upscales, as without a preset (decision 106).
+    fn request(&self, preset: Option<&Store>) -> Request {
+        let Some(store) = preset else {
+            return Request {
+                width: self.width.unwrap_or(0),
+                height: self.height.unwrap_or(0),
+                scale: None,
+                upscale: self.upscale.unwrap_or(false),
+                high_quality: self.hq.unwrap_or(true),
+                // darktable-cli's rules, not its export module's.
+                dialog: false,
+            };
+        };
+        let mut request = export_settings::size(store);
+        if self.width.is_some() || self.height.is_some() {
+            request.scale = None;
+            request.dialog = false;
+        }
+        request.width = self.width.unwrap_or(request.width);
+        request.height = self.height.unwrap_or(request.height);
+        request.upscale = self.upscale.unwrap_or(request.upscale);
+        request.high_quality = self.hq.unwrap_or(request.high_quality);
+        request
+    }
+}
+
+/// The settings of the Export preset `--preset` names (decision 106): a built-in by its
+/// id, else the person's in `folder`, the user data folder's `presets/export`, whose name
+/// is exactly `name`, else a built-in by its British English name. None is an error
+/// listing the presets there are; one a newer Apertrust wrote is refused.
+fn export_preset(name: &str, folder: Option<&Path>) -> Result<Vec<(String, String)>> {
+    let builtins = presets::builtins("export");
+    if let Some((_, stored)) = builtins.iter().find(|(id, _)| *id == name) {
+        return Ok(stored.settings.clone());
+    }
+    let listed = folder.map(|folder| presets::list(folder, presets::Kind::Preset));
+    for (path, error) in listed.iter().flat_map(|listed| &listed.failed) {
+        let path = path.display();
+        tracing::warn!(target: "settings", "preset {path} not read: {error}");
+    }
+    let own: Vec<presets::Stored> = (listed.into_iter())
+        .flat_map(|listed| listed.files)
+        .filter(|stored| {
+            stored.entries.is_empty() && stored.settings_tool.as_deref() == Some("export")
+        })
+        .collect();
+    if let Some(stored) = own.iter().find(|stored| stored.name.trim() == name) {
+        if let Some(newer) = stored.newer() {
+            bail!("the Export preset {name}: {newer}, which this Apertrust cannot apply");
+        }
+        tracing::debug!(target: "settings", "--preset {name}: {}", stored.path.display());
+        return Ok(stored.settings.clone());
+    }
+    if let Some((_, stored)) = builtins.iter().find(|(_, stored)| stored.name == name) {
+        return Ok(stored.settings.clone());
+    }
+    let mut names: Vec<String> = builtins.iter().map(|(id, _)| (*id).to_owned()).collect();
+    names.extend(own.iter().map(|stored| stored.name.trim().to_owned()));
+    bail!(
+        "no Export preset named {name:?}; the presets are: {}",
+        names.join(", ")
+    )
 }
 
 /// darktable-cli's boolean options' values, `--hq` and `--upscale`: 0, 1, false or true,
@@ -3416,22 +3509,12 @@ mod tests {
     #[test]
     fn export_takes_darktable_cli_s_size_flags() {
         let size = |args: &[&str]| {
-            let args = [
-                &["apertrust-cli", "export", "photo.CR2", "-o", "out.jpg"],
-                args,
-            ]
-            .concat();
-            match Cli::try_parse_from(args).map(|cli| cli.command) {
-                Ok(Command::Export {
-                    width,
-                    height,
-                    hq,
-                    upscale,
-                    ..
-                }) => Ok((width, height, hq, upscale)),
-                Ok(other) => panic!("{other:?}"),
-                Err(error) => Err(error.kind()),
-            }
+            sizes(args).map(|sizes| {
+                let request = sizes.request(None);
+                assert!(!request.dialog && request.scale.is_none());
+                let (width, height) = (request.width, request.height);
+                (width, height, request.high_quality, request.upscale)
+            })
         };
         assert_eq!(size(&[]), Ok((0, 0, true, false)));
         assert_eq!(
@@ -3445,6 +3528,114 @@ mod tests {
         assert_eq!(size(&["--upscale", "1"]), Ok((0, 0, true, true)));
         assert!(size(&["--hq", "yes"]).is_err());
         assert!(size(&["--width", "-5"]).is_err());
+    }
+
+    /// `export`'s size flags as given after `args`.
+    fn sizes(args: &[&str]) -> Result<Sizes, clap::error::ErrorKind> {
+        let args = [
+            &["apertrust-cli", "export", "photo.CR2", "-o", "out.jpg"],
+            args,
+        ]
+        .concat();
+        match Cli::try_parse_from(args).map(|cli| cli.command) {
+            Ok(Command::Export {
+                width,
+                height,
+                hq,
+                upscale,
+                ..
+            }) => Ok(Sizes {
+                width,
+                height,
+                hq,
+                upscale,
+            }),
+            Ok(other) => panic!("{other:?}"),
+            Err(error) => Err(error.kind()),
+        }
+    }
+
+    /// A store of the export settings with the Export preset `name` applied, as `export
+    /// --preset` applies it, the person's presets in `folder`.
+    fn with_preset(name: &str, folder: Option<&Path>) -> Result<Store> {
+        let mut store = Store::nowhere(&registries());
+        let settings = export_preset(name, folder)?;
+        export_settings::apply_preset(&mut store, &settings);
+        Ok(store)
+    }
+
+    /// `--preset for-sharing` exports a JPEG within 2048 × 2048 in sRGB, whatever the
+    /// settings held, the size flags given winning over the preset's; without a preset the
+    /// size is darktable-cli's flags' alone, never export.size's.
+    #[test]
+    fn a_preset_s_size_applies_and_the_size_flags_win_over_it() {
+        let store = with_preset("for-sharing", None).unwrap();
+        let request = sizes(&[]).unwrap().request(Some(&store));
+        assert_eq!((request.width, request.height), (2048, 2048));
+        assert_eq!(request.scale, None);
+        assert!(!request.upscale && !request.high_quality && request.dialog);
+        assert_eq!(store.get(&EXPORT_FORMAT), FileFormat::Jpeg);
+        let profile = store.get(&export_settings::registry::EXPORT_PROFILE);
+        assert_eq!(profile, export_settings::Profile::Srgb);
+        let flags = sizes(&["--width", "1024", "--hq", "true"]).unwrap();
+        let request = flags.request(Some(&store));
+        assert_eq!((request.width, request.height), (1024, 2048));
+        assert!(request.high_quality);
+        let full = with_preset("Full size JPEG", None).unwrap();
+        // A single limit given never upscales, the preset's other side left at 0.
+        let one = sizes(&["--width", "8000", "--upscale", "true"]).unwrap();
+        let request = one.request(Some(&full));
+        assert_eq!((request.width, request.height), (8000, 0));
+        assert!(request.upscale && !request.dialog);
+        let request = sizes(&[]).unwrap().request(Some(&full));
+        assert_eq!((request.width, request.height), (0, 0));
+        // No preset: darktable-cli's flags, the settings' size left alone.
+        let request = sizes(&[]).unwrap().request(None);
+        assert_eq!((request.width, request.high_quality), (0, true));
+    }
+
+    /// `--preset NAME` takes a built-in by its id first, then the person's preset named
+    /// exactly NAME, then a built-in by its English name; none is an error naming the
+    /// presets there are, and one a newer Apertrust wrote is refused.
+    #[test]
+    fn a_preset_is_named_by_a_built_in_s_id_then_the_person_s_then_a_built_in_s_name() {
+        let folder =
+            std::env::temp_dir().join(format!("apertrust-cli-presets-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        let write = |name: &str, settings: &[(&str, &str)], version: u32| {
+            let mut stored = presets::Stored::new(presets::Kind::Preset, name);
+            stored.settings_tool = Some("export".to_owned());
+            stored.settings = (settings.iter())
+                .map(|(key, text)| (key.to_string(), text.to_string()))
+                .collect();
+            stored.version = version;
+            let path = folder.join(format!("{}.appreset", presets::file_name(name)));
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(path, stored.to_xml("0.1.0")).unwrap();
+        };
+        write("for-sharing", &[("export.size.width", "100")], 1);
+        write("For sharing", &[("export.size.width", "300")], 1);
+        write("Web", &[("export.format", "png")], 1);
+        write("Later", &[], 2);
+        let width = |name: &str| {
+            let store = with_preset(name, Some(&folder)).unwrap();
+            store.get(&export_settings::registry::EXPORT_SIZE_WIDTH)
+        };
+        // The id first, then the person's by exact name, before the built-in's name.
+        assert_eq!(width("for-sharing"), 2048.0);
+        assert_eq!(width("For sharing"), 300.0);
+        assert_eq!(width("Full size JPEG"), 0.0);
+        let web = with_preset("Web", Some(&folder)).unwrap();
+        assert_eq!(web.get(&EXPORT_FORMAT), FileFormat::Png);
+        let none = export_preset("web", Some(&folder)).unwrap_err().to_string();
+        assert!(none.contains("for-sharing, full-size-jpeg"), "{none}");
+        assert!(none.contains("Web"), "{none}");
+        let later = export_preset("Later", Some(&folder))
+            .unwrap_err()
+            .to_string();
+        assert!(later.contains("cannot apply"), "{later}");
+        assert!(export_preset("Web", None).is_err());
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     /// `--user-data-dir` and its aliases, apart or joined to the folder, before the command

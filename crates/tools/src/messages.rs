@@ -592,13 +592,9 @@ pub fn utility_reset(utility: &str) -> String {
     format!("{utility}-reset")
 }
 
-/// A utility's presets button's name, and its tooltip while it is drawn disabled, until
-/// its presets are built: `<utility>-presets` and `<utility>-presets-later`, as Export's.
-pub fn utility_presets(utility: &str) -> [String; 2] {
-    [
-        format!("{utility}-presets"),
-        format!("{utility}-presets-later"),
-    ]
+/// A utility's presets button's name: `<utility>-presets`, as Export's.
+pub fn utility_presets(utility: &str) -> String {
+    format!("{utility}-presets")
 }
 
 /// Every message a utility's header and rows imply, each once, as [`of`] lists a
@@ -633,7 +629,7 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
         ids.push(utility_reset(definition.id));
     }
     if definition.presets {
-        ids.extend(utility_presets(definition.id));
+        ids.push(utility_presets(definition.id));
     }
     let tabs = definition.tabs.iter().map(|tab| tab.rows);
     for list in std::iter::once(definition.before)

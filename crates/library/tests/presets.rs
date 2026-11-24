@@ -524,3 +524,32 @@ fn a_file_name_the_file_system_takes_for_another_is_numbered() {
     let listed = presets::list(dir, Kind::Preset);
     assert_eq!(listed.files.len(), 2, "{:?}", names(&listed));
 }
+
+/// The built-in presets: Export's two, in their order, each an Export preset of settings
+/// with nothing a write would drop, in the one layout, and its British English name.
+#[test]
+fn the_built_in_presets_are_export_s_two_written_in_the_one_layout() {
+    let builtins = presets::builtins("export");
+    let ids: Vec<&str> = builtins.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, ["for-sharing", "full-size-jpeg"]);
+    let names: Vec<&str> = builtins.iter().map(|(_, s)| s.name.as_str()).collect();
+    assert_eq!(names, ["For sharing", "Full size JPEG"]);
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/presets/export");
+    for (id, stored) in &builtins {
+        assert_eq!(stored.settings_tool.as_deref(), Some("export"), "{id}");
+        assert!(stored.entries.is_empty(), "{id}");
+        assert_eq!(stored.newer(), None, "{id}");
+        let text = std::fs::read_to_string(data.join(format!("{id}.appreset"))).unwrap();
+        assert_eq!(stored.to_xml("0.1.0"), text, "{id}");
+    }
+    let setting = |id: usize, key: &str| {
+        let settings = &builtins[id].1.settings;
+        settings
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(setting(0, "export.size.width").as_deref(), Some("2048"));
+    assert_eq!(setting(1, "export.size.width").as_deref(), Some("0"));
+    assert!(presets::builtins("exposure").is_empty());
+}

@@ -27,8 +27,9 @@
 //! each format's options, through [`format()`], and, once File on disk comes, On
 //! conflict, its own flags giving the rest.
 
-use apertrust_base::settings::{Choice, Store};
+use apertrust_base::settings::{Choice, Declared, Store};
 
+use crate::size::Request;
 use crate::{Format, jpeg, png};
 
 /// The export settings as the settings schema declares them, generated from it by
@@ -39,8 +40,9 @@ pub mod registry {
 }
 
 use registry::{
-    EXPORT_JPEG_QUALITY, EXPORT_JPEG_SUBSAMPLE, EXPORT_PNG_BIT_DEPTH, EXPORT_PNG_COMPRESSION,
-    EXPORT_SIZE_DPI, EXPORT_SIZE_MODE,
+    EXPORT_ASK_BEFORE_OVERWRITE, EXPORT_JPEG_QUALITY, EXPORT_JPEG_SUBSAMPLE, EXPORT_PNG_BIT_DEPTH,
+    EXPORT_PNG_COMPRESSION, EXPORT_SIZE_DPI, EXPORT_SIZE_HEIGHT, EXPORT_SIZE_HIGH_QUALITY,
+    EXPORT_SIZE_MODE, EXPORT_SIZE_SCALE, EXPORT_SIZE_UPSCALE, EXPORT_SIZE_WIDTH,
 };
 
 /// File on disk's On conflict: darktable's four (`dt_disk_onconflict_actions_t`), in its
@@ -140,6 +142,68 @@ pub fn format(store: &Store, format: FileFormat) -> Format {
             compression: store.get(&EXPORT_PNG_COMPRESSION).round() as u8,
         }),
     }
+}
+
+/// The size the export settings in `store` ask for, as the Export tool asks it, with the
+/// export module's rule (`Request::dialog`): by scale its text, else the largest width
+/// and height, in pixels whatever the mode shows them in.
+pub fn size(store: &Store) -> Request {
+    let by_scale = store.get(&EXPORT_SIZE_MODE) == SizeMode::Scale;
+    let side = |pixels: f32| if by_scale { 0 } else { pixels.round() as u32 };
+    Request {
+        width: side(store.get(&EXPORT_SIZE_WIDTH)),
+        height: side(store.get(&EXPORT_SIZE_HEIGHT)),
+        scale: by_scale.then(|| store.get(&EXPORT_SIZE_SCALE)),
+        upscale: store.get(&EXPORT_SIZE_UPSCALE),
+        high_quality: store.get(&EXPORT_SIZE_HIGH_QUALITY),
+        dialog: true,
+    }
+}
+
+/// The export settings an Export preset holds (decision 106): every one the tool's page
+/// stores, which is every export setting but `export.ask_before_overwrite`, which no
+/// preset sets.
+pub fn in_presets() -> impl Iterator<Item = &'static dyn Declared> {
+    let asks = Declared::id(&EXPORT_ASK_BEFORE_OVERWRITE);
+    registry::ALL
+        .iter()
+        .copied()
+        .filter(move |s| s.id() != asks)
+}
+
+/// Applies an Export preset's `settings`, each a key and its text as `--conf` takes it,
+/// to `store` (decision 106): every setting a preset holds ([`in_presets`]) takes the
+/// preset's value, or its default where the preset lacks it, so a preset gives the same
+/// settings whatever was set before; one `--conf` holds for the run is left as it is, as
+/// the store refuses its change. A key no preset sets, and a value its setting cannot
+/// read, which then takes its default, are warned of under `-d settings`.
+pub fn apply_preset(store: &mut Store, settings: &[(String, String)]) {
+    for (key, _) in settings {
+        if !in_presets().any(|setting| setting.id() == key) {
+            tracing::warn!(target: "settings", "preset: {key} is no export setting a preset sets: not applied");
+        }
+    }
+    for setting in in_presets() {
+        let id = setting.id();
+        match settings.iter().find(|(key, _)| key == id) {
+            Some((_, text)) if store.set_text(setting, text) => {}
+            Some((_, text)) => {
+                tracing::warn!(target: "settings", "preset: {id} cannot be {text:?}; the default is used");
+                store.reset_value(setting);
+            }
+            None => store.reset_value(setting),
+        }
+    }
+}
+
+/// The settings in `store` an Export preset saves (decision 106): every one a preset
+/// holds ([`in_presets`]), by key, as text, in the schema's order, but those `--conf`
+/// holds for the run, which are not the person's.
+pub fn preset_settings(store: &Store) -> Vec<(String, String)> {
+    in_presets()
+        .filter(|setting| !store.overridden(*setting))
+        .filter_map(|setting| Some((setting.id().to_owned(), store.text(setting)?)))
+        .collect()
 }
 
 #[cfg(test)]
@@ -513,5 +577,100 @@ mod tests {
             let file = format!("version = 1\n[export.size]\nmode = \"{mode}\"\ndpi = 600\n");
             assert_eq!(dpi(&file), 300, "{mode}");
         }
+    }
+
+    /// The pairs of `settings`, as an Export preset holds them.
+    fn pairs(settings: &[(&str, &str)]) -> Vec<(String, String)> {
+        (settings.iter())
+            .map(|(key, text)| (key.to_string(), text.to_string()))
+            .collect()
+    }
+
+    /// An Export preset sets every setting it holds, its own values and the defaults for
+    /// the rest, whatever was set before, but `export.ask_before_overwrite` and a setting
+    /// `--conf` holds; a value that cannot be read takes its default, a key no preset sets
+    /// is not applied.
+    #[test]
+    fn a_preset_sets_every_setting_it_holds_and_the_defaults_for_the_rest() {
+        let file = "version = 1\n\
+            [export]\nformat = \"png\"\nprofile = \"srgb\"\nask_before_overwrite = false\n\
+            [export.jpeg]\nquality = 70\n[export.size]\nwidth = 640\n";
+        let mut store = read(file, &["export.disk.path=~/given"]);
+        let preset = pairs(&[
+            ("export.format", "jpeg"),
+            ("export.size.width", "2048"),
+            ("export.size.height", "2048"),
+            ("export.size.upscale", "maybe"),
+            ("export.disk.path", "~/elsewhere"),
+            ("export.ask_before_overwrite", "true"),
+            ("export.someday", "1"),
+        ]);
+        apply_preset(&mut store, &preset);
+        assert_eq!(store.get(&registry::EXPORT_FORMAT), FileFormat::Jpeg);
+        assert_eq!(store.get(&EXPORT_SIZE_WIDTH), 2048.0);
+        assert_eq!(store.get(&EXPORT_SIZE_HEIGHT), 2048.0);
+        // Not in the preset, or unreadable: the default.
+        assert_eq!(store.get(&EXPORT_JPEG_QUALITY), 95.0);
+        assert_eq!(store.get(&registry::EXPORT_PROFILE), Profile::ImageSettings);
+        assert!(!store.get(&EXPORT_SIZE_UPSCALE));
+        // `--conf`'s, and the one no preset sets, as they were.
+        assert_eq!(store.get(&registry::EXPORT_DISK_PATH), "~/given");
+        assert!(!store.get(&EXPORT_ASK_BEFORE_OVERWRITE));
+    }
+
+    /// What a preset saves is every setting it holds, as text in the schema's order, but
+    /// one `--conf` holds; applied to any store, it gives those settings back.
+    #[test]
+    fn a_preset_saves_every_setting_it_holds_but_conf_s_and_gives_them_back() {
+        let file = "version = 1\n[export]\nformat = \"png\"\n[export.png]\ncompression = 9\n\
+            [export.size]\nmode = \"scale\"\nscale = \"1/2\"\nhigh_quality = true\n";
+        let store = read(file, &["export.profile=srgb"]);
+        let saved = preset_settings(&store);
+        let keys: Vec<&str> = saved.iter().map(|(key, _)| key.as_str()).collect();
+        let expected: Vec<&str> = (in_presets().map(|s| s.id()))
+            .filter(|id| *id != "export.profile")
+            .collect();
+        assert_eq!(keys, expected);
+        let text = |key: &str| {
+            saved
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, t)| t.as_str())
+        };
+        assert_eq!(text("export.format"), Some("png"));
+        assert_eq!(text("export.png.compression"), Some("9"));
+        assert_eq!(text("export.size.scale"), Some("1/2"));
+        assert_eq!(text("export.size.high_quality"), Some("true"));
+        let mut other = read("version = 1\n[export.jpeg]\nquality = 50\n", &[]);
+        apply_preset(&mut other, &saved);
+        let mut back = preset_settings(&other);
+        assert_eq!(
+            back.pop(),
+            Some(("export.profile".into(), "image_settings".into()))
+        );
+        assert_eq!(back, saved);
+        assert!(!in_presets().any(|s| s.id() == "export.ask_before_overwrite"));
+    }
+
+    /// The size the settings ask for, as the tool asks it: by scale its text alone, else the
+    /// largest width and height, with the export module's rule.
+    #[test]
+    fn the_size_is_the_tool_s_by_its_mode() {
+        let size = |file: &str| super::size(&read(file, &[]));
+        assert_eq!(
+            size("version = 1\n[export.size]\nwidth = 2048\nheight = 1024\nupscale = true\n"),
+            Request {
+                width: 2048,
+                height: 1024,
+                scale: None,
+                upscale: true,
+                high_quality: false,
+                dialog: true,
+            }
+        );
+        let scaled =
+            size("version = 1\n[export.size]\nmode = \"scale\"\nwidth = 2048\nscale = \"0.5\"\n");
+        assert_eq!((scaled.width, scaled.height), (0, 0));
+        assert_eq!(scaled.scale.as_deref(), Some("0.5"));
     }
 }

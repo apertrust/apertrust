@@ -260,11 +260,7 @@ impl Export {
             value,
             path: false,
         };
-        let preset = if *v == Values::default() {
-            tr(ctx, "export-preset-default")
-        } else {
-            tr(ctx, "preset-custom")
-        };
+        let preset = self.preset_name(&words);
         let mut rows = vec![
             plain("export-summary-label-preset", preset),
             plain("export-summary-label-file-name", self.file_name_text()),

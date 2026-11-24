@@ -58,8 +58,7 @@ pub struct UtilityDefinition {
 
 impl UtilityDefinition {
     /// Whether the utility holds together (decision 93): its id; its header's ↺ a registry
-    /// action's, its own or none, never a processing tool's, a presets button allowed, drawn
-    /// disabled until its presets come with the presets API every tool shares (planned); its
+    /// action's, its own or none, never a processing tool's, a presets button allowed; its
     /// page one untitled tab, since
     /// its header draws no tab strip; no row that edits, so its rows are settings, groups,
     /// rows following a setting and custom rows naming no control, each a utility's own
@@ -526,8 +525,7 @@ mod tests {
         }
     }
 
-    /// A utility's ↺ is never a processing tool's; it may have a presets button, drawn
-    /// disabled until its presets are built.
+    /// A utility's ↺ is never a processing tool's; it may have a presets button.
     #[test]
     fn a_utility_s_header_has_no_tool_reset_and_may_have_presets() {
         let mut reset = with(&[]);

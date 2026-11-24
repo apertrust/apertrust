@@ -136,6 +136,8 @@ presets-save-button = Zapisz
 presets-rename-button = Zmień nazwę
 presets-name-empty = Preset musi mieć nazwę
 presets-name-taken = Narzędzie { $tool } ma już preset o tej nazwie
+preset-export-for-sharing = Do udostępniania
+preset-export-full-size-jpeg = JPEG w pełnym rozmiarze
 
 ## Znacznik suwaka
 
@@ -1253,7 +1255,6 @@ pick-warning-short-tip = { $control } osiągnęła granicę { $value }
 export-button = Eksportuj { photo-count }
 export-reset = Przywróć ustawienia eksportu
 export-presets = Presety eksportu
-export-presets-later = Presety pojawią się w jednej z kolejnych wersji
 export-preset-default = Ustawienia domyślne
 export-metadata-note = Ta wersja nie zapisuje jeszcze w plikach EXIF, lokalizacji ani praw autorskich.
 export-path-tip-unexact = { $source } → { $pattern }, zostanie uzupełnione podczas eksportu

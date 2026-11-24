@@ -3127,7 +3127,7 @@ impl Shell {
     /// kept, or as declared at first, peeking while `peek` holds, ⋯ holding its declared
     /// items as the menu builder lists them, then the layout's ([`Shell::layout_head`]),
     /// with the keymap's keys, enabled as `state` says, while Find Tool… is open where
-    /// the tool lives ([`Shell::found`]), and for a processing tool its presets.
+    /// the tool lives ([`Shell::found`]), and for a tool with presets their folder.
     fn head(
         &self,
         ctx: &egui::Context,
@@ -3143,7 +3143,7 @@ impl Shell {
             photo: None,
             layout: None,
             found: self.found(ctx, definition.id),
-            presets: (definition.reset == apertrust_tools::Reset::Tool)
+            presets: (definition.presets)
                 .then(|| {
                     let alerts = dialog_host::platform::shows_alerts(ctx.os());
                     self.presets.menu(definition.id, alerts)
@@ -4533,9 +4533,13 @@ impl App {
             .iter()
             .filter(|declared| keeper.overridden(**declared))
             .map(|declared| declared.id().to_owned());
-        let export = export::Export::new(shell.export.clone())
+        let mut export = export::Export::new(shell.export.clone())
             .alerts(dialog_host::platform::shows_alerts(cc.egui_ctx.os()))
             .given(given);
+        // The person's Export presets, so the Summary names the one in use (decision 106).
+        if let Some(folder) = shell.presets.folder(export::ID) {
+            export.set_presets(presets::read_settings(&folder, export::ID));
+        }
         prepare(&cc.egui_ctx, &shell, settings.scale);
         let (placement, built_start) = built;
         if let Some(window) = cc.winit_window() {
@@ -5519,15 +5523,36 @@ impl App {
         number
     }
 
-    /// What an item of `tool`'s presets does (decision 106; `presets.rs`): Default settings
-    /// and a preset applied as one history step each, Save as Preset… and Rename… their
+    /// What an item of `tool`'s presets does (decision 106; `presets.rs`): for a processing
+    /// tool, Default settings and a preset applied as one history step each; for Export,
+    /// Default settings, a built-in preset and the person's applied to its settings with no
+    /// history step ([`App::export_preset`]); for both, Save as Preset… and Rename… their
     /// dialog, Update and Delete their alert first. A preset that has gone or is parked by
     /// the time it is chosen is not applied.
     fn preset(&mut self, tool: &'static str, item: presets::Item, ctx: &egui::Context) {
-        let (Some(folder), Some(found)) = (self.shell.presets.folder(tool), self.tool(tool)) else {
+        let Some(folder) = self.shell.presets.folder(tool) else {
             return;
         };
         let words = apertrust_ui::translator(ctx);
+        if tool == export::ID {
+            let title = words.text(&format!("section-{tool}"));
+            let taken = || presets::taken_settings(&folder, tool, &words);
+            match item {
+                presets::Item::Save | presets::Item::Rename(_) => {
+                    self.name_preset(tool, title, taken(), item, ctx);
+                }
+                presets::Item::Update(_) | presets::Item::Delete(_) => {
+                    self.ask_preset(tool, item, ctx);
+                }
+                presets::Item::Default | presets::Item::Builtin(_) | presets::Item::Apply(_) => {
+                    self.export_preset(&folder, item);
+                }
+            }
+            return;
+        }
+        let Some(found) = self.tool(tool) else {
+            return;
+        };
         let title = words.text(&apertrust_tools::messages::title(tool));
         match item {
             presets::Item::Default => {
@@ -5543,93 +5568,178 @@ impl App {
                 }
                 _ => tracing::warn!(target: "settings", "{tool}'s preset {name} cannot be applied"),
             },
-            presets::Item::Save => {
+            // No processing tool has presets built in yet.
+            presets::Item::Builtin(_) => {}
+            presets::Item::Save | presets::Item::Rename(_) => {
                 let taken = presets::taken(&folder, found, &words);
-                let name = presets::free_name(&title, &taken, &words);
-                let dialog = presets::NameDialog::save(tool, title, taken, name);
-                self.dialogs.open(dialog, None, ctx);
+                self.name_preset(tool, title, taken, item, ctx);
             }
-            presets::Item::Rename(name) => {
-                let taken = presets::taken(&folder, found, &words);
-                let dialog = presets::NameDialog::rename(tool, title, taken, name);
-                self.dialogs.open(dialog, None, ctx);
-            }
-            presets::Item::Update(ref name) | presets::Item::Delete(ref name) => {
-                let name = name.clone();
-                let update = matches!(item, presets::Item::Update(_));
-                let (purpose, request) = if update {
-                    (
-                        alerts::Purpose::UpdatePreset,
-                        alerts::update_preset_request(ctx, &name),
-                    )
-                } else {
-                    (
-                        alerts::Purpose::DeletePreset,
-                        alerts::delete_preset_request(ctx, &name),
-                    )
-                };
-                let asked = self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
-                if asked == dialog_host::Ask::Shown {
-                    self.preset_asked = Some((tool, name));
-                }
-            }
+            presets::Item::Update(_) | presets::Item::Delete(_) => self.ask_preset(tool, item, ctx),
         }
     }
 
-    /// What Save as Preset… or Rename… asked as its button was pressed: the tool's values now
-    /// written as a preset, or its preset renamed, which is then the one Update, Rename…
-    /// and Delete… act on. A file that cannot be written is logged under `-d settings`.
-    fn preset_named(&mut self, asked: presets::Asked) {
-        let tool = match &asked {
-            presets::Asked::Save { tool, .. } | presets::Asked::Rename { tool, .. } => *tool,
+    /// Save as Preset… or Rename… of `tool`'s presets, `item`: their dialog, `title` the
+    /// tool's, the names `taken` refused, a new preset's name the first free one.
+    fn name_preset(
+        &mut self,
+        tool: &'static str,
+        title: String,
+        taken: Vec<String>,
+        item: presets::Item,
+        ctx: &egui::Context,
+    ) {
+        let dialog = match item {
+            presets::Item::Rename(name) => presets::NameDialog::rename(tool, title, taken, name),
+            _ => {
+                let name = presets::free_name(&title, &taken, &apertrust_ui::translator(ctx));
+                presets::NameDialog::save(tool, title, taken, name)
+            }
         };
-        let (Some(folder), Some(found)) = (self.shell.presets.folder(tool), self.tool(tool)) else {
+        self.dialogs.open(dialog, None, ctx);
+    }
+
+    /// Update or Delete of `tool`'s preset, `item`: its alert first, the answer carried out
+    /// by [`App::preset_confirmed`].
+    fn ask_preset(&mut self, tool: &'static str, item: presets::Item, ctx: &egui::Context) {
+        let (purpose, request, name) = match item {
+            presets::Item::Update(name) => (
+                alerts::Purpose::UpdatePreset,
+                alerts::update_preset_request(ctx, &name),
+                name,
+            ),
+            presets::Item::Delete(name) => (
+                alerts::Purpose::DeletePreset,
+                alerts::delete_preset_request(ctx, &name),
+                name,
+            ),
+            _ => return,
+        };
+        let asked = self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
+        if asked == dialog_host::Ask::Shown {
+            self.preset_asked = Some((tool, name));
+        }
+    }
+
+    /// Default settings, a built-in preset or the person's, `item`, applied to the Export
+    /// tool's settings, kept by the shell as a row's change is, with no history step: Export
+    /// edits no photo (decision 106). The person's presets in `folder` are read again, so
+    /// the Summary names the one in use.
+    fn export_preset(&mut self, folder: &Path, item: presets::Item) {
+        let listed = presets::read_settings(folder, export::ID);
+        match item {
+            presets::Item::Default => self.export.apply(&Vec::new()),
+            presets::Item::Builtin(id) => {
+                let builtins = presets::builtins(export::ID).into_iter();
+                match builtins.into_iter().find(|(own, _)| *own == id) {
+                    Some((_, settings)) => self.export.apply(&settings),
+                    None => {
+                        tracing::warn!(target: "settings", "export: no preset built in as {id}")
+                    }
+                }
+            }
+            presets::Item::Apply(name) => match listed.iter().find(|preset| preset.name == name) {
+                Some(presets::Listed {
+                    values: Ok(settings),
+                    ..
+                }) => {
+                    self.export.apply(settings);
+                    self.shell.presets.choose(export::ID, &name);
+                }
+                _ => tracing::warn!(target: "settings", "export's preset {name} cannot be applied"),
+            },
+            _ => {}
+        }
+        self.export.set_presets(listed);
+        self.shell.export = self.export.values().clone();
+    }
+
+    /// What Save as Preset… or Rename… asked as its button was pressed: the tool's values now,
+    /// or Export's settings but those `--conf` gives, written as a preset, or its preset
+    /// renamed, which is then the one Update, Rename… and Delete… act on. A file that
+    /// cannot be written is logged under `-d settings`.
+    fn preset_named(&mut self, asked: presets::Asked) {
+        let (tool, name) = match &asked {
+            presets::Asked::Save { tool, name, .. } => (*tool, name.clone()),
+            presets::Asked::Rename { tool, to, .. } => (*tool, to.clone()),
+        };
+        let Some(folder) = self.shell.presets.folder(tool) else {
             return;
         };
-        let (done, name) = match &asked {
-            presets::Asked::Save {
-                name, description, ..
-            } => {
-                let Some(state) = self.mirror.values.tools.iter().find(|s| s.tool == tool) else {
-                    return;
-                };
-                let build = apertrust_base::program!().version;
-                let named = (name.as_str(), description.as_deref());
-                (
-                    presets::save(&folder, found, state, named, build).map(drop),
-                    name,
-                )
-            }
-            presets::Asked::Rename { from, to, .. } => {
-                (presets::rename(&folder, found, from, to).map(drop), to)
+        let build = apertrust_base::program!().version;
+        let done = if tool == export::ID {
+            let done = match &asked {
+                presets::Asked::Save { description, .. } => {
+                    let named = (name.as_str(), description.as_deref());
+                    let settings = self.export.preset_settings();
+                    presets::save_settings(&folder, tool, settings, named, build)
+                }
+                presets::Asked::Rename { from, .. } => {
+                    presets::rename_settings(&folder, tool, from, &name)
+                }
+            };
+            self.export
+                .set_presets(presets::read_settings(&folder, export::ID));
+            done
+        } else {
+            let Some(found) = self.tool(tool) else {
+                return;
+            };
+            match &asked {
+                presets::Asked::Save { description, .. } => {
+                    let Some(state) = self.mirror.values.tools.iter().find(|s| s.tool == tool)
+                    else {
+                        return;
+                    };
+                    let named = (name.as_str(), description.as_deref());
+                    presets::save(&folder, found, state, named, build)
+                }
+                presets::Asked::Rename { from, .. } => presets::rename(&folder, found, from, &name),
             }
         };
         match done {
-            Ok(()) => self.shell.presets.choose(tool, name),
+            Ok(_) => self.shell.presets.choose(tool, &name),
             Err(error) => tracing::warn!(target: "settings", "{tool}'s preset {name}: {error}"),
         }
     }
 
     /// The alert asked for `tool`'s preset `name` answered yes: Update writes the tool's
-    /// values now over it, Delete removes it, so it is gone from the list at once.
+    /// values now, or Export's settings, over it, Delete removes it, so it is gone from the
+    /// list at once.
     fn preset_confirmed(&mut self, update: bool) {
         let Some((tool, name)) = self.preset_asked.take() else {
             return;
         };
-        let (Some(folder), Some(found)) = (self.shell.presets.folder(tool), self.tool(tool)) else {
+        let Some(folder) = self.shell.presets.folder(tool) else {
             return;
         };
-        let done = if update {
-            let Some(state) = self.mirror.values.tools.iter().find(|s| s.tool == tool) else {
+        let build = apertrust_base::program!().version;
+        let done = if tool == export::ID {
+            let done = if update {
+                let settings = self.export.preset_settings();
+                presets::update_settings(&folder, tool, settings, &name, build).map(drop)
+            } else {
+                presets::delete_settings(&folder, tool, &name)
+            };
+            self.export
+                .set_presets(presets::read_settings(&folder, export::ID));
+            done
+        } else {
+            let Some(found) = self.tool(tool) else {
                 return;
             };
-            let build = apertrust_base::program!().version;
-            presets::update(&folder, found, state, &name, build).map(drop)
-        } else {
-            presets::delete(&folder, found, &name).map(|()| self.shell.presets.forget(tool, &name))
+            if update {
+                let Some(state) = self.mirror.values.tools.iter().find(|s| s.tool == tool) else {
+                    return;
+                };
+                presets::update(&folder, found, state, &name, build).map(drop)
+            } else {
+                presets::delete(&folder, found, &name)
+            }
         };
-        if let Err(error) = done {
-            tracing::warn!(target: "settings", "{tool}'s preset {name}: {error}");
+        match done {
+            Ok(()) if !update => self.shell.presets.forget(tool, &name),
+            Ok(()) => {}
+            Err(error) => tracing::warn!(target: "settings", "{tool}'s preset {name}: {error}"),
         }
     }
 
@@ -6110,6 +6220,10 @@ impl App {
             self.send_edit(command);
         }
         let export = photos.export;
+        // An item of its presets (decision 106).
+        if let Some(item) = export.preset.clone() {
+            self.preset(export::ID, item, ui.ctx());
+        }
         if export.toggle {
             self.shell.toggle_section(&export::definition().tool);
         }
