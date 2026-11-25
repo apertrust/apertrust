@@ -48,6 +48,7 @@ mod group;
 mod histogram;
 mod icon_button;
 mod jobs;
+mod line_row;
 mod marker;
 mod patches;
 mod photo_frame;
@@ -107,6 +108,7 @@ pub use jobs::{
     ActivityAction, FileManager, Job, JobArg, JobFailure, JobId, JobMessage, JobPhase, Jobs,
     RowMenu, failure_line, kind_icon,
 };
+pub use line_row::{EndAction, EndItem, LineAction, LineRow, LineStart};
 pub use marker::{Marker, marker, set_marker};
 pub use patches::{Patch, Patches};
 pub use photo_frame::{

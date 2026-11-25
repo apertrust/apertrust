@@ -24,11 +24,16 @@
 //! The value follows the label a small gap (`spacing.xs`) apart, no brackets, never cut:
 //! "Compensate camera exposure −⅔ EV". The label is cut with … before it, and the words
 //! end a group's gap (`spacing.m`) before the switch.
+//!
+//! End items (decision 107), as a line row's, sit before the switch, `spacing.xs` from it
+//! and from each other, in reading and Tab order after the row: a press on one is its own,
+//! never the row's toggle, and the words end a group's gap before the first.
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Color32, FontId, Role, Ui, WidgetInfo, pos2, vec2};
+use egui::{Align, Color32, FontId, Layout, Rect, Role, Ui, UiBuilder, WidgetInfo, pos2, vec2};
 
 use super::focus_ring_centred;
+use super::line_row::{EndAction, EndItem, end_width, show_end};
 use super::plate::{Touch, allocate, undimmed_painter};
 use super::switch;
 use crate::theme;
@@ -40,6 +45,7 @@ pub struct ToggleRow<'a> {
     promise: Option<&'a str>,
     on: bool,
     enabled: bool,
+    end: Vec<EndItem<'a>>,
 }
 
 impl<'a> ToggleRow<'a> {
@@ -52,6 +58,7 @@ impl<'a> ToggleRow<'a> {
             promise: None,
             on,
             enabled: true,
+            end: Vec::new(),
         }
     }
 
@@ -81,17 +88,25 @@ impl<'a> ToggleRow<'a> {
         self
     }
 
+    /// End items before the switch, left to right (decision 107): each enabled or not as
+    /// it says, whatever the row's own state.
+    pub fn end(mut self, items: Vec<EndItem<'a>>) -> Self {
+        self.end = items;
+        self
+    }
+
     /// Returns the new value when the user changes it.
     pub fn show(self, ui: &mut Ui) -> Option<bool> {
+        self.show_with_end(ui).0
+    }
+
+    /// Returns the new value when the user changes it, and the end item pressed this frame,
+    /// by its index, with how.
+    pub fn show_with_end(mut self, ui: &mut Ui) -> (Option<bool>, Option<(usize, EndAction)>) {
         let t = theme(ui.ctx());
         let enabled = self.enabled && ui.is_enabled();
         let size = vec2(ui.available_width(), t.sizes.panel_line);
         let (row, mut response) = allocate(ui, size, enabled);
-        let mut on = self.on;
-        if response.clicked() {
-            on = !on;
-            response.mark_changed();
-        }
         // Where the switch sits: its right edge a field's inset from the row's end.
         let track = egui::Rect::from_center_size(
             pos2(
@@ -100,6 +115,21 @@ impl<'a> ToggleRow<'a> {
             ),
             vec2(t.sizes.switch_width, t.sizes.switch_height),
         );
+        // The end items before the switch, `spacing.xs` from it.
+        let items = std::mem::take(&mut self.end);
+        let ends = (!items.is_empty()).then(|| {
+            let width = end_width(ui, &items);
+            let right = track.left() - t.spacing.xs;
+            Rect::from_min_max(pos2(right - width, row.top()), pos2(right, row.bottom()))
+        });
+        // A press on the end items is theirs, even on one disabled, which takes none.
+        let on_ends = (response.interact_pointer_pos())
+            .is_some_and(|at| ends.is_some_and(|ends| ends.contains(at)));
+        let mut on = self.on;
+        if response.clicked() && !on_ends {
+            on = !on;
+            response.mark_changed();
+        }
         let font = FontId::proportional(t.text.body);
         let (text, secondary) = if enabled {
             (t.colors.text, t.colors.text_secondary)
@@ -115,9 +145,10 @@ impl<'a> ToggleRow<'a> {
             );
             ui.painter().layout_job(job)
         });
-        // The words end a group's gap before the switch; the value is never cut, the label
-        // before it is, with …
-        let room = (track.left() - t.spacing.m - row.left()).max(0.0);
+        let words_end = ends.map_or(track.left(), |ends| ends.left());
+        // The words end a group's gap before the switch, or the first end item; the value
+        // is never cut, the label before it is, with …
+        let room = (words_end - t.spacing.m - row.left()).max(0.0);
         let room = room - value.as_ref().map_or(0.0, |v| v.size().x);
         let label = ui.painter().layout_job(super::truncated(
             self.label,
@@ -180,6 +211,16 @@ impl<'a> ToggleRow<'a> {
             let tip = tip.join("\n");
             response.on_hover_text(&tip).on_disabled_hover_text(&tip)
         };
-        (response.changed() && on != self.on).then_some(on)
+        let toggled = (response.changed() && on != self.on).then_some(on);
+        // Drawn after the row, so a press on one is its own.
+        let pressed = ends.and_then(|ends| {
+            let mut inside = ui.new_child(
+                UiBuilder::new()
+                    .max_rect(ends)
+                    .layout(Layout::left_to_right(Align::Center)),
+            );
+            show_end(&mut inside, items)
+        });
+        (toggled, pressed)
     }
 }

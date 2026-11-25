@@ -697,8 +697,8 @@ pub enum Row {
     /// A boolean control.
     Toggle {
         control: &'static str,
-        /// Its end items, before the switch (decision 107); none until a toggle's are
-        /// drawn ([`DefinitionError::EndNotDrawn`]).
+        /// Its end items, before the switch (decision 107), as AgX's Reverse all takes Set
+        /// from above.
         end: &'static [End],
     },
     /// A titled set of rows, darktable's section label or its collapsible section
@@ -756,24 +756,21 @@ pub enum Row {
     /// fields of controls ([`DefinitionError::Fields`]). It is no control.
     Fields(Fields),
     /// One line, darktable's widgets packed in a box (decision 107): a start, a readout in
-    /// the label's place, and end items. Until decision 107's next step draws lines of any
-    /// shape, [`ProcessingDefinition::check`] takes three ([`DefinitionError::LineShape`]):
+    /// the label's place, and end items, of any shape:
     ///
-    /// - pickers: no start or a label, or a readout, and the buttons of pickers of
-    ///   [`ProcessingDefinition::pickers`] at its end, as AgX's Auto tune levels, RGB
-    ///   levels' black, grey and white, and Colour calibration's CCT, the illuminant's
-    ///   colour and its picker;
-    /// - buttons: a control's label, double-clicked to reset it, as darktable's reset
-    ///   label, with icon actions after it that write the control from its value
-    ///   ([`crate::ProcessingTool::action`]), as orientation's rotate and flip. A click is
-    ///   one change, a `SetControl` of each control the action writes; the control shows
-    ///   only here;
-    /// - an action: no start, no readout, and one text action not ported, which the panel
-    ///   draws disabled at the line's start, so the page reads as darktable's and shows
-    ///   what is missing, as AgX's Read exposure.
+    /// - pickers after a label or a readout, as AgX's Auto tune levels and Colour
+    ///   calibration's CCT, the illuminant's colour and its picker;
+    /// - a control's label, double-clicked to reset it, as darktable's reset label, with
+    ///   icon actions after it that write the control from its value
+    ///   ([`crate::ProcessingTool::action`]), as orientation's rotate and flip, the control
+    ///   shown only here;
+    /// - a line with no start and no readout whose one item is a text action, drawn at the
+    ///   line's start as a button of its own.
     ///
-    /// It is no control, but for a control at its start. An action writes the tool's
-    /// controls and is never stored (`docs/tools/README.md`, rule 10).
+    /// A click on an action is one change, a `SetControl` of each control it writes; one
+    /// not ported is drawn disabled, so the page reads as darktable's and shows what is
+    /// missing. It is no control, but for a control at its start. An action writes the
+    /// tool's controls and is never stored (`docs/tools/README.md`, rule 10).
     Line {
         start: LineStart,
         /// A text and a swatch the tool computes from its values
@@ -998,19 +995,26 @@ impl Row {
         }
     }
 
-    /// The pickers the row shows: a slider's end item's, a line's end items', or a
-    /// reference's.
+    /// The row's end items (decision 107): a slider's one, a line's, a choice's, a
+    /// toggle's or a setting's; none for any other row.
+    pub fn end(&self) -> &[End] {
+        match self {
+            Row::Slider(slider) => slider.end.as_slice(),
+            Row::Line { end, .. }
+            | Row::Choice { end, .. }
+            | Row::Toggle { end, .. }
+            | Row::Setting(SettingRow { end, .. }) => end,
+            _ => &[],
+        }
+    }
+
+    /// The pickers the row shows: its end items', or a reference's.
     pub fn pickers(&self) -> impl Iterator<Item = &'static str> + use<> {
-        let (one, end): (Option<&'static str>, &'static [End]) = match self {
-            Row::Slider(Slider {
-                end: Some(End::Picker(picker)),
-                ..
-            })
-            | Row::Reference { picker, .. } => (Some(picker), &[]),
-            Row::Line { end, .. } => (None, end),
-            _ => (None, &[]),
+        let (one, end): (Option<&'static str>, Vec<&'static str>) = match self {
+            Row::Reference { picker, .. } => (Some(picker), Vec::new()),
+            _ => (None, self.end().iter().filter_map(End::picker).collect()),
         };
-        one.into_iter().chain(end.iter().filter_map(End::picker))
+        one.into_iter().chain(end)
     }
 
     /// The setting rows the row shows itself: a setting row's, or a line of fields' one a
@@ -1055,8 +1059,8 @@ pub struct Slider {
     /// Whether the track fills from the default to the value.
     pub fill: bool,
     /// The item at the row's end, if any, darktable's quad (decision 107): one, as
-    /// darktable's is, and a picker until the other kinds are drawn
-    /// ([`DefinitionError::LineShape`]).
+    /// darktable's is, and a picker until the other kinds are drawn there
+    /// ([`DefinitionError::EndNotDrawn`]).
     pub end: Option<End>,
     /// The row's own words, by an id, where darktable labels the control otherwise in
     /// the mode the row shows for; `None` for the control's own.
@@ -1599,10 +1603,8 @@ pub enum DefinitionError {
     #[error("a line holds no end item")]
     EmptyLine,
     #[error(
-        "the line of {0} is of a shape not drawn yet: pickers after a label or a readout, icon actions after a control, or one text action not ported"
+        "the row {0} has end items not drawn there yet: a choice and a setting take none, and a slider's is a picker"
     )]
-    LineShape(&'static str),
-    #[error("the row {0} has end items, which only a slider and a line draw yet")]
     EndNotDrawn(&'static str),
     #[error(
         "the readout {0}: a line with a label too, no texts, an id named twice or not snake_case"
@@ -1815,11 +1817,11 @@ impl ProcessingDefinition {
     /// kind as a control's, and each action once. Control, preset row and coordinate ids
     /// are unique together. Each picker has an id of its own, writes controls of the
     /// tool and reads its settings, each once, its words following a choice setting of the
-    /// tool if any, and is in exactly one place: a slider's end item, a line's, a reference
-    /// row, or a drawn preset row's option that turns it on, an option of the row named
-    /// once. A line holds at least one end item and is of a shape the app draws
-    /// ([`Row::Line`]), a slider's end item is a picker, and a choice, a toggle and a
-    /// setting have none yet. Rows following a setting follow a choice setting of the tool,
+    /// tool if any, and is in exactly one place: a row's end item, a reference row, or a
+    /// drawn preset row's option that turns it on, an option of the row named once. A
+    /// line holds at least one end item, each action at a row's end has a snake_case id
+    /// unique among the tool's actions, a slider's end item is a picker, and a choice and
+    /// a setting have none yet. Rows following a setting follow a choice setting of the tool,
     /// shown wherever they are, for options it has, and hold no control and not it. A
     /// reference row's picker writes no control, and its two settings are the tool's,
     /// each once. A last
@@ -1921,17 +1923,22 @@ impl ProcessingDefinition {
             {
                 return Err(DefinitionError::Widget(*widget));
             }
+            // Each action at a row's end has an id of its own among the tool's actions.
+            for ActionEnd { id, .. } in row.end().iter().filter_map(End::action) {
+                if !is_id(id) {
+                    return Err(DefinitionError::Id(id));
+                }
+                if *id == "tabs" {
+                    return Err(DefinitionError::ReservedAction(id));
+                }
+                if !actions.insert(*id) {
+                    return Err(DefinitionError::DuplicateAction(id));
+                }
+            }
             match row {
-                Row::Line {
-                    start,
-                    readout,
-                    end,
-                } => {
-                    let Some(first) = end.first() else {
+                Row::Line { start, end, .. } => {
+                    if end.is_empty() {
                         return Err(DefinitionError::EmptyLine);
-                    };
-                    if !line_drawn(start, readout.as_ref(), end) {
-                        return Err(DefinitionError::LineShape(first.id()));
                     }
                     // A line's label shares a plain group's words, so its id is one.
                     if let LineStart::Label(id) = start {
@@ -1942,26 +1949,14 @@ impl ProcessingDefinition {
                             return Err(DefinitionError::DuplicateGroup(id));
                         }
                     }
-                    for ActionEnd { id, .. } in end.iter().filter_map(End::action) {
-                        if !is_id(id) {
-                            return Err(DefinitionError::Id(id));
-                        }
-                        if *id == "tabs" {
-                            return Err(DefinitionError::ReservedAction(id));
-                        }
-                        if !actions.insert(*id) {
-                            return Err(DefinitionError::DuplicateAction(id));
-                        }
-                    }
                 }
-                // A slider's one end item is a picker until the other kinds are drawn.
+                // A slider's one end item is a picker until the other kinds are drawn there.
                 Row::Slider(Slider {
-                    end: Some(end @ End::Action(_)),
+                    control,
+                    end: Some(End::Action(_)),
                     ..
-                }) => return Err(DefinitionError::LineShape(end.id())),
-                Row::Choice { control, end, .. } | Row::Toggle { control, end }
-                    if !end.is_empty() =>
-                {
+                }) => return Err(DefinitionError::EndNotDrawn(control)),
+                Row::Choice { control, end, .. } if !end.is_empty() => {
                     return Err(DefinitionError::EndNotDrawn(control));
                 }
                 Row::Group(group) => {
@@ -2285,11 +2280,7 @@ impl ProcessingDefinition {
             return Err(DefinitionError::UnknownToolbarAction(item.action));
         }
         let buttons: Vec<&str> = (self.rows())
-            .filter_map(|row| match row {
-                Row::Line { end, .. } => Some(end.iter().filter_map(End::action)),
-                _ => None,
-            })
-            .flatten()
+            .flat_map(|row| row.end().iter().filter_map(End::action))
             .filter(|action| matches!(action.face, Face::Icon(_)))
             .map(|action| action.id)
             .collect();
@@ -2558,40 +2549,6 @@ pub(crate) fn shows_setting(rows: &[Row], setting: &str) -> bool {
 /// Whether a number's range holds together: finite ends in order, and a step that fits.
 fn range_holds(min: f32, max: f32, step: f32) -> bool {
     min.is_finite() && max.is_finite() && min < max && step > 0.0 && step <= max - min
-}
-
-/// Whether a line with end items `end` is of a shape the app draws until decision 107's
-/// next step draws any ([`Row::Line`]): pickers alone, after no start or a label, or a
-/// readout; icon actions that run, after a control, with no readout; or one text action
-/// not ported, alone.
-fn line_drawn(start: &LineStart, readout: Option<&ReadoutDef>, end: &[End]) -> bool {
-    let pickers = end.iter().all(|item| matches!(item, End::Picker(_)));
-    let buttons = end.iter().all(|item| {
-        matches!(
-            item,
-            End::Action(ActionEnd {
-                face: Face::Icon(_),
-                unported: false,
-                ..
-            })
-        )
-    });
-    match (start, readout, end) {
-        (LineStart::None | LineStart::Label(_), _, _) if pickers => true,
-        (LineStart::Control(_), None, _) => buttons,
-        (
-            LineStart::None,
-            None,
-            [
-                End::Action(ActionEnd {
-                    face: Face::Text,
-                    unported: true,
-                    ..
-                }),
-            ],
-        ) => true,
-        _ => false,
-    }
 }
 
 /// Whether a slider's soft range holds together: finite ends in order, inside the range,
@@ -4288,11 +4245,11 @@ mod tests {
         }
     }
 
-    /// Decision 107's first step draws three shapes of line, today's rows: pickers after
-    /// no start, a label or a readout; icon actions that run after a control; and one text
-    /// action not ported, alone. Every other line is refused, by its first end item.
+    /// A line of any shape is drawn (decision 107): pickers, icon or text actions, after
+    /// no start, a label, a control or a readout, ported or not, and a toggle takes end
+    /// items before its switch.
     #[test]
-    fn a_line_is_of_a_shape_the_app_draws() {
+    fn a_line_and_a_toggle_take_end_items_of_any_shape() {
         const CCT: ReadoutDef = ReadoutDef {
             id: "cct",
             texts: &["daylight"],
@@ -4300,20 +4257,35 @@ mod tests {
             swatch: true,
         };
         let icon = Face::Icon(ButtonIcon::RotateLeft);
-        let spot = Picker {
-            id: "spot",
-            ..LEVEL
-        };
         let control = LineStart::Control("contrast");
         let label = LineStart::Label("auto_tune");
-        let drawn = [
+        let lines = [
             line(label, None, &[End::Picker("level")]),
             line(LineStart::None, Some(CCT), &[End::Picker("level")]),
-            line(LineStart::None, None, &[End::Picker("level")]),
             line(control, None, &[action("rotate", icon, false)]),
             line(LineStart::None, None, &[action("auto", Face::Text, true)]),
+            // Mixed lines, pickers and actions of either face, ported or not.
+            line(
+                label,
+                None,
+                &[End::Picker("level"), action("rotate", icon, false)],
+            ),
+            line(
+                LineStart::None,
+                Some(CCT),
+                &[action("auto", Face::Text, false), End::Picker("level")],
+            ),
+            line(control, None, &[action("rotate", icon, true)]),
+            line(
+                LineStart::None,
+                None,
+                &[
+                    action("auto", Face::Text, false),
+                    action("again", Face::Text, true),
+                ],
+            ),
         ];
-        for row in drawn {
+        for row in lines {
             // Contrast shown, and the picker in one place.
             let mut rows = vec![row.clone()];
             if row.controls().is_empty() {
@@ -4324,80 +4296,80 @@ mod tests {
             }
             assert_eq!(picking(&[LEVEL], &rows), Ok(()), "{rows:?}");
         }
-        let shape = |id| Err(DefinitionError::LineShape(id));
-        let refused = [
-            // A mixed line, pickers and actions.
-            line(
-                LineStart::None,
-                None,
-                &[End::Picker("spot"), action("auto", Face::Text, true)],
-            ),
-            line(
-                label,
-                None,
-                &[action("auto", Face::Text, true), End::Picker("spot")],
-            ),
-            // Actions after a label, or icon actions after no start.
-            line(label, None, &[action("rotate", icon, false)]),
-            line(LineStart::None, None, &[action("rotate", icon, false)]),
-            // A control's line of pickers, of text actions, of unported icons, or with a
-            // readout.
-            line(control, None, &[End::Picker("spot")]),
-            line(control, None, &[action("auto", Face::Text, false)]),
-            line(control, None, &[action("rotate", icon, true)]),
-            line(control, Some(CCT), &[action("rotate", icon, false)]),
-            // A text action that runs, two text actions, or one with a readout.
-            line(LineStart::None, None, &[action("auto", Face::Text, false)]),
-            line(
-                LineStart::None,
-                None,
-                &[
-                    action("auto", Face::Text, true),
-                    action("again", Face::Text, true),
-                ],
-            ),
-            line(
-                LineStart::None,
-                Some(CCT),
-                &[action("auto", Face::Text, true)],
-            ),
-        ];
-        for row in refused {
-            let id = match &row {
-                Row::Line { end, .. } => end[0].id(),
-                _ => unreachable!(),
-            };
-            let rows = [
-                Row::Slider(Slider::new("contrast").end(End::Picker("level"))),
-                row,
-            ];
-            assert_eq!(picking(&[LEVEL, spot], &rows), shape(id), "{rows:?}");
-        }
+        // A toggle with a text action before its switch, its fine tuning's.
+        const FINE: Row = Row::Group(Group {
+            id: "fine_tuning",
+            kind: GroupKind::Collapsible,
+            rows: &[
+                Row::Toggle {
+                    control: "smooth",
+                    end: &[End::Action(ActionEnd {
+                        id: "auto",
+                        face: Face::Text,
+                        unported: false,
+                    })],
+                },
+                Row::When {
+                    control: "smooth",
+                    is: &["true"],
+                    rows: &[Row::Slider(Slider::new("radius"))],
+                },
+            ],
+        });
+        let toggled = ProcessingDefinition {
+            tool: ToolDefinition {
+                tabs: Box::leak(Box::new([
+                    Tab {
+                        id: Some("main"),
+                        rows: with_mode(CONTRAST),
+                    },
+                    Tab {
+                        id: Some("fine"),
+                        rows: &[FINE],
+                    },
+                ])),
+                ..PAGE.tool
+            },
+            ..PAGE
+        };
+        assert_eq!(toggled.check(), Ok(()));
         // A slider's one end item is a picker.
         let ends = Row::Slider(Slider::new("contrast").end(action("rotate", icon, false)));
-        assert_eq!(picking(&[], &[ends]), shape("rotate"));
+        assert_eq!(
+            picking(&[], &[ends]),
+            Err(DefinitionError::EndNotDrawn("contrast"))
+        );
         // A line holds at least one end item.
         assert_eq!(
             picking(&[], &[line(control, None, &[])]),
             Err(DefinitionError::EmptyLine)
         );
+        // An action's id is the tool's once, a line's or a toggle's.
+        let twice = [
+            line(control, None, &[action("rotate", icon, false)]),
+            line(
+                LineStart::None,
+                None,
+                &[action("rotate", Face::Text, false)],
+            ),
+        ];
+        assert_eq!(
+            picking(&[], &twice),
+            Err(DefinitionError::DuplicateAction("rotate"))
+        );
     }
 
-    /// A choice's, a toggle's and a setting's end items wait for decision 107's next step.
+    /// A choice's and a setting's end items wait for decision 107's next steps.
     #[test]
-    fn a_choice_a_toggle_and_a_setting_take_no_end_item_yet() {
+    fn a_choice_and_a_setting_take_no_end_item_yet() {
         let end: &'static [End] = &[End::Picker("level")];
         let choice = Row::Choice {
             control: "mode",
             style: ChoiceStyle::List,
             end,
         };
-        let toggle = Row::Toggle {
-            control: "smooth",
-            end,
-        };
         let setting = Row::Setting(SettingRow { end, ..CHART });
-        for (row, id) in [(choice, "mode"), (toggle, "smooth"), (setting, "chart")] {
+        for (row, id) in [(choice, "mode"), (setting, "chart")] {
             assert_eq!(
                 page(with_mode(&[row])).check(),
                 Err(DefinitionError::EndNotDrawn(id))

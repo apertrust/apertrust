@@ -54,7 +54,7 @@
 use std::collections::BTreeMap;
 
 use apertrust_engine::session::{Command, SelectionCommand};
-use apertrust_tools::{End, ProcessingDefinition, Row};
+use apertrust_tools::{End, ProcessingDefinition};
 use apertrust_ui::components::{
     BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize, ToolsPanelPosition,
 };
@@ -2434,7 +2434,7 @@ pub fn all() -> impl Iterator<Item = &'static Action> {
 }
 
 /// The built-in tools' own actions as registry actions (decision 91), made once as the
-/// app starts from their definitions: one for each [`End::Action`] of a [`Row::Line`],
+/// app starts from their definitions: one for each [`End::Action`] at a row's end,
 /// `tool-<tool>-<action>`, its words the action's full name
 /// (`tool-<tool>-action-<action>-full`), no default keys, in the view's scope. One that
 /// runs, as a button, runs as pressing it does ([`Intent::ToolAction`]), while the photo
@@ -2475,10 +2475,8 @@ pub fn tool_actions() -> &'static [Action] {
 fn own_actions(definition: &'static ProcessingDefinition) -> Vec<(&'static str, bool)> {
     let mut actions = Vec::new();
     for row in definition.rows() {
-        if let Row::Line { end, .. } = row {
-            let ends = end.iter().filter_map(End::action);
-            actions.extend(ends.map(|action| (action.id, !action.unported)));
-        }
+        let ends = row.end().iter().filter_map(End::action);
+        actions.extend(ends.map(|action| (action.id, !action.unported)));
     }
     actions
 }

@@ -83,9 +83,10 @@ use apertrust_tools::{
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
-    CollapsibleGroup, Curve, CurveAction, Equalizer, EqualizerAction, IconButton, PickerAction,
-    PickerButton, PlainGroup, ReadoutRow, Reference, ReferenceAction, ReferenceRow, Section,
-    SectionAction, Segmented, SliderAction, SliderRow, ToggleRow, WarningRow, Wheel,
+    CollapsibleGroup, Curve, CurveAction, EndAction, EndItem, Equalizer, EqualizerAction,
+    IconButton, LineAction, LineRow, PickerAction, PickerButton, PlainGroup, ReadoutRow, Reference,
+    ReferenceAction, ReferenceRow, Section, SectionAction, Segmented, SliderAction, SliderRow,
+    ToggleRow, WarningRow, Wheel,
 };
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
@@ -123,7 +124,7 @@ pub enum Change {
     /// Several of these changes as one history step, `Step { source: You }` (decision 78):
     /// the tone equalizer's release of the bands a drag moved, and its reset of the bands.
     Step(Vec<Change>),
-    /// One of darktable's buttons of a button row, run on the values shown: the app sends
+    /// One of darktable's buttons at a row's end, run on the values shown: the app sends
     /// each control the tool's `action` writes as `SetControl`, one change.
     Action {
         tool: &'static str,
@@ -1094,6 +1095,7 @@ pub fn section(
         words: &words,
         tool,
         state,
+        editable,
         groups,
         pickers,
         controls: Default::default(),
@@ -1318,6 +1320,8 @@ struct Page<'a> {
     words: &'a Translator,
     tool: &'a dyn ProcessingTool,
     state: &'a ToolState,
+    /// Whether the photo takes edits, which its actions need.
+    editable: bool,
     groups: &'a dyn Fn(&str) -> bool,
     pickers: &'a Pickers<'a>,
     /// Where each row of controls on the edit was drawn, which a photo opening says over
@@ -1432,9 +1436,7 @@ impl Rows for Page<'_> {
             Row::Choice { control, style, .. } => {
                 choice_row(ui, words, definition, control, *style, state, changes);
             }
-            Row::Toggle { control, .. } => {
-                toggle_row(ui, words, definition, control, state, changes);
-            }
+            Row::Toggle { control, end } => toggle_row(ui, self, control, end, changes),
             Row::Custom {
                 widget: Widget::Curve,
                 controls: [points, ..],
@@ -1459,13 +1461,15 @@ impl Rows for Page<'_> {
                 photo,
             } => reference_row(ui, self, picker, lightness, photo, changes),
             Row::LastPick { picker } => last_pick_row(ui, self, picker),
-            // The three shapes `ProcessingDefinition::check` takes until decision 107's next
-            // step: icon actions after a control, one text action, or pickers.
+            // The three shapes the rows before decision 107 drew keep their own drawing,
+            // and so their pixels: icon actions that run after a control, one text action
+            // alone, drawn at the line's start, or pickers after no start, a label or a
+            // readout. Every other line is a line row.
             Row::Line {
                 start: LineStart::Control(control),
+                readout: None,
                 end,
-                ..
-            } => {
+            } if end.iter().all(runs_with_icon) => {
                 let buttons: Vec<(&'static str, ButtonIcon)> = (end.iter())
                     .filter_map(|item| match item {
                         End::Action(ActionEnd {
@@ -1479,21 +1483,34 @@ impl Rows for Page<'_> {
                 buttons_row(ui, words, definition, control, &buttons, state, changes);
             }
             Row::Line {
-                end: [End::Action(action)],
-                ..
-            } => action_row(ui, words, definition.tool.id, action.id),
+                start: LineStart::None,
+                readout: None,
+                end:
+                    [
+                        End::Action(
+                            action @ ActionEnd {
+                                face: Face::Text, ..
+                            },
+                        ),
+                    ],
+            } => action_row(ui, self, action, changes),
             Row::Line {
-                start,
+                start: start @ (LineStart::None | LineStart::Label(_)),
                 readout,
                 end,
-            } => {
+            } if end.iter().all(|item| item.picker().is_some()) => {
                 let label = match start {
                     LineStart::Label(id) => Some(*id),
-                    LineStart::None | LineStart::Control(_) => None,
+                    _ => None,
                 };
                 let pickers: Vec<&'static str> = end.iter().filter_map(End::picker).collect();
                 pickers_row(ui, self, label, readout.as_ref(), &pickers, changes);
             }
+            Row::Line {
+                start,
+                readout,
+                end,
+            } => line_row(ui, self, start, readout.as_ref(), end, changes),
             Row::Guides => guides_row(ui, words),
             // The page drawer's own.
             Row::Group(_)
@@ -1740,16 +1757,190 @@ fn guides_row(ui: &mut egui::Ui, words: &Translator) {
     });
 }
 
-/// A line of one of darktable's buttons, a text action not ported that writes the tool's
-/// controls, AgX's Read exposure: an `ActionRow`, drawn disabled until what it runs is
-/// built, its promise the tooltip. It reports nothing.
-fn action_row(ui: &mut egui::Ui, words: &Translator, tool: &str, id: &str) {
-    let [label, full, promise] = messages::action(tool, id).map(|id| words.text(&id));
-    ActionRow::new(&label)
+/// Whether an end item is an icon action that runs, as a button row draws them.
+fn runs_with_icon(item: &End) -> bool {
+    matches!(
+        item,
+        End::Action(ActionEnd {
+            face: Face::Icon(_),
+            unported: false,
+            ..
+        })
+    )
+}
+
+/// A line of one of darktable's buttons alone, a text action that writes the tool's
+/// controls: an `ActionRow`, its button at the line's start, its promise the tooltip,
+/// drawn disabled while the photo takes no edits and until what it runs is built. A press
+/// runs it on the values shown.
+fn action_row(ui: &mut egui::Ui, page: &Page, action: &ActionEnd, changes: &mut Vec<Change>) {
+    let tool = page.tool.definition().tool.id;
+    let [label, full, promise] = messages::action(tool, action.id).map(|id| page.words.text(&id));
+    let pressed = ActionRow::new(&label)
         .name(&full)
         .promise(&promise)
-        .enabled(false)
+        .enabled(page.runs(action))
         .show(ui);
+    if pressed {
+        changes.push(page.run(action.id));
+    }
+}
+
+/// An end item as the panel draws it: a picker's button with its words, or an action's
+/// words and whether it can run.
+enum EndWords<'a> {
+    Picker(&'static str, PickerWords<'a>),
+    Action {
+        action: ActionEnd,
+        label: String,
+        full: String,
+        promise: String,
+        enabled: bool,
+    },
+}
+
+impl<'a> Page<'a> {
+    /// Whether the action can run now: the photo takes edits and it is ported.
+    fn runs(&self, action: &ActionEnd) -> bool {
+        self.editable && !action.unported
+    }
+
+    /// What pressing the action `id` asks: the tool's action on the values shown.
+    fn run(&self, id: &'static str) -> Change {
+        Change::Action {
+            tool: self.tool.definition().tool.id,
+            action: id,
+            values: values(self.state),
+        }
+    }
+
+    /// The end items `end` as the panel draws them, each with its words; a picker's only
+    /// where its tool draws its pickers.
+    fn end_words(&self, ctx: &egui::Context, end: &[End]) -> Vec<EndWords<'a>> {
+        let tool = self.tool.definition().tool.id;
+        end.iter()
+            .filter_map(|item| match *item {
+                End::Picker(id) => self
+                    .button(ctx, id)
+                    .map(|(id, words)| EndWords::Picker(id, words)),
+                End::Action(action) => {
+                    let [label, full, promise] =
+                        messages::action(tool, action.id).map(|id| self.words.text(&id));
+                    Some(EndWords::Action {
+                        action,
+                        label,
+                        full,
+                        promise,
+                        enabled: self.runs(&action),
+                    })
+                }
+            })
+            .collect()
+    }
+
+    /// What pressing the end item `words[index]` asks, as `pressed` says.
+    fn end_change(
+        &self,
+        ui: &egui::Ui,
+        words: &[EndWords],
+        (index, pressed): (usize, EndAction),
+    ) -> Option<Change> {
+        match (words.get(index)?, pressed) {
+            (EndWords::Picker(picker, _), EndAction::Picker(action)) => {
+                Some(self.pressed(ui, picker, action))
+            }
+            (EndWords::Action { action, .. }, EndAction::Pressed) => Some(self.run(action.id)),
+            _ => None,
+        }
+    }
+}
+
+/// The design system's end items for `words`, in order.
+fn end_items<'w>(words: &'w [EndWords]) -> Vec<EndItem<'w>> {
+    words
+        .iter()
+        .map(|words| match words {
+            EndWords::Picker(_, button) => EndItem::Picker(button.button()),
+            EndWords::Action {
+                action,
+                label,
+                full,
+                promise,
+                enabled,
+            } => match action.face {
+                Face::Icon(face) => EndItem::Icon {
+                    icon: icon(face),
+                    name: full,
+                    promise: Some(promise),
+                    enabled: *enabled,
+                },
+                Face::Text => EndItem::Text {
+                    label,
+                    name: full,
+                    promise: Some(promise),
+                    enabled: *enabled,
+                },
+            },
+        })
+        .collect()
+}
+
+/// A line of darktable's widgets packed in a box, of any shape the three rows before it
+/// did not draw (decision 107): its start, a plain group's words, a control's reset label
+/// or a readout, and its end items, pickers and actions, as a `LineRow`.
+fn line_row(
+    ui: &mut egui::Ui,
+    page: &Page,
+    start: &LineStart,
+    readout: Option<&ReadoutDef>,
+    end: &[End],
+    changes: &mut Vec<Change>,
+) {
+    let tool = page.tool.definition().tool.id;
+    let control_words = match start {
+        LineStart::Control(id) => {
+            let Some(shown) = control(page.state, id) else {
+                return;
+            };
+            Some((words_of(page.words, tool, id, None), shown.available, *id))
+        }
+        _ => None,
+    };
+    let label = match start {
+        LineStart::Label(id) => Some(page.words.text(&messages::group(tool, id))),
+        _ => None,
+    };
+    let shown = readout.and_then(|def| readout_words(page, tool, def));
+    let line_start = match (&control_words, &label, &shown) {
+        (Some(([label, full, promise], enabled, _)), _, _) => parts::LineStart::Control {
+            label,
+            name: full,
+            promise: Some(promise),
+            enabled: *enabled,
+        },
+        (None, Some(label), _) => parts::LineStart::Label(label),
+        (None, None, Some(shown)) => parts::LineStart::Readout {
+            text: &shown.text,
+            promise: &shown.promise,
+            swatch: shown
+                .swatch
+                .as_ref()
+                .map(|(colour, tip)| (*colour, tip.as_str())),
+        },
+        (None, None, None) => parts::LineStart::None,
+    };
+    let words = page.end_words(ui.ctx(), end);
+    match LineRow::new(line_start, end_items(&words)).show(ui) {
+        Some(LineAction::Reset) => {
+            if let Some((_, _, control)) = control_words {
+                changes.push(Change::Reset { tool, control });
+            }
+        }
+        Some(LineAction::End(index, pressed)) => {
+            changes.extend(page.end_change(ui, &words, (index, pressed)));
+        }
+        None => {}
+    }
 }
 
 /// A computed value's row (`Row::Computed`, decision 87), the design system's readout
@@ -2897,15 +3088,16 @@ fn choice_row(
     }
 }
 
+/// A boolean's row, with its end items before its switch (decision 107).
 fn toggle_row(
     ui: &mut egui::Ui,
-    words: &Translator,
-    definition: &ProcessingDefinition,
+    page: &Page,
     id: &'static str,
-    state: &ToolState,
+    end: &[End],
     changes: &mut Vec<Change>,
 ) {
-    let tool = definition.tool.id;
+    let (words, state) = (page.words, page.state);
+    let tool = page.tool.definition().tool.id;
     let Some(shown) = control(state, id) else {
         return;
     };
@@ -2923,7 +3115,11 @@ fn toggle_row(
     if let Some(after) = &after {
         row = row.value(after);
     }
-    let changed = row.show(ui);
+    let ends = page.end_words(ui.ctx(), end);
+    let (changed, pressed) = row.end(end_items(&ends)).show_with_end(ui);
+    if let Some(pressed) = pressed {
+        changes.extend(page.end_change(ui, &ends, pressed));
+    }
     if let Some(on) = changed {
         changes.push(Change::Set {
             tool,
@@ -6443,6 +6639,7 @@ mod tests {
                     words: &words,
                     tool: &Sample,
                     state: &state,
+                    editable: true,
                     groups: &groups,
                     pickers: &pickers,
                     controls: Default::default(),
@@ -6938,6 +7135,7 @@ mod tests {
                                 words: &words,
                                 tool: *tool,
                                 state,
+                                editable: true,
                                 groups: &groups,
                                 pickers: &Pickers::NONE,
                                 controls: Default::default(),

@@ -25,7 +25,7 @@
 use std::sync::OnceLock;
 
 use apertrust_tools::utility::{UTILITIES, UtilityDefinition};
-use apertrust_tools::{ActionEnd, End, Face, ProcessingDefinition, Row, ToolbarItem};
+use apertrust_tools::{ActionEnd, End, Face, ProcessingDefinition, ToolbarItem};
 use apertrust_ui::{Icon, Translator};
 
 use crate::actions;
@@ -194,18 +194,17 @@ fn named(name: &str) -> Option<Icon> {
     Icon::ALL.into_iter().find(|icon| icon.name() == name)
 }
 
-/// The icon of `tool`'s button `action`, if a line holds it as an icon action.
+/// The icon of `tool`'s button `action`, if a row's end holds it as an icon action.
 fn button_icon(tool: &ProcessingDefinition, action: &str) -> Option<Icon> {
-    tool.rows().find_map(|row| match row {
-        Row::Line { end, .. } => end.iter().find_map(|item| match item {
+    tool.rows().find_map(|row| {
+        row.end().iter().find_map(|item| match item {
             End::Action(ActionEnd {
                 id,
                 face: Face::Icon(icon),
                 ..
             }) if *id == action => Some(crate::tools::icon(*icon)),
             _ => None,
-        }),
-        _ => None,
+        })
     })
 }
 
