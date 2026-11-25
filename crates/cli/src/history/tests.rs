@@ -226,7 +226,10 @@ fn each_move_writes_what_the_engine_s_log_functions_make() {
         // Never over a default step.
         (Move::Undo, |_| None),
         (Move::GoTo(3), |log| Some(at(log, 3))),
-        (Move::Compress, |log| Some(log.compressed())),
+        // No style applied: Compress writes no step of its own, so its clock is not read.
+        (Move::Compress, |log| {
+            Some(log.compressed(Clock::at(0, None, MachineId::UNKNOWN)))
+        }),
         (Move::Discard, |_| Some(Log::default())),
     ];
     for (chosen, expected) in expect {

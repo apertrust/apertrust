@@ -10617,6 +10617,7 @@ mod tests {
                 through: 0,
                 extent: [84, 62],
                 live: true,
+                styles: Vec::new(),
             }
         };
         // The step on the session's edit, its holds then pruned as after every change.
@@ -10781,6 +10782,7 @@ mod tests {
             through: 0,
             extent: [84, 62],
             live: true,
+            styles: Vec::new(),
         };
         let tools: &[&dyn ProcessingTool] = &[&WhiteBalance];
         let drag = Pending::Control {
@@ -14569,6 +14571,7 @@ mod tests {
             through: 1,
             extent: [84, 62],
             live: true,
+            styles: Vec::new(),
         }));
         Harness::builder()
             .with_size(egui::vec2(360.0, 700.0))

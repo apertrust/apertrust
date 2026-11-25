@@ -240,7 +240,7 @@ pub fn prepare<'a>(
             let (after, said) = started_afresh(&edit, operations, tools, clock);
             (Some(after), said)
         }
-        None => match moved(&before, chosen)? {
+        None => match moved(&before, chosen, clock)? {
             Moved::To(after, said) => (Some(after), said),
             Moved::Nothing(said) => (None, said),
         },
@@ -300,9 +300,9 @@ pub enum Moved {
     Nothing(String),
 }
 
-/// `chosen` made on `log`, by the session's own rules (`docs/history.md`, Behaviour), or
-/// an error for a step the log does not have.
-pub fn moved(log: &Log, chosen: Move) -> Result<Moved> {
+/// `chosen` made on `log` at `clock`, the move's, by the session's own rules
+/// (`docs/history.md`, Behaviour), or an error for a step the log does not have.
+pub fn moved(log: &Log, chosen: Move, clock: Clock) -> Result<Moved> {
     let steps = log.steps().len();
     let end_said = |end: usize| match end {
         0 => "the end at Original".to_owned(),
@@ -339,7 +339,7 @@ pub fn moved(log: &Log, chosen: Move) -> Result<Moved> {
         Move::GoTo(end) => Ok(Moved::To(at(end), format!("Went to {}", at_step(end)))),
         Move::Compress | Move::Truncate => {
             let (rewritten, verb) = match chosen {
-                Move::Compress => (log.compressed(), "Compressed"),
+                Move::Compress => (log.compressed(clock), "Compressed"),
                 _ => (log.truncated(), "Truncated"),
             };
             if rewritten == *log {

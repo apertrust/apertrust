@@ -997,6 +997,7 @@ fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
         through: 0,
         extent: [0, 0],
         live: false,
+        styles: Vec::new(),
     }
 }
 
@@ -1516,6 +1517,7 @@ pub(crate) mod tests {
             through: 4,
             extent: [84, 62],
             live: true,
+            styles: Vec::new(),
         });
         let failed = |open| {
             Event::Failed(SessionError::Open {
@@ -1584,6 +1586,7 @@ pub(crate) mod tests {
             through,
             extent: [84, 62],
             live: true,
+            styles: Vec::new(),
         };
         let image = ImageContext::full(84, 62);
         let mirror = |report, pending: &mut Vec<_>| {
@@ -1680,6 +1683,7 @@ pub(crate) mod tests {
             through,
             extent: [84, 62],
             live: true,
+            styles: Vec::new(),
         }
     }
 

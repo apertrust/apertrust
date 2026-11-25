@@ -43,6 +43,11 @@
 //! edit whose history cannot be read is started afresh as a new photo's default steps and
 //! a step of each tool it holds ([`Log::afresh`]), as Discard History does there.
 //!
+//! The styles applied to the edit (decision 106) are one more part of the log: a step that
+//! changed them holds the whole list after it ([`Step::styles`]), a change of the list
+//! alone a step of no tool ([`Change::None`]), and the edit's list is the one at the last
+//! step up to the end holding one ([`Log::styles`]), so every move of the end moves it.
+//!
 //! Plain data, which the session keeps in memory for the photo open and the engine's
 //! `sidecar` reads and writes in version 2, with the copy's clock vector ([`advance`]).
 
@@ -142,6 +147,39 @@ impl Note {
 
     /// The message id of [`Note::discard`].
     pub const DISCARD: &str = "history-discard";
+
+    /// The message id of [`Note::style`].
+    pub const STYLE: &str = "history-style";
+
+    /// The message id of [`Note::clear_style`].
+    pub const CLEAR_STYLE: &str = "history-clear-style";
+
+    /// The message id of [`Note::styles_applied`].
+    pub const STYLES_APPLIED: &str = "history-styles-applied";
+
+    /// The note of a style's steps (decision 106), with its name as the argument `style`.
+    pub fn style(name: &str) -> Note {
+        Note::Message {
+            id: Note::STYLE.to_owned(),
+            args: vec![("style".to_owned(), name.to_owned())],
+        }
+    }
+
+    /// The note of a style's Clear, with its name as the argument `style`.
+    pub fn clear_style(name: &str) -> Note {
+        Note::Message {
+            id: Note::CLEAR_STYLE.to_owned(),
+            args: vec![("style".to_owned(), name.to_owned())],
+        }
+    }
+
+    /// The note of the step Compress keeps the styles applied on ([`Log::compressed`]).
+    pub fn styles_applied() -> Note {
+        Note::Message {
+            id: Note::STYLES_APPLIED.to_owned(),
+            args: Vec::new(),
+        }
+    }
 
     /// The note of a reset of the whole edit, Reset's step.
     pub fn reset() -> Note {
@@ -286,13 +324,17 @@ impl Wrote {
 }
 
 /// What a step holds: one tool's or one operation's entry, as darktable's history item
-/// holds one tool, or Reset's.
+/// holds one tool, or Reset's, or none, for a step holding the styles applied alone.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Change {
     Entry(Entry),
     /// Reset, noted `history-reset`: an empty entry for each tool and operation it reset,
     /// in [`Entry::between`]'s order.
     Reset(Vec<Entry>),
+    /// No tool: a change of the styles applied alone (decision 106), a Clear whose tools
+    /// have all changed since, a style applied again whose tools hold its values already,
+    /// or the step Compress keeps the list on; its [`Step::styles`] holds the list.
+    None,
 }
 
 impl Change {
@@ -325,12 +367,149 @@ impl Change {
         placed.into_iter().map(|(_, change)| change).collect()
     }
 
-    /// Its entries: one, or Reset's.
+    /// Its entries: one, Reset's, or none.
     pub fn entries(&self) -> &[Entry] {
         match self {
             Change::Entry(entry) => std::slice::from_ref(entry),
             Change::Reset(entries) => entries,
+            Change::None => &[],
         }
+    }
+}
+
+/// A style applied to the photo (decision 106, `docs/history.md`, The styles applied): its
+/// name as applied, its file name in the styles folder then, and each tool it set with that
+/// tool's whole state before it and after it, so that Clear can put back the tools that
+/// still hold the style's values without its file.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppliedStyle {
+    pub name: String,
+    /// A file name, never a path.
+    pub file: String,
+    /// Each tool it set, in the order it set them.
+    pub tools: Vec<StyleTool>,
+}
+
+/// A tool a style set: its whole state before the style and after it, either empty for its
+/// reset state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StyleTool {
+    pub tool: String,
+    pub before: ToolValues,
+    pub after: ToolValues,
+}
+
+impl AppliedStyle {
+    /// The style `name` from `file` applied over `earlier`, its item already on the list,
+    /// `set` each tool this application set with its state just before it and after it
+    /// (decision 106): a tool that still held what `earlier` set keeps `earlier`'s state
+    /// before it, so Clear goes back to before the style first set it; every other tool
+    /// takes its state just before; and `earlier`'s tools this application did not set come
+    /// after, as they were.
+    pub fn applied(
+        name: &str,
+        file: &str,
+        earlier: Option<&AppliedStyle>,
+        set: Vec<StyleTool>,
+    ) -> AppliedStyle {
+        let earlier_tool = |tool: &str| {
+            (earlier.into_iter())
+                .flat_map(|style| &style.tools)
+                .find(|kept| kept.tool == tool)
+        };
+        let mut tools: Vec<StyleTool> = (set.into_iter())
+            .map(|mut now| {
+                if let Some(kept) = earlier_tool(&now.tool)
+                    && kept.after == now.before
+                {
+                    now.before = kept.before.clone();
+                }
+                now
+            })
+            .collect();
+        let others = (earlier.into_iter())
+            .flat_map(|style| &style.tools)
+            .filter(|kept| tools.iter().all(|now| now.tool != kept.tool))
+            .cloned()
+            .collect::<Vec<_>>();
+        tools.extend(others);
+        AppliedStyle {
+            name: name.to_owned(),
+            file: file.to_owned(),
+            tools,
+        }
+    }
+}
+
+/// `list` with `style` at the top, any item of its name taken out first.
+pub fn on_top(list: &[AppliedStyle], style: AppliedStyle) -> Vec<AppliedStyle> {
+    let mut list: Vec<AppliedStyle> = (list.iter())
+        .filter(|kept| kept.name != style.name)
+        .cloned()
+        .collect();
+    list.insert(0, style);
+    list
+}
+
+/// A newer log's list of styles applied, `rebuilt`, after one of the session's steps laid
+/// on it that changed the session's list from `before` to `after` (decision 106, A newer
+/// file taken in): each style cleared taken out where `rebuilt` holds it, and each style
+/// added or moved to the top put at the top, in `after`'s order, any item of its name taken
+/// out first, with the session's after states. It is applied again over the item `rebuilt`
+/// holds of its name, by [`AppliedStyle::applied`]'s rule: a tool it `set`, as the steps of
+/// its change show or as its item differs from the one before, takes its state in the
+/// joined log just before the step that set it, `joined`, or the earlier item's state
+/// before it where it still held that item's after; a tool an earlier application set keeps
+/// the earlier item's state before it, else the session's; and the earlier item's tools it
+/// does not set stay, as they were.
+pub(crate) fn replay(
+    rebuilt: &mut Vec<AppliedStyle>,
+    (before, after): (&[AppliedStyle], &[AppliedStyle]),
+    stepped: &BTreeSet<String>,
+    joined: impl Fn(&str) -> ToolValues,
+) {
+    let was = |name: &str| before.iter().find(|style| style.name == name);
+    let cleared = |name: &str| was(name).is_some() && after.iter().all(|now| now.name != name);
+    rebuilt.retain(|kept| !cleared(&kept.name));
+    // The top before, of the styles still listed: one there only as those above it were
+    // cleared was not moved.
+    let top = before.iter().find(|style| !cleared(&style.name));
+    let moved: Vec<&AppliedStyle> = (after.iter().enumerate())
+        .filter(|(at, style)| {
+            let earlier = was(&style.name);
+            earlier != Some(*style) || (*at == 0 && top.map(|top| &top.name) != Some(&style.name))
+        })
+        .map(|(_, style)| style)
+        .collect();
+    for style in moved.into_iter().rev() {
+        let earlier = (rebuilt.iter())
+            .find(|kept| kept.name == style.name)
+            .cloned();
+        let previous = was(&style.name);
+        let tools = (style.tools.iter())
+            .map(|tool| {
+                let then = (previous.into_iter())
+                    .flat_map(|previous| &previous.tools)
+                    .find(|kept| kept.tool == tool.tool);
+                let set = stepped.contains(&tool.tool) || then != Some(tool);
+                let kept = (earlier.iter())
+                    .flat_map(|earlier| &earlier.tools)
+                    .find(|kept| kept.tool == tool.tool);
+                let before = match (set, kept) {
+                    (true, _) => joined(&tool.tool),
+                    (false, Some(kept)) => kept.before.clone(),
+                    (false, None) => tool.before.clone(),
+                };
+                StyleTool {
+                    tool: tool.tool.clone(),
+                    before,
+                    after: tool.after.clone(),
+                }
+            })
+            .collect();
+        // Applied again over the item `rebuilt` holds, as the session applies one.
+        let replayed = AppliedStyle::applied(&style.name, &style.file, earlier.as_ref(), tools);
+        *rebuilt = on_top(rebuilt, replayed);
     }
 }
 
@@ -345,8 +524,11 @@ pub struct Step {
     /// Shared by the steps of one completed change that touched several tools, which
     /// Undo and Redo move whole; `None` for a change of one.
     pub batch: Option<BatchId>,
-    /// The tool it touched, with its whole state after it, or Reset's.
+    /// The tool it touched, with its whole state after it, or Reset's, or none.
     pub change: Change,
+    /// The whole list of styles applied after it, newest first, where it changed the list,
+    /// empty where it emptied it; `None` where it left the list as it was (decision 106).
+    pub styles: Option<Vec<AppliedStyle>>,
 }
 
 /// One virtual copy's history: its steps in order and its end, how many of them apply,
@@ -367,6 +549,26 @@ impl Log {
     /// Every step, oldest first, those after the end among them.
     pub fn steps(&self) -> &[Step] {
         &self.steps
+    }
+
+    /// The styles applied to the edit, newest first (decision 106): the list at the last
+    /// step up to the end that holds one, else none.
+    pub fn styles(&self) -> &[AppliedStyle] {
+        self.styles_at(self.end)
+    }
+
+    /// The styles applied with the first `end` steps applied, as [`Log::styles`].
+    pub fn styles_at(&self, end: usize) -> &[AppliedStyle] {
+        (self.steps[..end.min(self.steps.len())].iter().rev())
+            .find_map(|step| step.styles.as_deref())
+            .unwrap_or_default()
+    }
+
+    /// Puts `styles` on the last step applied, the list the change it ends leaves.
+    pub fn hold_styles(&mut self, styles: Vec<AppliedStyle>) {
+        if let Some(step) = self.steps[..self.end].last_mut() {
+            step.styles = Some(styles);
+        }
     }
 
     /// How many steps apply: 0 is Original, and the step numbered `end`, counting from 1,
@@ -441,6 +643,7 @@ impl Log {
                     tool: (*tool).to_owned(),
                     values: ToolValues::new(),
                 }),
+                styles: None,
             });
         }
     }
@@ -488,7 +691,8 @@ impl Log {
 
     /// Adds the steps of one completed change, `changes` ([`Change::between`]), of `source`
     /// with `note`, at `clock`: a step of each, sharing a new batch where there are several,
-    /// a Reset's noted `history-reset`. The first drops the steps after the end, which it
+    /// a Reset's noted `history-reset`, holding the empty list of styles applied where the
+    /// list was not empty (decision 106). The first drops the steps after the end, which it
     /// returns, as [`Log::add`] does.
     pub fn add_change(
         &mut self,
@@ -500,9 +704,12 @@ impl Log {
         let batch = (changes.len() > 1).then(|| self.new_batch());
         let mut dropped = Vec::new();
         for change in changes {
-            let note = match change {
-                Change::Reset(_) => Some(Note::reset()),
-                Change::Entry(_) => note.clone(),
+            let (note, styles) = match change {
+                Change::Reset(_) => {
+                    let emptied = !self.styles().is_empty();
+                    (Some(Note::reset()), emptied.then(Vec::new))
+                }
+                Change::Entry(_) | Change::None => (note.clone(), None),
             };
             let step = Step {
                 id: self.new_id(),
@@ -511,6 +718,7 @@ impl Log {
                 note,
                 batch,
                 change,
+                styles,
             };
             // Only the first drops any: the rest go on at the end.
             dropped.extend(self.add(step));
@@ -520,7 +728,8 @@ impl Log {
 
     /// Merges a change of one tool into the last step applied, as darktable's undo merges
     /// a widget's quick repeats (`docs/history.md`, Merging consecutive changes), where that
-    /// step holds one entry of the same tool or operation and is in no batch: the step
+    /// step holds one entry of the same tool or operation, is in no batch and changed no
+    /// list of styles applied: the step
     /// keeps its id, `entry`, the change's, takes the place of its entry, and its clock
     /// becomes `clock`. Whether it merged; with no such step, nothing.
     pub fn merge(&mut self, entry: &Entry, clock: Clock) -> bool {
@@ -528,7 +737,9 @@ impl Log {
             return false;
         };
         match &mut step.change {
-            Change::Entry(kept) if step.batch.is_none() && kept.key() == entry.key() => {
+            Change::Entry(kept)
+                if step.batch.is_none() && step.styles.is_none() && kept.key() == entry.key() =>
+            {
                 *kept = entry.clone();
                 step.clock = clock;
                 true
@@ -546,25 +757,56 @@ impl Log {
     /// after the end dropped, as darktable deletes the items above `history_end`
     /// (`:1244-1255`). The end is the last step kept up to it. At end 0 nothing is kept, as
     /// darktable deletes the whole history (`:1212-1216`).
-    pub fn compressed(&self) -> Log {
+    ///
+    /// The list of styles applied (decision 106) is taken off every step kept and, where the
+    /// edit's is not empty, written on a step of its own after the last kept up to the end,
+    /// the end then on it: no tool, source Style, noted `history-styles-applied`, with a new
+    /// id and `clock`, Compress's. Keeping the step that held the list instead would keep its
+    /// tool's entry over a later one Compress drops. A log whose end is on such a step
+    /// already, holding the edit's list, keeps it as it is, so Compress again changes
+    /// nothing.
+    pub fn compressed(&self, clock: Clock) -> Log {
         if self.end == 0 {
             return Log::default();
         }
         let applied = &self.steps[..self.end];
+        let styles = self.styles();
+        let listed = (applied.last()).filter(|step| {
+            step.change == Change::None
+                && step.source == StepSource::Style
+                && step.note == Some(Note::styles_applied())
+                && step.styles.as_deref() == Some(styles)
+        });
         let mut last: BTreeMap<Key<'_>, usize> = BTreeMap::new();
         for (at, step) in applied.iter().enumerate() {
             for entry in step.change.entries() {
                 last.insert(entry.key(), at);
             }
         }
-        let kept: Vec<Step> = (applied.iter().enumerate())
+        let mut kept: Vec<Step> = (applied.iter().enumerate())
             .filter(|(at, step)| {
                 step.source == StepSource::Default
                     || (step.change.entries().iter())
                         .any(|entry| last.get(&entry.key()) == Some(at) && !entry.is_empty())
             })
-            .map(|(_, step)| step.clone())
+            .map(|(_, step)| Step {
+                styles: None,
+                ..step.clone()
+            })
             .collect();
+        match listed {
+            Some(listed) if !styles.is_empty() => kept.push(listed.clone()),
+            _ if !styles.is_empty() => kept.push(Step {
+                id: self.new_id(),
+                clock,
+                source: StepSource::Style,
+                note: Some(Note::styles_applied()),
+                batch: None,
+                change: Change::None,
+                styles: Some(styles.to_vec()),
+            }),
+            _ => {}
+        }
         let end = kept.len();
         Log::from_steps(kept.into_iter().chain(self.defaults_after()).collect(), end)
     }
@@ -617,6 +859,7 @@ impl Log {
                     tool: tool.to_owned(),
                     values: ToolValues::new(),
                 }),
+                styles: None,
             });
         }
         log.end = end;
