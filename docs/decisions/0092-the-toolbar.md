@@ -149,8 +149,8 @@ The toolbar is measured every frame at the current scale and language, and gives
 
 1. The fixed spaces narrow to 8 points, then go one at a time from the end, so that any number of them fits.
 2. The actions move into » (`toolbar-more`, 30 points) one at a time:
-   - in reverse reading order, tools' items before the app's, Undo and Redo last;
-   - » stands just before the first flexible space, or, with none in the list, after the last item, at the toolbar's end before the caption buttons.
+   - from the toolbar's end, in reverse reading order across the whole bar, the rightmost first, so the end's group goes before the start's; within a group, between the same flexible spaces, tools' items before the app's; Undo and Redo last;
+   - » stands at the toolbar's end, after the last item drawn: before the caption buttons on Windows and Linux, at the bar's right end on the Mac; never in the middle. The flexible spaces still centre the middle group in the room left.
 3. The status words fold to their signs.
 4. Undo and Redo go into ».
 
@@ -205,6 +205,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **The labels inside the 44-point bar,** 6 points above the icon and 3 below it. It squeezes icon and word together and leaves no room below the word.
 - **Action icons at 16 points,** the viewer bar's size. Beside the Tools panel's 22-point tab icons they read small.
 - **New 22-point icon files,** as `toolbar-more` beside `more`. The icons render at any size from Lucide's grid with the same line, so a second file would only repeat the first.
+- **» before the first flexible space.** The overflow sat mid-bar, and the start group folded while the end stayed.
 - **The labels folding first,** all at once, before any item goes under ». The Toolbar would behave one way with labels and another without; one rule serves both: what does not fit goes under ».
 - **A setting for the word's place, under or beside.** Two looks double the fold widths, their tests and the snapshots in every language for little gain; the Tools panel's tab names have one look.
 - **Icons alone by default.** The words help a person new to the app, as the Tools panel's tab names, on by default, do, and the tooltips keep them.

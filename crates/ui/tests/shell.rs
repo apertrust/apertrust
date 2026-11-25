@@ -360,21 +360,26 @@ fn shown(harness: &Harness<'_, Vec<ToolbarAction>>) -> Vec<(&'static str, f32)> 
         .collect()
 }
 
-/// The same with labels or without (decision 92): every action shows, with its word where
-/// labels are on, until it does not fit; then the actions go under » one at a time, words
-/// and all, the shown ones keeping their words.
+/// The same with labels or without, as on the Mac and on Windows and Linux (decision 92):
+/// every action shows, with its word where labels are on, until it does not fit; then the
+/// actions go under » one at a time from the Toolbar's end, words and all, the shown ones
+/// keeping their words, » after the last item, and » lists them in the Toolbar's order.
 #[test]
 fn a_narrowing_toolbar_folds_its_actions_into_more() {
     for labels in [true, false] {
-        a_narrowing_toolbar_folds_its_actions_into_more_with(labels);
+        for caption in [false, true] {
+            a_narrowing_toolbar_folds_its_actions_into_more_with(labels, caption);
+        }
     }
     a_narrowing_toolbar_s_more_lists_what_it_holds();
 }
 
-/// [`a_narrowing_toolbar_folds_its_actions_into_more`], with labels or without.
-fn a_narrowing_toolbar_folds_its_actions_into_more_with(labels: bool) {
+/// [`a_narrowing_toolbar_folds_its_actions_into_more`], with labels or without, and with the
+/// menu button and the caption buttons where `caption`.
+fn a_narrowing_toolbar_folds_its_actions_into_more_with(labels: bool, caption: bool) {
     let saved = SaveState::Saved;
-    let mut wide = narrow_in(Locale::EnGb, labels, 1400.0, saved, 0.0, false);
+    let words = Translator::new(Locale::EnGb);
+    let mut wide = narrow_in(Locale::EnGb, labels, 1400.0, saved, 0.0, caption);
     wide.run();
     // Every action, with its word where labels are on; no ».
     let full = shown(&wide);
@@ -383,23 +388,34 @@ fn a_narrowing_toolbar_folds_its_actions_into_more_with(labels: bool) {
     assert!(full.iter().all(|(_, w)| labelled(*w)), "{labels}: {full:?}");
     assert!(wide.query_by_label("More actions").is_none());
 
-    // Narrower, the actions go under » one at a time, a tool's items first from the end,
-    // then Guides and Import…, the app's own, » fitting in the first's room; Undo and Redo last. The
-    // ones still shown keep their widths, words and all.
-    let mut narrowing = narrow_in(Locale::EnGb, labels, 1400.0, saved, 0.0, false);
+    // Narrower, the actions go under » one at a time from the end, the end's group first,
+    // then the start's from its end, a tool's items before the app's own in each, » fitting
+    // in the first's room; Undo and Redo last. The ones still shown keep their widths,
+    // words and all; the parts stay; » stands after the last item, and lists what it holds
+    // in the Toolbar's order.
+    let mut narrowing = narrow_in(Locale::EnGb, labels, 1400.0, saved, 0.0, caption);
     let mut gone: Vec<Vec<&str>> = Vec::new();
     let mut last = ACTIONS.to_vec();
     for width in (150..=1400).rev() {
         narrowing.set_size(egui::vec2(width as f32, 120.0));
         narrowing.run();
+        let at = format!("{labels}, {caption}, {width}");
         let now = shown(&narrowing);
         for (name, w) in &now {
             let was = full.iter().find(|(n, _)| n == name).map(|(_, w)| *w);
-            assert_eq!(Some(*w), was, "{labels}, {width}: {name}");
+            assert_eq!(Some(*w), was, "{at}: {name}");
         }
         let now: Vec<&str> = now.into_iter().map(|(name, _)| name).collect();
         let went: Vec<&str> = last.iter().copied().filter(|n| !now.contains(n)).collect();
+        let least = Toolbar::least_width(&narrowing.ctx).expect("a least width");
+        if width as f32 >= least {
+            more_stands_last(&narrowing, &words, caption, &at);
+        }
         if !went.is_empty() {
+            let folded: Vec<&str> = (ACTIONS.iter().copied())
+                .filter(|name| !now.contains(name))
+                .collect();
+            assert_eq!(more_lists(&mut narrowing), folded, "{at}");
             gone.push(went);
         }
         last = now;
@@ -409,14 +425,60 @@ fn a_narrowing_toolbar_folds_its_actions_into_more_with(labels: bool) {
         [
             vec!["Apply edit"],
             vec!["Copy edit"],
+            vec!["Guides"],
             vec!["Reset"],
             vec!["Export…"],
-            vec!["Guides"],
             vec!["Import…"],
             vec!["Undo", "Redo"],
         ],
-        "{labels}"
+        "{labels}, {caption}"
     );
+}
+
+/// What » lists, opened and closed again, in its order.
+fn more_lists(harness: &mut Harness<'_, Vec<ToolbarAction>>) -> Vec<String> {
+    harness.get_by_label("More actions").click();
+    harness.run();
+    let mut items: Vec<(f32, String)> = (harness.query_all_by_role(Role::MenuItem))
+        .map(|node| {
+            let label = node.accesskit_node().label().unwrap_or_default();
+            (node.rect().top(), label.to_string())
+        })
+        .collect();
+    items.sort_by(|a, b| a.0.total_cmp(&b.0));
+    harness.key_press(Key::Escape);
+    harness.run();
+    items.into_iter().map(|(_, label)| label).collect()
+}
+
+/// Decision 92: » stands at the Toolbar's end, after every button, the cursors' well and
+/// the status, before the caption buttons where `caption`; the parts never fold, the well
+/// and, where `caption`, the menu button still shown.
+fn more_stands_last<T>(harness: &Harness<'_, T>, words: &Translator, caption: bool, at: &str) {
+    let [more, menu, minimise] =
+        ["toolbar-more", "toolbar-menu", "window-minimise"].map(|id| words.text(id));
+    let well = harness.get_by_role(Role::RadioGroup).rect();
+    let menu = harness.query_by_role_and_label(Role::Button, &menu);
+    assert_eq!(menu.is_some(), caption, "{at}: the menu button");
+    let Some(more) = harness.query_by_label(&more) else {
+        return;
+    };
+    let more = more.rect();
+    let captions = harness.query_by_label(&minimise);
+    let captions = captions.map_or(f32::MAX, |minimise| minimise.rect().left());
+    assert!(
+        more.right() <= captions,
+        "{at}: » {more:?} over the caption buttons"
+    );
+    let items = (harness.query_all_by_role(Role::Button)).map(|node| node.rect());
+    for rect in items.chain([well]) {
+        if rect != more && rect.left() < captions {
+            assert!(
+                rect.right() <= more.left(),
+                "{at}: {rect:?} after » {more:?}"
+            );
+        }
+    }
 }
 
 /// » lists what it holds with their keys, disabled where they can't run, and at the
@@ -428,6 +490,11 @@ fn a_narrowing_toolbar_s_more_lists_what_it_holds() {
     more.run();
     let names: Vec<_> = shown(&more).into_iter().map(|(name, _)| name).collect();
     assert_eq!(names, ["Undo", "Redo"]);
+    // In the Toolbar's order, Import… first though it went last.
+    let order = ACTIONS
+        .iter()
+        .filter(|name| !["Undo", "Redo"].contains(name));
+    assert_eq!(more_lists(&mut more), order.copied().collect::<Vec<_>>());
     more.get_by_label("More actions").click();
     more.run();
     assert!(
@@ -663,15 +730,17 @@ fn a_narrowing_toolbar_always_leaves_room_to_move_the_window() {
                         .filter(|rect| rect.right() <= well.left())
                         .map(|rect| rect.right())
                         .fold(0.0, f32::max);
-                    // The save state at the end, before the caption buttons' gap or the
-                    // margin.
+                    // The save state at the end, then » where it shows, before the caption
+                    // buttons' gap or the margin.
                     let status = save_state_in(&harness, &words);
+                    let more = harness.query_by_label(&parts[0]).map(|more| more.rect());
                     let edge = if caption {
                         harness.get_by_label(&minimise).rect().left() - 16.0
                     } else {
                         harness.get_by_role(Role::Toolbar).rect().right() - 8.0
                     };
-                    assert_eq!(status.right(), edge, "{locale:?}, {width}, {saved:?}");
+                    let last_item = more.unwrap_or(status);
+                    assert_eq!(last_item.right(), edge, "{locale:?}, {width}, {saved:?}");
                     // Copy edit and Apply edit before it, where they show.
                     let end = (shown.iter())
                         .filter(|rect| rect.left() >= well.right())
@@ -852,9 +921,7 @@ fn keeps_every_part<T>(harness: &Harness<'_, T>, locale: Locale, menu: Option<Me
         let name = words.text(id);
         assert!(harness.query_by_label(&name).is_some(), "{at}: {name}");
     }
-    let menu_name = words.text("toolbar-menu");
-    let menu_button = harness.query_by_role_and_label(Role::Button, &menu_name);
-    assert_eq!(menu_button.is_some(), menu.is_some(), "{at}");
+    more_stands_last(harness, &words, menu.is_some(), &at);
     let well = harness.get_by_role(Role::RadioGroup).rect();
     let mut buttons: Vec<egui::Rect> = (harness.query_all_by_role(Role::Button))
         .map(|node| node.rect())
@@ -949,9 +1016,9 @@ const LARGEST_SCALE: f32 = 3.0;
 fn the_least_width_keeps_what_never_folds() {
     for locale in Locale::ALL {
         for (menu, expected) in [
-            (None, 267.0),
-            (Some(MenuButtonStyle::Icon), 444.0),
-            (Some(MenuButtonStyle::Menu), 433.0),
+            (None, 269.0),
+            (Some(MenuButtonStyle::Icon), 438.0),
+            (Some(MenuButtonStyle::Menu), 427.0),
         ] {
             let mut harness = every_part_bar(locale, menu, every_part, LARGEST_SCALE, 1400.0);
             harness.run();
@@ -2119,9 +2186,10 @@ fn the_toolbar_draws_its_entries_in_their_order() {
     assert_eq!(harness.state().actions, [ToolbarAction::Button("settings")]);
 }
 
-/// A tool's items go under » before the app's own, wherever they stand (decision 92): with
-/// Open, the app's, after Reset, a tool's, Reset still goes first after Copy edit, » taking
-/// the first one's room, then Open, then Import….
+/// A tool's items go under » before the app's own on the same side, and the end's group
+/// before the start's (decision 92): Apply edit, a tool's, before Guides, the app's, at the
+/// end; then at the start, with Open, the app's, after Reset, a tool's, Reset still goes
+/// first after Copy edit, then Open, then Import….
 #[test]
 fn a_tool_s_items_fold_before_the_app_s_own() {
     let button = |id: &'static str, tool: bool| {
@@ -2136,8 +2204,17 @@ fn a_tool_s_items_fold_before_the_app_s_own() {
         ToolbarEntry::Cursors,
         ToolbarEntry::FlexibleSpace,
         ToolbarEntry::SaveState,
+        button("guides", false),
+        button("apply-edit", true),
     ]);
-    let ids = ["import", "reset", "open", "copy-edit"];
+    let ids = [
+        "import",
+        "reset",
+        "open",
+        "copy-edit",
+        "guides",
+        "apply-edit",
+    ];
     let mut gone: Vec<Vec<&str>> = Vec::new();
     let mut last = ids.to_vec();
     for width in (100..=1000).rev() {
@@ -2159,12 +2236,34 @@ fn a_tool_s_items_fold_before_the_app_s_own() {
     assert_eq!(
         gone,
         [
+            vec!["apply-edit"],
+            vec!["guides"],
             vec!["copy-edit"],
             vec!["reset"],
             vec!["open"],
             vec!["import"]
         ]
     );
+}
+
+/// With no flexible space in the list, » still stands at the panel's end, the buttons left
+/// standing from its start (decision 92).
+#[test]
+fn with_no_flexible_space_more_stands_at_the_end() {
+    let ids = ["import", "export", "reset", "undo", "redo", "guides"];
+    let buttons = ids.map(|id| ToolbarEntry::Button(ToolbarButton::new(id, Icon::Settings, id)));
+    let mut harness = listed_on(buttons.to_vec(), 200.0, egui::os::OperatingSystem::Nix);
+    harness.run();
+    let bar = harness.get_by_role(Role::Toolbar).rect();
+    let more = harness.get_by_label("More actions").rect();
+    assert_eq!(bar.right() - more.right(), 8.0);
+    let shown: Vec<egui::Rect> = (ids.iter())
+        .filter_map(|id| harness.query_by_label(id))
+        .map(|node| node.rect())
+        .collect();
+    assert_eq!(shown.len(), 3, "{shown:?}");
+    assert_eq!(shown[0].left(), bar.left() + 8.0);
+    assert!(shown.iter().all(|rect| rect.right() < more.left() - 30.0));
 }
 
 /// With no menu button listed, the menus hang from the panel's start, where it would

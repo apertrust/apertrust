@@ -14243,15 +14243,15 @@ mod tests {
 
     /// The main window's least width is never under [`WINDOW_MIN`] and grows to what the
     /// Toolbar never folds at the interface size, in logical pixels (decision 92): at the
-    /// largest size, Windows' and Linux's 444 points with the app's icon need 1332, the
-    /// Mac's 267, the traffic lights' room shrinking with the size, fit in 960.
+    /// largest size, Windows' and Linux's 438 points with the app's icon need 1314, the
+    /// Mac's 269, the traffic lights' room shrinking with the size, fit in 960.
     #[test]
     fn the_window_is_as_wide_as_what_the_toolbar_never_folds() {
         let largest = *actions::SCALES.end();
         assert_eq!(window_min(None, largest), WINDOW_MIN);
-        assert_eq!(window_min(Some(444.0), 1.0), WINDOW_MIN);
-        assert_eq!(window_min(Some(444.0), largest), [1332.0, 600.0]);
-        assert_eq!(window_min(Some(267.0), largest), WINDOW_MIN);
+        assert_eq!(window_min(Some(438.0), 1.0), WINDOW_MIN);
+        assert_eq!(window_min(Some(438.0), largest), [1314.0, 600.0]);
+        assert_eq!(window_min(Some(269.0), largest), WINDOW_MIN);
         // Whole pixels, rounded up.
         assert_eq!(window_min(Some(433.0), 2.25), [975.0, 600.0]);
     }

@@ -463,7 +463,7 @@ What the menus hold is [the menu bar](#the-menu-bar)'s. Built: the frames of the
 - **The window keeps its title,** hidden in the Mac's frame, for Mission Control, the Window menu, the taskbar and screen readers. With a user data folder other than the default, it ends with the folder's name, "Apertrust — work" (decision 89; [Instances and windows](#instances-and-windows)).
 - **Scale.** Everything the frame draws is in points, so it follows a monitor's scale; on Windows winit applies the system's suggested rectangle on `WM_DPICHANGED`.
 - **The minimum window size** is 960 by 600 pixels on every platform, wider where what the Toolbar never folds needs more at a large interface size ([Narrowing](#narrowing)). Planned: 500 by 600 once the shell gives way, so Windows 11's half and third snap zones take the window (Microsoft asks for 500 effective pixels or less), and macOS's and the Linux desktops' tiling gain too. The quarter zones need a height of about 520 on a 1080-pixel screen, which 600 keeps out.
-  - Below 960 points the shell gives way: the Toolbar's actions go under » as they stop fitting, the menu button of Windows and Linux never folding while shown (decisions 39 and 92), in the order [the Toolbar](#the-toolbar) gives, Undo and Redo the last to go into ».
+  - Below 960 points the shell gives way: the Toolbar's actions go under », at the bar's end, as they stop fitting, the rightmost first, the menu button of Windows and Linux never folding while shown (decisions 39 and 92), in the order [the Toolbar](#the-toolbar) gives, Undo and Redo the last to go into ».
   - How the Tools panel narrows, hides or lies over the photo in a narrow window is an open design item.
   - The minimum is lowered in code (`WINDOW_MIN`) only once the shell gives way, so no window ever shows a broken layout.
 
@@ -949,7 +949,7 @@ The menus open from one menu button at the very start of the Toolbar, the app's 
 | Access keys | None | On the top-level menus in the menu button's menu, underlined while Alt is held | The same as Windows |
 | Keys spelt | By macOS, with its glyphs: ⌘⇧Z | As the tooltips spell them | As the tooltips spell them |
 
-- **A narrow Toolbar:** the menu button never folds while shown, and the menus need no room of their own, so the Toolbar gives way only by its actions and words ([the Toolbar](#the-toolbar)); every app action hidden under » (decision 92) is also in the menus; a tool's action folded into » is always in its tool, and in a menu where the tool declares one (decision 91). This matters since the window's minimum width is to be 500 points, for Windows' snap zones, where today it is 960 (decision 39; how the Tools panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
+- **A narrow Toolbar:** the menu button never folds while shown, and the menus need no room of their own, so the Toolbar gives way only by its actions, folding from its end into » there, and its words ([the Toolbar](#the-toolbar)); every app action hidden under » (decision 92) is also in the menus; a tool's action folded into » is always in its tool, and in a menu where the tool declares one (decision 91). This matters since the window's minimum width is to be 500 points, for Windows' snap zones, where today it is 960 (decision 39; how the Tools panel gives way in a narrow window is an open design item, [Open questions](#open-questions)).
 - **Inside an open menu,** typing a letter moves to the next item whose name starts with it, and Enter runs it, as menus without item access keys do on Windows; screen readers announce the item.
 
 **What the platforms provide.** macOS performs Services, Hide, Hide Others, Show All, Minimise, Zoom, its tiling items, Bring All to Front, the window list and the Help search, and adds AutoFill, Start Dictation… and Emoji & Symbols to Edit; these stay, Dictation included. It can also add full-screen and tab-bar items of its own to View: the menu has its own full-screen item, and Apertrust's windows have no tabs, so neither may appear (decision 39's checks). Windows keeps the window menu, Alt+Space, outside the menus. On Linux Apertrust draws everything.
@@ -2812,7 +2812,7 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 Built, decision 92's overflow ([Customising the Toolbar](#customising-the-toolbar)): the Toolbar measures its entries at the current scale and language each frame and gives way one step at a time, undoing a step only with 16 points to spare so a resize never flickers. The steps are the same with labels on or off: what does not fit goes under », a labelled action with its word, the ones still shown keeping theirs.
 
 1. the fixed spaces narrow to 8 points, then go one at a time from the end;
-2. the actions move into » (`toolbar-more`) one at a time, in reverse reading order, a tool's items before the app's own: Apply edit, Copy edit, Reset and Export…, then Guides and Import…, » fitting in the first one's room. » stands just before the first flexible space, or with none at the end, and lists them in the Toolbar's order with their keys, disabled where they cannot run;
+2. the actions move into » (`toolbar-more`) one at a time from the Toolbar's end, in reverse reading order across the whole bar, the end's group before the start's, a tool's items before the app's own within a group: Apply edit, Copy edit and Guides, then Reset, Export… and Import…, » fitting in the first one's room. » stands at the Toolbar's end, after the last item drawn, before the caption buttons on Windows and Linux, never in the middle, and lists them in the Toolbar's order with their keys, disabled where they cannot run;
 3. the save warning and Saving… lose their words, to the sign and "…", and the assistant's connection its, planned with it in Phase 6 (the jobs spinner has none);
 4. Undo and Redo go into » together, and the assistant's connection becomes one button whose menu holds Disconnect, planned with it.
 
@@ -2850,10 +2850,10 @@ Never folded: the menu button on Windows and Linux, the save warning's sign, an 
 
 | | Mac | Windows and Linux, the app's icon | Windows and Linux, ☰ |
 | --- | --- | --- | --- |
-| What never folds at 100% | 319 points | 444 | 433 |
-| At 300%, the largest interface size | 267 points | 444 | 433 |
+| What never folds at 100% | 321 points | 438 | 427 |
+| At 300%, the largest interface size | 269 points | 438 | 427 |
 | The window's minimum at 100% | 960 pixels | 960 | 960 |
-| At 300% | 960, the 801 fitting | 1332 | 1299 |
+| At 300% | 960, the 807 fitting | 1314 | 1281 |
 
 A test (`the_least_width_keeps_what_never_folds`) holds the widths at 300%, in every language, and checks that at them no part folds, nothing overlaps and 24 points stay empty.
 
@@ -2883,7 +2883,7 @@ Built (decision 92): tools' items, `ToolDefinition::toolbar`; the set of what ca
 | Hidden | What still holds |
 | --- | --- |
 | The menu button | F10 and Alt with an access key open the menus, hung from the toolbar's start, and Alt alone on Windows, planned; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
-| The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert unchanged |
+| The save state | A failed write still shows its warning and Not saved at the toolbar's end, before »; the message over the photo, the live region and the quit alert unchanged |
 | The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work. Jobs starting and ending are not announced; a failed job's spinner, drawn by the guard, is |
 | The assistant | It shows whenever an assistant is connected |
 | The cursors | Every cursor keeps its action and key, and its work its tool's own button; the cursor chosen stays chosen |
@@ -2918,7 +2918,7 @@ labels = true
 **The overflow** (built; [Narrowing](#narrowing) has where each step starts and the window's minimum width), measured every frame at the current scale and language, a step undone only once 16 points are spare:
 
 1. the fixed spaces narrow to 8 points, then go one at a time from the end, so any number of them fits;
-2. the actions move into » (`toolbar-more`, 30 points) one at a time, a labelled one with its word, in reverse reading order, tools' items before the app's, Undo and Redo last; » stands just before the first flexible space, or with none at the toolbar's end, after the last item and before the caption buttons;
+2. the actions move into » (`toolbar-more`, 30 points) one at a time, a labelled one with its word, from the toolbar's end, in reverse reading order across the whole bar, the end's group before the start's, tools' items before the app's within a group, Undo and Redo last; » stands at the toolbar's end, after the last item drawn and before the caption buttons, never in the middle, the flexible spaces still centring the middle group in the room left;
 3. the status words fold to their signs;
 4. Undo and Redo go into ».
 
