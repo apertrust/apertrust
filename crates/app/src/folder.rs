@@ -1556,6 +1556,7 @@ mod tests {
             minute: 0,
             second,
             millisecond: 0,
+            offset_minutes: None,
         })
     }
 

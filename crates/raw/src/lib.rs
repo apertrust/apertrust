@@ -31,20 +31,24 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use rawler::cfa::CFAColor;
-use rawler::decoders::{Orientation as RawlerOrientation, RawDecodeParams, WellKnownIFD};
+use rawler::decoders::{
+    FormatHint, Orientation as RawlerOrientation, RawDecodeParams, RawMetadata, WellKnownIFD,
+};
 use rawler::imgop::xyz::Illuminant as RawlerIlluminant;
 use rawler::rawimage::{RawImageData, RawPhotometricInterpretation};
 use rawler::rawsource::RawSource;
 use rawler::tags::{DngTag, ExifTag};
 
+mod cropfactors;
 mod exif;
 mod highlight;
 mod identity;
 mod lens;
 mod masked;
 mod preview;
+mod tags;
 
-pub use exif::{DateTime, Exif};
+pub use exif::{DateTime, Direction, Exif, Resolution, Speed};
 pub use lens::{
     DngCorrection, FujifilmCorrection, LensCorrection, OlympusCorrection, SonyCorrection,
 };
@@ -69,6 +73,9 @@ pub enum Error {
 pub struct RawImage {
     /// The camera's names, as rawler's camera definitions spell them.
     pub camera: Camera,
+    /// The file's format as its decoder names it, rawler's `FormatHint` in upper case:
+    /// "DNG", "ARW", "CR3", "3FR"; "UNKNOWN" where the decoder names none.
+    pub format: &'static str,
     /// Size of `pixels` in pixels: the whole readout, masked borders included.
     pub width: u32,
     pub height: u32,
@@ -285,6 +292,11 @@ impl RawFile {
         Ok(Self { source, name })
     }
 
+    /// Its size on disk, in bytes, as it was mapped.
+    pub fn size(&self) -> u64 {
+        self.source.buf().len() as u64
+    }
+
     /// What [`RawFile::decode`] gives but the pixels, which are empty, of the kind the
     /// decode's are: rawler's decode with its pixels skipped, so in milliseconds. The
     /// shooting data comes from the same parse of the metadata, `None` where it fails.
@@ -331,14 +343,70 @@ pub fn read_exif(file: &[u8]) -> Result<Exif, Error> {
 }
 
 fn read_exif_source(source: &RawSource) -> Result<Exif, Error> {
-    // A parser bug on an odd file must not take the application down.
-    let metadata = catch_unwind(AssertUnwindSafe(|| {
+    let (_, metadata) = rawler_metadata(source);
+    Ok(shooting(source, &metadata.map_err(Error::Decode)?))
+}
+
+/// The format rawler's decoder names `source`, where one takes it, and rawler's metadata of
+/// it, or why it has none. A parser bug on an odd file must not take the application down.
+fn rawler_metadata(source: &RawSource) -> (Option<FormatHint>, Result<RawMetadata, String>) {
+    let read = catch_unwind(AssertUnwindSafe(|| {
         let params = RawDecodeParams::default();
-        rawler::get_decoder(source).and_then(|decoder| decoder.raw_metadata(source, &params))
-    }))
-    .map_err(|_| Error::Decode("rawler panicked reading the EXIF data".to_owned()))?
-    .map_err(|e| Error::Decode(e.to_string()))?;
-    Ok(exif::read(&metadata.exif))
+        rawler::get_decoder(source).map(|decoder| {
+            let metadata = decoder.raw_metadata(source, &params);
+            (decoder.format_hint(), metadata.map_err(|e| e.to_string()))
+        })
+    }));
+    match read {
+        Ok(Ok((format, metadata))) => (Some(format), metadata),
+        Ok(Err(error)) => (None, Err(error.to_string())),
+        Err(_) => (
+            None,
+            Err("rawler panicked reading the EXIF data".to_owned()),
+        ),
+    }
+}
+
+/// The shooting data of `source` from rawler's `metadata` and the tags rawler lacks
+/// ([`tags`]), which a parser bug on an odd file leaves unread.
+fn shooting(source: &RawSource, metadata: &RawMetadata) -> Exif {
+    let tags = catch_unwind(AssertUnwindSafe(|| tags::read(source))).unwrap_or_else(|_| {
+        tracing::warn!(target: "raw", "EXIF tags: rawler panicked reading them, ignored");
+        None
+    });
+    exif::read(metadata, tags.as_ref())
+}
+
+/// rawler's name for a format, in upper case: its `FormatHint`'s, but Hasselblad's 3FR,
+/// which it calls TFR.
+fn format_name(format: FormatHint) -> &'static str {
+    match format {
+        FormatHint::Unknown => "UNKNOWN",
+        FormatHint::CR2 => "CR2",
+        FormatHint::CR3 => "CR3",
+        FormatHint::CRW => "CRW",
+        FormatHint::NEF => "NEF",
+        FormatHint::ARW => "ARW",
+        FormatHint::RAF => "RAF",
+        FormatHint::RW2 => "RW2",
+        FormatHint::ARI => "ARI",
+        FormatHint::DNG => "DNG",
+        FormatHint::DCR => "DCR",
+        FormatHint::DCS => "DCS",
+        FormatHint::ERF => "ERF",
+        FormatHint::IIQ => "IIQ",
+        FormatHint::KDC => "KDC",
+        FormatHint::MEF => "MEF",
+        FormatHint::MOS => "MOS",
+        FormatHint::MRW => "MRW",
+        FormatHint::NRW => "NRW",
+        FormatHint::ORF => "ORF",
+        FormatHint::PEF => "PEF",
+        FormatHint::QTK => "QTK",
+        FormatHint::SRW => "SRW",
+        FormatHint::TFR => "3FR",
+        FormatHint::X3F => "X3F",
+    }
 }
 
 /// The perf and raw domains' lines for a decoded raw.
@@ -426,22 +494,12 @@ fn decode_raw(source: &RawSource, dummy: bool) -> Result<(RawImage, Option<Exif>
     })?
     .map_err(|e| Error::Decode(e.to_string()))?;
     // The EXIF data is secondary: a file whose metadata fails to parse still decodes.
-    let metadata = catch_unwind(AssertUnwindSafe(|| {
-        let params = RawDecodeParams::default();
-        rawler::get_decoder(source).and_then(|decoder| decoder.raw_metadata(source, &params))
-    }));
-    let exif = match metadata {
-        Ok(Ok(metadata)) => Some(metadata.exif),
-        Ok(Err(error)) => {
-            tracing::debug!(target: "raw", "no EXIF: {error}");
-            None
-        }
-        Err(_) => {
-            tracing::warn!(target: "raw", "EXIF: rawler panicked reading it, ignored");
-            None
-        }
-    };
-    let shooting = exif.as_ref().map(exif::read);
+    let (format, metadata) = rawler_metadata(source);
+    let metadata = metadata
+        .inspect_err(|error| tracing::debug!(target: "raw", "no EXIF: {error}"))
+        .ok();
+    let exif = metadata.as_ref().map(|metadata| &metadata.exif);
+    let shooting = metadata.as_ref().map(|metadata| shooting(source, metadata));
     let exposure_bias = exif
         .as_ref()
         .and_then(|exif| exif.exposure_bias)
@@ -525,6 +583,7 @@ fn decode_raw(source: &RawSource, dummy: bool) -> Result<(RawImage, Option<Exif>
     color_matrices.sort_by_key(|m| m.illuminant);
 
     let raw = RawImage {
+        format: format.map_or("UNKNOWN", format_name),
         camera: Camera {
             make: raw.clean_make.clone(),
             model,

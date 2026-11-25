@@ -52,7 +52,7 @@ repos:
       # CR LF (.gitattributes); the library's fixtures, darktable's sidecars among them;
       # and the Windows edit icons, drawn on one line with no newline at its end.
       - id: end-of-file-fixer
-        exclude: &verbatim ^(crates/.+/generated/[^/]+\.wgsl|crates/ui/assets/fonts/OFL\.txt|crates/library/tests/fixtures/.+|crates/app/assets/icons/svg/apertrust-apxmp-windows(-small)?\.svg)$
+        exclude: &verbatim ^(crates/.+/generated/[^/]+\.wgsl|crates/ui/assets/fonts/OFL\.txt|crates/library/tests/fixtures/.+|crates/raw/tests/corpus/exif-tags\.txt|crates/app/assets/icons/svg/apertrust-apxmp-windows(-small)?\.svg)$
       - id: fix-byte-order-marker
         exclude: *verbatim
       # LF everywhere, as .gitattributes checks text out.

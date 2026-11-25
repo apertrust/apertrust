@@ -1,0 +1,323 @@
+# The EXIF tags apertrust-raw reads through rawler's TIFF parser (src/tags.rs), as Exiv2
+# 0.28.9 shows them, for every raw in files.sha256: one tag a line, file | tag | type and
+# count | value as printed. Made, for each file, with
+#   exiv2 -q -pv -K Exif.Image.Make -K Exif.Image.Model -K Exif.Image.Software \
+#     -K Exif.Image.ImageDescription -K Exif.Image.XResolution -K Exif.Image.YResolution \
+#     -K Exif.Image.ResolutionUnit -K Exif.Photo.DigitalZoomRatio -K Exif.Photo.Contrast \
+#     -K Exif.Photo.Saturation -K Exif.Photo.Sharpness -K Exif.Photo.ImageUniqueID \
+#     -K Exif.Photo.FocalLengthIn35mmFilm FILE
+# A raw whose tags Apertrust cannot reach is listed as file | unread | why.
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossless.DNG | Make | Ascii 6 | Canon
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossless.DNG | Model | Ascii 22 | Canon EOS 5D Mark III
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossless.DNG | Software | Ascii 34 | Adobe DNG Converter 9.8 (Windows)
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossy.DNG | Make | Ascii 6 | Canon
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossy.DNG | Model | Ascii 22 | Canon EOS 5D Mark III
+Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossy.DNG | Software | Ascii 34 | Adobe DNG Converter 9.8 (Windows)
+Apple/iPhone 12 Pro/IMG_1361.DNG | Make | Ascii 6 | Apple
+Apple/iPhone 12 Pro/IMG_1361.DNG | Model | Ascii 14 | iPhone 12 Pro
+Apple/iPhone 12 Pro/IMG_1361.DNG | Software | Ascii 5 | 14.3
+Apple/iPhone 12 Pro/IMG_1361.DNG | FocalLengthIn35mmFilm | Short 1 | 26
+Canon/EOS 5D Mark II/09.canon.sraw1.cr2 | Make | Ascii 6 | Canon
+Canon/EOS 5D Mark II/09.canon.sraw1.cr2 | Model | Ascii 21 | Canon EOS 5D Mark II
+Canon/EOS 5D Mark II/09.canon.sraw1.cr2 | XResolution | Rational 1 | 72/1
+Canon/EOS 5D Mark II/09.canon.sraw1.cr2 | YResolution | Rational 1 | 72/1
+Canon/EOS 5D Mark II/09.canon.sraw1.cr2 | ResolutionUnit | Short 1 | 2
+Canon/EOS 5D Mark IV/B13A0729.CR2 | Make | Ascii 6 | Canon
+Canon/EOS 5D Mark IV/B13A0729.CR2 | Model | Ascii 21 | Canon EOS 5D Mark IV
+Canon/EOS 5D Mark IV/B13A0729.CR2 | XResolution | Rational 1 | 72/1
+Canon/EOS 5D Mark IV/B13A0729.CR2 | YResolution | Rational 1 | 72/1
+Canon/EOS 5D Mark IV/B13A0729.CR2 | ResolutionUnit | Short 1 | 2
+Canon/EOS 7D Mark II/capture000106.cr2 | Make | Ascii 6 | Canon
+Canon/EOS 7D Mark II/capture000106.cr2 | Model | Ascii 21 | Canon EOS 7D Mark II
+Canon/EOS 7D Mark II/capture000106.cr2 | XResolution | Rational 1 | 72/1
+Canon/EOS 7D Mark II/capture000106.cr2 | YResolution | Rational 1 | 72/1
+Canon/EOS 7D Mark II/capture000106.cr2 | ResolutionUnit | Short 1 | 2
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3 | Make | Ascii 6 | Canon
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3 | Model | Ascii 14 | Canon EOS 90D
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3 | XResolution | Rational 1 | 72/1
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3 | YResolution | Rational 1 | 72/1
+Canon/EOS 90D/Canon-90D-RAW-ISO-100.CR3 | ResolutionUnit | Short 1 | 2
+Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3 | Make | Ascii 6 | Canon
+Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3 | Model | Ascii 14 | Canon EOS M50
+Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3 | XResolution | Rational 1 | 72/1
+Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3 | YResolution | Rational 1 | 72/1
+Canon/EOS M50/Canon_EOS_M50_CRAW_ISO_100_nocrop_nodual.CR3 | ResolutionUnit | Short 1 | 2
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3 | Make | Ascii 6 | Canon
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3 | Model | Ascii 13 | Canon EOS R5
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3 | XResolution | Rational 1 | 72/1
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3 | YResolution | Rational 1 | 72/1
+Canon/EOS R5/Canon_EOS_R5_CRAW_ISO_100_nocrop_nodual.CR3 | ResolutionUnit | Short 1 | 2
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3 | Make | Ascii 6 | Canon
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3 | Model | Ascii 15 | Canon EOS R6m2
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3 | XResolution | Rational 1 | 350/1
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3 | YResolution | Rational 1 | 350/1
+Canon/EOS R6 Mark II/canon-r6m2-img_0346-raw-normal-full.cr3 | ResolutionUnit | Short 1 | 2
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | Make | Ascii 9 | FUJIFILM
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | Model | Ascii 8 | GFX 50S
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | XResolution | Rational 1 | 72/1
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | YResolution | Rational 1 | 72/1
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | ResolutionUnit | Short 1 | 2
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | Software | Ascii 31 | Digital Camera GFX 50S Ver1.10
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | FocalLengthIn35mmFilm | Short 1 | 50
+Fujifilm/GFX 50S/20170525_0036TEST.RAF | Sharpness | Short 1 | 0
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | Make | Ascii 9 | FUJIFILM
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | Model | Ascii 5 | X-E4
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | XResolution | Rational 1 | 72/1
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | YResolution | Rational 1 | 72/1
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | ResolutionUnit | Short 1 | 2
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | Software | Ascii 28 | Digital Camera X-E4 Ver1.00
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | FocalLengthIn35mmFilm | Short 1 | 41
+Fujifilm/X-E4/fuji_xe4_32_lossy.RAF | Sharpness | Short 1 | 0
+Fujifilm/X-H2S/IMG-20221005-0665.raf | Make | Ascii 9 | FUJIFILM
+Fujifilm/X-H2S/IMG-20221005-0665.raf | Model | Ascii 6 | X-H2S
+Fujifilm/X-H2S/IMG-20221005-0665.raf | XResolution | Rational 1 | 72/1
+Fujifilm/X-H2S/IMG-20221005-0665.raf | YResolution | Rational 1 | 72/1
+Fujifilm/X-H2S/IMG-20221005-0665.raf | ResolutionUnit | Short 1 | 2
+Fujifilm/X-H2S/IMG-20221005-0665.raf | Software | Ascii 29 | Digital Camera X-H2S Ver2.00
+Fujifilm/X-H2S/IMG-20221005-0665.raf | FocalLengthIn35mmFilm | Short 1 | 41
+Fujifilm/X-H2S/IMG-20221005-0665.raf | Sharpness | Short 1 | 0
+Fujifilm/X-T5/DSCF0021.RAF | Make | Ascii 9 | FUJIFILM
+Fujifilm/X-T5/DSCF0021.RAF | Model | Ascii 5 | X-T5
+Fujifilm/X-T5/DSCF0021.RAF | XResolution | Rational 1 | 72/1
+Fujifilm/X-T5/DSCF0021.RAF | YResolution | Rational 1 | 72/1
+Fujifilm/X-T5/DSCF0021.RAF | ResolutionUnit | Short 1 | 2
+Fujifilm/X-T5/DSCF0021.RAF | Software | Ascii 28 | Digital Camera X-T5 Ver1.00
+Fujifilm/X-T5/DSCF0021.RAF | FocalLengthIn35mmFilm | Short 1 | 27
+Fujifilm/X-T5/DSCF0021.RAF | Sharpness | Short 1 | 0
+Fujifilm/X100VI/DSCF0074.RAF | Make | Ascii 9 | FUJIFILM
+Fujifilm/X100VI/DSCF0074.RAF | Model | Ascii 7 | X100VI
+Fujifilm/X100VI/DSCF0074.RAF | XResolution | Rational 1 | 72/1
+Fujifilm/X100VI/DSCF0074.RAF | YResolution | Rational 1 | 72/1
+Fujifilm/X100VI/DSCF0074.RAF | ResolutionUnit | Short 1 | 2
+Fujifilm/X100VI/DSCF0074.RAF | Software | Ascii 30 | Digital Camera X100VI Ver1.01
+Fujifilm/X100VI/DSCF0074.RAF | Sharpness | Short 1 | 0
+GoPro/HERO5 Black/GOPR0020.GPR | ImageDescription | Ascii 30 | C:\DCIM\100GOPRO\GOPR0020.GPR
+GoPro/HERO5 Black/GOPR0020.GPR | Make | Ascii 6 | GoPro
+GoPro/HERO5 Black/GOPR0020.GPR | Model | Ascii 12 | HERO5 Black
+GoPro/HERO5 Black/GOPR0020.GPR | Software | Ascii 16 | HD5.02.01.21.00
+GoPro/HERO5 Black/GOPR0020.GPR | DigitalZoomRatio | Rational 1 | 1024/1024
+GoPro/HERO5 Black/GOPR0020.GPR | FocalLengthIn35mmFilm | Short 1 | 15
+GoPro/HERO5 Black/GOPR0020.GPR | Contrast | Short 1 | 0
+GoPro/HERO5 Black/GOPR0020.GPR | Saturation | Short 1 | 0
+GoPro/HERO5 Black/GOPR0020.GPR | Sharpness | Short 1 | 2
+Google/Pixel 4a/PXL_20201121_100251397.dng | Make | Ascii 7 | Google
+Google/Pixel 4a/PXL_20201121_100251397.dng | Model | Ascii 9 | Pixel 4a
+Google/Pixel 4a/PXL_20201121_100251397.dng | Software | Ascii 21 | HDR+ 1.0.342784925zd
+Google/Pixel 4a/PXL_20201121_100251397.dng | DigitalZoomRatio | Rational 1 | 0/1
+Google/Pixel 4a/PXL_20201121_100251397.dng | FocalLengthIn35mmFilm | Short 1 | 27
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | Make | Ascii 11 | Hasselblad
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | Model | Ascii 20 |  CFV-50c/Flash Sync
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | XResolution | Rational 1 | 72/1
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | YResolution | Rational 1 | 72/1
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | ResolutionUnit | Short 1 | 2
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | Software | Ascii 12 | 3.6.9R/8730
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | ImageUniqueID | Ascii 33 | 000000000000000003DFD526000001A4
+Leica/M Monochrom (Typ 246)/M2462362.DNG | Make | Ascii 16 | Leica Camera AG
+Leica/M Monochrom (Typ 246)/M2462362.DNG | Model | Ascii 28 | LEICA M MONOCHROM (Typ 246)
+Leica/M Monochrom (Typ 246)/M2462362.DNG | XResolution | Rational 1 | 72/1
+Leica/M Monochrom (Typ 246)/M2462362.DNG | YResolution | Rational 1 | 72/1
+Leica/M Monochrom (Typ 246)/M2462362.DNG | ResolutionUnit | Short 1 | 2
+Leica/M Monochrom (Typ 246)/M2462362.DNG | Software | Ascii 16 |         1.0.1.0
+Leica/M Monochrom (Typ 246)/M2462362.DNG | DigitalZoomRatio | Rational 1 | 0/1
+Leica/M Monochrom (Typ 246)/M2462362.DNG | Contrast | Short 1 | 2
+Leica/M Monochrom (Typ 246)/M2462362.DNG | Sharpness | Short 1 | 2
+Leica/M Monochrom (Typ 246)/M2462362.DNG | ImageUniqueID | Ascii 33 | 00000000000000000000000000134493
+Leica/Q2/L1000750.DNG | Make | Ascii 16 | LEICA CAMERA AG
+Leica/Q2/L1000750.DNG | Model | Ascii 9 | LEICA Q2
+Leica/Q2/L1000750.DNG | XResolution | Rational 1 | 72/1
+Leica/Q2/L1000750.DNG | YResolution | Rational 1 | 72/1
+Leica/Q2/L1000750.DNG | ResolutionUnit | Short 1 | 2
+Leica/Q2/L1000750.DNG | Software | Ascii 6 | 1.03
+Leica/Q2/L1000750.DNG | DigitalZoomRatio | Rational 1 | 100/100
+Leica/Q2/L1000750.DNG | FocalLengthIn35mmFilm | Short 1 | 28
+Leica/Q2/L1000750.DNG | Contrast | Short 1 | 0
+Leica/Q2/L1000750.DNG | Saturation | Short 1 | 0
+Leica/Q2/L1000750.DNG | Sharpness | Short 1 | 1
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | Make | Ascii 18 | NIKON CORPORATION
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | Model | Ascii 12 | NIKON D5100
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | XResolution | Rational 1 | 300/1
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | YResolution | Rational 1 | 300/1
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | ResolutionUnit | Short 1 | 2
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | Software | Ascii 10 | Ver.1.01 
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | DigitalZoomRatio | Rational 1 | 1/1
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | FocalLengthIn35mmFilm | Short 1 | 27
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | Contrast | Short 1 | 0
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | Saturation | Short 1 | 0
+Nikon/D5100/00.nikon.12b-lossy-raw.nef | Sharpness | Short 1 | 0
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | Make | Ascii 18 | NIKON CORPORATION
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | Model | Ascii 11 | NIKON D850
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | XResolution | Rational 1 | 300/1
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | YResolution | Rational 1 | 300/1
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | ResolutionUnit | Short 1 | 2
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | Software | Ascii 10 | Ver.1.00 
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | FocalLengthIn35mmFilm | Short 1 | 35
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | Contrast | Short 1 | 0
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | Saturation | Short 1 | 0
+Nikon/D850/Nikon-D850-12bit-lossless-compressed.NEF | Sharpness | Short 1 | 0
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | Make | Ascii 18 | NIKON CORPORATION
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | Model | Ascii 11 | NIKON D850
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | XResolution | Rational 1 | 300/1
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | YResolution | Rational 1 | 300/1
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | ResolutionUnit | Short 1 | 2
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | Software | Ascii 10 | Ver.1.00 
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | FocalLengthIn35mmFilm | Short 1 | 35
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | Contrast | Short 1 | 0
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | Saturation | Short 1 | 0
+Nikon/D850/Nikon-D850-14bit-compressed.NEF | Sharpness | Short 1 | 0
+Nikon/Z 6/DSC_0750.NEF | Make | Ascii 18 | NIKON CORPORATION
+Nikon/Z 6/DSC_0750.NEF | Model | Ascii 10 | NIKON Z 6
+Nikon/Z 6/DSC_0750.NEF | XResolution | Rational 1 | 300/1
+Nikon/Z 6/DSC_0750.NEF | YResolution | Rational 1 | 300/1
+Nikon/Z 6/DSC_0750.NEF | ResolutionUnit | Short 1 | 2
+Nikon/Z 6/DSC_0750.NEF | Software | Ascii 13 | Ver.02.00
+Nikon/Z 6/DSC_0750.NEF | FocalLengthIn35mmFilm | Short 1 | 52
+Nikon/Z 6/DSC_0750.NEF | Contrast | Short 1 | 0
+Nikon/Z 6/DSC_0750.NEF | Saturation | Short 1 | 0
+Nikon/Z 6/DSC_0750.NEF | Sharpness | Short 1 | 0
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | Make | Ascii 18 | NIKON CORPORATION
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | Model | Ascii 10 | NIKON Z 9
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | XResolution | Rational 1 | 300/1
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | YResolution | Rational 1 | 300/1
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | ResolutionUnit | Short 1 | 2
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | Software | Ascii 13 | Ver.01.00
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | FocalLengthIn35mmFilm | Short 1 | 18
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | Contrast | Short 1 | 0
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | Saturation | Short 1 | 0
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF | Sharpness | Short 1 | 0
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | Make | Ascii 18 | NIKON CORPORATION
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | Model | Ascii 10 | NIKON Z 9
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | XResolution | Rational 1 | 300/1
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | YResolution | Rational 1 | 300/1
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | ResolutionUnit | Short 1 | 2
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | Software | Ascii 13 | Ver.01.00
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | FocalLengthIn35mmFilm | Short 1 | 18
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | Contrast | Short 1 | 0
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | Saturation | Short 1 | 0
+Nikon/Z 9/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossy_High_Efficiency).NEF | Sharpness | Short 1 | 0
+OM System/OM-1 Mark II/20mp-12bit.orf | ImageDescription | Ascii 32 | 
+OM System/OM-1 Mark II/20mp-12bit.orf | Make | Ascii 24 | OM Digital Solutions   
+OM System/OM-1 Mark II/20mp-12bit.orf | Model | Ascii 17 | OM-1MarkII      
+OM System/OM-1 Mark II/20mp-12bit.orf | XResolution | Rational 1 | 300/1
+OM System/OM-1 Mark II/20mp-12bit.orf | YResolution | Rational 1 | 300/1
+OM System/OM-1 Mark II/20mp-12bit.orf | ResolutionUnit | Short 1 | 2
+OM System/OM-1 Mark II/20mp-12bit.orf | Software | Ascii 32 | Version 1.0                    
+OM System/OM-1 Mark II/20mp-12bit.orf | DigitalZoomRatio | Rational 1 | 100/100
+OM System/OM-1 Mark II/20mp-12bit.orf | Contrast | Short 1 | 0
+OM System/OM-1 Mark II/20mp-12bit.orf | Saturation | Short 1 | 0
+OM System/OM-1 Mark II/20mp-12bit.orf | Sharpness | Short 1 | 0
+Olympus/E-M1MarkIII/_3160529.ORF | ImageDescription | Ascii 32 | 
+Olympus/E-M1MarkIII/_3160529.ORF | Make | Ascii 24 | OLYMPUS CORPORATION    
+Olympus/E-M1MarkIII/_3160529.ORF | Model | Ascii 17 | E-M1MarkIII     
+Olympus/E-M1MarkIII/_3160529.ORF | XResolution | Rational 1 | 350/1
+Olympus/E-M1MarkIII/_3160529.ORF | YResolution | Rational 1 | 350/1
+Olympus/E-M1MarkIII/_3160529.ORF | ResolutionUnit | Short 1 | 2
+Olympus/E-M1MarkIII/_3160529.ORF | Software | Ascii 32 | Version 1.0                    
+Olympus/E-M1MarkIII/_3160529.ORF | DigitalZoomRatio | Rational 1 | 100/100
+Olympus/E-M1MarkIII/_3160529.ORF | Contrast | Short 1 | 1
+Olympus/E-M1MarkIII/_3160529.ORF | Saturation | Short 1 | 1
+Olympus/E-M1MarkIII/_3160529.ORF | Sharpness | Short 1 | 1
+Panasonic/DC-GH6/1-1.RW2 | FocalLengthIn35mmFilm | Short 1 | 47
+Panasonic/DC-GH6/1-1.RW2 | Make | Ascii 10 | Panasonic
+Panasonic/DC-GH6/1-1.RW2 | Model | Ascii 7 | DC-GH6
+Panasonic/DC-GH6/1-1.RW2 | XResolution | Rational 1 | 180/1
+Panasonic/DC-GH6/1-1.RW2 | YResolution | Rational 1 | 180/1
+Panasonic/DC-GH6/1-1.RW2 | ResolutionUnit | Short 1 | 2
+Panasonic/DC-GH6/1-1.RW2 | Software | Ascii 10 | Ver.2.0  
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | FocalLengthIn35mmFilm | Short 1 | 35
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | Make | Ascii 10 | Panasonic
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | Model | Ascii 8 | DC-S5M2
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | XResolution | Rational 1 | 180/1
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | YResolution | Rational 1 | 180/1
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | ResolutionUnit | Short 1 | 2
+Panasonic/DC-S5M2/P1126458_mechanical.RW2 | Software | Ascii 10 | Ver.3.2  
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | FocalLengthIn35mmFilm | Short 1 | 35
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | Make | Ascii 10 | Panasonic
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | Model | Ascii 8 | DC-S5M2
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | XResolution | Rational 1 | 180/1
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | YResolution | Rational 1 | 180/1
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | ResolutionUnit | Short 1 | 2
+Panasonic/DC-S5M2/P1126473_96MP.RW2 | Software | Ascii 10 | Ver.3.2  
+Pentax/K-1 Mark II/_IMG2387.DNG | Make | Ascii 30 | RICOH IMAGING COMPANY, LTD.  
+Pentax/K-1 Mark II/_IMG2387.DNG | Model | Ascii 20 | PENTAX K-1 Mark II 
+Pentax/K-1 Mark II/_IMG2387.DNG | XResolution | Rational 1 | 300/1
+Pentax/K-1 Mark II/_IMG2387.DNG | YResolution | Rational 1 | 300/1
+Pentax/K-1 Mark II/_IMG2387.DNG | ResolutionUnit | Short 1 | 2
+Pentax/K-1 Mark II/_IMG2387.DNG | Software | Ascii 30 | PENTAX K-1 Mark II Ver. 1.02 
+Pentax/K-1 Mark II/_IMG2387.DNG | FocalLengthIn35mmFilm | Short 1 | 70
+Pentax/K-1 Mark II/_IMG2387.DNG | Contrast | Short 1 | 2
+Pentax/K-1 Mark II/_IMG2387.DNG | Saturation | Short 1 | 0
+Pentax/K-1 Mark II/_IMG2387.DNG | Sharpness | Short 1 | 2
+Pentax/K-3 Mark III/IMGP9854.PEF | Make | Ascii 33 | RICOH IMAGING COMPANY, LTD.     
+Pentax/K-3 Mark III/IMGP9854.PEF | Model | Ascii 33 | PENTAX K-3 Mark III             
+Pentax/K-3 Mark III/IMGP9854.PEF | XResolution | Rational 1 | 300/1
+Pentax/K-3 Mark III/IMGP9854.PEF | YResolution | Rational 1 | 300/1
+Pentax/K-3 Mark III/IMGP9854.PEF | ResolutionUnit | Short 1 | 2
+Pentax/K-3 Mark III/IMGP9854.PEF | Software | Ascii 33 | PENTAX K-3 Mark III Ver. 1.41   
+Pentax/K-3 Mark III/IMGP9854.PEF | FocalLengthIn35mmFilm | Short 1 | 27
+Pentax/K-3 Mark III/IMGP9854.PEF | Contrast | Short 1 | 2
+Pentax/K-3 Mark III/IMGP9854.PEF | Saturation | Short 1 | 0
+Pentax/K-3 Mark III/IMGP9854.PEF | Sharpness | Short 1 | 2
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ | Make | Ascii 14 | Phase One A/S
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ | Model | Ascii 10 | IQ3 100MP
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ | XResolution | Rational 1 | 4096/18
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ | YResolution | Rational 1 | 4096/18
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ | ResolutionUnit | Short 1 | 2
+Phase One/IQ3 100MP/Phase_One_IQ3_100MP_IIQ_S.IIQ | ImageUniqueID | Ascii 33 | 00005000008600000400E05800001B0D
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | Make | Ascii 20 | SAMSUNG
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | Model | Ascii 4 | NX1
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | DigitalZoomRatio | Rational 1 | 10/10
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | FocalLengthIn35mmFilm | Short 1 | 53
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | Contrast | Short 1 | 0
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | Saturation | Short 1 | 0
+Samsung/NX1/2016-07-23-142101_sam_9364.srw | Sharpness | Short 1 | 0
+Sony/ILCE-1/A1_full_compressed.ARW | ImageDescription | Ascii 32 |                                
+Sony/ILCE-1/A1_full_compressed.ARW | Make | Ascii 5 | SONY
+Sony/ILCE-1/A1_full_compressed.ARW | Model | Ascii 7 | ILCE-1
+Sony/ILCE-1/A1_full_compressed.ARW | XResolution | Rational 1 | 350/1
+Sony/ILCE-1/A1_full_compressed.ARW | YResolution | Rational 1 | 350/1
+Sony/ILCE-1/A1_full_compressed.ARW | ResolutionUnit | Short 1 | 2
+Sony/ILCE-1/A1_full_compressed.ARW | Software | Ascii 13 | ILCE-1 v1.00
+Sony/ILCE-1/A1_full_compressed.ARW | DigitalZoomRatio | Rational 1 | 16/16
+Sony/ILCE-1/A1_full_compressed.ARW | FocalLengthIn35mmFilm | Short 1 | 135
+Sony/ILCE-1/A1_full_compressed.ARW | Contrast | Short 1 | 0
+Sony/ILCE-1/A1_full_compressed.ARW | Saturation | Short 1 | 0
+Sony/ILCE-1/A1_full_compressed.ARW | Sharpness | Short 1 | 0
+Sony/ILCE-6400/DSC00087.ARW | ImageDescription | Ascii 32 |                                
+Sony/ILCE-6400/DSC00087.ARW | Make | Ascii 5 | SONY
+Sony/ILCE-6400/DSC00087.ARW | Model | Ascii 10 | ILCE-6400
+Sony/ILCE-6400/DSC00087.ARW | XResolution | Rational 1 | 350/1
+Sony/ILCE-6400/DSC00087.ARW | YResolution | Rational 1 | 350/1
+Sony/ILCE-6400/DSC00087.ARW | ResolutionUnit | Short 1 | 2
+Sony/ILCE-6400/DSC00087.ARW | Software | Ascii 16 | ILCE-6400 v2.00
+Sony/ILCE-6400/DSC00087.ARW | DigitalZoomRatio | Rational 1 | 16/16
+Sony/ILCE-6400/DSC00087.ARW | FocalLengthIn35mmFilm | Short 1 | 157
+Sony/ILCE-6400/DSC00087.ARW | Contrast | Short 1 | 0
+Sony/ILCE-6400/DSC00087.ARW | Saturation | Short 1 | 0
+Sony/ILCE-6400/DSC00087.ARW | Sharpness | Short 1 | 0
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | ImageDescription | Ascii 32 |                                
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | Make | Ascii 5 | SONY
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | Model | Ascii 10 | ILCE-7RM5
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | XResolution | Rational 1 | 350/1
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | YResolution | Rational 1 | 350/1
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | ResolutionUnit | Short 1 | 2
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | Software | Ascii 16 | ILCE-7RM5 v1.00
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | DigitalZoomRatio | Rational 1 | 16/16
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | FocalLengthIn35mmFilm | Short 1 | 50
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | Contrast | Short 1 | 0
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | Saturation | Short 1 | 0
+Sony/ILCE-7RM5/7RM5-LosslessCompressedLarge.ARW | Sharpness | Short 1 | 0
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | ImageDescription | Ascii 32 |                                
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | Make | Ascii 5 | SONY
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | Model | Ascii 10 | ILCE-7RM5
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | XResolution | Rational 1 | 350/1
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | YResolution | Rational 1 | 350/1
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | ResolutionUnit | Short 1 | 2
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | Software | Ascii 16 | ILCE-7RM5 v1.00
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | DigitalZoomRatio | Rational 1 | 16/16
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | FocalLengthIn35mmFilm | Short 1 | 50
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | Contrast | Short 1 | 0
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | Saturation | Short 1 | 0
+Sony/ILCE-7RM5/7RM5-LosslessCompressedSmall.ARW | Sharpness | Short 1 | 0
+GoPro/HERO5 Black/GOPR0020.GPR | unread | rawler decodes no GPR, so its EXIF is never read
+Sigma/DP1 Merrill/SDIM0555.X3F | unread | an X3F is no TIFF; Exiv2 reads none of its tags either
+Hasselblad/CFV-50c/20200215_BERLIN_OldNew_WestHafen_B0000420.3FR | unread | rawler's metadata of a 3FR fails, so none of its EXIF is read

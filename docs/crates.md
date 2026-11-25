@@ -470,16 +470,16 @@ Raw decoding with rawler (decision 23).
 
 **Decoding:**
 
-- the uncropped mosaic and its metadata;
+- the uncropped mosaic and its metadata, with the format its decoder names (`RawImage::format`, "DNG", "CR3", "3FR");
 - the camera's names as darktable's (decision 24): the model is an alias's camera, resolved from rawler's embedded camera files, and the alias apart;
 - the EXIF exposure bias, and the ISO by darktable's rule as far as rawler's EXIF reaches;
 - the orientation from the EXIF Orientation tag, IFD0's or a Panasonic raw's, as darktable reads it, where rawler's decoders set one only for a DNG;
 - a DNG's colour calibration tags and its LinearResponseLimit;
 - black measured from the masked areas as darktable's decoder does, to explain darktable's levels.
 
-**A raw mapped once** (decision 77): `RawFile::open`, then its `metadata`, rawler's decode with `dummy`, everything the decode gives but the pixels, which are empty, in milliseconds; its `preview`; and its `decode`. The metadata and the decode each come with the shooting data (`Exif`) from their one parse of the metadata. `tests/corpus.rs`'s `the_metadata_read_equals_the_decode_but_for_the_pixels` holds the two equal, field for field, over the corpus.
+**A raw mapped once** (decision 77): `RawFile::open`, its `size` on disk, then its `metadata`, rawler's decode with `dummy`, everything the decode gives but the pixels, which are empty, in milliseconds; its `preview`; and its `decode`. The metadata and the decode each come with the shooting data (`Exif`) from their one parse of the metadata. `tests/corpus.rs`'s `the_metadata_read_equals_the_decode_but_for_the_pixels` holds the two equal, field for field, over the corpus.
 
-**Shooting data.** `read_exif_file` and `read_exif` give the shooting data darktable's variables read (`Exif`), from rawler's metadata, without decoding the image.
+**Shooting data.** `read_exif_file` and `read_exif` give the shooting data darktable's variables read (`Exif`), from rawler's metadata, without decoding the image. `Exif` also holds what the Metadata tool shows (decision 110), each field documented with its tag: rawler's fields first, then the tags rawler lacks (Make and Model as written, Software, ImageDescription, the resolution, DigitalZoomRatio, Contrast, Saturation, Sharpness, ImageUniqueID, FocalLengthIn35mmFilm), read in `src/tags.rs` through rawler's public TIFF parser where Exiv2 finds them: at the TIFF header of the formats built on TIFF, a Panasonic raw's IFD0 completed from the JPEG it embeds, a CR3's CMT1 and CMT2 boxes and a RAF's embedded JPEG. A file whose IFDs cannot be reached lists those fields in `Exif::unread`. The crop factor is darktable's (`src/cropfactors.rs`, `exif.cc:1492-1610`): FocalLengthIn35mmFilm over the focal length, the focal plane's resolution against the pixel dimensions, Olympus's FocalPlaneDiagonal, then `dt_cropfactors` by model. `tests/exif.rs` holds the tags to Exiv2 0.28's dump of them over the corpus, `tests/corpus/exif-tags.txt`, which lists the raws whose tags cannot be reached (the GPR and the X3F, which rawler does not read, and the 3FR, whose rawler metadata fails).
 
 **The embedded picture.** `read_preview_file` and `read_preview` (`src/preview.rs`) read the camera's own picture without decoding the mosaic, as darktable's thumbnails show it before their render: rawler's thumbnail (a DNG's) when it is at least the size asked, else its preview, else the larger of the two; at most the size asked on its longer side, each pixel the mean of those under it, never made larger; turned upright by the EXIF Orientation, since the camera stores it as the sensor sees it; 8-bit RGBA (`Preview`). A raw with none gives `None`. `tests/preview.rs` holds the corpus's pictures at 256 pixels to `tests/corpus/previews.txt` and each upright where its raw decodes.
 
