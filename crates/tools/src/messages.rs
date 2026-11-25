@@ -326,6 +326,12 @@ pub fn action(tool: &str, action: &str) -> [String; 3] {
     ["label", "full", "promise"].map(|part| format!("tool-{tool}-action-{action}-{part}"))
 }
 
+/// A warning's message ([`crate::End::Warning`]), its tooltip and its description to
+/// screen readers: `tool-<tool>-warning-<id>`.
+pub fn warning(tool: &str, id: &str) -> String {
+    format!("tool-{tool}-warning-{id}")
+}
+
 /// A computed value's label and promise ([`crate::Row::Computed`]):
 /// `tool-<tool>-computed-<id>-label` and `-promise`.
 pub fn computed(tool: &str, id: &str) -> [String; 2] {
@@ -487,6 +493,9 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
             .map(|t| tab(tool, t)),
     );
     for row in definition.rows() {
+        for found in row.end().iter().filter_map(End::warning) {
+            ids.push(warning(tool, found));
+        }
         for found in row.end().iter().filter_map(End::action) {
             ids.extend(action(tool, found.id));
             for item in found.menu {

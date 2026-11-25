@@ -239,6 +239,22 @@ tool-agx-control-curve_shoulder_power-promise = Contrast in highlights. Higher v
 tool-agx-control-curve_toe_power-label = Toe power
 tool-agx-control-curve_toe_power-full = Toe power
 tool-agx-control-curve_toe_power-promise = Contrast in shadows. Higher values keep the slope nearly constant for longer, at the cost of a more sudden drop near black.
+tool-agx-warning-shoulder =
+    Shoulder power cannot be applied because the curve has lost its S shape
+    due to the current settings for white relative exposure, contrast and pivot.
+    To re-enable it, do one of the following:
+    – increase contrast
+    – increase pivot target output
+    – increase white relative exposure
+    – increase curve y gamma (in the Advanced curve parameters section)
+tool-agx-warning-toe =
+    Toe power cannot be applied because the curve has lost its S shape
+    due to the current settings for black relative exposure, contrast and pivot.
+    To re-enable it, do one of the following:
+    – increase contrast
+    – decrease pivot target output
+    – decrease black relative exposure (make it more negative)
+    – decrease curve y gamma (in the Advanced curve parameters section)
 tool-agx-control-curve_linear_ratio_above_pivot-label = Shoulder start
 tool-agx-control-curve_linear_ratio_above_pivot-full = Shoulder start
 tool-agx-control-curve_linear_ratio_above_pivot-promise = Length to keep the curve linear above the pivot. May clip highlights.

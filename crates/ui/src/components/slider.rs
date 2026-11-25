@@ -179,6 +179,8 @@ pub struct SliderRow<'a> {
     before_match: Option<f64>,
     quad: Option<Quad<'a>>,
     picker: Option<PickerButton<'a>>,
+    /// A warning end item's place, and its message while it shows (decision 107).
+    warning: Option<Option<&'a str>>,
     enabled: bool,
     unit: Option<&'a str>,
     wheel: Wheel,
@@ -206,6 +208,7 @@ impl<'a> SliderRow<'a> {
             before_match: None,
             quad: None,
             picker: None,
+            warning: None,
             enabled: true,
             unit: None,
             wheel: Wheel::Off,
@@ -288,6 +291,16 @@ impl<'a> SliderRow<'a> {
     /// [`SliderAction::Picker`]. It takes the place of any [`Self::quad`].
     pub fn picker(mut self, button: PickerButton<'a>) -> Self {
         self.picker = Some(button.quad(true));
+        self
+    }
+
+    /// A warning at the row's end, in the quad's place (decision 107): while `message`, the
+    /// translated message, is given, `Icon::Warning` in `warning`, 18 by 18 with no plate,
+    /// its message the tooltip and the description screen readers hear on the slider; the
+    /// place stays reserved while it is `None`, so the value never moves. The sign takes no
+    /// press and is no focus stop. It takes the place of any [`Self::quad`] and picker.
+    pub fn warning(mut self, message: Option<&'a str>) -> Self {
+        self.warning = Some(message);
         self
     }
 
@@ -587,7 +600,7 @@ impl<'a> SliderRow<'a> {
         };
         // The label takes what the rest of the top line leaves, cut with … when long: the
         // value is never cut.
-        let quad = self.quad.is_some() || self.picker.is_some();
+        let quad = self.quad.is_some() || self.picker.is_some() || self.warning.is_some();
         let body = FontId::proportional(t.text.body);
         let room = Places::across(row, &t, quad, f32::INFINITY, value_width)
             .label
@@ -629,8 +642,19 @@ impl<'a> SliderRow<'a> {
         let marker_tip = tr.text(if kept { "slider-kept" } else { "slider-keep" });
 
         // The quad and the value field, each in a child that leaves the row's cursor under
-        // the row, where a scope would move it back up to its own bottom.
-        if let Some(mut picker) = self.picker.take() {
+        // the row, where a scope would move it back up to its own bottom. A warning's sign
+        // takes the pointer for its tooltip alone.
+        if let Some(warning) = self.warning {
+            if let Some(message) = warning {
+                let sign = ui.interact(places.quad, id.with("warning"), Sense::hover());
+                if ui.is_rect_visible(places.quad) {
+                    let side = Icon::Warning.size();
+                    let at = Rect::from_center_size(places.quad.center(), vec2(side, side));
+                    Icon::Warning.paint(ui.painter(), at, t.colors.warning);
+                }
+                sign.on_hover_text(message);
+            }
+        } else if let Some(mut picker) = self.picker.take() {
             if !self.enabled {
                 picker = picker.state(ButtonState::Disabled);
             }
@@ -829,9 +853,18 @@ impl<'a> SliderRow<'a> {
             }
             tip.push_str(&line);
         }
+        // A warning shown is heard first, before the tooltip's lines (decision 107).
+        let described = self.warning.flatten().map(|message| match tip.is_empty() {
+            true => message.to_owned(),
+            false => format!("{message}\n{tip}"),
+        });
         if !tip.is_empty() {
             track.on_hover_text(tip.clone());
             label.on_hover_text(tip);
+        }
+        if let Some(described) = described {
+            ui.ctx()
+                .accesskit_node_builder(id, |node| node.set_description(described));
         }
         marker.on_hover_text(marker_tip);
         if let Some(value) = value

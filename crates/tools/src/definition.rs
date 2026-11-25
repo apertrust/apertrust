@@ -920,13 +920,18 @@ pub enum End {
     Picker(&'static str),
     /// One of the tool's actions, [`crate::ProcessingTool::action`].
     Action(ActionEnd),
+    /// A read-only warning sign, shown while the tool's check reports it
+    /// ([`crate::ProcessingTool::warning`]), as AgX's toe and shoulder power quads: on a
+    /// slider's end alone, its id snake_case and unique among the tool's warnings, its
+    /// message `tool-<tool>-warning-<id>` ([`crate::messages::warning`]).
+    Warning(&'static str),
 }
 
 impl End {
-    /// The picker's id, or the action's.
+    /// The picker's id, the action's or the warning's.
     pub fn id(&self) -> &'static str {
         match self {
-            End::Picker(id) | End::Action(ActionEnd { id, .. }) => id,
+            End::Picker(id) | End::Action(ActionEnd { id, .. }) | End::Warning(id) => id,
         }
     }
 
@@ -934,7 +939,7 @@ impl End {
     pub fn picker(&self) -> Option<&'static str> {
         match self {
             End::Picker(id) => Some(id),
-            End::Action(_) => None,
+            End::Action(_) | End::Warning(_) => None,
         }
     }
 
@@ -942,7 +947,15 @@ impl End {
     pub fn action(&self) -> Option<&ActionEnd> {
         match self {
             End::Action(action) => Some(action),
-            End::Picker(_) => None,
+            End::Picker(_) | End::Warning(_) => None,
+        }
+    }
+
+    /// The warning it shows, if it is a warning's.
+    pub fn warning(&self) -> Option<&'static str> {
+        match self {
+            End::Warning(id) => Some(id),
+            End::Picker(_) | End::Action(_) => None,
         }
     }
 }
@@ -1581,6 +1594,10 @@ pub enum DefinitionError {
     ActionMenu(&'static str),
     #[error("the tool publishes {0} twice")]
     DuplicatePublished(&'static str),
+    #[error("the warning {0} is at the end of a row other than a slider's")]
+    WarningPlace(&'static str),
+    #[error("two warnings are called {0}")]
+    DuplicateWarning(&'static str),
     #[error("two computed values are called {0}")]
     DuplicateComputed(&'static str),
     #[error(
@@ -1641,7 +1658,7 @@ pub enum DefinitionError {
     #[error("a line holds no end item")]
     EmptyLine,
     #[error(
-        "the row {0} has end items not drawn there yet: a choice and a setting take none, and a slider's is a picker"
+        "the row {0} has end items not drawn there yet: a choice and a setting take none, and a slider's is a picker or a warning"
     )]
     EndNotDrawn(&'static str),
     #[error(
@@ -1858,8 +1875,9 @@ impl ProcessingDefinition {
     /// tool if any, and is in exactly one place: a row's end item, a reference row, or a
     /// drawn preset row's option that turns it on, an option of the row named once. A
     /// line holds at least one end item, each action at a row's end has a snake_case id
-    /// unique among the tool's actions and no control's, a slider's end item is a picker,
-    /// and a choice and a setting have none yet. Rows following a setting follow a choice setting of the tool,
+    /// unique among the tool's actions and no control's, a slider's end item is a picker
+    /// or a warning, a warning's id snake_case and unique among them and on a slider
+    /// alone, and a choice and a setting have none yet. Rows following a setting follow a choice setting of the tool,
     /// shown wherever they are, for options it has, and hold no control and not it. A
     /// reference row's picker writes no control, and its two settings are the tool's,
     /// each once. A last
@@ -1952,6 +1970,7 @@ impl ProcessingDefinition {
         let mut readouts = BTreeSet::new();
         // The actions that run, which a context menu or the toolbar may name.
         let mut runnable = BTreeSet::new();
+        let mut warnings = BTreeSet::new();
         for &Placed { row, ref at } in &placed {
             // A group with no rows has nothing behind it yet; rows following a control
             // must be rows.
@@ -1971,6 +1990,18 @@ impl ProcessingDefinition {
                 && widget.is_utility()
             {
                 return Err(DefinitionError::Widget(*widget));
+            }
+            // A warning is a slider's alone, its id snake_case and the tool's once.
+            if let Some(id) = row.end().iter().find_map(End::warning) {
+                if !matches!(row, Row::Slider(_)) {
+                    return Err(DefinitionError::WarningPlace(id));
+                }
+                if !is_id(id) {
+                    return Err(DefinitionError::Id(id));
+                }
+                if !warnings.insert(id) {
+                    return Err(DefinitionError::DuplicateWarning(id));
+                }
             }
             // Each action at a row's end, and each of a menu's, has an id of its own among
             // the tool's actions, never a control's: availability asks one rule with
@@ -2018,7 +2049,8 @@ impl ProcessingDefinition {
                         }
                     }
                 }
-                // A slider's one end item is a picker until the other kinds are drawn there.
+                // A slider's one end item is a picker or a warning until the other kinds
+                // are drawn there.
                 Row::Slider(Slider {
                     control,
                     end: Some(End::Action(_)),
@@ -2387,6 +2419,13 @@ impl ProcessingDefinition {
     pub fn action_ends(&self) -> impl Iterator<Item = &ActionEnd> {
         self.rows()
             .flat_map(|row| row.end().iter().filter_map(End::action))
+    }
+
+    /// Every warning at its sliders' ends, in the page's order (decision 107).
+    pub fn warnings(&self) -> Vec<&'static str> {
+        (self.rows())
+            .flat_map(|row| row.end().iter().filter_map(End::warning))
+            .collect()
     }
 
     /// Every action of the tool with whether it is not ported, in the page's order: each
@@ -4546,6 +4585,47 @@ mod tests {
             check(menu(icon, &["soft", "detail"])),
             Err(DefinitionError::ActionIsControl("detail"))
         );
+    }
+
+    /// A warning is a slider's end item alone, its id snake_case and the tool's once
+    /// (decision 107).
+    #[test]
+    fn a_warning_is_a_slider_s_alone() {
+        let warned = Row::Slider(Slider::new("contrast").end(End::Warning("flat")));
+        assert_eq!(picking(&[], &[warned]), Ok(()));
+        let on_line = line(LineStart::Label("look"), None, &[End::Warning("flat")]);
+        let contrast = Row::Slider(Slider::new("contrast"));
+        assert_eq!(
+            picking(&[], &[on_line, contrast]),
+            Err(DefinitionError::WarningPlace("flat"))
+        );
+        let mode = Row::Choice {
+            control: "mode",
+            style: ChoiceStyle::List,
+            end: &[End::Warning("flat")],
+        };
+        assert_eq!(
+            page(with_mode(&[mode])).check(),
+            Err(DefinitionError::WarningPlace("flat"))
+        );
+        let named = Row::Slider(Slider::new("contrast").end(End::Warning("Flat")));
+        assert_eq!(picking(&[], &[named]), Err(DefinitionError::Id("Flat")));
+        // A warned slider's other checks hold too: its soft range and its own words.
+        let soft = Row::Slider(
+            Slider::new("contrast")
+                .soft(0.8, 0.2)
+                .end(End::Warning("flat")),
+        );
+        assert_eq!(
+            picking(&[], &[soft]),
+            Err(DefinitionError::SoftRange("contrast"))
+        );
+        let words = Row::Slider(
+            Slider::new("contrast")
+                .label("Words")
+                .end(End::Warning("flat")),
+        );
+        assert_eq!(picking(&[], &[words]), Err(DefinitionError::Id("Words")));
     }
 
     /// The facts a tool publishes are snake_case, each once (decision 107).

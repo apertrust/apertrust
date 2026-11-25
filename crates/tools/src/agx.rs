@@ -469,6 +469,15 @@ const fn picked(control: &'static str, picker: &'static str, (min, max): (f32, f
     Row::Slider(Slider::new(control).end(End::Picker(picker)).soft(min, max))
 }
 
+/// A power over darktable's soft range, 1 to 5, with its warning quad `warning`.
+const fn warned(control: &'static str, warning: &'static str) -> Row {
+    Row::Slider(
+        Slider::new(control)
+            .soft(1.0, 5.0)
+            .end(End::Warning(warning)),
+    )
+}
+
 /// Pivot target output, which the `pivot_output` picker writes with the pivot.
 const OUTPUT: &str = "curve_pivot_y_linear_output";
 
@@ -550,8 +559,9 @@ static SETTINGS: [Row; 5] = [
             picked(PIVOT, "pivot", (-10.0, 6.5)),
             Row::Slider(Slider::new(OUTPUT).end(End::Picker("pivot_output"))),
             soft("curve_contrast_around_pivot", 0.1, 5.0),
-            soft("curve_shoulder_power", 1.0, 5.0),
-            soft("curve_toe_power", 1.0, 5.0),
+            // darktable's warning quads, shown while the curve has lost its S shape.
+            warned("curve_shoulder_power", "shoulder"),
+            warned("curve_toe_power", "toe"),
         ],
     }),
     // darktable's read-only graph of the curve, once a definition can name one.
@@ -770,6 +780,21 @@ impl ProcessingTool for Agx {
                     && !values.flag("disable_primaries_adjustments")
             }
             _ => true,
+        }
+    }
+
+    /// darktable's warning quads on Toe power and Shoulder power (`agx.c:1727-1735`):
+    /// **`toe`** while the toe, **`shoulder`** while the shoulder, has lost its S shape and
+    /// the power fallback takes over, darktable's `need_convex_toe` and
+    /// `need_concave_shoulder` (`agx.c:903`, `:948`), from the curve the operation renders
+    /// ([`Curve::new`]). Shown whatever darktable's preference to hide them says (decision
+    /// 107).
+    fn warning(&self, id: &str, values: &Controls, _: &ImageContext) -> bool {
+        let curve = || Curve::new(&curve_settings(values));
+        match id {
+            "toe" => curve().toe.fallback,
+            "shoulder" => curve().shoulder.fallback,
+            _ => false,
         }
     }
 
@@ -1643,6 +1668,39 @@ mod tests {
         let values = DEFINITION.defaults();
         let none = Agx.action("read_exposure", &values, &PublishedValues::new(), &image);
         assert!(none.unwrap().is_empty());
+    }
+
+    /// The toe's and the shoulder's warnings show while the curve falls back, its
+    /// `fallback`, darktable's `need_convex_toe` and `need_concave_shoulder`: off at the
+    /// defaults; the shoulder's, then both, as contrast falls; the toe's with a narrow range
+    /// below the pivot and the shoulder's with one above it.
+    #[test]
+    fn the_curve_s_warnings_follow_its_fallback() {
+        let image = crate::testing::image();
+        const CONTRAST: &str = "curve_contrast_around_pivot";
+        let warned = |set: &[(&'static str, f32)]| {
+            let mut values = DEFINITION.defaults();
+            for &(id, value) in set {
+                values.set(id, ControlValue::Number(value));
+            }
+            let curve = Curve::new(&curve_settings(&values));
+            let toe = Agx.warning("toe", &values, &image);
+            let shoulder = Agx.warning("shoulder", &values, &image);
+            assert_eq!(
+                (toe, shoulder),
+                (curve.toe.fallback, curve.shoulder.fallback)
+            );
+            (toe, shoulder)
+        };
+        assert_eq!(warned(&[]), (false, false));
+        // A low contrast: the shoulder first, then both.
+        assert_eq!(warned(&[(CONTRAST, 1.0)]), (false, true));
+        assert_eq!(warned(&[(CONTRAST, 0.5)]), (true, true));
+        // A narrow range: below the pivot the toe's, above it the shoulder's.
+        assert_eq!(warned(&[(BLACK, -2.0)]), (true, false));
+        assert_eq!(warned(&[(WHITE, 2.0)]), (false, true));
+        assert!(!Agx.warning("other", &DEFINITION.defaults(), &image));
+        assert_eq!(DEFINITION.warnings(), ["shoulder", "toe"]);
     }
 
     /// Set from above can run only while the primaries after tone mapping act, darktable's

@@ -24,7 +24,8 @@
 mod common;
 
 use apertrust_ui::components::{
-    EndAction, EndItem, LineAction, LineRow, LineStart, PickerAction, PickerButton, ToggleRow,
+    EndAction, EndItem, LineAction, LineRow, LineStart, PickerAction, PickerButton, SliderRow,
+    ToggleRow,
 };
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::popup::{Entry, Item};
@@ -228,6 +229,78 @@ fn the_line_rows_in_the_dark_and_the_light_theme() {
             Gallery::show_line_rows,
         ));
     }
+}
+
+/// The gallery's slider warnings, one on and one off, in the dark and the light theme.
+#[test]
+fn the_slider_warnings_in_the_dark_and_the_light_theme() {
+    let size = egui::vec2(330.0, 150.0);
+    let mut results = egui_kittest::SnapshotResults::new();
+    for (which, name) in [
+        (Builtin::Dark, "slider-warning-dark"),
+        (Builtin::Light, "slider-warning-light"),
+    ] {
+        results.extend(common::photograph_section(
+            which,
+            size,
+            name,
+            Gallery::show_slider_warnings,
+        ));
+    }
+}
+
+/// A slider's warning is heard as the slider's description while it shows, and is no
+/// focus stop: Tab goes from the marker to the track, as on a row without one.
+#[test]
+fn a_slider_s_warning_is_its_description_and_no_focus_stop() {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 100.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui(|ui| {
+            for (label, warning) in [
+                ("Shoulder power", Some("Lost its S shape.")),
+                ("Toe power", None),
+            ] {
+                SliderRow::new(label, 3.3, 0.0..=10.0)
+                    .decimals(2)
+                    .warning(warning)
+                    .show(ui);
+            }
+        });
+    harness.run();
+    let shoulder = harness.get_by_role_and_label(Role::Slider, "Shoulder power");
+    assert_eq!(
+        shoulder.accesskit_node().description().as_deref(),
+        Some("Lost its S shape.")
+    );
+    let toe = harness.get_by_role_and_label(Role::Slider, "Toe power");
+    assert_eq!(toe.accesskit_node().description(), None);
+    // The two values end at the same x, the sign's place kept on the row without it.
+    assert_eq!(shoulder.rect().right(), toe.rect().right());
+    let mut met = Vec::new();
+    for _ in 0..4 {
+        harness.key_press(Key::Tab);
+        harness.run();
+        let focused = harness.get_by(|node| node.is_focused());
+        met.push(focused.accesskit_node().role());
+    }
+    assert!(!met.contains(&Role::Image), "{met:?}");
+    // Heard first, before the promise.
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 60.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui(|ui| {
+            SliderRow::new("Toe power", 1.5, 0.0..=10.0)
+                .promise("Contrast in shadows.")
+                .warning(Some("Lost its S shape."))
+                .show(ui);
+        });
+    harness.run();
+    let toe = harness.get_by_role_and_label(Role::Slider, "Toe power");
+    assert_eq!(
+        toe.accesskit_node().description().as_deref(),
+        Some("Lost its S shape.\nContrast in shadows.")
+    );
 }
 
 /// The gallery's menu button with its menu open, in the dark theme.

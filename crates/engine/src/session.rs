@@ -1045,6 +1045,18 @@ pub struct ToolState {
     /// Every action at its rows' ends, a menu button's and its menu's among them, in the
     /// page's order, with whether it can run (decision 107).
     pub actions: Vec<ActionState>,
+    /// Every warning at its sliders' ends, in the page's order, with whether it shows
+    /// (decision 107).
+    pub warnings: Vec<WarningState>,
+}
+
+/// A warning at a slider's end ([`apertrust_tools::End::Warning`]): whether it shows on
+/// the values reported, by the tool's `warning` check on the photo's image context; off
+/// where the check panics (decision 107).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WarningState {
+    pub id: &'static str,
+    pub on: bool,
 }
 
 /// An action at a row's end ([`apertrust_tools::ActionEnd`]): whether it can run on the
@@ -2849,6 +2861,9 @@ struct Open {
     /// The tools whose actions' availability panicked as the values were reported, each
     /// warned of once for the photo (decision 107).
     actions_failed: BTreeSet<&'static str>,
+    /// The tools whose warnings' check panicked as the values were reported, each warned
+    /// of once for the photo (decision 107).
+    warnings_failed: BTreeSet<&'static str>,
     /// The tools whose availability panicked as the values were reported, each warned
     /// of once for the photo (decision 30).
     available_failed: BTreeSet<&'static str>,
@@ -4864,6 +4879,7 @@ impl Engine {
             presets_failed: BTreeSet::new(),
             readouts_failed: BTreeSet::new(),
             actions_failed: BTreeSet::new(),
+            warnings_failed: BTreeSet::new(),
             available_failed: BTreeSet::new(),
             ranges_failed: BTreeSet::new(),
             options,
@@ -6419,6 +6435,7 @@ impl Open {
                 let presets = self.presets(*tool, &controls);
                 let readouts = self.readouts(*tool, &values);
                 let actions = self.actions(*tool, &values);
+                let warnings = self.warnings(*tool, &values);
                 let views = self.views(*tool, &controls, &values);
                 let computed = definition.computed(&values);
                 for (row, (value, shown)) in computed.iter().enumerate() {
@@ -6443,6 +6460,7 @@ impl Open {
                         .collect(),
                     readouts,
                     actions,
+                    warnings,
                 }
             })
             .collect();
@@ -6616,6 +6634,34 @@ impl Open {
             }
             ends()
                 .map(|(id, available)| ActionState { id, available })
+                .collect()
+        })
+    }
+
+    /// Each warning at the tool's sliders' ends while its controls hold `values`, every
+    /// control, the edit's over the defaults, on the photo's image context: on where the
+    /// tool's `warning` check reports it (decision 107). Should the tool's code panic, each
+    /// reads off, and a warning in the log says so once for the photo.
+    fn warnings(&mut self, tool: &dyn ProcessingTool, values: &Controls) -> Vec<WarningState> {
+        let definition = tool.definition();
+        let ids = definition.warnings();
+        let checked = catch_unwind(AssertUnwindSafe(|| {
+            (ids.iter())
+                .map(|&id| WarningState {
+                    id,
+                    on: tool.warning(id, values, &self.image),
+                })
+                .collect()
+        }));
+        checked.unwrap_or_else(|panic| {
+            let id = definition.tool.id;
+            // The values are reported after every change: once is enough.
+            if self.warnings_failed.insert(id) {
+                let message = panic_message(panic.as_ref());
+                tracing::warn!(target: "pipe", "tool {id}'s warnings all off: {message}");
+            }
+            (ids.iter())
+                .map(|&id| WarningState { id, on: false })
                 .collect()
         })
     }
@@ -9709,8 +9755,8 @@ mod tests {
         remove(&path);
     }
 
-    /// A tool whose availability rule panics, as a tool's bug may make it, with an action
-    /// at a line's end (decision 107).
+    /// A tool whose availability rule and warning check panic, as a tool's bug may make
+    /// them, with an action at a line's end and a warning at its slider's (decision 107).
     struct Unruly;
 
     static UNRULY: ProcessingDefinition = ProcessingDefinition {
@@ -9719,7 +9765,7 @@ mod tests {
             tabs: &[Tab {
                 id: None,
                 rows: &[
-                    Row::Slider(Slider::new("amount")),
+                    Row::Slider(Slider::new("amount").end(apertrust_tools::End::Warning("odd"))),
                     Row::Line {
                         start: apertrust_tools::LineStart::None,
                         readout: None,
@@ -9756,11 +9802,16 @@ mod tests {
         fn available(&self, _: &str, _: &Controls, _: &ImageContext) -> bool {
             panic!("a bug in the rule");
         }
+
+        fn warning(&self, _: &str, _: &Controls, _: &ImageContext) -> bool {
+            panic!("a bug in the check");
+        }
     }
 
-    /// A tool's actions are reported with its state, each available by its rule; where the
-    /// rule panics, each ported one reads available while the photo takes edits, and a
-    /// warning says so once for the photo, though the values are reported again.
+    /// A tool's actions and warnings are reported with its state; where its rule panics,
+    /// each ported action reads available while the photo takes edits, where its check
+    /// panics each warning reads off, and the log says so once for the photo, though the
+    /// values are reported again.
     #[test]
     fn an_action_whose_tool_s_rule_panics_reads_available_and_is_warned_of_once() {
         let path = scratch("unruly");
@@ -9774,8 +9825,14 @@ mod tests {
         assert_eq!(unruly.actions, std::slice::from_ref(&act));
         let events = driven.run([set("grain", ControlValue::Number(20.0), true)]);
         assert_eq!(values(&events).tools[1].actions, [act]);
+        let off = WarningState {
+            id: "odd",
+            on: false,
+        };
+        assert_eq!(values(&events).tools[1].warnings, [off]);
         let open = driven.engine.open.as_ref().expect("the photo is open");
         assert_eq!(open.actions_failed, BTreeSet::from(["unruly"]));
+        assert_eq!(open.warnings_failed, BTreeSet::from(["unruly"]));
         remove(&path);
     }
 
@@ -9807,6 +9864,31 @@ mod tests {
         assert!(!available(values(&events), "set_from_above"));
         let events = driven.run([reverse(false)]);
         assert!(available(values(&events), "set_from_above"));
+        // The toe's and the shoulder's warnings, off at the defaults, on as Contrast falls.
+        let warned = |values: &Values| -> Vec<(&'static str, bool)> {
+            (values.tools[0].warnings.iter())
+                .map(|warning| (warning.id, warning.on))
+                .collect()
+        };
+        assert_eq!(
+            warned(values(&events)),
+            [("shoulder", false), ("toe", false)]
+        );
+        let events = driven.run([Command::SetControl {
+            tool: "agx".to_owned(),
+            control: "curve_contrast_around_pivot".to_owned(),
+            value: ControlValue::Number(0.5),
+            done: true,
+        }]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        let mut contrast = Agx.definition().defaults();
+        contrast.set("curve_contrast_around_pivot", ControlValue::Number(0.5));
+        let image = &driven.engine.open.as_ref().unwrap().image;
+        let expected: Vec<(&str, bool)> = ["shoulder", "toe"]
+            .map(|id| (id, Agx.warning(id, &contrast, image)))
+            .to_vec();
+        assert_eq!(warned(values(&events)), expected);
+        assert!(expected.iter().any(|(_, on)| *on));
         remove(&path);
     }
 

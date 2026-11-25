@@ -53,7 +53,7 @@ use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ActionState, ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History,
     OpenPreview, Photo, PresetState, PreviewSource, ReadoutState, Selection, SelectionCommand,
-    SessionError, ToolState, Values, ViewState,
+    SessionError, ToolState, Values, ViewState, WarningState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -995,6 +995,14 @@ fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
                     available: false,
                 })
                 .collect(),
+            // Its warnings for the defaults, as the session will report them.
+            warnings: (definition.warnings().into_iter())
+                .map(|id| WarningState {
+                    id,
+                    on: catch_unwind(AssertUnwindSafe(|| tool.warning(id, &defaults, &image)))
+                        .unwrap_or_default(),
+                })
+                .collect(),
         }
     });
     Values {
@@ -1586,6 +1594,7 @@ pub(crate) mod tests {
             computed: Vec::new(),
             readouts: Vec::new(),
             actions: Vec::new(),
+            warnings: Vec::new(),
         };
         let report = |black, value, through| Values {
             tools: vec![exposure(black, None, value, Some(Mark::Kept))],
@@ -1686,6 +1695,7 @@ pub(crate) mod tests {
                 computed: Vec::new(),
                 readouts: Vec::new(),
                 actions: Vec::new(),
+                warnings: Vec::new(),
             }],
             settings: Vec::new(),
             edited: exposure != 0.0,

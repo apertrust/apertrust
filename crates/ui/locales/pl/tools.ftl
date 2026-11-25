@@ -221,6 +221,22 @@ tool-agx-control-curve_shoulder_power-promise = Kontrast w światłach. Wyższe 
 tool-agx-control-curve_toe_power-label = Potęga dolnego zaokrąglenia
 tool-agx-control-curve_toe_power-full = Potęga dolnego zaokrąglenia
 tool-agx-control-curve_toe_power-promise = Kontrast w cieniach. Wyższe wartości utrzymują niemal stałe nachylenie w większym zakresie, kosztem agresywniejszego zjazdu w okolicy czerni.
+tool-agx-warning-shoulder =
+    Potęga ramienia („shoulder”) nie może być zastosowana, ponieważ krzywa straciła swój kształt „S”
+    z powodu bieżących ustawień ekspozycji względnej bieli, kontrastu i punktu obrotu.
+    By ją ponownie włączyć, wykonaj jedno z:
+    – zwiększ kontrast
+    – zwiększ docelowe wyjście punktu obrotu
+    – zwiększ ekspozycję względną bieli
+    – zwiększ y gamma krzywej (w sekcji zaawansowanych parametrów krzywej)
+tool-agx-warning-toe =
+    Potęga palca („toe”) nie może być zastosowana, ponieważ krzywa straciła swój kształt „S”
+    z powodu bieżących ustawień ekspozycji względnej czerni, kontrastu i punktu obrotu.
+    By ją ponownie włączyć, wykonaj jedno z:
+    – zwiększ kontrast
+    – zmniejsz docelowe wyjście punktu obrotu
+    – zmniejsz ekspozycję względną czerni (uczyń bardziej ujemną)
+    – zmniejsz y gamma krzywej (w sekcji zaawansowanych parametrów krzywej)
 tool-agx-control-curve_linear_ratio_above_pivot-label = Początek górnego zaokrąglenia
 tool-agx-control-curve_linear_ratio_above_pivot-full = Początek górnego zaokrąglenia
 tool-agx-control-curve_linear_ratio_above_pivot-promise = Długość liniowego odcinka powyżej punktu obrotu. Może przepalić światła.
