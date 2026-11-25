@@ -5937,7 +5937,7 @@ impl App {
         for action in actions {
             match action {
                 // Not while the photo takes no edit yet, opening, or none at all.
-                Action::Apply(_) | Action::Clear(_) if !self.mirror.takes_edits() => {}
+                Action::Apply(_) | Action::Clear { .. } if !self.mirror.takes_edits() => {}
                 Action::Apply(file) => {
                     let listed = self.shell.styles.listed.iter().flatten();
                     let Some(style) = listed.into_iter().find(|s| s.file() == file).cloned() else {
@@ -5951,8 +5951,8 @@ impl App {
                         }
                     }
                 }
-                Action::Clear(name) => {
-                    self.send_edit(styles::tool::clear(&name));
+                Action::Clear { name, file } => {
+                    self.send_edit(styles::tool::clear(&name, &file));
                 }
                 Action::Rename(ref name) | Action::Copy(ref name) => {
                     let Some(folder) = self.shell.presets.styles() else {

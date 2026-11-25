@@ -136,9 +136,10 @@ fn a_click_applies_the_style_as_the_mode_says_and_parked_entries_are_said() {
     future.tools = None;
     assert_eq!(apply(&future, StyleMode::Append, &[]), None);
     assert_eq!(
-        clear("Warm"),
+        clear("Warm", "Warm.apstyle"),
         Command::ClearStyle {
-            name: "Warm".to_owned()
+            name: "Warm".to_owned(),
+            file: "Warm.apstyle".to_owned(),
         }
     );
 }
@@ -646,7 +647,10 @@ fn a_style_s_keys_and_menu() {
     harness.run();
     assert_eq!(
         harness.state().actions,
-        [Action::Clear("Bright".to_owned())]
+        [Action::Clear {
+            name: "Bright".to_owned(),
+            file: "Bright.apstyle".to_owned(),
+        }]
     );
 }
 
@@ -665,7 +669,10 @@ fn a_click_on_an_applied_style_offers_clear() {
     harness.run();
     assert_eq!(
         harness.state().actions,
-        [Action::Clear("Film|Warm film".to_owned())]
+        [Action::Clear {
+            name: "Film|Warm film".to_owned(),
+            file: "Film|Warm film.apstyle".to_owned(),
+        }]
     );
 }
 
@@ -831,7 +838,13 @@ fn a_built_in_style_applies_clears_and_copies_but_is_never_renamed_or_deleted() 
         .get_by_role_and_label(Role::MenuItem, "Clear")
         .click();
     harness.run();
-    assert_eq!(harness.state().actions, [Action::Clear("Ломо".to_owned())]);
+    assert_eq!(
+        harness.state().actions,
+        [Action::Clear {
+            name: "Ломо".to_owned(),
+            file: "builtin:lomo".to_owned(),
+        }]
+    );
 }
 
 /// Copy to Custom Styles… writes the built-in's entries into the styles folder under the

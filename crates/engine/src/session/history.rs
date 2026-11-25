@@ -1153,7 +1153,9 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
         // Its step is noted `history-reset` as it is made.
         Command::Reset => Some((StepSource::You, None)),
         Command::ApplyStyle { name, .. } => Some((StepSource::Style, Some(Note::style(name)))),
-        Command::ClearStyle { name } => Some((StepSource::Style, Some(Note::clear_style(name)))),
+        Command::ClearStyle { name, .. } => {
+            Some((StepSource::Style, Some(Note::clear_style(name))))
+        }
         Command::Step {
             source,
             note,

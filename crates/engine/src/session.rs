@@ -375,7 +375,8 @@ pub enum Command {
     /// checked and refused alike, all or none, a step of each tool it changes sharing a
     /// batch. The client reads the `.apstyle` and turns each entry into values with
     /// [`sidecar::tool_values`], leaving a parked one out. The style goes to the top of the
-    /// styles applied, [`Values::styles`], any item of its name taken out first, with each
+    /// styles applied, [`Values::styles`], any item of the same style taken out first, by
+    /// its file where either is a built-in's, `builtin:<id>`, else by its name, with each
     /// tool's state before and after it: before, its state in the edit just before the
     /// change, its reset state after a Replace's reset, or, applied again, the earlier
     /// item's state before it where the tool still held what that set; the earlier item's
@@ -388,15 +389,17 @@ pub enum Command {
         mode: StyleMode,
         tools: Vec<(String, ToolValues)>,
     },
-    /// Clear the style `name` (decision 106): each tool it set whose state is still the one
+    /// Clear the style `name` from `file`, the item of the styles applied that is that style,
+    /// by its file for a built-in's, `builtin:<id>`, else by its name (decisions 106 and 109):
+    /// each tool it set whose state is still the one
     /// the style left goes back to its state before the style, and the style leaves the
     /// styles applied, as one change of source Style noted `history-clear-style` with its
     /// name, a step of each tool put back sharing a batch, the last holding the list; a tool
     /// changed since keeps its value; with none put back, a step holding the list alone.
-    /// One Undo takes it back, the list included. A name the list lacks is refused
-    /// ([`SessionError::UnknownStyle`]), and so is a `ClearStyle` inside a [`Command::Step`]
+    /// One Undo takes it back, the list included. Refused where no item of the list is that
+    /// style ([`SessionError::UnknownStyle`]), and so is a `ClearStyle` inside a [`Command::Step`]
     /// ([`SessionError::NotInStep`]).
-    ClearStyle { name: String },
+    ClearStyle { name: String, file: String },
     /// The History tab's eye, held (decision 78): the live frame shows the tool as if it
     /// were reset while `hidden`, off for a switched tool and at its defaults for one
     /// every photo runs, whose operation is never skipped; with `hidden` false, as the edit
@@ -3541,7 +3544,7 @@ impl Engine {
                         (tools.iter()).map(|(tool, _)| Some(tool.clone())).collect()
                     }
                 },
-                Command::ClearStyle { name } => self.style_tools(name),
+                Command::ClearStyle { name, file } => self.style_tools(name, file),
                 command => changed_tool(command).into_iter().collect(),
             };
             // A tool's picker on, and its tool's state, before a move through the history
@@ -4218,7 +4221,7 @@ impl Engine {
                 mode,
                 tools,
             } => return self.apply_style(&name, &file, mode, tools),
-            Command::ClearStyle { name } => return self.clear_style(&name),
+            Command::ClearStyle { name, file } => return self.clear_style(&name, &file),
             Command::Open(_)
             | Command::Close
             | Command::Resize { .. }
@@ -7369,6 +7372,7 @@ mod tests {
             },
             Command::ClearStyle {
                 name: "Warm film".to_owned(),
+                file: "Warm film.apstyle".to_owned(),
             },
         ]));
         let refused: Vec<u64> = events

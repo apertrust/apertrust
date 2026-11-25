@@ -96,8 +96,8 @@ mod tests;
 
 pub(crate) use copies::entry_problems;
 pub use copies::{
-    ARG_NAMESPACE, AppliedStyle, COPIES_VERSION, Edits, FIRST_COPY, Note, Problem, SOURCES, Step,
-    VirtualCopy, read_edits,
+    ARG_NAMESPACE, AppliedStyle, BUILT_IN_FILE, COPIES_VERSION, Edits, FIRST_COPY, Note, Problem,
+    SOURCES, Step, VirtualCopy, read_edits, same_style,
 };
 
 /// What `x:xmptk` says before the build.

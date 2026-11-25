@@ -68,7 +68,7 @@ pub const BUILT_IN: &str = "built-in";
 
 /// What the styles applied record as a built-in style's file, before its id: no file name
 /// ([`apertrust_library::presets::file_name`]) holds a `:`, so it is never a person's.
-pub const BUILT_IN_FILE: &str = "builtin:";
+pub use apertrust_engine::history::BUILT_IN_FILE;
 
 /// One style file as the tree lists it.
 #[derive(Clone, Debug, PartialEq)]
@@ -228,10 +228,11 @@ pub fn left_out(style: &Listed, words: &Translator) -> Option<String> {
     })
 }
 
-/// The command Clear sends for the style applied `name`.
-pub fn clear(name: &str) -> Command {
+/// The command Clear sends for the style applied `name` from `file`.
+pub fn clear(name: &str, file: &str) -> Command {
     Command::ClearStyle {
         name: name.to_owned(),
+        file: file.to_owned(),
     }
 }
 
@@ -261,8 +262,12 @@ pub enum Action {
     /// A style applied, by its file ([`Listed::file`]), which a built-in's and a person's
     /// of the same name do not share.
     Apply(String),
-    /// A style applied taken off, by its name.
-    Clear(String),
+    /// A style applied taken off, by the name it was applied under and its file, which a
+    /// built-in's and a person's of the same name do not share.
+    Clear {
+        name: String,
+        file: String,
+    },
     Rename(String),
     Delete(String),
     /// Copy to Custom Styles…, for the built-in style of this name.
@@ -686,7 +691,10 @@ impl StylesTool<'_> {
         let name = style.name.clone();
         actions.extend(match chosen.as_deref() {
             Some(APPLY) => Some(Action::Apply(style.file())),
-            Some(CLEAR) => applied_as.map(|name| Action::Clear(name.to_owned())),
+            Some(CLEAR) => applied_as.map(|name| Action::Clear {
+                name: name.to_owned(),
+                file: style.file(),
+            }),
             Some(RENAME) => Some(Action::Rename(name)),
             Some(DELETE) => Some(Action::Delete(name)),
             Some(COPY) => Some(Action::Copy(name)),
@@ -750,7 +758,10 @@ impl StylesTool<'_> {
                     if menu_of(ui, &response, &menu, (asked, keys), entries).as_deref()
                         == Some(CLEAR)
                     {
-                        actions.push(Action::Clear(style.name.clone()));
+                        actions.push(Action::Clear {
+                            name: style.name.clone(),
+                            file: style.file.clone(),
+                        });
                     }
                 }
             },
