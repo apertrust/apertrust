@@ -124,6 +124,12 @@ impl Gallery {
         line_rows(ui, &t, &mut self.demo.reverse_all);
     }
 
+    /// Draws the slider warnings alone, as the snapshot tests photograph them.
+    pub fn show_slider_warnings(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        slider_warnings(ui, &t);
+    }
+
     /// Draws the Cursor well section alone, as the snapshot tests photograph it.
     pub fn show_cursor_well(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
@@ -234,6 +240,8 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Line rows");
         line_rows(ui, &t, &mut self.demo.reverse_all);
+        ui.add_space(t.spacing.l);
+        slider_warnings(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Cursor well");
         cursor_wells(ui, &t, &mut self.demo.cursors);
@@ -949,6 +957,30 @@ fn line_rows(ui: &mut Ui, t: &Theme, reverse_all: &mut bool) {
             "One 24-point line: a label, a control's reset label or a readout, then the end \
              items, pickers, 18-point icon buttons, text buttons and menu buttons, 4 points \
              apart; a toggle draws them before its switch.",
+        )
+        .color(t.colors.text_secondary),
+    );
+}
+
+/// A slider's warning end item (decision 107), as AgX's toe and shoulder power have them:
+/// one on, its sign in the quad's place before the value, and one off, its place kept, so
+/// the two values line up.
+fn slider_warnings(ui: &mut Ui, t: &Theme) {
+    ui.push_id("slider warnings", |ui| {
+        ui.set_width(296.0);
+        let message = "Shoulder power cannot be applied because the curve has lost its S shape.";
+        for (label, warning) in [("Shoulder power", Some(message)), ("Toe power", None)] {
+            SliderRow::new(label, 3.3, 0.0..=10.0)
+                .soft_range(1.0..=5.0)
+                .decimals(2)
+                .warning(warning)
+                .show(ui);
+        }
+    });
+    ui.label(
+        RichText::new(
+            "A warning in the quad's place, in the warning colour while the tool's check \
+             reports it; its place is kept while it is off, so the value never moves.",
         )
         .color(t.colors.text_secondary),
     );

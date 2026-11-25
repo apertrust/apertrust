@@ -442,6 +442,16 @@ pub trait ProcessingTool: Send + Sync {
         true
     }
 
+    /// Whether the warning `id` at a slider's end ([`End::Warning`]) shows while the tool's
+    /// controls hold `values`, every control, the edit's over the defaults, on the photo
+    /// `image` (decision 107), as AgX's toe and shoulder power warn that the curve has lost
+    /// its S shape. Pure, as [`Self::bind`] is: the session asks after every change and
+    /// reports it with the tool's state, and the app's pending display follows it. False, as
+    /// provided.
+    fn warning(&self, _id: &str, _values: &Controls, _image: &ImageContext) -> bool {
+        false
+    }
+
     /// What the readout `readout` of a line of pickers ([`ReadoutDef`]) shows while the
     /// tool's controls hold `values`, every control, the edit's over the defaults: one of
     /// its texts with its number, and its swatch's colour, as Colour calibration's CCT and

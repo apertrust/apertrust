@@ -698,6 +698,7 @@ impl Pending {
         follow_ranges(tool, state, &before);
         coordinate_marks(definition, state);
         follow_availability(tool, state, &before, image);
+        follow_warnings(tool, state, &before, image);
         state.edited = edited(tool, state);
     }
 }
@@ -809,6 +810,37 @@ fn follow_availability(
             && check::lists_only(control, &shown.options, &shown.value)
         {
             shown.available = false;
+        }
+    }
+}
+
+/// Shows each warning at a slider's end as the session will report it now that the values
+/// `state` shows have moved from `before` (decision 107): where the tool's `warning` check
+/// answers otherwise for them than for `before`, the new answer; every other warning as
+/// the session reported it. A tool whose check panics leaves them as reported.
+fn follow_warnings(
+    tool: &dyn ProcessingTool,
+    state: &mut ToolState,
+    before: &Controls,
+    image: &ImageContext,
+) {
+    let after = values(state);
+    if after == *before {
+        return;
+    }
+    let ids = tool.definition().warnings();
+    let moved = catch_unwind(AssertUnwindSafe(|| {
+        let moved = ids.iter().filter_map(|&id| {
+            let now = tool.warning(id, &after, image);
+            (now != tool.warning(id, before, image)).then_some((id, now))
+        });
+        moved.collect::<Vec<_>>()
+    }));
+    if let Ok(moved) = moved {
+        for (id, on) in moved {
+            if let Some(shown) = state.warnings.iter_mut().find(|shown| shown.id == id) {
+                shown.on = on;
+            }
         }
     }
 }
@@ -1902,6 +1934,8 @@ impl<'a> Page<'a> {
                 End::Picker(id) => self
                     .button(ctx, id)
                     .map(|(id, words)| EndWords::Picker(id, words)),
+                // A slider's alone, which its row draws in the quad's place.
+                End::Warning(_) => None,
                 End::Action(action) => {
                     let [label, full, promise] =
                         messages::action(tool, action.id).map(|id| self.words.text(&id));
@@ -2850,6 +2884,17 @@ fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec
     if let Some((_, button)) = &picker {
         row = row.picker(button.button());
     }
+    // A warning at the row's end, its place kept while it is off (decision 107).
+    let warning = match slider.end {
+        Some(End::Warning(id)) => {
+            let on = (page.state.warnings.iter()).any(|state| state.id == id && state.on);
+            Some(on.then(|| page.words.text(&messages::warning(tool, id))))
+        }
+        _ => None,
+    };
+    if let Some(message) = &warning {
+        row = row.warning(message.as_deref());
+    }
     let control = id;
     match row.show(ui) {
         Some(SliderAction::Set { value, done }) => changes.push(Change::Set {
@@ -3554,7 +3599,7 @@ mod tests {
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
     use super::*;
-    use apertrust_engine::session::ActionState;
+    use apertrust_engine::session::{ActionState, WarningState};
 
     /// The point `at` of the way along a slider's `track`, as the marker travels it: short of
     /// each end by the marker's stop (decision 75).
@@ -3592,6 +3637,7 @@ mod tests {
             computed: Vec::new(),
             readouts: Vec::new(),
             actions: Vec::new(),
+            warnings: Vec::new(),
         };
         state.presets = presets(tool, &state);
         report_availability(tool, &mut state);
@@ -3618,6 +3664,12 @@ mod tests {
         for (control, shown) in tool.definition().controls.iter().zip(&mut state.controls) {
             shown.available = !control.unported && tool.available(control.id, &values, &image);
         }
+        state.warnings = (tool.definition().warnings().into_iter())
+            .map(|id| WarningState {
+                id,
+                on: tool.warning(id, &values, &image),
+            })
+            .collect();
         state.actions = (tool.definition().action_ids().into_iter())
             .map(|(id, unported)| ActionState {
                 id,
@@ -9103,6 +9155,8 @@ mod tests {
     struct Toned {
         on: Option<PickerRef>,
         changes: Vec<Change>,
+        /// AgX's values as the panel shows them.
+        state: ToolState,
     }
 
     /// AgX's section in `which`, open on Settings.
@@ -9123,7 +9177,7 @@ mod tests {
                     let changes = section(
                         ui,
                         &Agx,
-                        &untouched(&Agx),
+                        &toned.state,
                         Head {
                             open: true,
                             ..Head::default()
@@ -9139,6 +9193,7 @@ mod tests {
                 Toned {
                     on: None,
                     changes: Vec::new(),
+                    state: untouched(&Agx),
                 },
             );
         harness.run();
@@ -9243,6 +9298,7 @@ mod tests {
                 Toned {
                     on: None,
                     changes: Vec::new(),
+                    state: untouched(&Agx),
                 },
             );
         harness.run();
@@ -9398,6 +9454,67 @@ mod tests {
             .position(|label| label == "Auto tune levels: pick from the photo")
             .unwrap_or_else(|| panic!("{met:?}"));
         assert_eq!(met[at + 1], "Read exposure", "{met:?}");
+    }
+
+    /// Where a slider's value is drawn: the painted text `value`'s left edge.
+    fn value_x(harness: &Harness<'_, impl Sized>, value: &str) -> f32 {
+        fn find(shape: &egui::Shape, value: &str) -> Option<f32> {
+            match shape {
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| find(s, value)),
+                egui::Shape::Text(text) if text.galley.text() == value => Some(text.pos.x),
+                _ => None,
+            }
+        }
+        (harness.output().shapes.iter())
+            .find_map(|clipped| find(&clipped.shape, value))
+            .unwrap_or_else(|| panic!("no {value}"))
+    }
+
+    /// Toe power's warning shows at once on a change pending that makes the curve fall
+    /// back, its message darktable's, heard as the slider's description, and Shoulder
+    /// power's value stays where it was drawn without it; the Settings tab with the toe's
+    /// warning on, in each theme.
+    #[test]
+    fn toe_power_s_warning_follows_a_pending_change() {
+        let mut harness = panel(&Agx, untouched(&Agx));
+        harness.set_size(egui::vec2(400.0, 700.0));
+        harness.run();
+        let slider = harness.get_by_role_and_label(Role::Slider, "Toe power");
+        let promise = slider.accesskit_node().description().unwrap_or_default();
+        assert!(promise.starts_with("Contrast in shadows"), "{promise}");
+        let (toe, shoulder) = (value_x(&harness, "1.50"), value_x(&harness, "3.30"));
+        let state = &mut harness.state_mut().state;
+        Pending::Control {
+            tool: "agx",
+            control: "range_black_relative_ev",
+            value: ControlValue::Number(-2.0),
+        }
+        .show(&Agx, state, &testing::image());
+        let warned = |id| state.warnings.iter().any(|w| w.id == id && w.on);
+        assert!(warned("toe") && !warned("shoulder"));
+        harness.run();
+        let slider = harness.get_by_role_and_label(Role::Slider, "Toe power");
+        let message = slider.accesskit_node().description().unwrap_or_default();
+        assert!(
+            message.starts_with("Toe power cannot be applied"),
+            "{message}"
+        );
+        assert_eq!(value_x(&harness, "1.50"), toe);
+        assert_eq!(value_x(&harness, "3.30"), shoulder);
+
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = toned(which);
+            Pending::Control {
+                tool: "agx",
+                control: "range_black_relative_ev",
+                value: ControlValue::Number(-2.0),
+            }
+            .show(&Agx, &mut harness.state_mut().state, &testing::image());
+            harness.run();
+            harness.snapshot(format!("agx-settings-line-{theme}"));
+            results.extend_harness(&mut harness);
+        }
     }
 
     /// AgX's Settings tab with its pickers drawn, Auto tune levels' on, in each theme.

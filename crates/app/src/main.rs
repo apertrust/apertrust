@@ -10986,6 +10986,7 @@ mod tests {
                     computed: Vec::new(),
                     readouts: Vec::new(),
                     actions: Vec::new(),
+                    warnings: Vec::new(),
                 }],
                 settings: Vec::new(),
                 edited,
@@ -11152,6 +11153,7 @@ mod tests {
                 computed: Vec::new(),
                 readouts: Vec::new(),
                 actions: Vec::new(),
+                warnings: Vec::new(),
             }],
             settings: Vec::new(),
             edited: false,
@@ -14827,6 +14829,7 @@ mod tests {
             computed: Vec::new(),
             readouts: Vec::new(),
             actions: Vec::new(),
+            warnings: Vec::new(),
         };
         // Its Shape tab, where the Midtones group is.
         let mut panels = tools::Panels::default();
@@ -14939,6 +14942,7 @@ mod tests {
             computed: Vec::new(),
             readouts: Vec::new(),
             actions: Vec::new(),
+            warnings: Vec::new(),
         };
         let mut mirror = crate::mirror::tests::mirror();
         mirror.apply(Event::Opened(crate::mirror::tests::photo(1)));

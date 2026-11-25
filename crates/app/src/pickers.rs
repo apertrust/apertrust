@@ -1985,6 +1985,7 @@ mod tests {
                 computed: Vec::new(),
                 readouts: Vec::new(),
                 actions: Vec::new(),
+                warnings: Vec::new(),
             }],
             settings: Vec::new(),
             edited: false,
