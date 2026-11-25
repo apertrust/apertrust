@@ -285,12 +285,14 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// Reset Edit, which it adds to the photo's and a thumbnail's menus, and whose ⋯ holds
 /// Compress History, Truncate History and Create a Style…, then Discard History… apart, as
 /// the destructive one; Collections, the Photos tab's first; Styles, whose ⋯ holds Create
-/// a Style… (decision 106); and Export, its last ([`export::EXPORT`]). The pages of the
-/// first four are their own widgets as custom rows, which keep what each drew before
-/// (decision 93): Scopes' the graph with its buttons, History's its steps, Collections' its
-/// recents line and its Folders, Styles' its lists; Export's are setting rows in groups,
-/// with custom rows of its own. Scopes, History and Collections are open at first, Styles
-/// and Export closed, as every processing tool is ([`ToolDefinition::open_at_first`]).
+/// a Style… (decision 106); Metadata between Collections and Styles
+/// ([`metadata::METADATA`]); and Export, its last ([`export::EXPORT`]). The pages of Scopes,
+/// History, Collections and Styles are their own widgets as custom rows, which keep what each
+/// drew before (decision 93): Scopes' the graph with its buttons, History's its steps,
+/// Collections' its recents line and its Folders, Styles' its lists; Metadata's are facts
+/// in groups; Export's are setting rows in groups, with custom rows of its own. Scopes,
+/// History and Collections are open at first, Metadata, Styles and Export closed, as every
+/// processing tool is ([`ToolDefinition::open_at_first`]).
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -401,6 +403,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         rows_shown: false,
         tips: &[],
     },
+    metadata::METADATA,
     UtilityDefinition {
         tool: ToolDefinition {
             id: "styles",
@@ -550,6 +553,7 @@ mod tests {
             ("scopes", true),
             ("history", true),
             ("collections", true),
+            ("metadata", false),
             ("styles", false),
             ("export", false),
         ];

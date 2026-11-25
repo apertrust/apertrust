@@ -80,7 +80,7 @@ impl Exposure {
 
 /// An exposure time by darktable's rule (`dt_util_format_exposure`), with `s` for its ″: a
 /// fraction of a second below 0.29 s or where the fraction is whole, else in seconds.
-fn shutter(seconds: f32, words: &Translator) -> String {
+pub(crate) fn shutter(seconds: f32, words: &Translator) -> String {
     let number = |value: f32, decimals| words.format_number(f64::from(value), decimals, false);
     if seconds >= 1.0 {
         if seconds.round() == seconds {

@@ -1359,3 +1359,5 @@ tool-metadata-fact-satellites-none = Aparat nie zapisał satelitów
 tool-metadata-fact-map_datum-label = Układ odniesienia
 tool-metadata-fact-map_datum-tag = GPSMapDatum, EXIF GPS 0x0012
 tool-metadata-fact-map_datum-none = Aparat nie zapisał układu odniesienia
+tool-metadata-fact-rating-label = Ocena
+tool-metadata-fact-colour_labels-label = Etykiety kolorów

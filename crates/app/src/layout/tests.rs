@@ -30,7 +30,7 @@ use crate::settings::testing::Folder;
 /// holds Collections, pinned ([`DEFAULT_PINNED`]), then Styles, then the Export tool, its
 /// last (decisions 73, 90 and 106); History its section alone.
 const DECISION_38: [(&str, &[&str]); 7] = [
-    ("photos", &["collections", "styles", "export"]),
+    ("photos", &["collections", "metadata", "styles", "export"]),
     (
         "adjust",
         &[
@@ -348,6 +348,7 @@ fn the_hidden_tab_lists_the_hidden_tools_in_processing_order() {
         "soften",
         "vignette",
         "colorout",
+        "metadata",
         "styles",
     ]
     .into_iter()
@@ -514,7 +515,7 @@ fn hidden_wins_over_the_lists_but_for_export() {
     assert!(shown.hidden.contains(&"vignette"));
     assert_eq!(
         tab(&shown, "photos").order,
-        ["collections", "styles", "export"]
+        ["collections", "metadata", "styles", "export"]
     );
     assert!(!shown.hidden.contains(&EXPORT));
 }
@@ -610,7 +611,7 @@ fn export_goes_to_the_photos_tab_else_the_first_holding_tools() {
     );
     assert_eq!(
         tab(&shown, "photos").order,
-        ["collections", "styles", EXPORT]
+        ["collections", "metadata", "styles", EXPORT]
     );
     let (shown, _) = shown_with_seen_but(&[], "skin", &[]);
     assert_eq!(tab(&shown, "skin").order, [EXPORT]);
@@ -754,7 +755,7 @@ fn a_newer_version_s_file_is_read_and_never_written() {
     assert!(warnings.iter().any(|w| w.contains("newer")), "{warnings:?}");
     assert_eq!(
         tab(&workspace.shown, "photos").order,
-        ["collections", "styles", EXPORT]
+        ["collections", "metadata", "styles", EXPORT]
     );
     holds_the_invariants(&workspace.shown, &known());
 }
@@ -779,7 +780,7 @@ fn a_person_s_own_workspace_opens_from_its_file() {
     holds_the_invariants(shown, &known());
     assert_eq!(
         tab(shown, "photos").order,
-        ["collections", "styles", EXPORT]
+        ["collections", "metadata", "styles", EXPORT]
     );
     assert_eq!(tab(shown, "skin").order, ["exposure"]);
     // Every other tool of Adjust's defaults joins it, in their order around AgX.
@@ -1272,7 +1273,10 @@ fn a_write_keeps_a_hand_edit() {
     let text = std::fs::read_to_string(folder.0.join("default.toml")).unwrap();
     let layout = parsed(&text);
     assert_eq!(layout.tabs.len(), 2, "the hand edit's tabs");
-    assert_eq!(layout.order["photos"], ["export", "collections", "styles"]);
+    assert_eq!(
+        layout.order["photos"],
+        ["export", "collections", "metadata", "styles"]
+    );
     // Scopes, which the file names nowhere, is new to it, and pinned as Default pins it.
     assert_eq!(layout.pinned["adjust"], ["scopes", "exposure"]);
     assert_eq!(layout.order["adjust"][0], "future-tool");
@@ -2052,7 +2056,10 @@ fn a_toolbar_change_keeps_a_hand_edit_and_unknown_ids() {
         Some(&owned(&["import", "cull", "redo"])[..])
     );
     assert_eq!(layout.tabs.len(), 2, "the hand edit's tabs");
-    assert_eq!(layout.order["photos"], ["export", "collections", "styles"]);
+    assert_eq!(
+        layout.order["photos"],
+        ["export", "collections", "metadata", "styles"]
+    );
     assert_eq!(layout.order["skin"], ["exposure"]);
     let table: Table = text.parse().unwrap();
     assert_eq!(table["colour"].as_str(), Some("amber"));
@@ -2119,7 +2126,7 @@ fn reset_toolbar_takes_the_file_s_list_out_and_keeps_the_rest() {
     assert_eq!(table["colour"].as_str(), Some("amber"));
     assert_eq!(
         parsed(&text).order["photos"],
-        ["export", "collections", "styles"]
+        ["export", "collections", "metadata", "styles"]
     );
     let (read, warnings) = Workspace::open(Some(&folder.0), DEFAULT);
     assert!(warnings.is_empty(), "{warnings:?}");

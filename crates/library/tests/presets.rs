@@ -554,6 +554,27 @@ fn the_built_in_presets_are_export_s_two_written_in_the_one_layout() {
     assert!(presets::builtins("exposure").is_empty());
 }
 
+/// The Metadata tool's three, views of its rows and groups (decision 110), each in the one
+/// layout, its lists as ids joined by spaces.
+#[test]
+fn the_metadata_tool_s_built_in_presets_are_its_three_views() {
+    let builtins = presets::builtins("metadata");
+    let ids: Vec<&str> = builtins.iter().map(|(id, _)| *id).collect();
+    assert_eq!(ids, ["essentials", "everything", "iptc-for-agencies"]);
+    let names: Vec<&str> = builtins.iter().map(|(_, s)| s.name.as_str()).collect();
+    assert_eq!(names, ["Essentials", "Everything", "IPTC for agencies"]);
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/presets/metadata");
+    for (id, stored) in &builtins {
+        assert_eq!(stored.settings_tool.as_deref(), Some("metadata"), "{id}");
+        assert_eq!(stored.newer(), None, "{id}");
+        let text = std::fs::read_to_string(data.join(format!("{id}.appreset"))).unwrap();
+        assert_eq!(stored.to_xml("0.1.0"), text, "{id}");
+    }
+    let open = (builtins[0].1.settings.iter()).find(|(key, _)| key == "metadata.open");
+    let open = open.map(|(_, value)| value.as_str());
+    assert_eq!(open, Some("basic exposure lens content"));
+}
+
 /// The built-in styles: eight, in their order, each a style of one tool's entry with
 /// nothing a write would drop, in the one layout, and its British English name, the three
 /// black-and-white ones in their folder.

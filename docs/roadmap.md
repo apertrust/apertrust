@@ -362,8 +362,8 @@ The library's steps 10 to 20, 15b, 19b, 19c and 19d, [listed below](#the-library
 - [ ] A camera card opened as a folder view-only, nothing written on it, with its banner, ahead of Import (#674, decision 85; [gui.md](gui.md#a-card-opened-as-a-folder)); the banner's Import… comes with Import's 20a1.
 - [ ] Keywords, in the Keywords tool; darktable's ratings, labels, keywords and metadata fields read from its XMP files.
 - [ ] The Metadata tool (decision 110; [gui.md](gui.md#the-metadata-tool)), darktable's image information and metadata editor in one, in eleven groups after EXIF and IPTC Core, one slice at a time:
-  - [ ] 1: read-only for one photo, the active one: Basic but the copy's name, Camera, Exposure, Lens and GPS from the session's `Photo` and `apertrust-raw`'s EXIF, the IPTC groups closed and disabled, ＋'s Rows Shown, Ctrl+C and Copy Information; needing none of the library's steps;
-  - [ ] 2: several photos, read-only: Different, ranges and totals from the index's summary, Maker notes for the makers rawler reads, and the presets, Default settings, Essentials, Everything and IPTC for agencies;
+  - [x] 1: read-only for one photo, the active one: Basic but the copy's name, Camera, Exposure, Lens and GPS from the session's `Photo` and `apertrust-raw`'s EXIF, the IPTC groups closed and disabled, ＋'s Rows Shown, Ctrl+C, Copy Information and Copy Coordinates, and the presets, Default settings, Essentials, Everything and IPTC for agencies; needing none of the library's steps;
+  - [ ] 2: several photos, read-only: Different, ranges and totals from the index's summary, and Maker notes for the makers rawler reads;
   - [ ] 3: storage and editing for one photo, with steps 14 and 15: darktable's fields and the copy's name, the camera's own text in an empty field, failed writes and view-only photos;
   - [ ] 4: editing several photos: typing over Different, the ⌄ list, Clear on N Photos, batches and jobs;
   - [ ] 5: Export's Notes, left out unless its Metadata group includes them, and the copy's name as `$(VERSION.NAME)`.

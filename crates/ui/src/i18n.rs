@@ -1318,6 +1318,24 @@ mod tests {
                 args.set("more", 0);
                 // The caption's tooltips: what a control does, with its key.
                 args.set("action", "Rate 3 stars");
+                // The Metadata tool's values and tooltips (decision 110).
+                args.set("code", "7");
+                args.set("megapixels", "24.0");
+                args.set("when", "8 Nov 2026, 10:42");
+                args.set("steps", 14);
+                args.set("x", "300");
+                args.set("y", "300");
+                args.set("time", "08:10:01");
+                args.set("type", "ISO speed");
+                args.set("source", "D65");
+                args.set("range", "Macro");
+                args.set("focal", "24–70 mm");
+                args.set("aperture", "f/2.8");
+                args.set("degrees", "38");
+                args.set("minutes", "42.6");
+                args.set("mode", "auto");
+                args.set("fired", "yes");
+                args.set("red_eye", "no");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

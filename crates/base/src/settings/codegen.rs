@@ -1034,12 +1034,15 @@ mod tests {
     fn the_schema_is_read_and_its_ids_are_unique() {
         let schema = parse(SCHEMA, SCHEMA_PATH).unwrap_or_else(|errors| panic!("{errors:?}"));
         let owned = |owner: &str| schema.settings.iter().filter(|s| s.owner == owner).count();
-        // Two tools have settings: Exposure's Picker target, Lightness and reference, and
-        // Colour calibration's area colour mapping, generated together as the tools'
-        // crate generates them.
-        let tools = ["tool:exposure", "tool:channelmixerrgb"];
+        // Three tools have settings, generated together as the tools' crate generates them:
+        // Exposure's Picker target, Lightness and reference, Colour calibration's area colour
+        // mapping, and the Metadata tool's rows shown and groups open.
+        let tools = ["tool:exposure", "tool:channelmixerrgb", "tool:metadata"];
         assert_eq!(
-            owned("app") + owned("engine") + owned("export") + owned(tools[0]) + owned(tools[1]),
+            owned("app")
+                + owned("engine")
+                + owned("export")
+                + tools.map(owned).iter().sum::<usize>(),
             schema.settings.len()
         );
         let (app, engine) = (schema.generate("app"), schema.generate("engine"));
@@ -1047,6 +1050,9 @@ mod tests {
         assert_eq!(
             ids(&tool),
             [
+                "metadata.shown",
+                "metadata.hidden",
+                "metadata.open",
                 "tools.exposure.target",
                 "tools.exposure.lightness",
                 "tools.exposure.reference_lightness",

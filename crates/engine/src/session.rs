@@ -175,6 +175,9 @@ use crate::sidecar;
 pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_entry, tool_values};
 pub use crate::view::{FramePlace, Placement, View, ViewScale};
 pub use apertrust_library::Rating;
+/// The raw's EXIF a `Photo` carries, as `apertrust-raw` reads it, for a client that reads no
+/// raw (decision 110).
+pub use apertrust_raw::Exif;
 pub use batch::{BatchAction, BatchEvent, Batched, Skip};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};

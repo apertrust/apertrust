@@ -28,6 +28,10 @@ apertrust-operations.workspace = true
 apertrust-plugin.workspace = true
 apertrust-tools.workspace = true
 apertrust-ui.workspace = true
+# A camera clock's date and time as the Metadata tool hands it to the words (decision 110),
+# and in the tests a history step's time on the local clock, so its tooltip reads the same in
+# every zone.
+chrono.workspace = true
 rfd.workspace = true
 # The settings' values as settings.toml keeps them, which the Settings dialog's rows show
 # and change without their types.
@@ -54,8 +58,6 @@ apertrust-engine = { workspace = true, features = ["testing"] }
 apertrust-base = { workspace = true, features = ["jobs"] }
 # Its `testing::Sample` tool, whose rows the renderer's tests draw too.
 apertrust-tools = { workspace = true, features = ["testing"] }
-# A history step's time on the local clock, so its tooltip reads the same in every zone.
-chrono.workspace = true
 egui_kittest.workspace = true
 naga.workspace = true
 # The app icon's platform files, rendered from its SVGs by `examples/icons.rs`

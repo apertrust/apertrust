@@ -70,6 +70,7 @@ mod layout;
 mod library;
 mod log_window;
 mod menus;
+mod metadata;
 mod mirror;
 mod paths;
 mod pickers;
@@ -1503,6 +1504,8 @@ struct App {
     export: export::Export,
     /// When the session is asked for the Export tool's preview ([`App::preview_export`]).
     export_previews: export::Previews,
+    /// The Metadata tool, its view and its presets (decision 110).
+    metadata: metadata::Metadata,
     /// The Export tool's folder button, while whether its path is a folder is asked of the
     /// disk before the folder dialog opens.
     export_folder: export::folder::Looking,
@@ -2106,6 +2109,8 @@ struct Shell {
     rate: Option<rating::Rate>,
     /// The Export tool's settings, as it left them (`export.*`).
     export: export::Values,
+    /// The Metadata tool's view, as it left it (`metadata.*`).
+    metadata: metadata::View,
     /// The tools' settings, as their rows and picks left them (`tools.*`).
     tool_settings: settings::ToolSettings,
     /// Whether Export and Export Again ask before replacing files
@@ -2276,6 +2281,7 @@ impl Shell {
             step: None,
             rate: None,
             export: settings.export.clone(),
+            metadata: settings.metadata.clone(),
             tool_settings: settings.tool_settings.clone(),
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
             discard: alerts::Question::discard(settings.ask_before_discard, false),
@@ -2910,6 +2916,7 @@ impl Shell {
             browser: self.browser,
             keys: self.keymap.overrides().clone(),
             export: self.export.clone(),
+            metadata: self.metadata.clone(),
             tool_settings: self.tool_settings.clone(),
             ask_before_overwrite: self.overwrite.asks(),
             ask_before_discard: self.discard.asks(),
@@ -4747,6 +4754,13 @@ impl App {
         if let Some(folder) = shell.presets.folder(export::ID) {
             export.set_presets(presets::read_settings(&folder, export::ID));
         }
+        // The Metadata tool's view, its settings `--conf` gives kept by ＋ and its presets.
+        let given = apertrust_tools::settings::registry::ALL
+            .iter()
+            .filter(|declared| declared.id().starts_with("metadata."))
+            .filter(|declared| keeper.overridden(**declared))
+            .map(|declared| declared.id().to_owned());
+        let metadata = metadata::Metadata::new(shell.metadata.clone()).given(given);
         prepare(&cc.egui_ctx, &shell, settings.scale);
         let (placement, built_start) = built;
         if let Some(window) = cc.winit_window() {
@@ -4866,6 +4880,7 @@ impl App {
             again: export_again::Again::default(),
             export,
             export_previews: export::Previews::default(),
+            metadata,
             export_folder: export::folder::Looking::default(),
             discarding: None,
             preset_asked: None,
@@ -5758,7 +5773,7 @@ impl App {
             return;
         };
         let words = apertrust_ui::translator(ctx);
-        if tool == export::ID {
+        if tool == export::ID || tool == metadata::ID {
             let title = words.text(&format!("section-{tool}"));
             let taken = || presets::taken_settings(&folder, tool, &words);
             match item {
@@ -5767,6 +5782,11 @@ impl App {
                 }
                 presets::Item::Update(_) | presets::Item::Delete(_) => {
                     self.ask_preset(tool, item, ctx);
+                }
+                presets::Item::Default | presets::Item::Builtin(_) | presets::Item::Apply(_)
+                    if tool == metadata::ID =>
+                {
+                    self.metadata_preset(&folder, item);
                 }
                 presets::Item::Default | presets::Item::Builtin(_) | presets::Item::Apply(_) => {
                     self.export_preset(&folder, item);
@@ -5877,6 +5897,15 @@ impl App {
         self.shell.export = self.export.values().clone();
     }
 
+    /// Default settings, a built-in preset or the person's in `folder`, `item`, applied to
+    /// the Metadata tool's view with no history step (decision 110), as Export's are.
+    fn metadata_preset(&mut self, folder: &Path, item: presets::Item) {
+        if let Some(name) = self.metadata.apply_item(folder, &item) {
+            self.shell.presets.choose(metadata::ID, &name);
+        }
+        self.shell.metadata = self.metadata.view().clone();
+    }
+
     /// What Save as Preset… or Rename… asked as its button was pressed: the tool's values now,
     /// or Export's settings but those `--conf` gives, written as a preset, or its preset
     /// renamed, which is then the one Update, Rename… and Delete… act on. A file that
@@ -5890,7 +5919,18 @@ impl App {
             return;
         };
         let build = apertrust_base::program!().version;
-        let done = if tool == export::ID {
+        let done = if tool == metadata::ID {
+            match &asked {
+                presets::Asked::Save { description, .. } => {
+                    let named = (name.as_str(), description.as_deref());
+                    let settings = self.metadata.preset_settings();
+                    presets::save_settings(&folder, tool, settings, named, build)
+                }
+                presets::Asked::Rename { from, .. } => {
+                    presets::rename_settings(&folder, tool, from, &name)
+                }
+            }
+        } else if tool == export::ID {
             let done = match &asked {
                 presets::Asked::Save { description, .. } => {
                     let named = (name.as_str(), description.as_deref());
@@ -5951,7 +5991,14 @@ impl App {
             return;
         };
         let build = apertrust_base::program!().version;
-        let done = if tool == export::ID {
+        let done = if tool == metadata::ID {
+            if update {
+                let settings = self.metadata.preset_settings();
+                presets::update_settings(&folder, tool, settings, &name, build).map(drop)
+            } else {
+                presets::delete_settings(&folder, tool, &name)
+            }
+        } else if tool == export::ID {
             let done = if update {
                 let settings = self.export.preset_settings();
                 presets::update_settings(&folder, tool, settings, &name, build).map(drop)
@@ -6516,6 +6563,7 @@ impl App {
         let holds = |tool: &str| self.shell.shown_tab().is_some_and(|tab| tab.holds(tool));
         let (collections, exporting) = (holds(library::ID), holds(export::ID));
         let styling = holds(styles::tool::ID);
+        let describing = holds(metadata::ID);
         // The styles are read as the tool first shows, and again after one is created,
         // copied, renamed or deleted, or the language changes.
         if styling
@@ -6553,6 +6601,7 @@ impl App {
                 photo: self.mirror.photo.open(),
                 ..self.shell.styles_head(ui.ctx(), &state)
             }),
+            metadata: describing.then(|| self.metadata_head(ui.ctx(), &state)),
             collections: (self.shell).layout_head(ui.ctx(), library::ID, &state),
             export: exporting.then(|| ExportShown {
                 head: tools::Head {
@@ -6612,11 +6661,13 @@ impl App {
             clearable: styles::tool::unavailable(photo_open, view_only, takes.0, &words).is_none(),
         };
         let export = &mut self.export;
+        let metadata_tool = &mut self.metadata;
         let mut others = |ui: &mut egui::Ui, id: &'static str, cx: &mut utility::Context<'_>| {
             let shown = &mut photos_shown;
             let tools = PhotosTools {
                 collections: &mut library,
                 styles: &mut styles_tool,
+                metadata: &mut *metadata_tool,
                 export,
             };
             photos_tool(ui, id, cx, tools, shown, &mut photos);
@@ -6673,6 +6724,17 @@ impl App {
             self.shell
                 .toggle_section(&styles::tool::declared().tool, false);
         }
+        if photos.metadata_toggle {
+            self.shell.toggle_section(&metadata::definition().tool);
+        }
+        if let Some(text) = photos.copied.take() {
+            ui.ctx().copy_text(text);
+        }
+        if let Some(item) = photos.metadata_preset.take() {
+            self.preset(metadata::ID, item, ui.ctx());
+        }
+        // ＋, a group opened or closed, or a preset applied, as the settings keep them.
+        self.shell.metadata = self.metadata.view().clone();
         self.styles_asked(photos.styles, ui.ctx());
         self.export(export.asked, ui.ctx());
         if export.show_jobs {
@@ -6703,6 +6765,24 @@ impl App {
         }
         self.shell.layout_asked(&state, ui.ctx());
         asked.or(tab_clicked)
+    }
+
+    /// The Metadata tool's header (decision 110): its own ⋯ items, Copy Information and Copy
+    /// Coordinates, then the layout's, with the photo they act on, and its presets.
+    fn metadata_head(&self, ctx: &egui::Context, state: &State) -> tools::Head {
+        let definition = &metadata::definition().tool;
+        let head = self.shell.head(ctx, definition, state, false);
+        let photo = metadata::described(&self.mirror);
+        let mut options = metadata::Metadata::options(&translator(ctx), photo);
+        if !head.options.is_empty() {
+            options.push(apertrust_ui::popup::Entry::Separator);
+        }
+        options.extend(head.options);
+        tools::Head {
+            options,
+            photo: self.mirror.photo.open(),
+            ..head
+        }
     }
 
     /// What the Export tool is told each frame: its groups as the shell keeps them, the
@@ -10095,6 +10175,8 @@ struct PhotosShown {
     collections: tools::Head,
     /// The Styles tool's header, where the tab shown holds it.
     styles: Option<tools::Head>,
+    /// The Metadata tool's header, where the tab shown holds it.
+    metadata: Option<tools::Head>,
     export: Option<ExportShown>,
 }
 
@@ -10102,6 +10184,7 @@ struct PhotosShown {
 struct PhotosTools<'t, 'a> {
     collections: &'t mut library::Collections<'a>,
     styles: &'t mut styles::tool::StylesTool<'a>,
+    metadata: &'t mut metadata::Metadata,
     export: &'t mut export::Export,
 }
 
@@ -10124,6 +10207,11 @@ struct PhotosDrawn {
     styles: Vec<styles::tool::Action>,
     /// Whether the Styles tool's header was toggled.
     styles_toggle: bool,
+    /// Whether the Metadata tool's header was toggled, the item of its presets chosen, and
+    /// the text one of its own ⋯ items copies.
+    metadata_toggle: bool,
+    metadata_preset: Option<presets::Item>,
+    copied: Option<String>,
 }
 
 /// Routes the change of a utility's setting row, `key` in full set to `value` (decision
@@ -10168,9 +10256,14 @@ fn photos_tool(
     let PhotosTools {
         collections,
         styles,
+        metadata,
         export,
     } = tools;
-    if id == styles::tool::ID
+    if id == metadata::ID
+        && let Some(head) = shown.metadata.take()
+    {
+        metadata_section(ui, metadata, cx, head, out);
+    } else if id == styles::tool::ID
         && let Some(head) = shown.styles.take()
     {
         let section = utility::section(ui, styles, cx, head, false);
@@ -10219,6 +10312,30 @@ fn photos_tool(
         out.export = tool.inner;
         out.exported = true;
     }
+}
+
+/// Draws the Metadata tool's section with `head`, what it asked for going into `out`: its
+/// header's registry actions, its toggle, the preset chosen, the text ⋯ copies, and Open
+/// This Folder's action.
+fn metadata_section(
+    ui: &mut egui::Ui,
+    metadata: &mut metadata::Metadata,
+    cx: &mut utility::Context<'_>,
+    head: tools::Head,
+    out: &mut PhotosDrawn,
+) {
+    let section = utility::section(ui, metadata, cx, head, false);
+    for pressed in &section.pressed {
+        match pressed {
+            tools::Pressed::Run(id) => out.run.push(*id),
+            tools::Pressed::Toggle => out.metadata_toggle = true,
+            tools::Pressed::Preset(id) => out.metadata_preset = presets::Item::of(id),
+            tools::Pressed::Own(id) => out.copied = metadata.copied(id, cx),
+            _ => {}
+        }
+    }
+    out.actions.extend(section.actions);
+    out.changes.extend(section.changes);
 }
 
 /// What the tab shown's sections asked for, as [`panel_body`] returns it: Scopes', the
@@ -10300,7 +10417,7 @@ fn panel_body(
                 changes.extend(drawn.changes);
                 history_asked.extend(drawn.actions);
             }
-            library::ID | export::ID | styles::tool::ID => others(ui, id, cx),
+            library::ID | export::ID | styles::tool::ID | metadata::ID => others(ui, id, cx),
             _ => {
                 let tool = tools.iter().find(|tool| tool.definition().tool.id == id);
                 let state_of = values.tools.iter().find(|state| state.tool == id);
@@ -17679,7 +17796,8 @@ mod tests {
         harness
             .get_by_role_and_label(Role::MenuItem, "History")
             .click();
-        harness.run();
+        // The pointer left resting on a header as the menu closes, its tooltip on its way.
+        harness.run_steps(8);
         added_here(&harness, "history", "adjust");
         let header = harness
             .get_by_role_and_label(Role::Button, "History")
@@ -23275,6 +23393,7 @@ mod tests {
                             let mut shown = PhotosShown {
                                 collections: tools::Head::default(),
                                 styles: None,
+                                metadata: None,
                                 export: Some(shown),
                             };
                             let no_titles = |id: &str| id.to_owned();
@@ -23289,6 +23408,8 @@ mod tests {
                                 photos: 1,
                                 clearable: true,
                             };
+                            let mut metadata_tool =
+                                metadata::Metadata::new(metadata::View::default());
                             let mut drawn = PhotosDrawn::default();
                             PanelBody::new().show(ui, |ui| {
                                 for id in [library::ID, export::ID] {
@@ -23296,6 +23417,7 @@ mod tests {
                                     let tools = PhotosTools {
                                         collections: &mut collections,
                                         styles: &mut styles,
+                                        metadata: &mut metadata_tool,
                                         export: &mut *export,
                                     };
                                     photos_tool(ui, id, &mut cx, tools, &mut shown, out);

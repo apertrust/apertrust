@@ -1359,3 +1359,5 @@ tool-metadata-fact-satellites-none = Камера не записала супу
 tool-metadata-fact-map_datum-label = Геодезична система
 tool-metadata-fact-map_datum-tag = GPSMapDatum, EXIF GPS 0x0012
 tool-metadata-fact-map_datum-none = Камера не записала геодезичної системи
+tool-metadata-fact-rating-label = Оцінка
+tool-metadata-fact-colour_labels-label = Кольорові мітки

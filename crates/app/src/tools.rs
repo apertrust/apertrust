@@ -76,8 +76,8 @@ use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
-    ActionEnd, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, End, Face, Fields, Group,
-    GroupKind, LineStart, MAX_POINTS, PickerKind, ProcessingDefinition, ProcessingTool,
+    ActionEnd, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, End, Face, Fact, Fields,
+    Group, GroupKind, LineStart, MAX_POINTS, PickerKind, ProcessingDefinition, ProcessingTool,
     PublishedValues, ReadoutDef, Reset, Row, SettingRow, Slider, ToolDefinition, Track, Unit, View,
     Widget, Word, check, messages,
 };
@@ -1202,9 +1202,17 @@ pub fn section(
 pub fn about(words: &Translator, id: &str, facts: Option<&Facts>) -> parts::About {
     let description = words.text(&messages::description(id));
     if let Some(utility) = utility::utility(id) {
+        // A utility's own Kind line where its words hold one, as the Metadata tool's, which
+        // writes the photos' metadata (decision 110); else that it edits nothing.
+        let own = format!("tool-{id}-kind");
+        let kind = if words.has(&own) {
+            words.text(&own)
+        } else {
+            words.text(about::Kind::EditsNothing.message())
+        };
         return parts::About {
             description,
-            kind: Some(words.text(about::Kind::EditsNothing.message())),
+            kind: Some(kind),
             place: utility
                 .measures
                 .map(|place| parts::Place::Measures(words.text(place.message()))),
@@ -1286,6 +1294,16 @@ pub trait Rows {
     /// Draws `row`, one of the rows its kind draws.
     fn own(&self, ui: &mut egui::Ui, row: &Row, changes: &mut Vec<Change>);
 
+    /// Draws `facts`, a run of a utility's facts the page shows together, as one list
+    /// (decision 110); a processing tool has none.
+    fn facts(&self, _ui: &mut egui::Ui, _facts: &[&Fact], _changes: &mut Vec<Change>) {}
+
+    /// The tooltip of its group `id`'s title, where it gives one, as the Metadata tool's
+    /// name the standard each group follows (decision 110).
+    fn group_tip(&self, _id: &str) -> Option<String> {
+        None
+    }
+
     /// The title of its group `id` of the kind `kind`: the one its id and kind imply,
     /// unless a utility declares its own (decision 93).
     fn title(&self, id: &str, kind: GroupKind) -> String {
@@ -1352,17 +1370,47 @@ pub fn page(ui: &mut egui::Ui, rows: &dyn Rows, tab: usize, changes: &mut Vec<Ch
     let tab = definition.tabs.get(tab).map_or(&[][..], |tab| tab.rows);
     let top = ui.cursor().top();
     for list in [definition.before, tab, definition.after] {
-        for row in list {
-            draw_row(ui, rows, row, top, changes);
-        }
+        draw_list(ui, rows, list, top, changes);
     }
 }
 
 /// Draws `list`, the rows of one container, a group's, from where `ui` is now.
 fn draw_rows(ui: &mut egui::Ui, rows: &dyn Rows, list: &[Row], changes: &mut Vec<Change>) {
     let top = ui.cursor().top();
-    for row in list {
-        draw_row(ui, rows, row, top, changes);
+    draw_list(ui, rows, list, top, changes);
+}
+
+/// Draws `list`'s rows in its container, whose first row starts at `top`: each run of
+/// facts the page shows together as one list ([`Rows::facts`], decision 110), every other
+/// row by itself.
+fn draw_list(
+    ui: &mut egui::Ui,
+    rows: &dyn Rows,
+    list: &[Row],
+    top: f32,
+    changes: &mut Vec<Change>,
+) {
+    let mut at = 0;
+    while at < list.len() {
+        let run: Vec<&Fact> = list[at..]
+            .iter()
+            .map_while(|row| match row {
+                Row::Fact(fact) => Some(fact),
+                _ => None,
+            })
+            .collect();
+        if run.is_empty() {
+            draw_row(ui, rows, &list[at], top, changes);
+            at += 1;
+            continue;
+        }
+        at += run.len();
+        let shown: Vec<&Fact> = (run.into_iter())
+            .filter(|fact| !rows.hidden(&Row::Fact(**fact)))
+            .collect();
+        if !shown.is_empty() {
+            rows.facts(ui, &shown, changes);
+        }
     }
 }
 
@@ -2724,22 +2772,27 @@ fn group_row(
         return;
     }
     // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none.
+    let tip = page.group_tip(id);
     if rows.is_empty() {
         let later = page.words().text("section-tab-later");
-        CollapsibleGroup::new(&title, false)
+        let mut group = CollapsibleGroup::new(&title, false)
             .first(first)
-            .disabled(&later)
-            .show(ui, |_| {});
+            .disabled(&later);
+        if let Some(tip) = &tip {
+            group = group.tip(tip);
+        }
+        group.show(ui, |_| {});
         return;
     }
     let open = page.group_open(id);
     let set = page.set_in(rows);
     // A scope, whose response is the group's row while it is closed, carries the tooltip.
     let group = ui.scope(|ui| {
-        CollapsibleGroup::new(&title, open)
-            .first(first)
-            .set(set)
-            .show(ui, |ui| draw_rows(ui, page, rows, changes))
+        let mut group = CollapsibleGroup::new(&title, open).first(first).set(set);
+        if let Some(tip) = &tip {
+            group = group.tip(tip);
+        }
+        group.show(ui, |ui| draw_rows(ui, page, rows, changes))
     });
     if !open && set > 0 {
         let mut args = Args::new();
@@ -4756,6 +4809,15 @@ mod tests {
                 ("channelmixerrgb", "colour_checker"),
                 ("demosaic", "capture_sharpen_controls"),
                 ("export", "global"),
+                ("metadata", "basic"),
+                ("metadata", "camera"),
+                ("metadata", "content"),
+                ("metadata", "creator"),
+                ("metadata", "exposure"),
+                ("metadata", "gps"),
+                ("metadata", "lens"),
+                ("metadata", "location"),
+                ("metadata", "rights"),
                 ("temperature", "channel_coefficients"),
             ]
         );

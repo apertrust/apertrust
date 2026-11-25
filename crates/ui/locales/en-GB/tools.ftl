@@ -1431,3 +1431,5 @@ tool-metadata-fact-satellites-none = The camera recorded no satellites
 tool-metadata-fact-map_datum-label = Map datum
 tool-metadata-fact-map_datum-tag = GPSMapDatum, EXIF GPS 0x0012
 tool-metadata-fact-map_datum-none = The camera recorded no map datum
+tool-metadata-fact-rating-label = Rating
+tool-metadata-fact-colour_labels-label = Colour labels

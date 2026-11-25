@@ -37,7 +37,7 @@ use std::cell::RefCell;
 
 use apertrust_engine::session::{Command, ControlValue};
 use apertrust_tools::utility::UtilityDefinition;
-use apertrust_tools::{GroupKind, Reset, Row, SettingRow, ToolDefinition, Widget, messages};
+use apertrust_tools::{Fact, GroupKind, Reset, Row, SettingRow, ToolDefinition, Widget, messages};
 use apertrust_ui::components as parts;
 use apertrust_ui::popup::Entry as MenuEntry;
 use apertrust_ui::{Translator, translator};
@@ -141,6 +141,43 @@ pub trait UtilityTool {
     fn wheel(&self) -> parts::Wheel {
         parts::Wheel::Pointer
     }
+
+    /// Whether its collapsible group `group` is open, where it keeps its groups' open state
+    /// itself, as the Metadata tool does in its settings so that its presets hold it
+    /// (decision 110); none leaves it to the shell's `edit.groups`.
+    fn open(&self, _group: &str) -> Option<bool> {
+        None
+    }
+
+    /// Its collapsible group `group` opened or closed, where it keeps their state
+    /// ([`Self::open`]).
+    fn set_open(&mut self, _group: &str, _open: bool) {}
+
+    /// Whether its page hides `row` now, as the Metadata tool's ＋ hides a row, and a group
+    /// whose every row it hides.
+    fn hidden(&self, _row: &Row) -> bool {
+        false
+    }
+
+    /// Draws `facts`, a run of its facts its page shows together (decision 110), and
+    /// returns what they asked for.
+    fn facts(
+        &mut self,
+        _ui: &mut egui::Ui,
+        _facts: &[&Fact],
+        _cx: &mut Context<'_>,
+    ) -> Vec<Self::Action> {
+        Vec::new()
+    }
+
+    /// What its header's ＋ opens, where its declaration has one (`rows_shown`), in
+    /// `words`: its groups, each a submenu of its rows, checked where shown.
+    fn rows_menu(&self, _words: &Translator) -> Vec<MenuEntry> {
+        Vec::new()
+    }
+
+    /// The row `id` was chosen in ＋: show it, or hide it.
+    fn row_chosen(&mut self, _id: &str) {}
 }
 
 /// What builds a utility's presets' pull-down as it opens, in the words given
@@ -171,6 +208,7 @@ pub fn section<T: UtilityTool>(
     let definition = &tool.definition().tool;
     let [title, reset, name] = titles(cx.words, definition);
     let about = about(cx.words, definition);
+    let shown_name = cx.words.text(&messages::rows_shown(definition.id));
     let (photo, layout) = (head.photo, head.layout);
     let (mut changes, mut actions) = (Vec::new(), Vec::new());
     let presets = (head.presets.as_ref()).and_then(|menu| tool.presets(menu));
@@ -179,7 +217,15 @@ pub fn section<T: UtilityTool>(
         let words = translator(ui.ctx());
         section = section.presets(true).presets_menu(move || build(&words));
     }
+    if tool.definition().rows_shown {
+        section = section
+            .rows_shown(&shown_name)
+            .rows_menu(tool.rows_menu(cx.words));
+    }
     let out = section.show(ui, |ui| (changes, actions) = rows(ui, tool, cx));
+    if let Some(id) = &out.rows {
+        tool.row_chosen(id);
+    }
     let mut pressed = tools::pressed(ui, definition, &out, photo, layout);
     if pressed.contains(&Pressed::Reset) {
         tool.reset(cx);
@@ -213,7 +259,18 @@ pub fn rows<T: UtilityTool>(
     };
     let mut changes = Vec::new();
     tools::page(ui, &page, 0, &mut changes);
-    let (_, _, actions) = page.drawn.into_inner();
+    let (tool, _, actions) = page.drawn.into_inner();
+    // A group the utility keeps the state of is opened or closed by it, never the shell.
+    changes.retain(|change| match change {
+        Change::Group { group, .. } => match tool.open(group) {
+            Some(open) => {
+                tool.set_open(group, !open);
+                false
+            }
+            None => true,
+        },
+        _ => true,
+    });
     (changes, actions)
 }
 
@@ -273,8 +330,12 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
         &self.utility.tool
     }
 
-    /// As the settings keep it, else open where its declaration says it opens at first.
+    /// As the utility keeps it where it does, else as the settings keep it, else open where
+    /// its declaration says it opens at first.
     fn group_open(&self, group: &str) -> bool {
+        if let Some(open) = self.drawn.borrow().0.open(group) {
+            return open;
+        }
         let groups = self.settings.edit.groups.get(self.utility.tool.id);
         let kept = groups.and_then(|groups| groups.get(group));
         kept.copied().unwrap_or(self.utility.opens(group))
@@ -303,6 +364,23 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
 
     fn title(&self, id: &str, kind: GroupKind) -> String {
         self.words.text(&self.utility.title(id, kind))
+    }
+
+    /// Its declaration's (`UtilityDefinition::tips`).
+    fn group_tip(&self, id: &str) -> Option<String> {
+        let tips = self.utility.tips.iter();
+        let (_, tip) = tips.into_iter().find(|(group, _)| *group == id)?;
+        Some(self.words.text(tip))
+    }
+
+    fn hidden(&self, row: &Row) -> bool {
+        self.drawn.borrow().0.hidden(row)
+    }
+
+    /// A run of facts, by the utility's [`UtilityTool::facts`].
+    fn facts(&self, ui: &mut egui::Ui, facts: &[&Fact], _changes: &mut Vec<Change>) {
+        let (tool, cx, actions) = &mut *self.drawn.borrow_mut();
+        actions.extend(tool.facts(ui, facts, cx));
     }
 
     /// A setting naming its key in full as the utility keeps it, live but where `--conf`
