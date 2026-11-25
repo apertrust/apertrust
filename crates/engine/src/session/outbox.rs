@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
-use super::{Event, LibraryEvent, SessionError, Topic, Wake};
+use super::{BatchEvent, Event, LibraryEvent, SessionError, Topic, Wake};
 use crate::export_job::ExportStatus;
 use crate::jobs::JobEvent;
 
@@ -210,6 +210,8 @@ fn kind(event: &Event) -> &'static str {
             ExportStatus::Finished(_) => "Export Finished",
         },
         Event::ExportPreview { .. } => "ExportPreview",
+        Event::Batch(BatchEvent::Changed { .. }) => "Batch Changed",
+        Event::Batch(BatchEvent::Ended { .. }) => "Batch Ended",
         Event::Library(event) => match event {
             LibraryEvent::Opened { .. } => "Library Opened",
             LibraryEvent::Subfolders { .. } => "Library Subfolders",
@@ -278,6 +280,10 @@ impl fmt::Display for Line<'_> {
                 }
             }
             Event::Export { job, .. } => write!(f, ", job {job}")?,
+            Event::Batch(BatchEvent::Changed { batch, .. }) => write!(f, ", batch {batch}")?,
+            Event::Batch(BatchEvent::Ended { batch, command, .. }) => {
+                write!(f, ", batch {batch}, command {command}")?
+            }
             Event::Library(event) => write!(f, ", open {}", event.open())?,
             Event::Failed(SessionError::Open { open, .. }) => write!(f, ", open {open}")?,
             Event::Failed(SessionError::Refused { command, .. }) => {

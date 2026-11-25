@@ -919,6 +919,10 @@ impl Engine {
     /// will have, changes nothing: that word reaches the selection after the cancel.
     pub(super) fn cancel_job(&mut self, job: super::JobId) -> Result<(), SessionError> {
         let accepted = self.jobs.cancel(job)?;
+        // A batch on several photos it runs reaches no more photos (decision 109).
+        if accepted {
+            self.batch_cancelled(job);
+        }
         if accepted
             && let Some((reading, ended)) = &self.folder
             && *reading == job

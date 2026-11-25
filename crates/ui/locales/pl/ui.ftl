@@ -340,6 +340,16 @@ job-cache-clear-now = Usunięto { $done } z { $total }
 job-cache-cleared = Usunięto { job-cache-entries }, { job-cache-size }
 job-cache-clear-cancelled = Czyszczenie anulowane. Usunięto { job-cache-entries }, { job-cache-size }
 
+job-apply-style = Stosowanie „{ $style }” · { photo-count }
+job-apply-style-now = Gotowe: { $done } z { $total } · teraz { $photo }
+job-apply-style-outcome =
+    { $count ->
+        [one] Zastosowano „{ $style }” do { $changed } z { $count } zdjęcia
+        [few] Zastosowano „{ $style }” do { $changed } z { $count } zdjęć
+        [many] Zastosowano „{ $style }” do { $changed } z { $count } zdjęć
+       *[other] Zastosowano „{ $style }” do { $changed } z { $count } zdjęcia
+    }
+
 job-export-photo =
     Eksportowanie { $number } / { $total } do { $storage ->
        *[disk] pliku na dysku

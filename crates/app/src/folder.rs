@@ -1228,6 +1228,7 @@ mod tests {
             detail: None,
             progress: Progress::default(),
             retries: None,
+            quiet: false,
         }
     }
 

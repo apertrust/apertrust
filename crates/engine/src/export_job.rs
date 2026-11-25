@@ -434,10 +434,6 @@ impl Snapshot {
     /// over the file as read compares (decision 109), hashed as it is asked: `None` where
     /// there was no file, and where one was there that could not be read, which a write over
     /// it then finds changed.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the apply-style job's, #373's next step")
-    )]
     pub(crate) fn file_stamp(&self) -> Option<FileStamp> {
         let (stamp, xml) = (self.stamp?, self.xml.as_ref().ok()?.as_ref()?);
         Some(FileStamp {
@@ -2283,6 +2279,7 @@ mod tests {
                 total: Some(2),
             },
             retries: None,
+            quiet: false,
         };
         let queued = JobEvent::State {
             job,

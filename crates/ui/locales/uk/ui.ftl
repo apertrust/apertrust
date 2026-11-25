@@ -339,6 +339,16 @@ job-cache-clear-now = Видалено { $done } із { $total }
 job-cache-cleared = Видалено { job-cache-entries }, { job-cache-size }
 job-cache-clear-cancelled = Очищення скасовано: видалено { job-cache-entries }, { job-cache-size }
 
+job-apply-style = Застосування «{ $style }» · { photo-count }
+job-apply-style-now = Готово { $done } із { $total } · зараз { $photo }
+job-apply-style-outcome =
+    { $count ->
+        [one] «{ $style }» застосовано до { $changed } із { $count } знімка
+        [few] «{ $style }» застосовано до { $changed } із { $count } знімків
+        [many] «{ $style }» застосовано до { $changed } із { $count } знімків
+       *[other] «{ $style }» застосовано до { $changed } із { $count } знімка
+    }
+
 job-export-photo =
     Експортування { $number } / { $total } до { $storage ->
        *[disk] файлу на диску

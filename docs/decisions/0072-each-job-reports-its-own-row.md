@@ -14,7 +14,7 @@ darktable's background jobs panel (`libs/backgroundjobs.c` at the reference rele
 
 | Event | Fields | Kind | darktable's |
 | --- | --- | --- | --- |
-| `Added` | `job`, `kind`, `queue`, `title: Message`, `cancellable`, `destination: Option<Destination>`, `detail: Option<Message>`, `progress: Progress`, `retries: Option<JobId>`, `quiet: bool` (planned) | notice | `added`, `cancellable` |
+| `Added` | `job`, `kind`, `queue`, `title: Message`, `cancellable`, `destination: Option<Destination>`, `detail: Option<Message>`, `progress: Progress`, `retries: Option<JobId>`, `quiet: bool` | notice | `added`, `cancellable` |
 | `Progress` | `job`, `done: u64`, `total: Option<u64>` | fact, by job | `updated`, its fraction `done / total` |
 | `Title` | `job`, `title: Message` | fact, by job | `message_updated` |
 | `Detail` | `job`, `detail: Option<Message>` | fact, by job | none |
@@ -52,7 +52,7 @@ darktable's background jobs panel (`libs/backgroundjobs.c` at the reference rele
 - At its end: the outcome by its counts; the failure that ended the job, or else the first photo's that failed; and `Retry` where a photo failed or was not reached, but not after a cancel, nor when the export was refused.
 - **`Event::Export` stays** as the export's record for scripts and the CLI: each photo's start and its file with its size and tiles, then the counts. No client draws a row from it.
 
-**The app's mirror is a fold:** one row per job, each part from one event ([gui.md](../gui.md#the-jobs-window)). Its `sent` requests, export rows and the app's clock go. The window opens itself for a job on `UserForeground` or `UserExport` whose `Added` names this client's command and is not `quiet`, and for no other. Planned, `Added`'s `quiet`: a job whose own notice tells its end, a style on several photos and its Undo ([0109](0109-a-style-on-every-selected-photo-one-batch-one-undo.md)), which a client leaves the window closed for, the spinner still showing it and its row still there when the person opens the window.
+**The app's mirror is a fold:** one row per job, each part from one event ([gui.md](../gui.md#the-jobs-window)). Its `sent` requests, export rows and the app's clock go. The window opens itself for a job on `UserForeground` or `UserExport` whose `Added` names this client's command and is not `quiet`, and for no other. Nor for one whose `Added` is `quiet`: a job whose own notice tells its end, a style on several photos and its Undo ([0109](0109-a-style-on-every-selected-photo-one-batch-one-undo.md)), which a client leaves the window closed for, the spinner still showing it and its row still there when the person opens the window.
 
 **The window's look** follows the wireframe: stacked rows, an 8-point accent bar, a ✕ at the bar's end that only cancels, Clear Finished in the footer for finished and cancelled rows, Dismiss on a failed row beside Try again, the spinner only while a job is queued or running, the warning sign after a failure until it is dismissed or tried again, and no tick. A thumbnail's job has no progress and never shows.
 

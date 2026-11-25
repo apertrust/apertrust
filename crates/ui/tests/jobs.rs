@@ -851,6 +851,7 @@ fn each_kind_has_its_icon_and_a_kind_not_listed_a_generic_one() {
     assert_eq!(kind_icon("export"), Icon::Export);
     assert_eq!(kind_icon("import"), Icon::Import);
     assert_eq!(kind_icon("folder"), Icon::Folder);
+    assert_eq!(kind_icon("apply-style"), Icon::Apply);
     let generic = kind_icon("a kind from a later release");
     assert_eq!(kind_icon(""), generic);
     assert!(![Icon::Export, Icon::Import, Icon::Folder].contains(&generic));

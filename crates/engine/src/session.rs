@@ -111,6 +111,7 @@
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 
+mod batch;
 mod cache;
 mod history;
 pub(crate) mod open;
@@ -171,6 +172,7 @@ pub use crate::scopes::{Graphs, Reading};
 use crate::sidecar;
 pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_entry, tool_values};
 pub use crate::view::{FramePlace, Placement, View, ViewScale};
+pub use batch::{BatchAction, BatchEvent, Skip};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
 pub(crate) use open::Load;
@@ -384,11 +386,21 @@ pub enum Command {
     /// tools it does not set kept as they were. The change's last step holds the list; one
     /// that moves the list and no tool is a step holding the list alone; one that moves
     /// neither makes none. Refused inside a [`Command::Step`] ([`SessionError::NotInStep`]).
+    ///
+    /// `photos` empty, it is the active photo's alone, refused as above. Otherwise it is the
+    /// style on each photo `photos` names, each once, in the order given, as `Export` names
+    /// them (decision 109): one batch, every step of every photo it changes in it; the
+    /// active photo, where named, changed at once; the others by one `apply-style` job,
+    /// cancellable and quiet, one such job at a time; a photo that cannot take the style
+    /// skipped and named, never refusing the command, the active one among them. Refused
+    /// whole while the active photo opens ([`SessionError::NotLive`]). Told by
+    /// [`Event::Batch`].
     ApplyStyle {
         name: String,
         file: String,
         mode: StyleMode,
         tools: Vec<(String, ToolValues)>,
+        photos: Vec<PathBuf>,
     },
     /// Clear the style `name` from `file`, the item of the styles applied that is that style,
     /// by its file for a built-in's, `builtin:<id>`, else by its name (decisions 106 and 109):
@@ -740,6 +752,11 @@ pub(crate) enum Inbox {
         open: u64,
         photos: Vec<(PathBuf, library::EditState)>,
     },
+    /// A photo of a batch on several photos, as its job's worker built its file, for the
+    /// engine thread to route ([`batch`]).
+    Route(Box<batch::Route>),
+    /// A batch job ended: the engine thread starts the next ([`Engine::start_batches`]).
+    BatchEnded,
     Stop,
 }
 
@@ -829,6 +846,9 @@ pub enum Event {
     /// each batch whose commands changed either, after the batch's values and before its
     /// frame, and as a photo opens or turns live where its placement differs.
     View(ViewState),
+    /// A style on several photos (decision 109): each photo's change as it lands, and the
+    /// batch's end, notices.
+    Batch(BatchEvent),
     Failed(SessionError),
 }
 
@@ -909,6 +929,7 @@ impl Event {
             | Event::Saved { .. }
             | Event::Export { .. }
             | Event::Library(_)
+            | Event::Batch(_)
             | Event::Failed(_) => {
                 return Topic::Notice;
             }
@@ -1751,6 +1772,9 @@ impl Session {
                                 break;
                             }
                             Inbox::Saved | Inbox::Newer => {}
+                            Inbox::Route(route) => engine.routes.push(*route),
+                            // The turn starts the next batch job.
+                            Inbox::BatchEnded => {}
                             // The handle's last word: the tasks after it are the end's.
                             Inbox::Stop => {
                                 stop = true;
@@ -1863,6 +1887,23 @@ struct Writer {
     /// takes only once it is done.
     files: Arc<Mutex<Files>>,
     thread: Option<JoinHandle<()>>,
+}
+
+/// The sidecars' reading through the edit writer, after the writes handed over before, for
+/// a job's worker ([`Writer::reads`]).
+#[derive(Clone)]
+pub(crate) struct Reads(Option<mpsc::Sender<Order>>);
+
+impl Reads {
+    /// Reads the sidecars at `paths`, once every edit handed over before is written; what
+    /// this returns hears them in their order, or that the writer has gone.
+    pub(crate) fn read(&self, paths: Vec<PathBuf>) -> mpsc::Receiver<Vec<Snapshot>> {
+        let (answer, answered) = mpsc::channel();
+        if let Some(jobs) = &self.0 {
+            let _ = jobs.send(Order::Read { paths, answer });
+        }
+        answered
+    }
 }
 
 /// What the writer is asked, in order.
@@ -2095,10 +2136,6 @@ impl Writer {
     /// with another write of the file, and dropped where the file's generation rises before
     /// it is written, as its photo opens. What this returns hears how it ended, or that the
     /// writer has gone.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the apply-style job's, #373's next step")
-    )]
     fn write_over(
         &self,
         path: PathBuf,
@@ -2122,15 +2159,17 @@ impl Writer {
         answered
     }
 
+    /// What a job reads sidecars through, as [`Writer::read`] reads them: an apply-style
+    /// job's photos (decision 109).
+    fn reads(&self) -> Reads {
+        Reads(self.jobs.clone())
+    }
+
     /// Reads the sidecars at `paths` for an export's snapshot, once every edit handed over
     /// before is written (D12); what this returns hears them in their order, or that the
     /// writer has gone.
     fn read(&self, paths: Vec<PathBuf>) -> mpsc::Receiver<Vec<Snapshot>> {
-        let (answer, answered) = mpsc::channel();
-        if let Some(jobs) = &self.jobs {
-            let _ = jobs.send(Order::Read { paths, answer });
-        }
-        answered
+        self.reads().read(paths)
     }
 
     /// Asks for the sidecar of `photo` to be classified as a listing classifies it, once
@@ -2563,6 +2602,13 @@ struct Engine {
     /// The ids of the tools Apertrust has retired, whose values a saved edit loses
     /// without making the photo view-only: `apertrust_tools::RETIRED`.
     retired: &'static [&'static str],
+    /// The batch a style on several photos gives the active photo's change, while it is
+    /// applied (decision 109).
+    batching: Option<styles::Batch>,
+    /// The batches on several photos whose jobs have not ended, in the order sent.
+    batches: Vec<Arc<batch::Pending>>,
+    /// The batches' photos their jobs handed the engine thread, to route.
+    routes: Vec<batch::Route>,
     /// The build every edit written records.
     build: String,
     limits: Limits,
@@ -3209,6 +3255,9 @@ impl Engine {
             operations,
             tools,
             retired: apertrust_tools::RETIRED,
+            batching: None,
+            batches: Vec::new(),
+            routes: Vec::new(),
             build,
             limits,
             anticipate_move: view.anticipate_move,
@@ -3323,6 +3372,10 @@ impl Engine {
         }
         // A newer sidecar the writer found, taken in.
         events.extend(self.newer_file(false));
+        // The photos of batches on several photos their jobs handed over, and the next
+        // batch job where one ended.
+        events.extend(self.take_routes());
+        events.extend(self.start_batches());
         // What arrived meanwhile, during the batch's render included.
         events.extend(self.scopes());
         events.extend(self.picked());
@@ -3627,6 +3680,9 @@ impl Engine {
     /// the writer. A panic saving the edit still ends the jobs first, `inbox` going before
     /// the control waits for its workers, and goes on once they have.
     fn finish(mut self, inbox: mpsc::Receiver<Inbox>) {
+        // A batch job's photos handed over and not routed: dropped, their workers hearing
+        // the engine stopped, so the jobs' end waits for none (decision 109).
+        self.routes.clear();
         let saved = catch_unwind(AssertUnwindSafe(|| {
             self.save_unsaved();
             self.rendered_thumbnails.cancel_all(&self.jobs.control);
@@ -3673,12 +3729,24 @@ impl Engine {
                 Command::Step { commands, .. } => {
                     commands.iter().filter_map(changed_tool).collect()
                 }
-                Command::ApplyStyle { mode, tools, .. } => match mode {
-                    StyleMode::Replace => vec![None],
-                    StyleMode::Append => {
-                        (tools.iter()).map(|(tool, _)| Some(tool.clone())).collect()
+                // Only where it reaches the open photo (decision 109).
+                Command::ApplyStyle {
+                    mode,
+                    tools,
+                    photos,
+                    ..
+                } => {
+                    let reaches = photos.is_empty()
+                        || (self.open.as_ref()).is_some_and(|open| {
+                            photos
+                                .iter()
+                                .any(|photo| sidecar::path_for(photo) == open.sidecar)
+                        });
+                    match reaches {
+                        true => batch::Owned::changes(*mode, tools),
+                        false => Vec::new(),
                     }
-                },
+                }
                 Command::ClearStyle { name, file } => self.style_tools(name, file),
                 command => changed_tool(command).into_iter().collect(),
             };
@@ -3765,6 +3833,30 @@ impl Engine {
                 } => {
                     self.export(photos, settings, places, None);
                     Ok(())
+                }
+                // A style on several photos (decision 109): an earlier batch still to reach
+                // the active photo applied to it first.
+                Command::ApplyStyle {
+                    name,
+                    file,
+                    mode,
+                    tools,
+                    photos,
+                } if !photos.is_empty() => {
+                    let caught = self.catch_up(&mut events);
+                    let style = batch::Owned {
+                        name,
+                        file,
+                        mode,
+                        tools,
+                    };
+                    let applied = self.apply_style_to(style, photos, &mut events);
+                    render |= caught.render;
+                    save |= caught.save;
+                    applied.map(|effect| {
+                        render |= effect.render;
+                        save |= effect.save;
+                    })
                 }
                 #[cfg(test)]
                 Command::Synthetic(synthetic) => {
@@ -3856,6 +3948,14 @@ impl Engine {
                         self.once_off(&mut events);
                     }
                     let viewing = self.open.as_ref().is_some_and(|o| o.view_only.is_some());
+                    // An earlier batch still to reach the active photo applied to it first,
+                    // so each photo's batches and changes land in the order sent (decision
+                    // 109).
+                    if on_edit(&command) {
+                        let caught = self.catch_up(&mut events);
+                        render |= caught.render;
+                        save |= caught.save;
+                    }
                     let applied = self.apply_edit(command, at).map(|effect| {
                         render |= effect.render;
                         save |= effect.save;
@@ -4342,11 +4442,25 @@ impl Engine {
             Command::Truncate { after } => return self.rewrite(history::Rewrite::Truncate(after)),
             Command::DiscardHistory => return self.rewrite(history::Rewrite::Discard),
             Command::Step { commands, .. } => return self.apply_step(commands),
+            // Naming photos but not this one, as the session ending applies its last
+            // commands: nothing here (decision 109).
+            Command::ApplyStyle { photos, .. }
+                if !photos.is_empty()
+                    && !(self.open.as_ref()).is_some_and(|open| {
+                        photos
+                            .iter()
+                            .any(|photo| sidecar::path_for(photo) == open.sidecar)
+                    }) =>
+            {
+                return Ok(Effect::default());
+            }
+            // `photos` named, it reaches here for the active photo alone, as a batch's.
             Command::ApplyStyle {
                 name,
                 file,
                 mode,
                 tools,
+                ..
             } => {
                 return self.apply_style(styles::Style {
                     name: &name,
@@ -4778,12 +4892,21 @@ impl Engine {
             open.held.prune(&open.edit);
             open.unsaved = true;
         }
+        let changed = self.open.as_ref().is_some_and(|open| open.edit != before);
+        self.edited_events(&mut events, changed, closing);
+        events
+    }
+
+    /// What follows a change of the open photo's edit made outside a batch of commands, a
+    /// newer file taken in or a batch on several photos reaching it live, after `events`:
+    /// its values and history, its view, its save, and where the edit `changed`, its frame;
+    /// as it closes, its view and frame not told.
+    fn edited_events(&mut self, events: &mut Vec<Event>, changed: bool, closing: bool) {
         let facts = events.len();
-        self.count_raw_histogram(&mut events);
+        self.count_raw_histogram(events);
         let Some(open) = &mut self.open else {
-            return events;
+            return;
         };
-        let changed = open.edit != before;
         events.push(Event::Values(open.values(
             self.operations,
             &self.tools,
@@ -4799,15 +4922,14 @@ impl Engine {
             self.save();
         }
         if changed && !closing && self.open.as_ref().is_some_and(|open| open.input.is_some()) {
-            let rendered = self.render(Instant::now(), false, &mut events);
-            self.answer_view(&rendered, &mut events, facts);
+            let rendered = self.render(Instant::now(), false, events);
+            self.answer_view(&rendered, events, facts);
             match rendered {
                 Ok(Some(frame)) => events.push(Event::Frame(frame)),
                 Ok(None) => {}
                 Err(error) => events.push(Event::Failed(error)),
             }
         }
-        events
     }
 
     /// [`Command::Open`], numbered `open`, which reached the session `at` (decision 77): the
@@ -6911,6 +7033,7 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
 
 #[cfg(test)]
 mod tests {
+    mod batch;
     mod history;
     mod selection;
     mod set_tool;
@@ -7503,6 +7626,7 @@ mod tests {
                 file: "Warm film.apstyle".to_owned(),
                 mode: StyleMode::Append,
                 tools: Vec::new(),
+                photos: Vec::new(),
             },
             Command::ClearStyle {
                 name: "Warm film".to_owned(),
@@ -8095,10 +8219,12 @@ mod tests {
     /// writer's events in `saved`.
     struct Driven {
         gpu: GpuContext,
+        /// The engine thread's inbox, which its jobs hand their tasks to: dropped before the
+        /// engine, so a job waiting on it after a failed assertion hears it gone rather than
+        /// hold the writer's join.
+        inbox: Receiver<Inbox>,
         engine: Engine,
         saved: Drain,
-        /// The engine thread's inbox, which its jobs hand their tasks to.
-        inbox: Receiver<Inbox>,
     }
 
     impl Driven {
@@ -8199,6 +8325,11 @@ mod tests {
                 {
                     Inbox::Open(stage) => events.extend(self.engine.stage(*stage)),
                     Inbox::Task(waiting) => self.engine.jobs.background.add(waiting),
+                    Inbox::Route(route) => {
+                        self.engine.routes.push(*route);
+                        events.extend(self.engine.take_routes());
+                    }
+                    Inbox::BatchEnded => events.extend(self.engine.start_batches()),
                     Inbox::Command(..)
                     | Inbox::Evict
                     | Inbox::Saved
@@ -8229,6 +8360,11 @@ mod tests {
                 match self.inbox.recv_timeout(wait()) {
                     Ok(Inbox::Open(stage)) => events.extend(self.engine.stage(*stage)),
                     Ok(Inbox::Task(waiting)) => self.engine.jobs.background.add(waiting),
+                    Ok(Inbox::Route(route)) => {
+                        self.engine.routes.push(*route);
+                        events.extend(self.engine.take_routes());
+                    }
+                    Ok(Inbox::BatchEnded) => events.extend(self.engine.start_batches()),
                     Ok(_) | Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -12886,6 +13022,7 @@ mod tests {
                 detail: None,
                 progress: jobs::Progress::default(),
                 retries: None,
+                quiet: false,
             })
         );
         let progress: Vec<_> = own
@@ -13115,6 +13252,7 @@ mod tests {
                         total: reporting.then_some(1),
                     },
                     retries: None,
+                    quiet: false,
                 },
                 JobEvent::State {
                     job,
@@ -13464,6 +13602,7 @@ mod tests {
             Event::Scopes(_) => Topic::Fact(Fact::Scopes),
             Event::Picker { .. } => Topic::Fact(Fact::Picker),
             Event::Saved { .. } => Topic::Notice,
+            Event::Batch(_) => Topic::Notice,
             Event::Job { event, .. } => match *event {
                 JobEvent::Added { .. } | JobEvent::Ended { .. } => Topic::Notice,
                 JobEvent::Progress { job, .. } => Topic::Fact(Fact::Progress(job)),
@@ -13788,6 +13927,7 @@ mod tests {
                 detail: None,
                 progress: jobs::Progress::default(),
                 retries: None,
+                quiet: false,
             })
         );
         assert!(

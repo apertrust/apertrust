@@ -377,6 +377,7 @@ fn a_clear_another_command_started_disables_its_kind_too() {
             detail: None,
             progress: apertrust_engine::jobs::Progress::default(),
             retries: Some(ids(1)[0]),
+            quiet: false,
         },
         command: Some(31),
     };

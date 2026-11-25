@@ -213,6 +213,9 @@ pub enum JobEvent {
         detail: Option<Message>,
         progress: Progress,
         retries: Option<JobId>,
+        /// Whether a client leaves its jobs window closed for it, as for a job that
+        /// tells how it ended by a notice of its own (decision 109).
+        quiet: bool,
     },
     /// Its progress, darktable's `updated`.
     Progress {
