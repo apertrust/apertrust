@@ -6357,6 +6357,7 @@ mod tests {
                     kind: PickerKind::Area,
                     area: photo,
                     photo,
+                    fitted: photo.size(),
                     pixels: [720, 440],
                     region: Region::Area([0.2, 0.3, 0.7, 0.65]),
                     switched: Region::Point([0.5, 0.5]),

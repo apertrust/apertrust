@@ -36,8 +36,8 @@ pub enum Region {
 }
 
 /// darktable's half side across of the area a press on the photo starts, as a share of
-/// the photo's width (`src/views/darkroom.c:4064-4073`).
-const PRESSED: f32 = 0.02;
+/// the photo's width (`src/views/darkroom.c:4064-4073`), at every zoom.
+pub const PRESSED: f32 = 0.02;
 
 impl Region {
     /// The area a press at `at` starts on the photo for an area picker, as darktable's
@@ -47,7 +47,13 @@ impl Region {
     /// one-shot pick both make it here, so the two never differ. Left, top, right, bottom,
     /// as [`Region::Area`] holds them.
     pub fn pressed(at: [f32; 2], aspect: f32) -> [f32; 4] {
-        let (across, down) = (PRESSED, PRESSED * aspect);
+        Region::around(at, [PRESSED, PRESSED * aspect])
+    }
+
+    /// The area of half sides `half` round `at`, across as a share of the photo's width and
+    /// down of its height, clamped to the photo as [`Region::pressed`]'s: the app's click's
+    /// area at its size on screen at Fit (decision 105). Left, top, right, bottom.
+    pub fn around(at: [f32; 2], [across, down]: [f32; 2]) -> [f32; 4] {
         // A coordinate that is not a number at 0, as the session clamps a region.
         let clamped = |v: f32| if v >= 0.0 { v.min(1.0) } else { 0.0 };
         [
@@ -265,9 +271,30 @@ mod tests {
             ([6000, 4000], [1.0, 0.0], [0.98, 0.0, 1.0, 0.03]),
         ];
         for ([width, height], at, want) in cases {
-            let area = Region::pressed(at, width as f32 / height as f32);
+            let aspect = width as f32 / height as f32;
+            let area = Region::pressed(at, aspect);
             let near = area.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6);
             assert!(near, "{width}×{height} at {at:?}: {area:?}, not {want:?}");
+            // The same area as `around` at darktable's share, to the bit.
+            assert_eq!(Region::around(at, [PRESSED, PRESSED * aspect]), area);
         }
+    }
+
+    /// An area round a point, of any half sides, clamped to the photo at each edge.
+    #[test]
+    fn around_makes_an_area_of_its_half_sides_clamped_to_the_photo() {
+        let cases: [([f32; 2], [f32; 2], [f32; 4]); 3] = [
+            ([0.5, 0.5], [0.25, 0.125], [0.25, 0.375, 0.75, 0.625]),
+            // Held to the photo at its left and bottom edges, then its right and top.
+            ([0.05, 0.98], [0.1, 0.05], [0.0, 0.93, 0.15, 1.0]),
+            ([0.95, 0.02], [0.1, 0.05], [0.85, 0.0, 1.0, 0.07]),
+        ];
+        for (at, half, want) in cases {
+            let area = Region::around(at, half);
+            let near = area.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-6);
+            assert!(near, "{at:?} by {half:?}: {area:?}, not {want:?}");
+        }
+        // A coordinate that is not a number at 0.
+        assert_eq!(Region::around([f32::NAN, 0.5], [0.1, 0.0])[..2], [0.0, 0.5]);
     }
 }

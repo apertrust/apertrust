@@ -49,7 +49,7 @@ use apertrust_engine::picker::{DEFAULT_AREA, DEFAULT_POINT};
 use apertrust_engine::session::{
     Command, ControlValue, PickKeys, PickerCommand, PickerReading, PickerRef, Region, Values,
 };
-use apertrust_tools::pick::{LastPick, Patch, PickWarnings, Shown};
+use apertrust_tools::pick::{LastPick, PRESSED, Patch, PickWarnings, Shown};
 use apertrust_tools::{
     ControlKind, PickerKind, ProcessingDefinition, ProcessingTool, Row, messages,
 };
@@ -989,6 +989,9 @@ pub struct OnPhoto<'a> {
     /// the photo overflows it, which the marks are placed on (`docs/gui.md`, On-photo
     /// overlays).
     pub photo: Rect,
+    /// The whole photo's size in points at Fit, `photo`'s there: a click's area keeps its
+    /// size at Fit on the screen at every zoom (decision 105).
+    pub fitted: Vec2,
     /// The whole photo's size in pixels of the frame's scale, so a frame pixel spans
     /// `photo`'s width over its first.
     pub pixels: [u32; 2],
@@ -1410,7 +1413,8 @@ fn revealed(on: &OnPhoto, region: Region, overlay: &Overlay) -> Option<Rect> {
 /// Control-click is a right-click, resetting an area; with a point, the point moves there; with an area, a press within
 /// [`CORNER`] points of its nearest edge on each axis takes that corner, the opposite one
 /// held, as darktable's (`darkroom.c:4050-4062`), and one elsewhere starts a new area round
-/// it.
+/// it, the click's area, of the size on screen it has at Fit, where it is
+/// [`Region::pressed`]'s (decision 105).
 fn pressed_on(
     commands: &mut Vec<PickerCommand>,
     on: &OnPhoto,
@@ -1453,9 +1457,14 @@ fn pressed_on(
         ];
         return Some(Drag::Area { held, last: None });
     }
-    // As tall on screen as it is wide, as the session's one-shot pick makes it.
+    // As tall on screen as it is wide, as the session's one-shot pick makes it, and as
+    // wide on screen as at Fit, where `scale` is exactly 1, so the area is `pressed`'s
+    // there to the bit.
     let size = on.photo.size();
-    let [left, top, right, bottom] = Region::pressed(at, size.x / size.y.max(1.0));
+    let aspect = size.x / size.y.max(1.0);
+    let scale = on.fitted.x / size.x.max(1.0);
+    let half = [PRESSED * scale, PRESSED * aspect * scale];
+    let [left, top, right, bottom] = Region::around(at, half);
     let (from, to) = ([left, top], [right, bottom]);
     commands.push(PickerCommand::Area {
         from,
@@ -2061,6 +2070,7 @@ mod tests {
                         kind,
                         area: PHOTO,
                         photo: PHOTO,
+                        fitted: PHOTO.size(),
                         pixels: PIXELS,
                         region,
                         switched: scene.mirror.switched(region),
@@ -2215,7 +2225,7 @@ mod tests {
     }
 
     /// Presses at `from` and releases at `to` on the photo, moving between them.
-    fn drag(harness: &mut Harness<'_, Scene>, from: egui::Pos2, to: egui::Pos2) {
+    fn drag<S>(harness: &mut Harness<'_, S>, from: egui::Pos2, to: egui::Pos2) {
         harness.hover_at(from);
         harness.run();
         harness.drag_at(from);
@@ -2650,6 +2660,7 @@ mod tests {
                         kind,
                         area: PHOTO,
                         photo: PHOTO,
+                        fitted: PHOTO.size(),
                         pixels: PIXELS,
                         region,
                         switched: region,
@@ -3411,6 +3422,7 @@ mod tests {
                         kind: PickerKind::PointArea,
                         area: PHOTO,
                         photo,
+                        fitted: PHOTO.size(),
                         pixels: PIXELS.map(|side| (side as f32 * zoom) as u32),
                         region: *region,
                         switched: *region,
@@ -3460,6 +3472,7 @@ mod tests {
                         kind: PickerKind::PointArea,
                         area: PHOTO,
                         photo: PHOTO,
+                        fitted: PHOTO.size(),
                         pixels: PIXELS,
                         region: *region,
                         switched: DEFAULT_AREA,
@@ -3744,6 +3757,89 @@ mod tests {
             let clip = clipped.clip_rect;
             assert!(PHOTO.contains_rect(clip), "{clip:?}");
         }
+    }
+
+    /// The area a click at `press` on the area picker makes over the photo at `photo`, the
+    /// photo area [`PHOTO`] and the photo at Fit as large.
+    fn clicked_over(photo: Rect, press: Pos2) -> [f32; 4] {
+        let zoom = photo.width() / PHOTO.width();
+        let mut harness = Harness::builder()
+            .with_size(vec2(760.0, 400.0))
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, sent: &mut Vec<PickerCommand>| {
+                    let on = OnPhoto {
+                        picker: BRIGHTNESS,
+                        kind: PickerKind::Area,
+                        area: PHOTO,
+                        photo,
+                        fitted: PHOTO.size(),
+                        pixels: PIXELS.map(|side| (side as f32 * zoom) as u32),
+                        region: DEFAULT_AREA,
+                        switched: DEFAULT_AREA,
+                        colour: Color32::RED,
+                        name: "",
+                        label: "",
+                        badge: Icon::Pick,
+                        panning: false,
+                    };
+                    sent.extend(on_photo(ui, &on).commands);
+                },
+                Vec::new(),
+            );
+        harness.run();
+        drag(&mut harness, press, press);
+        match harness.state()[..] {
+            [
+                PickerCommand::Area {
+                    from: [left, top],
+                    to: [right, bottom],
+                    done: false,
+                    ..
+                },
+                _,
+            ] => [left, top, right, bottom],
+            ref sent => panic!("{sent:?}"),
+        }
+    }
+
+    /// A click's area keeps its size on screen at every zoom (decision 105): at Fit
+    /// [`Region::pressed`]'s, zoomed in as many points wide and as tall on screen, so a
+    /// smaller share of the photo, and clamped to the photo at its edge.
+    #[test]
+    fn a_click_s_area_keeps_its_size_on_screen_at_every_zoom() {
+        let press = PHOTO.center() + vec2(10.0, -20.0);
+        let at = photo_at(press);
+        assert_eq!(
+            clicked_over(PHOTO, press),
+            Region::pressed(at, 400.0 / 300.0)
+        );
+        let points = |photo: Rect, [left, top, right, bottom]: [f32; 4]| {
+            vec2(
+                (right - left) * photo.width(),
+                (bottom - top) * photo.height(),
+            )
+        };
+        let fit = points(PHOTO, clicked_over(PHOTO, press));
+        assert!((fit.x - 2.0 * 0.02 * PHOTO.width()).abs() < 0.01, "{fit:?}");
+        assert!((fit.y - fit.x).abs() < 0.01, "{fit:?}");
+        for zoom in [2.0, 8.0] {
+            let photo = Rect::from_center_size(PHOTO.center(), PHOTO.size() * zoom);
+            let area = clicked_over(photo, press);
+            let zoomed = points(photo, area);
+            assert!((zoomed - fit).abs().max_elem() < 0.01, "{zoom}: {zoomed:?}");
+            assert!(
+                ((area[2] - area[0]) * zoom - 2.0 * 0.02).abs() < 1e-5,
+                "{zoom}: {area:?}"
+            );
+        }
+        // At 800% with the photo's top-left corner in view, near it: clamped to the photo.
+        let photo = Rect::from_min_size(PHOTO.min, PHOTO.size() * 8.0);
+        let [left, top, right, bottom] = clicked_over(photo, PHOTO.min + vec2(2.0, 3.0));
+        assert_eq!([left, top], [0.0, 0.0]);
+        let shown = points(photo, [left, top, right, bottom]);
+        assert!((shown.x - (2.0 + 8.0)).abs() < 0.01, "{shown:?}");
+        assert!((shown.y - (3.0 + 8.0)).abs() < 0.01, "{shown:?}");
     }
 
     #[test]
