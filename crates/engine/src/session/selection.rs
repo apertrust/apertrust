@@ -1048,6 +1048,7 @@ mod tests {
             size: 0,
             modified: None,
             edit,
+            rating: Default::default(),
         }
     }
 

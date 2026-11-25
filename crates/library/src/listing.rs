@@ -34,7 +34,8 @@
 //!
 //! A sidecar belongs to the raw whose name it carries plus [`SUFFIX`]
 //! (`DSCF0001.RAF.apxmp`), matched byte for byte for now; one with no raw is an orphan.
-//! A sidecar's contents are not read here.
+//! A sidecar's contents are not read here. darktable's own sidecar beside a raw with no
+//! `.apxmp` (`DSCF0001.RAF.xmp`) is noted too, counted among the other files.
 
 use std::cmp;
 use std::collections::HashSet;
@@ -69,6 +70,10 @@ pub struct Photo {
     pub raw: FileStat,
     /// The sidecar, named `name` plus [`SUFFIX`].
     pub sidecar: Option<FileStat>,
+    /// darktable's sidecar, named `name` plus `.xmp` ([`crate::darktable::SUFFIX`]),
+    /// whose fields the photo shows while it has no `.apxmp` (decision 110); not measured,
+    /// and so not looked for, where it has one.
+    pub darktable: Option<FileStat>,
 }
 
 /// A sidecar whose raw is not in the folder.
@@ -326,6 +331,8 @@ struct Job {
 struct Names {
     raws: Vec<String>,
     sidecars: HashSet<String>,
+    /// darktable's sidecars, counted among the other files.
+    darktable: HashSet<String>,
     folders: Vec<String>,
 }
 
@@ -385,6 +392,7 @@ impl Job {
         let Some(Names {
             mut raws,
             sidecars,
+            darktable: darktables,
             mut folders,
         }) = self.names(&mut summary)?
         else {
@@ -416,12 +424,17 @@ impl Job {
             } else {
                 None
             };
+            let darktable_name = format!("{name}{}", crate::darktable::SUFFIX);
+            let darktable = (sidecar.is_none() && darktables.contains(&darktable_name))
+                .then(|| stat(&self.folder.join(&darktable_name)))
+                .flatten();
             summary.raws += 1;
             summary.with_sidecar += usize::from(sidecar.is_some());
             chunk.push(Photo {
                 name: name.clone(),
                 raw,
                 sidecar,
+                darktable,
             });
             if chunk.len() >= self.chunk && !self.send(Event::Chunk(std::mem::take(&mut chunk))) {
                 return Ok(None);
@@ -526,6 +539,9 @@ impl Job {
             } else if is_raw(&name) {
                 names.raws.push(name);
             } else {
+                if name.ends_with(crate::darktable::SUFFIX) {
+                    names.darktable.insert(name);
+                }
                 summary.other += 1;
             }
             if !self.check_deadline() {

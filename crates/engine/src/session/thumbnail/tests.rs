@@ -917,6 +917,7 @@ fn an_unedited_copy_of_an_edited_raw_never_shows_its_render() {
         number: "0".to_owned(),
         name: String::new(),
         end: String::new(),
+        fields: Vec::new(),
         clocks: Vec::new(),
         history: Vec::new(),
     });

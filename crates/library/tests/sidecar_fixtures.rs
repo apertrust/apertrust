@@ -281,6 +281,7 @@ fn exiftool_reads_no_text_in_a_copy_at_original() {
         number: "0".to_owned(),
         name: String::new(),
         end: String::new(),
+        fields: Vec::new(),
         clocks: Vec::new(),
         history: Vec::new(),
     });
@@ -298,5 +299,70 @@ fn exiftool_reads_no_text_in_a_copy_at_original() {
             read.contains(r#""XMP-apertrust:CopiesId": "7c0e9a14""#),
             "{read}"
         );
+    }
+}
+
+/// A copy's fields (decision 110), the rating's three, one cleared, read back as written
+/// and read by ExifTool and exiv2 without error or warning, where they are installed.
+#[test]
+fn a_copy_s_fields_read_back_and_other_readers_read_them() {
+    use apertrust_library::clock::Clock;
+    use apertrust_library::fields::{self, FieldValue};
+
+    let clock = |text: &str| Clock::from_fields(text, "0", "5e1f22c9").unwrap();
+    let mut edits = Edits::new("0.5.0+3~g1a2b3c4");
+    edits.copies.push(VirtualCopy {
+        id: "7c0e9a14".to_owned(),
+        number: "0".to_owned(),
+        name: String::new(),
+        end: String::new(),
+        clocks: vec![clock("2026-11-08T10:43:12.004Z")],
+        fields: Vec::new(),
+        history: Vec::new(),
+    });
+    let entries = &mut edits.copies[0].fields;
+    let stars = Some(FieldValue::Stars(3));
+    fields::set(
+        entries,
+        fields::RATING,
+        stars,
+        clock("2026-11-08T10:42:01.120Z"),
+    );
+    let labels = Some(FieldValue::Labels(0b1001));
+    let at = clock("2026-11-08T10:43:12.004Z");
+    fields::set(entries, fields::COLOUR_LABELS, labels, at);
+    fields::set(entries, fields::REJECTED, None, at);
+    let xml = edits.to_xml();
+    let read = Edits::parse(&xml, 0).unwrap();
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    assert_eq!(read, edits);
+    assert_eq!(read.to_xml(), xml);
+    assert!(!read.edited(), "fields are no edit");
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("DSCF0001.RAF.apxmp");
+    std::fs::write(&path, &xml).unwrap();
+    if let Some(read) = read_with("exiftool", &["-a", "-G1", "-struct"], &path) {
+        assert!(
+            !read.contains("Warning") && !read.contains("Error"),
+            "{read}"
+        );
+        for field in [
+            "Field=xmp:Rating",
+            "Value=3",
+            "Value=[0,3]",
+            "Field=apertrust:rejected",
+        ] {
+            assert!(read.contains(field), "{field} in {read}");
+        }
+    }
+    if let Some(read) = read_with("exiv2", &["-px"], &path) {
+        for field in [
+            "apertrust:fields[1]/apertrust:field",
+            "apertrust:fields[2]/apertrust:value XmpSeq      2  0, 3",
+            "apertrust:fields[3]/apertrust:value",
+        ] {
+            assert!(read.contains(field), "{field} in {read}");
+        }
     }
 }

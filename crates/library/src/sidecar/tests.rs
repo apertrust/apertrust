@@ -377,6 +377,7 @@ fn edits() -> Edits {
         name: "Warm".to_owned(),
         end: "00000000000000b2".to_owned(),
         // In the order of their machines, as they are written.
+        fields: Vec::new(),
         clocks: vec![
             clock(PI_DAY + 2_000, 1, "0000beef"),
             clock(PI_DAY + 1_000, 0, "5e1f22c9"),
@@ -651,6 +652,7 @@ fn an_empty_version_2_file_reads_back_empty() {
         number: "0".to_owned(),
         name: String::new(),
         end: String::new(),
+        fields: Vec::new(),
         clocks: Vec::new(),
         history: Vec::new(),
     });
@@ -691,6 +693,7 @@ fn version_1_reads_as_a_step_of_each_tool() {
             number: "0".to_owned(),
             name: String::new(),
             end: id(2),
+            fields: Vec::new(),
             clocks: vec![made],
             history: vec![
                 batched(0, tool("lens")),
@@ -1462,6 +1465,32 @@ fn an_entry_s_unknown_field_is_a_problem() {
             field: field.to_owned(),
         };
         assert_eq!(read.problems, [expected], "{field}");
+    }
+}
+
+/// A field's clock past its copy's vector, or of a machine the vector lacks, is a problem
+/// as a step's is (decision 110), the field still read so its rating shows.
+#[test]
+fn a_field_s_clock_past_the_vector_is_a_problem_its_value_still_read() {
+    let stars = Some(crate::fields::FieldValue::Stars(3));
+    for (late, machine) in [(PI_DAY + 60_000, "5e1f22c9"), (PI_DAY, "0badcafe")] {
+        let mut past = edits();
+        let fields = &mut past.copies[0].fields;
+        crate::fields::set(
+            fields,
+            crate::fields::RATING,
+            stars,
+            clock(late, 0, machine),
+        );
+        let read = Edits::parse(&past.to_xml(), 0).unwrap();
+        let expected = Problem::Field {
+            copy: "7c0e9a14".to_owned(),
+            field: crate::fields::RATING.to_owned(),
+            what: "a clock past its copy's clock vector",
+        };
+        assert_eq!(read.problems, [expected], "{machine}");
+        let rating = crate::fields::Rating::of(&read.copies[0].fields);
+        assert_eq!(rating.stars, 3, "{machine}");
     }
 }
 
