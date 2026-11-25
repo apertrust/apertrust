@@ -206,6 +206,7 @@ pub fn apply(style: &Listed, mode: StyleMode, applied: &[StyleState]) -> Option<
         file: style.file(),
         mode,
         tools: style.tools.clone()?,
+        photos: Vec::new(),
     })
 }
 

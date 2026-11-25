@@ -234,6 +234,7 @@ impl Mirror {
                 detail,
                 progress,
                 retries,
+                quiet,
             } => {
                 if let Some(number) = command {
                     self.starting.retain(|starting| *starting != number);
@@ -262,8 +263,9 @@ impl Mirror {
                     offers: Vec::new(),
                 });
                 // Only this app's commands open the window: another client's export shows
-                // in it, but never opens it.
-                if user && command.is_some() {
+                // in it, but never opens it; nor does a job that tells how it ended by a
+                // notice of its own, as a style on several photos (decision 109).
+                if user && command.is_some() && !*quiet {
                     self.opened.push(job.get());
                     Show::Open
                 } else {

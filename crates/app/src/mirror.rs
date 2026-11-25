@@ -620,6 +620,8 @@ impl Mirror {
                 self.photo = PhotoState::Open(photo);
             }
             Event::Saved { path, through } => self.saving.saved(&path, through),
+            // A style on several photos (decision 109): the app takes it in with its notice.
+            Event::Batch(_) => {}
             // The open photo's values, which replace the untouched ones in one apply; a
             // session with no photo open sends none. Until the photo is live they show
             // read-only (decision 77).
@@ -2802,6 +2804,7 @@ pub(crate) mod tests {
                 detail: None,
                 progress: Default::default(),
                 retries: None,
+                quiet: false,
             },
             command: Some(7),
         };

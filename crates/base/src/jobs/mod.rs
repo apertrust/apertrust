@@ -181,6 +181,7 @@ pub struct Job {
     detail: Option<Message>,
     total: Option<u64>,
     retries: Option<JobId>,
+    quiet: bool,
     body: Body,
 }
 
@@ -204,6 +205,7 @@ impl Job {
             detail: None,
             total: None,
             retries: None,
+            quiet: false,
             body: Box::new(body),
         }
     }
@@ -246,6 +248,13 @@ impl Job {
         self.retries = Some(job);
         self
     }
+
+    /// Its `Added` says a client leaves its jobs window closed for it: the job tells how it
+    /// ended by a notice of its own (decision 109).
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
+        self
+    }
 }
 
 impl fmt::Debug for Job {
@@ -257,6 +266,7 @@ impl fmt::Debug for Job {
             .field("detail", &self.detail)
             .field("total", &self.total)
             .field("retries", &self.retries)
+            .field("quiet", &self.quiet)
             .finish_non_exhaustive()
     }
 }
@@ -537,6 +547,7 @@ impl Shared {
                     total: job.total,
                 },
                 retries: job.retries,
+                quiet: job.quiet,
             });
             Shown {
                 cancellable,

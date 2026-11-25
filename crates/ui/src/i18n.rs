@@ -1194,6 +1194,8 @@ mod tests {
                 args.set("item", "Undo");
                 // A style's history steps (decision 106).
                 args.set("style", "Warm film");
+                // A style on several photos: the photos it changed (decision 109).
+                args.set("changed", 11);
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

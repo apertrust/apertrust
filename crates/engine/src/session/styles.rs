@@ -168,10 +168,6 @@ pub(super) fn style_photo(
 /// [`style_photo`], as on the open photo, the steps after the end dropped, which no Undo
 /// brings back. The log and vector to write, `None` where the log holds the batch already,
 /// the batch having reached it, or the style changes nothing.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the apply-style job's, #373's next step")
-)]
 pub(super) fn style_log(
     (log, clocks): (Log, Vec<Clock>),
     defaults: &[&str],
@@ -199,10 +195,11 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Ok(Effect::default());
         };
-        let batch = Batch {
+        // A batch on several photos gives its own (decision 109).
+        let batch = self.batching.unwrap_or_else(|| Batch {
             id: open.history.new_batch(),
             wall: wall_clock(),
-        };
+        });
         let (edit, styles) = (open.edit.clone(), open.history.styles().to_vec());
         let image = open.image.clone();
         let (wrote, _) = style_photo(

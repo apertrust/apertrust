@@ -110,6 +110,7 @@ fn a_click_applies_the_style_as_the_mode_says_and_parked_entries_are_said() {
         file,
         mode,
         tools,
+        ..
     }) = apply(&warm, StyleMode::Replace, &[])
     else {
         panic!("a style applied");

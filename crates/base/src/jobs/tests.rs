@@ -114,6 +114,7 @@ fn added(job: JobId, queue: Option<Queue>, title: Message, cancellable: bool) ->
         detail: None,
         progress: Progress::default(),
         retries: None,
+        quiet: false,
     }
 }
 
@@ -598,7 +599,8 @@ fn ended_carries_what_the_body_set() {
     .destination(folder.clone())
     .detail(Message::new("job-queued").with("count", 3u64))
     .total(3)
-    .retries(JobId(41));
+    .retries(JobId(41))
+    .quiet();
     let before = SystemTime::now();
     let x = control.add(UserExport, job);
     events.ended(x);
@@ -624,6 +626,7 @@ fn ended_carries_what_the_body_set() {
                 total: Some(3),
             },
             retries: Some(JobId(41)),
+            quiet: true,
         })
     );
     let Some(JobEvent::Ended {

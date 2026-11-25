@@ -12430,6 +12430,7 @@ mod tests {
             detail: None,
             progress: Progress::default(),
             retries: None,
+            quiet: false,
         };
         let cancelled = apertrust_engine::session::JobEvent::Ended {
             job,

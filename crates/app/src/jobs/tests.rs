@@ -56,6 +56,7 @@ pub(crate) fn added(job: JobId, queue: Queue, command: Option<u64>) -> Event {
             detail: None,
             progress: Progress::default(),
             retries: None,
+            quiet: false,
         },
         command,
     }
@@ -142,6 +143,7 @@ fn export_added(job: JobId, total: usize) -> Event {
                 total: Some(total as u64),
             },
             retries: None,
+            quiet: false,
         },
         command: Some(7),
     }
@@ -317,6 +319,7 @@ fn a_folders_reading_folds_through_the_same_code_and_never_opens_the_window() {
             detail: None,
             progress: Progress::default(),
             retries: None,
+            quiet: false,
         },
         command: Some(4),
     };
@@ -500,6 +503,19 @@ fn only_a_job_on_a_user_queue_that_this_app_started_opens_the_window() {
     assert_eq!(opens(Queue::UserBackground, None), Show::Update);
     assert_eq!(opens(Queue::SystemForeground, None), Show::Update);
     assert_eq!(opens(Queue::SystemBackground, Some(5)), Show::Update);
+    // A quiet job, a style on several photos, which tells how it ended by its notice
+    // (decision 109): shown, never opening the window.
+    let mut mirror = Mirror::new(None);
+    let mut quiet_added = added(id, Queue::UserForeground, Some(6));
+    if let Event::Job {
+        event: JobEvent::Added { quiet, .. },
+        ..
+    } = &mut quiet_added
+    {
+        *quiet = true;
+    }
+    assert_eq!(mirror.apply(&quiet_added), Show::Update);
+    assert_eq!(mirror.view(&english()).len(), 1);
 }
 
 #[test]
@@ -517,6 +533,7 @@ fn a_job_with_no_outcome_says_why_it_failed() {
         detail: None,
         progress: Progress::default(),
         retries: None,
+        quiet: false,
     };
     mirror.apply(&job(event));
     mirror.apply(&state(id, State::Running));
@@ -675,6 +692,7 @@ fn a_retry_takes_the_place_of_the_job_it_tries_again() {
             detail: None,
             progress: Progress::default(),
             retries: Some(first),
+            quiet: false,
         },
         command: Some(9),
     };
@@ -735,6 +753,7 @@ fn try_again_sends_retry_job_and_its_row_takes_the_failed_one_s_place() {
             detail: None,
             progress: Progress::default(),
             retries: Some(first),
+            quiet: false,
         },
         command: Some(9),
     };
@@ -1503,6 +1522,7 @@ pub(crate) fn added_stoppable(
             detail: None,
             progress: Progress::default(),
             retries: None,
+            quiet: false,
         },
         command,
     }
@@ -1645,6 +1665,7 @@ fn the_last_exports_failure_is_what_the_export_tool_reads() {
             detail: None,
             progress: Progress::default(),
             retries: None,
+            quiet: false,
         },
         command: None,
     });

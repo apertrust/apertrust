@@ -353,17 +353,12 @@ impl PhotoHistory {
 
     /// The log in memory, any default steps not yet written among it; the sidecar saves
     /// [`Self::written`].
-    #[cfg(test)]
     pub(super) fn log(&self) -> &Log {
         &self.log
     }
 
     /// The log and the copy's clock vector, to write, as a photo that is not open is
     /// changed (decision 109).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the apply-style job's, #373's next step")
-    )]
     pub(super) fn into_log(self) -> (Log, Vec<Clock>) {
         (self.log, self.clocks)
     }

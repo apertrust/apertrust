@@ -457,6 +457,18 @@ job-cache-clear-now = { $done } of { $total } removed
 job-cache-cleared = Cleared { job-cache-entries }, { job-cache-size }
 job-cache-clear-cancelled = Clearing cancelled: { job-cache-entries } removed, { job-cache-size }
 
+## A style applied to several photos (decision 109): $style is its name, $count the photos
+## named, $done those done of $total, every photo but the active one, $photo the one under
+## way, and $changed those it changed.
+job-apply-style = Applying “{ $style }” to { photo-count }
+job-apply-style-now = { $done } of { $total } done · now { $photo }
+# Its title once it has ended: "Warm film applied to 11 of 12 photos".
+job-apply-style-outcome =
+    { $count ->
+        [one] { $style } applied to { $changed } of { $count } photo
+       *[other] { $style } applied to { $changed } of { $count } photos
+    }
+
 ## What an export job reports of itself for its row. $number is the photo under way,
 ## from 1, and 0 before the first; $total the photos; $storage where they go, "disk" for
 ## File on disk; $photo a raw; $done the photos done; $count the photos waiting; $folder

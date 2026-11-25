@@ -57,6 +57,7 @@ fn apply(name: &str, mode: StyleMode, tools: &[(&str, ToolValues)]) -> Command {
         tools: (tools.iter())
             .map(|(tool, values)| ((*tool).to_owned(), values.clone()))
             .collect(),
+        photos: Vec::new(),
     }
 }
 
@@ -818,6 +819,7 @@ fn built_in(name: &str, id: &str, tools: &[(&str, ToolValues)]) -> Command {
             file: format!("builtin:{id}"),
             mode,
             tools,
+            photos: Vec::new(),
         },
         _ => unreachable!("an ApplyStyle"),
     }
@@ -1049,6 +1051,7 @@ fn a_style_gives_the_same_log_on_a_photo_opened_or_not() {
             file,
             mode,
             tools,
+            ..
         } = &command
         else {
             unreachable!("an ApplyStyle")
