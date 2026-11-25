@@ -421,6 +421,234 @@ fn batch_jobs_run_one_at_a_time_in_the_order_sent() {
     remove(&active);
 }
 
+/// A batch's `Ended`: its action, the photos it changed and those it skipped.
+type Ends = (BatchAction, Vec<PathBuf>, Vec<(PathBuf, Skip)>);
+
+/// The `Ended`s among `events`, in order.
+fn ends(events: &[Event]) -> Vec<Ends> {
+    (events.iter())
+        .filter_map(|event| match event {
+            Event::Batch(BatchEvent::Ended {
+                action,
+                changed,
+                skipped,
+                ..
+            }) => Some((*action, changed.clone(), skipped.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Pumps until the `n`th batch `Ended` is heard.
+fn until_ends(driven: &mut Driven, n: usize) -> Vec<Event> {
+    let mut heard = until_ended(driven);
+    while ends(&heard).len() < n {
+        heard.extend(until_ended(driven));
+    }
+    heard
+}
+
+/// Whether the log beside `photo`, as saved, holds Grain at its end.
+fn grained(photo: &Path) -> bool {
+    saved_log(photo).fold().tool("grain").is_some()
+}
+
+/// A style on three photos, one open: Undo there names the three photos, takes the batch
+/// back there and, by an `undo-batch` job, on the two others; Redo puts it back on all.
+#[test]
+fn undo_takes_a_batch_back_on_every_photo_and_redo_puts_it_back() {
+    let active = scratch("batch-undo");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let named = [vec![active.clone()], others.clone()].concat();
+    let events = driven.run([warm(40.0, &named)]);
+    let history = events.iter().rev().find_map(|event| match event {
+        Event::History(history) => Some(history.clone()),
+        _ => None,
+    });
+    let undo = history.and_then(|history| history.undo);
+    assert!(
+        matches!(undo, Some(Move::Steps { photos: 3, .. })),
+        "{undo:?}"
+    );
+    until_ended(&mut driven);
+    driven.writes();
+    assert!(others.iter().all(|photo| grained(photo)));
+    let undone = driven.run([Command::Undo]);
+    assert!(failures(&undone).is_empty(), "{undone:?}");
+    // Redo names the photos it would put the batch back on, its steps held outside the log.
+    let redo = undone.iter().rev().find_map(|event| match event {
+        Event::History(history) => Some(history.redo),
+        _ => None,
+    });
+    assert!(
+        matches!(redo, Some(Some(Move::Steps { photos: 3, .. }))),
+        "{redo:?}"
+    );
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!((changed.len(), skipped.len()), (3, 0));
+    let added = heard.iter().find_map(|event| match event {
+        Event::Job {
+            event: JobEvent::Added { kind, quiet, .. },
+            ..
+        } => Some((*kind, *quiet)),
+        _ => None,
+    });
+    assert_eq!(added, Some(("undo-batch", true)));
+    driven.writes();
+    assert!(others.iter().all(|photo| !grained(photo)));
+    let open = driven.engine.open.as_ref().unwrap();
+    assert!(open.edit.tool("grain").is_none());
+    // Redo puts it back on each.
+    driven.run([Command::Redo]);
+    let heard = until_ended(&mut driven);
+    assert_eq!(ends(&heard)[0].0, BatchAction::PutBack);
+    driven.writes();
+    assert!(others.iter().all(|photo| grained(photo)));
+    remove(&active);
+}
+
+/// A photo of the batch changed since keeps the batch under its own step, and is named;
+/// the notice's Undo, `UndoBatch`, takes it back from a photo outside the batch; a batch
+/// the session does not remember is refused.
+#[test]
+fn a_photo_changed_since_keeps_the_batch_and_undo_batch_works_from_any_photo() {
+    let active = scratch("batch-undo-changed");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    driven.run([warm(40.0, &others)]);
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    // The first changed since: opened, Soften set, left again.
+    driven.open(&others[0]);
+    driven.run([Command::SetTool {
+        tool: "soften".to_owned(),
+        values: on("amount", 10.0),
+    }]);
+    driven.open(&active);
+    driven.writes();
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!(changed, std::slice::from_ref(&others[1]));
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ChangedSince)] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert!(grained(&others[0]));
+    assert!(!grained(&others[1]));
+    let unknown = BatchId(7);
+    let refused = driven.run([Command::UndoBatch { batch: unknown }]);
+    assert!(
+        matches!(&failures(&refused)[..], [SessionError::UnknownBatch { batch }] if *batch == unknown),
+        "{refused:?}"
+    );
+    remove(&active);
+}
+
+/// `UndoBatch` from a photo of the batch open for viewing only, its next Undo the batch's:
+/// that photo is skipped and named, its file untouched, and the batch taken back on the
+/// two others.
+#[test]
+fn undo_batch_from_a_view_only_photo_skips_it_and_takes_the_others_back() {
+    let active = scratch("batch-undo-view-only");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([warm(40.0, &named)]);
+    until_let_go(&mut driven);
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    // Grain at a version above its own: newer, the batch's step still read.
+    driven.open(&others[0]);
+    let sidecar = sidecar::path_for(&active);
+    let xml = std::fs::read_to_string(&sidecar).unwrap().replace(
+        r#"apertrust:toolVersion="2""#,
+        r#"apertrust:toolVersion="3""#,
+    );
+    std::fs::write(&sidecar, &xml).unwrap();
+    driven.open(&active);
+    let open = driven.engine.open.as_ref().unwrap();
+    assert!(open.view_only.is_some());
+    assert!(open.history.moves_batch(batch, false));
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!(changed, &others);
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ViewOnly(_))] if *photo == active),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert!(others.iter().all(|photo| !grained(photo)));
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml);
+    remove(&active);
+}
+
+/// Undo of a batch whose job still runs cancels the job first, then takes the batch back on
+/// the photos it reached.
+#[test]
+fn undo_of_a_running_batch_cancels_its_job_first() {
+    let active = scratch("batch-undo-running");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 20);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([warm(40.0, &named)]);
+    // Three photos reached, then Undo on the active one.
+    for _ in 0..3 {
+        let route = next_route(&mut driven);
+        driven.engine.routes.push(route);
+        driven.engine.take_routes();
+    }
+    driven.run([Command::Undo]);
+    let heard = until_ends(&mut driven, 2);
+    let ended = ends(&heard);
+    let (applied, taken) = (&ended[0], &ended[1]);
+    assert_eq!(
+        (applied.0, taken.0),
+        (BatchAction::Applied, BatchAction::TakenBack)
+    );
+    let cancelled = heard.iter().any(|event| {
+        matches!(
+            event,
+            Event::Batch(BatchEvent::Ended {
+                action: BatchAction::Applied,
+                cancelled: true,
+                ..
+            })
+        )
+    });
+    assert!(cancelled);
+    // Every photo the batch changed taken back, the active one among them.
+    let mut reached = applied.1.clone();
+    let mut back = taken.1.clone();
+    reached.sort();
+    back.sort();
+    assert_eq!(reached, back);
+    driven.writes();
+    assert!(others.iter().all(|photo| !grained(photo)));
+    remove(&active);
+}
+
 /// A photo that opens while its file is handed over waits, its job reading it again once it
 /// is live, where the engine thread applies the batch to it there, once.
 #[test]
@@ -541,6 +769,75 @@ fn a_waiting_batch_starts_after_the_one_before_is_cancelled() {
     remove(&active);
 }
 
+/// The latest `History`'s Undo among `events`: how many photos it names.
+fn undo_photos(events: &[Event]) -> Option<usize> {
+    events.iter().rev().find_map(|event| match event {
+        Event::History(History {
+            undo: Some(Move::Steps { photos, .. }),
+            ..
+        }) => Some(*photos),
+        _ => None,
+    })
+}
+
+/// [`until_ended`], then until the engine thread let the batch go, telling the history
+/// again.
+fn until_let_go(driven: &mut Driven) -> Vec<Event> {
+    let mut heard = until_ended(driven);
+    let deadline = Instant::now() + TEST_WAIT;
+    while !driven.engine.batches.is_empty() {
+        assert!(Instant::now() < deadline, "the batch is let go");
+        heard.extend(driven.pump_for(Duration::from_millis(10)));
+    }
+    heard
+}
+
+/// Undo names the photos a batch changed (decision 109): while it runs, those it changed and
+/// those still to come; once it ends, told again, those it changed, a view-only one left out;
+/// after a cancel, those it reached.
+#[test]
+fn undo_names_the_photos_a_batch_changed() {
+    let active = scratch("batch-undo-count");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 11);
+    let newer = sidecar::to_xml(&Edit::default(), OPERATIONS, TOOLS, "9.0.0")
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
+    std::fs::write(sidecar::path_for(&others[0]), &newer).unwrap();
+    let named = [vec![active.clone()], others.clone()].concat();
+    let events = driven.run([warm(40.0, &named)]);
+    // Twelve to change, or eleven where the job skipped the view-only one already.
+    assert!(matches!(undo_photos(&events), Some(11 | 12)), "{events:?}");
+    let heard = until_let_go(&mut driven);
+    assert_eq!(undo_photos(&heard), Some(11), "{heard:?}");
+    // Cancelled after three of twenty: the photos it reached.
+    let more = photos(&active, "more", 20);
+    let named = [vec![active.clone()], more].concat();
+    driven.run([warm(60.0, &named)]);
+    let deadline = Instant::now() + TEST_WAIT;
+    let job = loop {
+        let jobs: Vec<_> = driven.engine.batches.iter().map(|p| p.job()).collect();
+        if let [Some(job)] = jobs[..] {
+            break job;
+        }
+        assert!(Instant::now() < deadline, "the job starts: {jobs:?}");
+        driven.pump_for(Duration::from_millis(10));
+    };
+    for _ in 0..3 {
+        let route = next_route(&mut driven);
+        driven.engine.routes.push(route);
+        driven.engine.take_routes();
+    }
+    driven.run([Command::CancelJob { job }]);
+    let heard = until_let_go(&mut driven);
+    let Some(BatchEvent::Ended { changed, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    assert_eq!(undo_photos(&heard), Some(changed.len()));
+    assert!((4..21).contains(&changed.len()), "{}", changed.len());
+    remove(&active);
+}
+
 /// A batch job cancelled while still queued, every worker busy, ends without its body: the
 /// engine thread ends it, so the batch after it runs, and the cancelled one lands nowhere.
 #[test]
@@ -596,6 +893,59 @@ fn a_batch_cancelled_while_queued_lets_the_next_run() {
     remove(&active);
 }
 
+/// A batch taken back while it still waits for the one before never starts: it reaches no
+/// photo, live or not.
+#[test]
+fn a_waiting_batch_taken_back_never_reaches_a_photo() {
+    let active = scratch("batch-undo-waiting");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let first = photos(&active, "first", 1);
+    let second = photos(&active, "second", 2);
+    driven.run([warm(40.0, &first)]);
+    let faded = Command::ApplyStyle {
+        name: "Faded".to_owned(),
+        file: "Faded.apstyle".to_owned(),
+        mode: StyleMode::Append,
+        tools: vec![("soften".to_owned(), on("amount", 20.0))],
+        photos: second.clone(),
+    };
+    driven.run([faded]);
+    let waiting = Arc::clone(&driven.engine.batches[1]);
+    assert_eq!(waiting.job(), None);
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    // Its second photo opened meanwhile: nothing catches it up.
+    driven.open(&second[1]);
+    driven.run([Command::SetTool {
+        tool: "grain".to_owned(),
+        values: on("strength", 10.0),
+    }]);
+    let open = driven.engine.open.as_ref().unwrap();
+    assert!(batches(open.history.log()).iter().all(|b| *b != batch));
+    let heard = until_ends(&mut driven, 1);
+    assert!(
+        ends(&heard)
+            .iter()
+            .all(|(action, ..)| *action != BatchAction::PutBack)
+    );
+    let deadline = Instant::now() + TEST_WAIT;
+    while !driven.engine.batches.is_empty() {
+        assert!(Instant::now() < deadline, "the batches let go");
+        driven.pump_for(Duration::from_millis(10));
+    }
+    driven.writes();
+    for photo in &second {
+        assert!(
+            !batches(&saved_log(photo)).contains(&batch),
+            "{}",
+            photo.display()
+        );
+    }
+    remove(&active);
+}
+
 /// A batch cancelled reaches no more photos: one it had not reached, opened and edited
 /// after the cancel, never takes it, though its job is still finishing.
 #[test]
@@ -629,5 +979,40 @@ fn a_cancelled_batch_catches_up_no_photo() {
     };
     assert!(*cancelled);
     assert!(!changed.contains(&others[2]));
+    remove(&active);
+}
+
+/// Redo names the photos the Undo took the batch back on, not those that applied it: a
+/// photo changed since, which the Undo skipped, is none Redo puts back.
+#[test]
+fn redo_names_the_photos_the_undo_took_back() {
+    let active = scratch("batch-redo-count");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([warm(40.0, &named)]);
+    until_let_go(&mut driven);
+    // The second changed since: opened, Soften set, left again.
+    driven.open(&others[1]);
+    driven.run([Command::SetTool {
+        tool: "soften".to_owned(),
+        values: on("amount", 10.0),
+    }]);
+    driven.open(&active);
+    driven.run([Command::Undo]);
+    let heard = until_let_go(&mut driven);
+    let [(_, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!((changed.len(), skipped.len()), (2, 1));
+    let redo = heard.iter().rev().find_map(|event| match event {
+        Event::History(history) => Some(history.redo),
+        _ => None,
+    });
+    assert!(
+        matches!(redo, Some(Some(Move::Steps { photos: 2, .. }))),
+        "{redo:?}"
+    );
     remove(&active);
 }

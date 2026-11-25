@@ -2345,7 +2345,7 @@ Decision 28. The session saves the edit after each completed change (a `done` va
 
 ### Writing an edit without opening the photo
 
-Decision 109, built with a style on every selected photo (#373; `session/batch.rs`): a photo that is not open is changed through its sidecar, by a job, with no decode and no GPU. A batch's Undo on other photos, `undo-batch`, is planned with #373's next step.
+Decision 109, built with a style on every selected photo (#373; `session/batch.rs`): a photo that is not open is changed through its sidecar, by a job, with no decode and no GPU. A batch's Undo and Redo on other photos, `undo-batch`, is built too.
 
 - **What is read:** the raw's metadata without its pixels (`RawFile::metadata`, 38 to 44 ms for the 61 MP 7R V on the M4's SSD, [Opening a photo](#opening-a-photo)), made the image context as the open's stage 2 makes it, which `apertrust-raw`'s corpus test holds equal to the decode's but for the pixels; and the sidecar, through the edit writer after the writes handed over before (`Writer::read`), with its stamp, its size, modified time and the BLAKE3 hash of the bytes read, as `apertrust-cli edit` stamps a file, read with the tool definitions (`sidecar::from_xml_at`). A log that already holds the command's batch id is left as it is.
 - **What the image context serves:** `Edit::set_tool`'s checks, a choice's options on the photo (`ProcessingTool::options`), the defaults for the photo that `Edit::clamp_read` folds in before it clamps (`ProcessingTool::defaults`), and White balance's redraw (`ProcessingTool::redrawn`); a range that follows other controls reads the values alone. Nothing of a tool needs the pixels, so no kind of tool is skipped or deferred.

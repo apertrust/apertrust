@@ -2439,6 +2439,7 @@ pub(crate) mod tests {
         let back = Some(Move::Steps {
             first: StepId(1),
             count: 1,
+            photos: 1,
         });
         m.apply(one(4, back));
         assert_eq!(undo(&m), Some((4, back)));

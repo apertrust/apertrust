@@ -1075,7 +1075,14 @@ pub enum Move {
     /// Take back or put back the `count` steps from `first` on, one change's: its step, or
     /// its batch's steps, added, or the end moved over them; a batch's part where `GoTo`
     /// left the end inside it.
-    Steps { first: StepId, count: usize },
+    /// `photos` is how many photos a batch on several photos named that these steps are
+    /// part of, which Undo and Redo take back or put back on each of them still on it
+    /// (decision 109), else 1.
+    Steps {
+        first: StepId,
+        count: usize,
+        photos: usize,
+    },
     /// Take back or put back a `GoTo`: the end back where it was, or where it put it.
     GoTo,
     /// Take back or put back a Compress: the log as it was before it, or compressed again.

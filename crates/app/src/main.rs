@@ -28042,6 +28042,7 @@ mod tests {
                 Some(Move::Steps {
                     first: StepId(7),
                     count: 1,
+                    photos: 1,
                 }),
                 None,
             ));
@@ -28059,6 +28060,7 @@ mod tests {
                 Some(Move::Steps {
                     first: StepId(7),
                     count: 1,
+                    photos: 1,
                 }),
             ));
             harness.state_mut().commands.clear();
@@ -28113,6 +28115,7 @@ mod tests {
                 Some(Move::Steps {
                     first: StepId(7),
                     count: 1,
+                    photos: 1,
                 }),
                 Some(Move::GoTo),
             );

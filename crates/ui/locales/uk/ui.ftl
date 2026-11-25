@@ -348,6 +348,22 @@ job-apply-style-outcome =
         [many] «{ $style }» застосовано до { $changed } із { $count } знімків
        *[other] «{ $style }» застосовано до { $changed } із { $count } знімка
     }
+job-undo-batch = Скасування «{ $style }» · { photo-count }
+job-redo-batch = Повернення «{ $style }» · { photo-count }
+job-undo-batch-outcome =
+    { $count ->
+        [one] «{ $style }» скасовано на { $changed } із { $count } знімка
+        [few] «{ $style }» скасовано на { $changed } із { $count } знімків
+        [many] «{ $style }» скасовано на { $changed } із { $count } знімків
+       *[other] «{ $style }» скасовано на { $changed } із { $count } знімка
+    }
+job-redo-batch-outcome =
+    { $count ->
+        [one] «{ $style }» повернено на { $changed } із { $count } знімка
+        [few] «{ $style }» повернено на { $changed } із { $count } знімків
+        [many] «{ $style }» повернено на { $changed } із { $count } знімків
+       *[other] «{ $style }» повернено на { $changed } із { $count } знімка
+    }
 
 job-export-photo =
     Експортування { $number } / { $total } до { $storage ->
@@ -1046,6 +1062,13 @@ menu-open-recent = Відкрити недавні
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Скасувати: { $step }
 menu-redo-step = Повторити: { $step }
+history-on-photos =
+    { $count ->
+        [one] { $step } на { $count } знімку
+        [few] { $step } на { $count } знімках
+        [many] { $step } на { $count } знімках
+       *[other] { $step } на { $count } знімках
+    }
 menu-export-photos =
     { $count ->
         [one] Експортувати { $count } знімок…

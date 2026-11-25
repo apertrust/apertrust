@@ -349,6 +349,22 @@ job-apply-style-outcome =
         [many] Zastosowano „{ $style }” do { $changed } z { $count } zdjęć
        *[other] Zastosowano „{ $style }” do { $changed } z { $count } zdjęcia
     }
+job-undo-batch = Cofanie „{ $style }” · { photo-count }
+job-redo-batch = Przywracanie „{ $style }” · { photo-count }
+job-undo-batch-outcome =
+    { $count ->
+        [one] Cofnięto „{ $style }” na { $changed } z { $count } zdjęcia
+        [few] Cofnięto „{ $style }” na { $changed } z { $count } zdjęć
+        [many] Cofnięto „{ $style }” na { $changed } z { $count } zdjęć
+       *[other] Cofnięto „{ $style }” na { $changed } z { $count } zdjęcia
+    }
+job-redo-batch-outcome =
+    { $count ->
+        [one] Przywrócono „{ $style }” na { $changed } z { $count } zdjęcia
+        [few] Przywrócono „{ $style }” na { $changed } z { $count } zdjęć
+        [many] Przywrócono „{ $style }” na { $changed } z { $count } zdjęć
+       *[other] Przywrócono „{ $style }” na { $changed } z { $count } zdjęcia
+    }
 
 job-export-photo =
     Eksportowanie { $number } / { $total } do { $storage ->
@@ -1050,6 +1066,13 @@ menu-open-recent = Otwórz ostatnie
 menu-recent-in = { $name } — { $parent }
 menu-undo-step = Cofnij: { $step }
 menu-redo-step = Ponów: { $step }
+history-on-photos =
+    { $count ->
+        [one] { $step } na { $count } zdjęciu
+        [few] { $step } na { $count } zdjęciach
+        [many] { $step } na { $count } zdjęciach
+       *[other] { $step } na { $count } zdjęciach
+    }
 menu-export-photos =
     { $count ->
         [one] Eksportuj { $count } zdjęcie…

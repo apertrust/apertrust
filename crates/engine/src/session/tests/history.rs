@@ -52,6 +52,7 @@ fn single(id: StepId) -> Move {
     Move::Steps {
         first: id,
         count: 1,
+        photos: 1,
     }
 }
 
@@ -946,6 +947,7 @@ fn a_step_of_two_tools_is_two_steps_in_one_batch_which_one_undo_takes_back() {
     let both = Move::Steps {
         first: made.steps[0].id,
         count: 2,
+        photos: 1,
     };
     assert_eq!(made.undo, Some(both));
     assert_eq!(fold(&driven), edit(&driven));
