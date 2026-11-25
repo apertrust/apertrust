@@ -49,7 +49,7 @@ In Apertrust it is the background's tone mapper, run once (architecture decision
 
 darktable params version 7, 144 bytes, 36 four-byte fields in this order: `look_lift`, `look_slope`, `look_brightness`, `look_saturation`, `look_original_hue_mix_ratio`, `range_black_relative_ev`, `range_white_relative_ev`, `dynamic_range_scaling`, `curve_pivot_x`, `curve_pivot_y_linear_output`, `curve_contrast_around_pivot`, `curve_linear_ratio_below_pivot`, `curve_linear_ratio_above_pivot`, `curve_toe_power`, `curve_shoulder_power`, `curve_gamma` (f32), `auto_gamma` (gboolean, i32), `curve_target_display_black_ratio`, `curve_target_display_white_ratio` (f32), `base_primaries` (enum, i32), `disable_primaries_adjustments` (i32), `red_inset`, `red_rotation`, `green_inset`, `green_rotation`, `blue_inset`, `blue_rotation`, `master_outset_ratio`, `master_unrotation_ratio`, `red_outset`, `red_unrotation`, `green_outset`, `green_unrotation`, `blue_outset`, `blue_unrotation` (f32), `completely_reverse_primaries` (i32).
 
-Defaults are darktable's scene-referred defaults (`reload_defaults` calls `_set_scene_referred_default_params` in a scene-referred workflow; `agx::Settings::scene_referred_default`, checked field for field against test 0186's stored params); where the introspection `$DEFAULT` differs, it is given in brackets. The AgX tool, the tone mapper of its own in the Adjust tab, owns every parameter, one control each, as darktable's Settings and Primaries tabs show them, its show curve, advanced curve parameters and look sections collapsible groups, and `dynamic_range_scaling` a control on the Settings tab, as darktable shows it, binding no parameter, the pickers' margin (decision 29; `docs/tools/README.md`, AgX).
+Defaults are darktable's scene-referred defaults (`reload_defaults` calls `_set_scene_referred_default_params` in a scene-referred workflow; `agx::Settings::scene_referred_default`, checked field for field against test 0186's stored params); where the introspection `$DEFAULT` differs, it is given in brackets. The AgX tool, the tone mapper of its own in the Adjust tab, owns every parameter, one control each, as darktable's Settings and Primaries tabs show them, its show curve, advanced curve parameters and look sections collapsible groups, and `dynamic_range_scaling` a control on the Settings tab, as darktable shows it, binding no parameter, the pickers' and Read exposure's margin (decision 29; `docs/tools/README.md`, AgX).
 
 | Name | darktable field | Type | Range | Default | Meaning |
 | --- | --- | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ Defaults are darktable's scene-referred defaults (`reload_defaults` calls `_set_
 | Preserve hue | `look_original_hue_mix_ratio` | f32 | 0 to 1 | 0.6 | 0 keeps the curve's hue shifts, 1 restores the input's HSV hue |
 | Black relative exposure | `range_black_relative_ev` | f32 | −20 to −0.1 | −10 | EV below mid-grey that maps to the curve's start |
 | White relative exposure | `range_white_relative_ev` | f32 | 0.1 to 20 | 6.5 | EV above mid-grey that maps to the curve's end |
-| Dynamic range scaling | `dynamic_range_scaling` | f32 | −0.5 to 2 | 0.1 | Safety margin the pickers add to the range |
+| Dynamic range scaling | `dynamic_range_scaling` | f32 | −0.5 to 2 | 0.1 | Safety margin the pickers and Read exposure add to the range |
 | Pivot relative exposure | `curve_pivot_x` | f32 | 0 to 1 | 10/16.5, i.e. 0 EV | The pivot's input, as a fraction of the range |
 | Pivot target output | `curve_pivot_y_linear_output` | f32 | 0 to 1 | 0.18 | The pivot's linear output |
 | Contrast | `curve_contrast_around_pivot` | f32 | 0.1 to 10 | 3.0 | Slope of the linear section, normalised to a 16.5 EV range and gamma 2.2 |
@@ -209,13 +209,22 @@ None that change results. `agx.cl` reduces the hue difference with `x − rint(x
 - **The hue difference uses `x − round(x)`**, as darktable's OpenCL does; WGSL's `round` rounds half to even, like `remainderf`.
 - **No NaN mapping**, as above.
 - **Base primaries "export profile" returns `NotPorted`**: the image context carries the output profile (decision 26), but AgX does not read it yet. Once it does, its primaries come from `ImageContext::output_profile`, colorout's `type` as the edit sets it, as darktable's `dt_ioppr_get_export_profile_type` reads colorout's `type` from the edit, the working profile when there is none (`None`), and a profile without a matrix falling back to Rec2020 as darktable's does. darktable takes the edit's profile even when an export overrides it; when Apertrust's export gains its own profile, this reads the edit's, a field of its own then (decision 26). Its golden case, `agx-export-profile`, renders with an sRGB output profile, compared after colorout. "Working profile" is Rec2020, Apertrust's fixed working space.
-- **Not ported (GUI only):** "read exposure", the curve graph and its warnings. Dynamic range scaling and the pickers act on parameters in the interface and belong to the AgX tool ([../tools/agx.md](../tools/agx.md)), built.
+- **Not ported (GUI only):** the curve graph. "read exposure", the curve's warnings, Dynamic range scaling and the pickers act on parameters in the interface and belong to the AgX tool ([../tools/agx.md](../tools/agx.md)), built.
 - **Params version 8 is refused**, where darktable silently substitutes defaults.
 
 ## Tool binding notes
 
 - **In the first pass** (decision 2) the AgX tool is darktable's, built ([../tools/agx.md](../tools/agx.md)): its controls are the parameters above under darktable's labels, the pivot stored in EV as darktable's slider shows it, dynamic range scaling a control binding no parameter, which its pickers read as their margin, and darktable's looks, planned, are to be its presets in the header's presets menu, each setting the range too, as darktable's do ([../tools/agx.md](../tools/agx.md#gaps), 7). AgX is one of the tone mappers, tools of their own, one per edit; sigmoid and filmic rgb join as they are ported.
 - The port renders whatever a sidecar sets: test 0175 carries pivot target output 0.22, gamma 2.3 and target black and white 0.0015 and 0.9485.
+- **The module's actions** (decision 98) and their Apertrust ids, none with a default shortcut in darktable:
+
+  | darktable's action | Apertrust's |
+  | --- | --- |
+  | `exposure range/auto tune levels`, a toggle (`agx.c:2074`) | `tool-agx-picker-range` |
+  | `exposure range/read exposure`, a button (`:2081`) | `tool-agx-read_exposure`, ported |
+  | `reset primaries`, a button opening its menu (`:2283`) | none: its three items, `tool-agx-primaries_blender_like`, `tool-agx-primaries_smooth` and `tool-agx-primaries_unmodified`, are actions of their own, where darktable defines only the button (decision 107) |
+  | `reverse pre-mapping primaries`, Set from above's button (`:2354`) | `tool-agx-set_from_above` |
+  | `curve/graph` and `page` | none: the graph waits for Show curve, and the tabs are the panel's |
 - A purity boost of 50% at a master purity boost of 200% (any product of 1), or reverse rotations turning two primaries opposite each other, blacks the image out (Precision; darktable shows noise there), and close to either the colours are boosted without bound. The defaults (master purity boost 100%, master rotation reversal 0) are far from both: a purity boost reaches the first only with the master purity boost above 101%, and the second needs green's and blue's reverse rotations, times the master rotation reversal, turned about 39° (sRGB) to 55° (Rec2020) further apart, so a master rotation reversal of at least about 65% to 92%, or reverse all with green's and blue's rotations that far apart.
 
 ## Gradients

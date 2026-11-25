@@ -128,6 +128,7 @@ The selection and the active photo are the session's (decision 37; [gui.md](gui.
 ## Commands planned
 
 - **`Readouts(Vec<ReadoutId>)`**, the readouts a client shows, by tool (decision 19; [engine.md](engine.md#readouts)).
+- **A tool's action run by the session,** for scripts (decision 107). Until then a client runs one itself, as its writes, `SetControl`s, one change ([gui.md](gui.md#line-rows-and-end-items)), by the availability `Values` reports with the tool's state ([events.md](events.md#the-events-the-session-sends)).
 - **`Samples(SamplesCommand)`**, the stored samples, answered by the `Samples` fact; and a pick's writes the session's own changes of source Auto, with history (decision 79; [pickers.md](pickers.md#through-the-session)).
 - **`Show(cells)`**, the cells on screen, each a photo id and a size, with commands naming photos by id, the selection and the active photo the session's (decision 37).
 - **The library's commands**, `Command::Library(LibraryCommand)` (decision 54). `LibraryCommand`, about forty commands in the end, is layer 4 of the library's API, served by the session from `apertrust-library`.
