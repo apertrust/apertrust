@@ -10,7 +10,7 @@
 
 ## Decision
 
-**A style on several photos is one `ApplyStyle` naming them: the active photo changed at once, as built, and the others by one job that reads each one's metadata and sidecar, applies the style's rules to its log with no decode and no GPU, and writes it over the file as read; every photo's steps share one batch id, which one Undo takes back on every photo where it is still the last.** Planned, as #373's steps ([history.md](../history.md#the-plan)), following darktable's job above but for its two undo groups and its blocking progress.
+**A style on several photos is one `ApplyStyle` naming them: the active photo changed at once, as built, and the others by one job that reads each one's metadata and sidecar, applies the style's rules to its log with no decode and no GPU, and writes it over the file as read; every photo's steps share one batch id, which one Undo takes back on every photo where it is still the last.** Built, as #373's steps ([history.md](../history.md#the-plan)), following darktable's job above but for its two undo groups and its blocking progress.
 
 ### The command
 
@@ -78,7 +78,7 @@ A photo is skipped, unchanged and named, when its raw is not on the disk; its ra
 
 ### What the person sees, and the events
 
-- **`Event::Batch(BatchEvent)`,** notices (planned; [events.md](../events.md)), naming the style's batch as `batch: BatchId`, apart from the engine's batches of commands, which a client knows only by their numbers:
+- **`Event::Batch(BatchEvent)`,** notices ([events.md](../events.md)), naming the style's batch as `batch: BatchId`, apart from the engine's batches of commands, which a client knows only by their numbers:
   - `Changed { batch, photo, edit }`, as each photo's write lands, the active photo's in the command's turn, `edit` its `EditState` as classified after the write, so a client marks the Browser's pencil and asks for its thumbnail again;
   - `Ended { command, batch, action, style, named, changed, skipped, cancelled }`, `command` the number of the command that started it, `action` `Applied`, `TakenBack` or `PutBack`, `named` how many photos it named, `changed` the photos changed and `skipped` each skipped photo with its reason, those changed since among them for a take-back; with no job, in the command's turn.
 - **The active photo** changes at once; the others' pencils as their writes land. Their thumbnails are asked for again: a photo that is not live is rendered once the library's step 6 renders other photos, and until then keeps its picture ([library.md](../library.md#thumbnails)).

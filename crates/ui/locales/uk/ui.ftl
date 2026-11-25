@@ -166,6 +166,52 @@ styles-parked-retired = Містить лише інструменти, яких
 styles-row-menu = Меню «{ $name }»
 styles-apply = Застосувати
 styles-clear = Прибрати
+
+styles-apply-photos =
+    { $count ->
+        [one] Застосувати до { $count } знімка
+        [few] Застосувати до { $count } знімків
+        [many] Застосувати до { $count } знімків
+       *[other] Застосувати до { $count } знімка
+    }
+batch-applied =
+    { $count ->
+        [one] «{ $style }» застосовано до { $count } знімка
+        [few] «{ $style }» застосовано до { $count } знімків
+        [many] «{ $style }» застосовано до { $count } знімків
+       *[other] «{ $style }» застосовано до { $count } знімка
+    }
+batch-applied-some = «{ $style }» застосовано до { $changed } із { $count } знімків
+batch-taken-back =
+    { $count ->
+        [one] «{ $style }» скасовано на { $count } знімку
+        [few] «{ $style }» скасовано на { $count } знімках
+        [many] «{ $style }» скасовано на { $count } знімках
+       *[other] «{ $style }» скасовано на { $count } знімках
+    }
+batch-taken-back-some = «{ $style }» скасовано на { $changed } із { $count } знімків
+batch-put-back =
+    { $count ->
+        [one] «{ $style }» повернено на { $count } знімку
+        [few] «{ $style }» повернено на { $count } знімках
+        [many] «{ $style }» повернено на { $count } знімках
+       *[other] «{ $style }» повернено на { $count } знімках
+    }
+batch-put-back-some = «{ $style }» повернено на { $changed } із { $count } знімків
+batch-cancelled = { $said }; скасовано
+batch-skipped =
+    { $said }; { $photo }: { $why ->
+        [view-only] лише для перегляду
+        [not-on-disk] немає на цьому комп’ютері
+        [unreadable] не вдається прочитати
+        [refused] не приймає цей стиль
+        [changing] постійно змінюється
+        [failed] не вдалося зберегти
+       *[changed] змінено відтоді
+    }{ $more ->
+        [0] { "" }
+       *[other] , і ще { $more }
+    }
 styles-rename = Перейменувати стиль…
 styles-delete = Видалити стиль…
 styles-mode = Режим

@@ -245,6 +245,10 @@ struct Drawn {
     applied: Option<Vec<StyleState>>,
     kept: Kept,
     unavailable: Option<String>,
+    /// How many photos a style applied changes.
+    photos: usize,
+    /// Whether the active photo's styles can be cleared, as it takes edits.
+    clearable: bool,
     actions: Vec<Action>,
 }
 
@@ -279,6 +283,8 @@ fn drawn_with(which: Builtin, state: Drawn, alerts: bool) -> Harness<'static, Dr
                     unavailable: state.unavailable.clone(),
                     titles: &titles,
                     alerts,
+                    photos: state.photos,
+                    clearable: state.unavailable.is_none() && state.clearable,
                 };
                 let head = Head {
                     open: true,
@@ -302,6 +308,8 @@ fn with_photo() -> Drawn {
         applied: Some(applied(&["Film|Warm film", "Bright"])),
         kept: Kept::default(),
         unavailable: None,
+        photos: 1,
+        clearable: true,
         actions: Vec::new(),
     }
 }
@@ -461,6 +469,8 @@ fn find_style_searches_both_roots_and_hides_one_with_no_match() {
             unavailable: None,
             titles: &titles,
             alerts: true,
+            photos: 1,
+            clearable: true,
         };
         let words = Translator::new(Locale::EnGb);
         let (nodes, _) = tool.nodes(&words);
@@ -517,6 +527,8 @@ fn return_applies_the_first_style_the_tree_shows() {
             unavailable: None,
             titles: &titles,
             alerts: true,
+            photos: 1,
+            clearable: true,
         };
         let words = Translator::new(Locale::EnGb);
         tool.first_shown(&words).map(|style| style.name.clone())
@@ -992,4 +1004,156 @@ fn a_built_in_applied_again_after_a_language_change_keeps_its_name() {
         name(&own, applied),
         ("Ломо".to_owned(), "Ломо.apstyle".to_owned())
     );
+}
+
+/// With several photos selected a style applies to all of them (decision 109): a photo open
+/// for viewing only leaves the tree enabled once live, which it is not while it opens, and
+/// the rows' tooltips say how many photos.
+#[test]
+fn with_several_selected_a_view_only_photo_leaves_the_tree_enabled() {
+    let words = Translator::new(Locale::EnGb);
+    // Live, view-only: the active photo alone refuses; several take it.
+    let view_only = (true, true);
+    assert!(unavailable_on(view_only, (false, true), 1, &words).is_some());
+    assert_eq!(unavailable_on(view_only, (false, true), 12, &words), None);
+    // Still opening: refused either way, as the session refuses it.
+    assert!(unavailable_on((true, false), (false, false), 12, &words).is_some());
+    // The active photo view-only: Clear rests, the tree applies.
+    let state = Drawn {
+        photos: 12,
+        clearable: false,
+        ..with_photo()
+    };
+    let mut harness = drawn(Builtin::Dark, state);
+    harness.run();
+    let bright = harness.get_by_role_and_label(Role::TreeItem, "Bright");
+    bright.hover();
+    harness.run();
+    assert!(
+        harness
+            .query_by_label_contains("Apply to 12 photos")
+            .is_some()
+    );
+}
+
+/// The notice as a batch ends says what it did, the first photo skipped named with why, and
+/// offers Undo while the batch stands.
+#[test]
+fn a_batch_s_notice_says_what_it_did_and_offers_undo() {
+    use apertrust_engine::session::{BatchAction, BatchEvent, BatchId, Skip};
+    let words = Translator::new(Locale::EnGb);
+    let photos: Vec<PathBuf> = (40..52)
+        .map(|n| PathBuf::from(format!("/p/IMG_20{n}.ARW")))
+        .collect();
+    let ended = |action, changed: &[PathBuf], skipped: Vec<(PathBuf, Skip)>| BatchEvent::Ended {
+        command: 3,
+        batch: BatchId(9),
+        action,
+        style: "Warm film".to_owned(),
+        named: 12,
+        changed: changed.to_vec(),
+        skipped,
+        cancelled: false,
+    };
+    let all = ended(BatchAction::Applied, &photos, Vec::new());
+    assert_eq!(
+        batch_notice(&all, &words),
+        Some((
+            "Warm film applied to 12 photos".to_owned(),
+            Some(BatchId(9))
+        ))
+    );
+    let newer = apertrust_engine::sidecar::ViewOnly {
+        build: None,
+        reason: apertrust_engine::sidecar::Reason::Unreadable(
+            apertrust_engine::sidecar::Problem::End {
+                copy: "00000000".to_owned(),
+                end: "00000000000000ff".to_owned(),
+            },
+        ),
+    };
+    let some = ended(
+        BatchAction::Applied,
+        &photos[..11],
+        vec![(photos[11].clone(), Skip::ViewOnly(newer))],
+    );
+    let (said, undo) = batch_notice(&some, &words).unwrap();
+    assert_eq!(
+        said,
+        "Warm film applied to 11 of 12 photos; IMG_2051.ARW is view-only"
+    );
+    assert_eq!(undo, Some(BatchId(9)));
+    let back = ended(
+        BatchAction::TakenBack,
+        &photos[..11],
+        vec![(photos[11].clone(), Skip::ChangedSince)],
+    );
+    let (said, undo) = batch_notice(&back, &words).unwrap();
+    assert_eq!(
+        said,
+        "Warm film taken back on 11 of 12 photos; IMG_2051.ARW has changed since"
+    );
+    assert_eq!(undo, None);
+    // Cancelled after 30 of 200: how many of those named, and that it was cancelled.
+    let many: Vec<PathBuf> = (0..30)
+        .map(|n| PathBuf::from(format!("/p/{n}.ARW")))
+        .collect();
+    let cancelled = BatchEvent::Ended {
+        command: 4,
+        batch: BatchId(10),
+        action: BatchAction::Applied,
+        style: "Warm film".to_owned(),
+        named: 200,
+        changed: many,
+        skipped: Vec::new(),
+        cancelled: true,
+    };
+    let (said, undo) = batch_notice(&cancelled, &words).unwrap();
+    assert_eq!(said, "Warm film applied to 30 of 200 photos; cancelled");
+    assert_eq!(undo, Some(BatchId(10)));
+    // Nothing changed: no Undo.
+    let none = BatchEvent::Ended {
+        command: 5,
+        batch: BatchId(11),
+        action: BatchAction::Applied,
+        style: "Warm film".to_owned(),
+        named: 2,
+        changed: Vec::new(),
+        skipped: Vec::new(),
+        cancelled: true,
+    };
+    let (said, undo) = batch_notice(&none, &words).unwrap();
+    assert_eq!(said, "Warm film applied to 0 of 2 photos; cancelled");
+    assert_eq!(undo, None);
+}
+
+/// The batch's notice over the photo: its words, a polite status to screen readers, and
+/// Undo, which says it was pressed.
+#[test]
+fn a_batch_s_notice_shows_its_words_and_undo() {
+    let said = "Warm film applied to 11 of 12 photos; IMG_2051.ARW is view-only";
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(640.0, 200.0))
+        .with_context_setup(|ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark));
+            apertrust_ui::set_locale(ctx, Locale::EnGb);
+        })
+        .build_ui_state(
+            move |ui, pressed: &mut bool| {
+                let t = theme(ui.ctx());
+                let slot = ui.ctx().content_rect();
+                ui.painter().rect_filled(slot, 0.0, t.colors.photo_surround);
+                let words = Translator::new(Locale::EnGb);
+                *pressed |= show_batch_notice(ui, slot, (said, true), &words);
+            },
+            false,
+        );
+    harness.run();
+    let label = harness.get_by_label(said);
+    let polite = egui::accesskit::Live::Polite;
+    assert_eq!(label.accesskit_node().data().live(), Some(polite));
+    harness.snapshot("batch-notice-dark");
+    harness.get_by_role_and_label(Role::Button, "Undo").click();
+    harness.run();
+    assert!(*harness.state());
 }

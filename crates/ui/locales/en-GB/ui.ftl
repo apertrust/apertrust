@@ -240,6 +240,51 @@ styles-parked-retired = Holds only tools Apertrust has retired
 styles-row-menu = { $name } menu
 styles-apply = Apply
 styles-clear = Clear
+
+## A style on several photos (decision 109): its rows' tooltips, $count the photos a style
+## applied now changes, "Apply to 12 photos".
+styles-apply-photos =
+    { $count ->
+        [one] Apply to { $count } photo
+       *[other] Apply to { $count } photos
+    }
+## The notice over the photo as a batch on several photos ends: $style the style, $count
+## the photos it reached, $changed those it changed of them; "-some" where some were
+## skipped, which batch-skipped then names: $said the line before, $photo the first skipped,
+## $why why, and $more how many more were skipped.
+batch-applied =
+    { $count ->
+        [one] { $style } applied to { $count } photo
+       *[other] { $style } applied to { $count } photos
+    }
+batch-applied-some = { $style } applied to { $changed } of { $count } photos
+batch-taken-back =
+    { $count ->
+        [one] { $style } taken back on { $count } photo
+       *[other] { $style } taken back on { $count } photos
+    }
+batch-taken-back-some = { $style } taken back on { $changed } of { $count } photos
+batch-put-back =
+    { $count ->
+        [one] { $style } put back on { $count } photo
+       *[other] { $style } put back on { $count } photos
+    }
+batch-put-back-some = { $style } put back on { $changed } of { $count } photos
+# A batch cancelled, which left the rest: $said is what it did.
+batch-cancelled = { $said }; cancelled
+batch-skipped =
+    { $said }; { $photo } { $why ->
+        [view-only] is view-only
+        [not-on-disk] is not on this computer
+        [unreadable] cannot be read
+        [refused] cannot take this style
+        [changing] kept changing
+        [failed] could not be saved
+       *[changed] has changed since
+    }{ $more ->
+        [0] { "" }
+       *[other] , and { $more } more
+    }
 styles-rename = Rename Style…
 styles-delete = Delete Style…
 # The tool's ⋯: how a click applies a style, and what comes later.
