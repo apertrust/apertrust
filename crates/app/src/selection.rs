@@ -482,6 +482,29 @@ fn selected<'a>(
     })
 }
 
+/// The photos a style applied now names (decision 109): every selected photo, in the
+/// Browser's order, where several are selected, those open for viewing only among them,
+/// which the batch skips and names; none otherwise, the style the active photo's alone.
+pub(crate) fn styled(mirror: &Mirror) -> Vec<PathBuf> {
+    if mirror.selection_pending() || mirror.selected_count() < 2 {
+        return Vec::new();
+    }
+    let Some(collection) = collection(mirror) else {
+        return Vec::new();
+    };
+    let mut photos: Vec<PathBuf> = selected(mirror, collection)
+        .map(|(photo, _)| photo)
+        .collect();
+    // The active photo, which the selection keeps where the listing lacks it, first.
+    let active = (mirror.photo.asked()).filter(|active| mirror.is_selected(active));
+    if let Some(active) = active
+        && collection.position(active).is_none()
+    {
+        photos.insert(0, active.to_owned());
+    }
+    photos
+}
+
 /// The session's collection as the Browser shows it (decision 37): the folder open's
 /// photos, or the photos opened alone, each by its place there, which the Browser's order
 /// (`FolderState::order`) sorts.
@@ -1516,6 +1539,8 @@ mod tests {
         };
         assert_eq!(exported(&f.m), one);
         assert!(exportable(&f.m));
+        // One selected: a style is the active photo's alone, naming none.
+        assert!(styled(&f.m).is_empty());
         let mut f = Folder::new("a");
         f.listed(&[], false);
         f.told(&["a"], Some("a"));
@@ -1547,6 +1572,8 @@ mod tests {
         assert!(exportable(&f.m));
         assert_eq!(exported_count(&f.m), 3);
         assert_eq!(f.m.selected_count(), 3);
+        // A style names them too, in the same order (decision 109).
+        assert_eq!(styled(&f.m), [at("e"), at("c"), at("a")]);
         // c's sidecar unreadable, the open a view-only: e alone.
         let mut f = Folder::new("a");
         let folder = PathBuf::from("/photos");
@@ -1577,6 +1604,8 @@ mod tests {
         }));
         f.told(&["a", "c", "e"], Some("a"));
         opened_a(&mut f, true);
+        // A style names the view-only ones too, which the batch skips and names.
+        assert_eq!(styled(&f.m), [at("a"), at("c"), at("e")]);
         let e = Exported {
             photos: vec![at("e")],
             left_out: 2,
@@ -1585,6 +1614,65 @@ mod tests {
         assert_eq!(exported(&f.m), e);
         assert!(exportable(&f.m));
         assert_eq!(exported_count(&f.m), 1);
+    }
+
+    /// A batch on several photos marks each photo it changed edited as its change lands
+    /// (decision 109), and its end is the app's to say, a reaction.
+    #[test]
+    fn a_batch_s_change_marks_the_photo_edited_and_its_end_is_told() {
+        use apertrust_engine::session::{BatchAction, BatchEvent, BatchId};
+        let mut f = Folder::new("a");
+        let folder = PathBuf::from("/photos");
+        f.m.folder.opening(folder.clone(), 100);
+        let name = "photos".to_owned();
+        f.m.apply(Event::Library(LibraryEvent::Opened {
+            open: 100,
+            name,
+            folder,
+        }));
+        let photos = ["a", "c"]
+            .map(|name| Photo {
+                name: format!("{name}.ARW"),
+                size: 1,
+                modified: None,
+                edit: EditState::None,
+            })
+            .to_vec();
+        f.m.apply(Event::Library(LibraryEvent::Listed {
+            open: 100,
+            photos,
+            done: true,
+        }));
+        let edit_of = |m: &Mirror, name: &str| match &m.folder.folder {
+            folder::Folder::Open(listing) => {
+                let at = listing.position(&at(name)).expect("listed");
+                listing.photos[at].edit.clone()
+            }
+            _ => unreachable!("the folder is open"),
+        };
+        assert_eq!(edit_of(&f.m, "c"), EditState::None);
+        f.m.apply(Event::Batch(BatchEvent::Changed {
+            batch: BatchId(9),
+            photo: at("c"),
+            edit: EditState::Edited,
+        }));
+        assert_eq!(edit_of(&f.m, "c"), EditState::Edited);
+        assert_eq!(edit_of(&f.m, "a"), EditState::None);
+        let ended = BatchEvent::Ended {
+            command: 3,
+            batch: BatchId(9),
+            action: BatchAction::Applied,
+            style: "Warm film".to_owned(),
+            named: 1,
+            changed: vec![at("c")],
+            skipped: Vec::new(),
+            cancelled: false,
+        };
+        let reactions = f.m.apply(Event::Batch(ended.clone()));
+        assert!(
+            matches!(&reactions[..], [crate::mirror::Reaction::Batch(told)] if *told == ended),
+            "{reactions:?}"
+        );
     }
 
     /// While the folder is listed, a photo selected that the listing has not brought yet
@@ -1625,6 +1713,8 @@ mod tests {
         f.told(&["a", "b", "z"], Some("z"));
         assert_eq!(exported(&f.m).photos, [at("a"), at("b")]);
         assert_eq!(exported_count(&f.m), 2);
+        // A style names it, first (decision 109).
+        assert_eq!(styled(&f.m), [at("z"), at("a"), at("b")]);
     }
 
     /// A photo selected alone with none open, as a Ctrl-click with none active leaves it,

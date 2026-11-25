@@ -51,9 +51,9 @@ use std::time::{Duration, Instant};
 
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
-    ActionState, ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History,
-    OpenPreview, Photo, PresetState, PreviewSource, ReadoutState, Selection, SelectionCommand,
-    SessionError, ToolState, Values, ViewState, WarningState,
+    ActionState, BatchEvent, ControlState, ControlValue, CoordinateState, Event, ExportPreview,
+    Frame, History, OpenPreview, Photo, PresetState, PreviewSource, ReadoutState, Selection,
+    SelectionCommand, SessionError, ToolState, Values, ViewState, WarningState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -99,6 +99,9 @@ pub enum Reaction {
     /// where it cannot render yet (`SessionError::Zoom`, decision 99): the zoom goes back to
     /// Fit, with nothing said over the photo, unless a later view overtook it.
     Unzoomed { command: u64 },
+    /// A batch on several photos ended (decision 109): the notice over the photo says how,
+    /// with its Undo while the batch stands.
+    Batch(BatchEvent),
 }
 
 /// What the Tools panel's editing tabs draw (`docs/gui.md`, The Tools panel): the values
@@ -288,6 +291,13 @@ impl Mirror {
     pub fn takes_edits(&self) -> bool {
         // Not while Previous Selection may have made another photo active.
         self.shown == Shown::Photo { editable: true } && self.previous.is_none()
+    }
+
+    /// Whether a style can be applied to the photos selected now (decision 109): the photo
+    /// is live, open for viewing only or not, which the batch skips and names, and no
+    /// Previous Selection is under way.
+    pub fn takes_batches(&self) -> bool {
+        matches!(self.shown, Shown::Photo { .. }) && self.previous.is_none()
     }
 
     /// Whether Reset would change the photo: its edit holds anything, or the history's end
@@ -620,8 +630,16 @@ impl Mirror {
                 self.photo = PhotoState::Open(photo);
             }
             Event::Saved { path, through } => self.saving.saved(&path, through),
-            // A style on several photos (decision 109): the app takes it in with its notice.
-            Event::Batch(_) => {}
+            // A style on several photos (decision 109): each photo changed marked edited in
+            // the Browser as its change lands, its thumbnail keeping its picture until it is
+            // rendered again; the batch's end said by the notice over the photo.
+            Event::Batch(BatchEvent::Changed { photo, edit, .. }) => {
+                let edited = matches!(edit, apertrust_engine::session::library::EditState::Edited);
+                self.folder.edited(&photo, edited, true);
+            }
+            Event::Batch(ended @ BatchEvent::Ended { .. }) => {
+                reactions.push(Reaction::Batch(ended))
+            }
             // The open photo's values, which replace the untouched ones in one apply; a
             // session with no photo open sends none. Until the photo is live they show
             // read-only (decision 77).

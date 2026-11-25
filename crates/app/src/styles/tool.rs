@@ -41,7 +41,9 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use apertrust_engine::session::{Command, StyleMode, StyleState, tool_values};
+use apertrust_engine::session::{
+    BatchAction, BatchEvent, BatchId, Command, Skip, StyleMode, StyleState, tool_values,
+};
 use apertrust_engine::sidecar::Parked;
 use apertrust_library::listing::browser_order;
 use apertrust_library::presets::{Stored, builtin_styles};
@@ -229,6 +231,121 @@ pub fn left_out(style: &Listed, words: &Translator) -> Option<String> {
     })
 }
 
+/// What the notice over the photo says as a batch on several photos ends (decision 109),
+/// in `words`: the style applied to, taken back on or put back on how many of the photos it
+/// named, the first one skipped named with why, and that it was cancelled where it was; and
+/// the batch its Undo takes back, while the batch stands on a photo, applied or put back.
+/// None for an event that is no batch's end.
+pub fn batch_notice(event: &BatchEvent, words: &Translator) -> Option<(String, Option<BatchId>)> {
+    let BatchEvent::Ended {
+        batch,
+        action,
+        style,
+        named,
+        changed,
+        skipped,
+        cancelled,
+        ..
+    } = event
+    else {
+        return None;
+    };
+    let (message, undo) = match action {
+        BatchAction::Applied => ("batch-applied", Some(*batch)),
+        BatchAction::TakenBack => ("batch-taken-back", None),
+        BatchAction::PutBack => ("batch-put-back", Some(*batch)),
+    };
+    // Nothing to take back where it changed no photo.
+    let undo = undo.filter(|_| !changed.is_empty());
+    // "Warm film applied to 12 photos", or "to 11 of 12 photos" where fewer changed.
+    let message = match changed.len() < *named {
+        true => format!("{message}-some"),
+        false => message.to_owned(),
+    };
+    let mut args = Args::new();
+    args.set("style", style.as_str());
+    args.set("changed", changed.len() as f64);
+    args.set("count", *named as f64);
+    let mut said = words.text_with(&message, Some(&args));
+    if let Some((photo, skip)) = skipped.first() {
+        said = skipped_said(&said, (photo, skip), skipped.len() - 1, words);
+    }
+    // "…; cancelled", where a cancel left the rest.
+    if *cancelled {
+        let mut args = Args::new();
+        args.set("said", said.as_str());
+        said = words.text_with("batch-cancelled", Some(&args));
+    }
+    Some((said, undo))
+}
+
+/// `said` with the first photo a batch skipped, `photo`, named with why, `skip`, and how many
+/// `more` it skipped, in `words`.
+fn skipped_said(
+    said: &str,
+    (photo, skip): (&Path, &Skip),
+    more: usize,
+    words: &Translator,
+) -> String {
+    let why = match skip {
+        Skip::NotOnDisk => "not-on-disk",
+        Skip::Unreadable(_) => "unreadable",
+        Skip::ViewOnly(_) => "view-only",
+        Skip::Refused(_) => "refused",
+        Skip::KeptChanging => "changing",
+        Skip::Failed(_) => "failed",
+        Skip::ChangedSince => "changed",
+    };
+    let mut args = Args::new();
+    args.set("said", said);
+    let name = apertrust_base::log::file_name(photo).into_owned();
+    args.set("photo", name.as_str());
+    args.set("why", why);
+    args.set("more", more as f64);
+    words.text_with("batch-skipped", Some(&args))
+}
+
+/// A batch's notice over the photo, near the foot of `slot` (decision 109): what it did,
+/// `said`, a polite status to screen readers, and Undo where `undo`, in `words`; whether
+/// Undo was pressed.
+pub fn show_batch_notice(
+    ui: &mut egui::Ui,
+    slot: egui::Rect,
+    (said, undo): (&str, bool),
+    words: &Translator,
+) -> bool {
+    let t = theme(ui.ctx());
+    let width = (slot.width() - 2.0 * t.spacing.xl).max(t.spacing.xl);
+    let at = egui::pos2(slot.center().x, slot.bottom() - t.spacing.xl);
+    let mut pressed = false;
+    egui::Area::new(ui.scope_id().with("batch notice"))
+        .fixed_pos(at)
+        .pivot(egui::Align2::CENTER_BOTTOM)
+        .order(egui::Order::Foreground)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::new()
+                .fill(t.colors.raised)
+                .corner_radius(t.shape.radius)
+                .inner_margin(t.spacing.m)
+                .show(ui, |ui| {
+                    ui.set_max_width(width);
+                    ui.horizontal(|ui| {
+                        let label = ui.label(said);
+                        label.widget_info(|| {
+                            egui::WidgetInfo::labeled(egui::accesskit::Role::Status, true, said)
+                        });
+                        (ui.ctx()).accesskit_node_builder(label.id, |node| {
+                            node.set_live(egui::accesskit::Live::Polite);
+                        });
+                        if undo {
+                            pressed = ui.button(words.text("action-undo")).clicked();
+                        }
+                    });
+                });
+        });
+    pressed
+}
+
 /// The command Clear sends for the style applied `name` from `file`.
 pub fn clear(name: &str, file: &str) -> Command {
     Command::ClearStyle {
@@ -297,6 +414,22 @@ pub fn unavailable(
     }
 }
 
+/// [`unavailable`] with `photos` selected, how many a style applied now changes: with
+/// several, a photo open for viewing only takes none of it, which the batch skips and names,
+/// so the tree stays enabled once the photo is live (`batches`, decision 109); with one,
+/// the active photo's alone, which must take edits (`edits`).
+pub fn unavailable_on(
+    (photo, view_only): (bool, bool),
+    (edits, batches): (bool, bool),
+    photos: usize,
+    words: &Translator,
+) -> Option<String> {
+    match photos > 1 {
+        true => unavailable(photo, false, batches, words),
+        false => unavailable(photo, view_only, edits, words),
+    }
+}
+
 /// The Styles tool as a utility, as the frame gives it: the styles read, the styles applied
 /// to the active photo, the tool's own state, whether a style can be applied now, and
 /// whether the platform asks before Delete.
@@ -313,6 +446,12 @@ pub struct StylesTool<'a> {
     /// Whether the platform shows the alert Delete Style… asks first with: where it does
     /// not, Delete Style… is disabled, as a preset's Delete… is.
     pub alerts: bool,
+    /// How many photos a style applied now changes, every selected photo where several are
+    /// (decision 109), which its rows' tooltips say; 1 for the active photo alone.
+    pub photos: usize,
+    /// Whether the styles applied can be cleared now: Clear is the active photo's alone, so
+    /// it takes edits, whatever is selected (decision 109).
+    pub clearable: bool,
 }
 
 /// The Styles tool's declaration, among the utilities (decision 93).
@@ -631,6 +770,12 @@ impl StylesTool<'_> {
             self::parked(style, words)
         } else if let Some(why) = &self.unavailable {
             why.clone()
+        } else if self.photos > 1 {
+            // On every selected photo (decision 109): "Apply to 12 photos", then its tools.
+            let mut args = Args::new();
+            args.set("count", self.photos as f64);
+            let on = words.text_with("styles-apply-photos", Some(&args));
+            format!("{on}\n{tools}")
         } else {
             tools.clone()
         };
@@ -671,7 +816,7 @@ impl StylesTool<'_> {
         let menu = row_menu_name(style.leaf(), words);
         let entries = || {
             let first = if applied {
-                Item::new(CLEAR, words.text("styles-clear")).enabled(self.unavailable.is_none())
+                Item::new(CLEAR, words.text("styles-clear")).enabled(self.clearable)
             } else {
                 Item::new(APPLY, words.text("styles-apply")).enabled(can_apply)
             };
@@ -724,7 +869,7 @@ impl StylesTool<'_> {
     ) {
         let t = theme(ui.ctx());
         let label = words.text("styles-applied");
-        let clearable = self.unavailable.is_none();
+        let clearable = self.clearable;
         ui.scope_builder(
             UiBuilder::new()
                 .id_salt("styles applied")

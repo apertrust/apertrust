@@ -1194,8 +1194,12 @@ mod tests {
                 args.set("item", "Undo");
                 // A style's history steps (decision 106).
                 args.set("style", "Warm film");
-                // A style on several photos: the photos it changed (decision 109).
+                // A style on several photos: the photos it changed, and its notice's skipped
+                // photo, why, and how many more (decision 109).
                 args.set("changed", 11);
+                args.set("said", "Warm film applied to 11 of 12 photos");
+                args.set("why", "view-only");
+                args.set("more", 0);
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

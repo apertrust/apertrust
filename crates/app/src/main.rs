@@ -109,7 +109,7 @@ use apertrust_display::{ColorSpace, DoubleClick, WindowButtons};
 use apertrust_engine::gpu::{self, GpuContext, SubmitGate};
 use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
-    CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, History,
+    BatchId, CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, History,
     LibraryCommand, PickKeys, PickerCommand, PickerRef, Places, Session, SessionError, StepSource,
     StyleMode, Values, ViewOnly,
 };
@@ -1563,6 +1563,10 @@ struct App {
     /// A status message the Viewer says over the photo, with the time it came, for
     /// [`STATUS_FOR`] seconds: a style created ([`App::create_style`]).
     status: Option<(String, f64)>,
+    /// The notice over the photo as a batch on several photos ends (decision 109), the batch
+    /// its Undo takes back while the batch stands, and the time it came, for
+    /// [`STATUS_FOR`] seconds.
+    batch_notice: Option<(String, Option<BatchId>, f64)>,
     /// This run's start marker, removed once a frame has been drawn into the window.
     marker: recovery::Pending,
     /// What was open last, while it reopens at the start ([`reopened`]).
@@ -4844,6 +4848,7 @@ impl App {
             notice,
             notice_held: false,
             status: None,
+            batch_notice: None,
             marker,
             reopening: None,
             remembered: Remembered::default(),
@@ -5432,6 +5437,11 @@ impl App {
                         self.view_sync.sent = None;
                     }
                     Reaction::Unzoomed { .. } => {}
+                    Reaction::Batch(ended) => {
+                        let time = ctx.input(|i| i.time);
+                        let notice = styles::tool::batch_notice(&ended, &translator(ctx));
+                        self.batch_notice = notice.map(|(said, undo)| (said, undo, time));
+                    }
                 }
             }
         }
@@ -5936,15 +5946,25 @@ impl App {
         use styles::tool::Action;
         for action in actions {
             match action {
-                // Not while the photo takes no edit yet, opening, or none at all.
-                Action::Apply(_) | Action::Clear { .. } if !self.mirror.takes_edits() => {}
+                // Not while the photo takes no edit yet, opening, or none at all; with
+                // several selected, a view-only active photo is skipped by the batch.
+                Action::Apply(_)
+                    if self.mirror.selection_pending()
+                        || !self.mirror.takes_edits()
+                            && !(self.mirror.takes_batches()
+                                && selection::styled(&self.mirror).len() > 1) => {}
+                Action::Clear { .. } if !self.mirror.takes_edits() => {}
                 Action::Apply(file) => {
                     let listed = self.shell.styles.listed.iter().flatten();
                     let Some(style) = listed.into_iter().find(|s| s.file() == file).cloned() else {
                         continue;
                     };
                     let (mode, applied) = (self.shell.style_mode, &self.mirror.values.styles);
-                    if let Some(command) = styles::tool::apply(&style, mode, applied) {
+                    if let Some(mut command) = styles::tool::apply(&style, mode, applied) {
+                        // Every selected photo, as one batch (decision 109).
+                        if let Command::ApplyStyle { photos, .. } = &mut command {
+                            *photos = selection::styled(&self.mirror);
+                        }
                         self.send_edit(command);
                         if let Some(said) = styles::tool::left_out(&style, &translator(ctx)) {
                             self.status = Some((said, ctx.input(|i| i.time)));
@@ -6518,18 +6538,24 @@ impl App {
             PhotoState::Open(photo) => (true, photo.view_only.is_some()),
             _ => (false, false),
         };
+        // With several selected, a style is applied to all of them, the active photo open
+        // for viewing only among them skipped and named (decision 109).
+        let styled = selection::styled(&self.mirror).len();
+        let takes = (self.mirror.takes_edits(), self.mirror.takes_batches());
         let mut styles_tool = styles::tool::StylesTool {
             listed: self.shell.styles.listed.as_deref().unwrap_or_default(),
             applied: photo_open.then_some(self.mirror.values.styles.as_slice()),
             kept: &self.shell.styles,
-            unavailable: styles::tool::unavailable(
-                photo_open,
-                view_only,
-                self.mirror.takes_edits(),
+            unavailable: styles::tool::unavailable_on(
+                (photo_open, view_only),
+                takes,
+                styled,
                 &words,
             ),
             titles: &titles,
             alerts: dialog_host::platform::shows_alerts(ui.ctx().os()),
+            photos: styled.max(1),
+            clearable: styles::tool::unavailable(photo_open, view_only, takes.0, &words).is_none(),
         };
         let export = &mut self.export;
         let mut others = |ui: &mut egui::Ui, id: &'static str, cx: &mut utility::Context<'_>| {
@@ -7135,6 +7161,20 @@ impl App {
         if let Some((_, at)) = &self.status {
             ui.ctx()
                 .request_repaint_after_secs((at + STATUS_FOR - time) as f32);
+        }
+        // A batch's notice, with its Undo, for its time (decision 109).
+        self.batch_notice = (self.batch_notice.take()).filter(|(.., at)| time - at < STATUS_FOR);
+        if let Some((said, undo, at)) = self.batch_notice.clone() {
+            ui.ctx()
+                .request_repaint_after_secs((at + STATUS_FOR - time) as f32);
+            let words = translator(ui.ctx());
+            let shown = (said.as_str(), undo.is_some());
+            if styles::tool::show_batch_notice(ui, slot, shown, &words)
+                && let Some(batch) = undo
+            {
+                self.session.send(Command::UndoBatch { batch });
+                self.batch_notice = None;
+            }
         }
         let said: Vec<&str> = [
             left.as_deref(),
@@ -23033,6 +23073,8 @@ mod tests {
                                 unavailable: None,
                                 titles: &no_titles,
                                 alerts: true,
+                                photos: 1,
+                                clearable: true,
                             };
                             let mut drawn = PhotosDrawn::default();
                             PanelBody::new().show(ui, |ui| {

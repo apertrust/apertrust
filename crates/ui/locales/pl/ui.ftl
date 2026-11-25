@@ -166,6 +166,52 @@ styles-parked-retired = Zawiera tylko narzędzia, których Apertrust już nie ma
 styles-row-menu = Menu „{ $name }”
 styles-apply = Zastosuj
 styles-clear = Usuń
+
+styles-apply-photos =
+    { $count ->
+        [one] Zastosuj do { $count } zdjęcia
+        [few] Zastosuj do { $count } zdjęć
+        [many] Zastosuj do { $count } zdjęć
+       *[other] Zastosuj do { $count } zdjęcia
+    }
+batch-applied =
+    { $count ->
+        [one] Zastosowano „{ $style }” do { $count } zdjęcia
+        [few] Zastosowano „{ $style }” do { $count } zdjęć
+        [many] Zastosowano „{ $style }” do { $count } zdjęć
+       *[other] Zastosowano „{ $style }” do { $count } zdjęcia
+    }
+batch-applied-some = Zastosowano „{ $style }” do { $changed } z { $count } zdjęć
+batch-taken-back =
+    { $count ->
+        [one] Cofnięto „{ $style }” na { $count } zdjęciu
+        [few] Cofnięto „{ $style }” na { $count } zdjęciach
+        [many] Cofnięto „{ $style }” na { $count } zdjęciach
+       *[other] Cofnięto „{ $style }” na { $count } zdjęciach
+    }
+batch-taken-back-some = Cofnięto „{ $style }” na { $changed } z { $count } zdjęć
+batch-put-back =
+    { $count ->
+        [one] Przywrócono „{ $style }” na { $count } zdjęciu
+        [few] Przywrócono „{ $style }” na { $count } zdjęciach
+        [many] Przywrócono „{ $style }” na { $count } zdjęciach
+       *[other] Przywrócono „{ $style }” na { $count } zdjęciach
+    }
+batch-put-back-some = Przywrócono „{ $style }” na { $changed } z { $count } zdjęć
+batch-cancelled = { $said }; anulowano
+batch-skipped =
+    { $said }; { $photo }: { $why ->
+        [view-only] tylko do podglądu
+        [not-on-disk] nie ma go na tym komputerze
+        [unreadable] nie można odczytać
+        [refused] nie przyjmuje tego stylu
+        [changing] wciąż się zmienia
+        [failed] nie udało się zapisać
+       *[changed] zmieniono od tego czasu
+    }{ $more ->
+        [0] { "" }
+       *[other] , i jeszcze { $more }
+    }
 styles-rename = Zmień nazwę stylu…
 styles-delete = Usuń styl…
 styles-mode = Tryb
