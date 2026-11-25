@@ -9778,6 +9778,37 @@ mod tests {
         remove(&path);
     }
 
+    /// AgX's actions are reported with its state on a photo, each by its rule, and follow
+    /// a `SetControl` of Reverse all: Set from above can run only while it is off.
+    #[test]
+    fn agx_s_actions_follow_reverse_all() {
+        use apertrust_tools::agx::Agx;
+        let path = scratch("agx-actions");
+        let mut driven = Driven::new(&[&Agx]);
+        let available = |values: &Values, id: &str| -> bool {
+            let found = (values.tools[0].actions.iter()).find(|action| action.id == id);
+            found.unwrap_or_else(|| panic!("{id}")).available
+        };
+        let events = driven.open(&path);
+        // On the photo, each action ported can run, Set from above among them.
+        for end in Agx.definition().action_ends() {
+            let (id, unported) = (end.id, end.unported);
+            assert_eq!(available(values(&events), id), !unported, "{id}");
+        }
+        let reverse = |on| Command::SetControl {
+            tool: "agx".to_owned(),
+            control: "completely_reverse_primaries".to_owned(),
+            value: ControlValue::Bool(on),
+            done: true,
+        };
+        let events = driven.run([reverse(true)]);
+        assert!(failures(&events).is_empty(), "{events:?}");
+        assert!(!available(values(&events), "set_from_above"));
+        let events = driven.run([reverse(false)]);
+        assert!(available(values(&events), "set_from_above"));
+        remove(&path);
+    }
+
     /// A preset row whose options panic, and a lossless view whose coordinates do, as a
     /// tool's bug may make them.
     struct Brittle;
