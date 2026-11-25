@@ -1,0 +1,787 @@
+// Apertrust, a free, non-destructive, cross-platform raw photo editor
+// Copyright (C) 2026  Apertrust developers
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use apertrust_engine::session::library::DateTime;
+use apertrust_engine::session::{Exif, Photo, Selection};
+use apertrust_ui::{Builtin, Locale, Theme, translator};
+use egui::accesskit::Role;
+use egui_kittest::Harness;
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
+
+use super::format::{Shown, Source, fact, flash};
+use super::*;
+use crate::folder::{Folder, Listing};
+use crate::mirror::{Mirror, PhotoState};
+use crate::settings::Settings;
+use crate::tools::Head;
+
+const HOME: &str = "/Users/ana";
+const FOLDER: &str = "/Users/ana/Pictures/2026-07 Lisbon";
+
+/// A photo from the Lisbon folder whose EXIF records what the tool shows at first, a
+/// location among it.
+fn photo() -> Photo {
+    let mut image = apertrust_tools::testing::image();
+    if let Some(camera) = &mut image.camera {
+        camera.iso = 200.0;
+        camera.make = "Ricoh".to_owned();
+        camera.alias = "GR IV".to_owned();
+    }
+    let exif = Exif {
+        make_written: Some("RICOH IMAGING COMPANY, LTD.".to_owned()),
+        model_written: Some("RICOH GR IV".to_owned()),
+        taken: Some(DateTime {
+            year: 2026,
+            month: 7,
+            day: 4,
+            hour: 8,
+            minute: 10,
+            second: 1,
+            millisecond: 120,
+            offset_minutes: Some(60),
+        }),
+        exposure_time: Some(1.0 / 500.0),
+        aperture: Some(5.6),
+        focal_length: Some(18.3),
+        exposure_bias: Some(-1.0 / 3.0),
+        exposure_program: Some(3),
+        metering_mode: Some(5),
+        flash: Some(16),
+        lens: Some("GR Lens 18.3mm F2.8".to_owned()),
+        focal_length_35mm: Some(28.0),
+        latitude: Some(38.71),
+        longitude: Some(-9.13),
+        elevation: Some(54.0),
+        ..Exif::default()
+    };
+    Photo {
+        path: PathBuf::from(format!("{FOLDER}/R0001225.DNG")),
+        open: 1,
+        camera: "Ricoh GR IV".to_owned(),
+        width: 6000,
+        height: 4000,
+        view_only: None,
+        exposure_time: exif.exposure_time,
+        aperture: exif.aperture,
+        focal_length: exif.focal_length,
+        exif: Box::new(exif),
+        format: "DNG".to_owned(),
+        file_size: 32_400_000,
+        sensor: [6064, 4040],
+        image: Box::new(image),
+    }
+}
+
+/// `photo`'s facts in `locale`.
+fn shown(id: &str, photo: &Photo, locale: Locale) -> Shown {
+    let words = Translator::new(locale);
+    let source = Source {
+        photo,
+        history: None,
+        home: Some(Path::new(HOME)),
+        words: &words,
+    };
+    fact(id, &source)
+}
+
+fn value(id: &str, photo: &Photo) -> Option<String> {
+    shown(id, photo, Locale::EnGb).value
+}
+
+/// Edited counts the person's steps applied: none undone, none of the defaults; Never
+/// with none.
+#[test]
+fn edited_counts_the_steps_applied_but_the_defaults() {
+    use apertrust_engine::session::{History, StepSource};
+
+    use crate::history::tests::{history, step};
+    let words = Translator::new(Locale::EnGb);
+    let photo = photo();
+    let edited = |history: &History| {
+        let source = Source {
+            photo: &photo,
+            history: Some(history),
+            home: None,
+            words: &words,
+        };
+        fact("edited", &source).value.unwrap_or_default()
+    };
+    let mut default = (*step(1, &["exposure"], None)).clone();
+    default.source = StepSource::Default;
+    let steps = vec![
+        std::sync::Arc::new(default),
+        step(2, &["exposure"], None),
+        step(3, &["agx"], None),
+        step(4, &["exposure"], None),
+    ];
+    let mut history = history(4, steps, None, None);
+    assert!(
+        edited(&history).ends_with(" · 3 steps"),
+        "{}",
+        edited(&history)
+    );
+    // The last undone.
+    history.end = 3;
+    assert!(
+        edited(&history).ends_with(" · 2 steps"),
+        "{}",
+        edited(&history)
+    );
+    // The default step alone applied.
+    history.end = 1;
+    assert_eq!(edited(&history), "Never");
+}
+
+#[test]
+fn every_fact_is_worded_from_the_photo() {
+    let photo = photo();
+    let rows = [
+        ("file_name", "R0001225.DNG"),
+        ("folder", "~/Pictures/2026-07 Lisbon"),
+        ("type", "DNG"),
+        ("size_on_disk", "32 MB"),
+        ("dimensions", "6000 × 4000 · 24.0 MP"),
+        ("make", "RICOH IMAGING COMPANY, LTD."),
+        ("model", "RICOH GR IV"),
+        ("date_taken", "Sat, 4 Jul 2026, 08:10:01 (+01:00)"),
+        ("exposure_time", "1/500 s"),
+        ("aperture", "f/5.6"),
+        ("iso", "ISO 200"),
+        ("exposure_bias", "−0.33 EV"),
+        ("exposure_program", "Aperture priority"),
+        ("metering_mode", "Multi-segment"),
+        ("flash", "Off, did not fire"),
+        ("lens", "GR Lens 18.3mm F2.8"),
+        ("focal_length", "18.3 mm"),
+        ("focal_length_35mm", "28 mm"),
+        ("latitude", "38° 42.6′ N"),
+        ("longitude", "9° 7.8′ W"),
+        ("altitude", "54 m"),
+    ];
+    for (id, wanted) in rows {
+        assert_eq!(value(id, &photo).as_deref(), Some(wanted), "{id}");
+    }
+    // The milliseconds in Date taken's tooltip, the readout in Dimensions'.
+    let taken = shown("date_taken", &photo, Locale::EnGb);
+    assert_eq!(
+        taken.note.as_deref(),
+        Some("To the millisecond: 08:10:01.120")
+    );
+    let size = shown("dimensions", &photo, Locale::EnGb);
+    assert_eq!(size.note.as_deref(), Some("Sensor 6064 × 4040"));
+    let latitude = shown("latitude", &photo, Locale::EnGb);
+    assert_eq!(latitude.note.as_deref(), Some("38.710000"));
+}
+
+/// A file whose metadata cannot be read lists every field unread, and each fact read from
+/// the EXIF finds its field there, so its tooltip says why it is empty; ISO is the
+/// decoder's own.
+#[test]
+fn every_exif_fact_says_why_where_the_metadata_cannot_be_read() {
+    let unread = Exif::unread_all().unread;
+    let groups = ROWS
+        .iter()
+        .filter(|group| matches!(group.group, "camera" | "exposure" | "lens" | "gps"));
+    for row in groups.flat_map(|group| group.rows.iter()) {
+        if row.id != "iso" {
+            assert!(unread.contains(&exif_field(row.id)), "{}", row.id);
+        }
+    }
+}
+
+#[test]
+fn a_fact_the_photo_lacks_reads_none_and_the_make_falls_back() {
+    let mut photo = photo();
+    *photo.exif = Exif::default();
+    for id in [
+        "date_taken",
+        "exposure_time",
+        "subject_distance",
+        "lens",
+        "latitude",
+        "crop_factor",
+        "software",
+    ] {
+        assert_eq!(value(id, &photo), None, "{id}");
+    }
+    // The camera's names as rawler spells them where the file's cannot be read.
+    assert_eq!(value("make", &photo).as_deref(), Some("Ricoh"));
+    assert_eq!(value("model", &photo).as_deref(), Some("GR IV"));
+    // The readout said only where it differs.
+    photo.sensor = [6000, 4000];
+    assert_eq!(shown("dimensions", &photo, Locale::EnGb).note, None);
+}
+
+#[test]
+fn the_codes_read_in_words_and_an_unknown_one_says_so() {
+    let mut photo = photo();
+    photo.exif.exposure_mode = Some(2);
+    photo.exif.white_balance = Some(1);
+    photo.exif.light_source = Some(21);
+    photo.exif.scene_type = Some(3);
+    photo.exif.contrast = Some(1);
+    photo.exif.colour_space = Some(65535);
+    photo.exif.orientation_code = Some(6);
+    assert_eq!(
+        value("exposure_mode", &photo).as_deref(),
+        Some("Auto bracket")
+    );
+    let balance = shown("white_balance", &photo, Locale::EnGb);
+    assert_eq!(balance.value.as_deref(), Some("Manual"));
+    assert_eq!(balance.note.as_deref(), Some("Light source: D65"));
+    assert_eq!(value("scene_type", &photo).as_deref(), Some("Night scene"));
+    assert_eq!(value("contrast", &photo).as_deref(), Some("Low"));
+    assert_eq!(
+        value("colour_space", &photo).as_deref(),
+        Some("Uncalibrated")
+    );
+    assert_eq!(
+        value("orientation", &photo).as_deref(),
+        Some("Rotated 90° clockwise")
+    );
+    photo.exif.exposure_program = Some(7);
+    assert_eq!(
+        value("exposure_program", &photo).as_deref(),
+        Some("Portrait mode")
+    );
+    photo.exif.exposure_program = Some(42);
+    assert_eq!(
+        value("exposure_program", &photo).as_deref(),
+        Some("Unknown (42)")
+    );
+}
+
+#[test]
+fn the_flash_reads_from_its_bits() {
+    let words = Translator::new(Locale::EnGb);
+    let photo = photo();
+    let source = Source {
+        photo: &photo,
+        history: None,
+        home: None,
+        words: &words,
+    };
+    let read = |bits| flash(bits, &source);
+    assert_eq!(read(0x10).value.as_deref(), Some("Off, did not fire"));
+    assert_eq!(read(0x09).value.as_deref(), Some("On, fired"));
+    assert_eq!(read(0x19).value.as_deref(), Some("Auto, fired"));
+    assert_eq!(read(0x18).value.as_deref(), Some("Auto, did not fire"));
+    assert_eq!(
+        read(0x59).value.as_deref(),
+        Some("Auto, fired, red-eye reduction")
+    );
+    assert_eq!(read(0x20).value.as_deref(), Some("No flash function"));
+    // The return light in the tooltip.
+    let returned = read(0x1f);
+    assert_eq!(
+        returned.note.as_deref(),
+        Some("Strobe return light detected")
+    );
+}
+
+#[test]
+fn coordinates_altitude_and_distance_read_as_darktable_writes_them() {
+    let mut photo = photo();
+    for (latitude, longitude, wanted) in [
+        (38.71, -9.13, ["38° 42.6′ N", "9° 7.8′ W"]),
+        (-33.8688, 151.2093, ["33° 52.1′ S", "151° 12.6′ E"]),
+        (0.0, 0.0, ["0° 0.0′ N", "0° 0.0′ E"]),
+    ] {
+        photo.exif.latitude = Some(latitude);
+        photo.exif.longitude = Some(longitude);
+        assert_eq!(value("latitude", &photo).as_deref(), Some(wanted[0]));
+        assert_eq!(value("longitude", &photo).as_deref(), Some(wanted[1]));
+    }
+    photo.exif.elevation = Some(-12.0);
+    assert_eq!(
+        value("altitude", &photo).as_deref(),
+        Some("12 m below sea level")
+    );
+    photo.exif.focus_distance = Some(3.2);
+    assert_eq!(value("subject_distance", &photo).as_deref(), Some("3.20 m"));
+    photo.exif.focus_distance = Some(4_294_967_295.0);
+    assert_eq!(
+        value("subject_distance", &photo).as_deref(),
+        Some("Infinity")
+    );
+    assert_eq!(
+        format::coordinates(&photo.exif).as_deref(),
+        Some("0.000000, 0.000000")
+    );
+}
+
+#[test]
+fn the_lens_s_specification_leaves_out_what_it_lacks() {
+    let mut photo = photo();
+    photo.exif.lens_specification = Some([18.3, 18.3, 2.8, 2.8]);
+    assert_eq!(
+        value("lens_specification", &photo).as_deref(),
+        Some("18.3 mm f/2.8")
+    );
+    photo.exif.lens_specification = Some([24.0, 70.0, 2.8, 4.0]);
+    assert_eq!(
+        value("lens_specification", &photo).as_deref(),
+        Some("24–70 mm f/2.8–4")
+    );
+    photo.exif.lens_specification = Some([50.0, 50.0, 0.0, 0.0]);
+    assert_eq!(
+        value("lens_specification", &photo).as_deref(),
+        Some("50 mm")
+    );
+    // The 35 mm equivalent from the crop factor where the camera records none.
+    photo.exif.focal_length_35mm = None;
+    photo.exif.crop_factor = Some(1.53);
+    assert_eq!(value("focal_length_35mm", &photo).as_deref(), Some("28 mm"));
+    assert_eq!(value("crop_factor", &photo).as_deref(), Some("1.53×"));
+}
+
+#[test]
+fn a_size_on_disk_is_in_each_language_s_numbers() {
+    let mut photo = photo();
+    photo.file_size = 4_500_000;
+    let size = |locale| shown("size_on_disk", &photo, locale).value;
+    assert_eq!(size(Locale::EnGb).as_deref(), Some("4.5 MB"));
+    assert_eq!(size(Locale::Uk).as_deref(), Some("4,5 МБ"));
+    assert_eq!(size(Locale::Pl).as_deref(), Some("4,5 MB"));
+}
+
+#[test]
+fn a_view_toggles_rows_against_the_declaration() {
+    let mut view = View::default();
+    assert!(view.shows("aperture") && !view.shows("software"));
+    view.toggle("aperture");
+    view.toggle("software");
+    assert!(!view.shows("aperture") && view.shows("software"));
+    assert_eq!(
+        (view.shown.clone(), view.hidden.clone()),
+        (vec!["software".to_owned()], vec!["aperture".to_owned()])
+    );
+    view.toggle("aperture");
+    assert!(view.hidden.is_empty());
+    view.set_open("camera", true);
+    assert_eq!(view.open, ["basic", "camera", "exposure", "content"]);
+    // A row this build lacks is no row to toggle.
+    view.toggle("title");
+    assert!(!view.shows("title"));
+}
+
+/// A preset's settings, read and written back; Essentials shows its rows alone, whatever
+/// rows the build has, a row it names that the build lacks skipped.
+#[test]
+fn a_preset_s_settings_read_and_write_back() {
+    let essentials = View::from_settings(&vec![
+        (
+            "metadata.shown".to_owned(),
+            "file_name rating title aperture".to_owned(),
+        ),
+        ("metadata.shown_only".to_owned(), "true".to_owned()),
+        ("metadata.open".to_owned(), "basic exposure".to_owned()),
+    ]);
+    for (id, shows) in [
+        ("file_name", true),
+        ("aperture", true),
+        ("rating", true),
+        ("folder", false),
+        ("iso", false),
+        ("software", false),
+    ] {
+        assert_eq!(essentials.shows(id), shows, "{id}");
+    }
+    assert_eq!(View::from_settings(&essentials.settings()), essentials);
+    // A preset of no settings is Default settings.
+    assert_eq!(View::from_settings(&Vec::new()), View::default());
+    let builtin = presets::builtins(ID);
+    let everything = View::from_settings(&builtin[1].1);
+    let every = ROWS.iter().flat_map(|group| group.rows.iter());
+    assert!(every.into_iter().all(|row| everything.shows(row.id)));
+}
+
+/// What the tool's section shows, and what it asked for.
+struct Scene {
+    tool: Metadata,
+    mirror: Mirror,
+    folder: PathBuf,
+    actions: Vec<library::Action>,
+    copied: Vec<String>,
+}
+
+fn scene(photo: Option<Photo>) -> Scene {
+    let mut mirror = crate::mirror::tests::mirror();
+    if let Some(photo) = photo {
+        mirror.photo = PhotoState::Open(Box::new(photo));
+    }
+    Scene {
+        tool: Metadata::new(View::default()).with_home(Some(PathBuf::from(HOME))),
+        mirror,
+        folder: std::env::temp_dir().join("apertrust-metadata-tests-presets"),
+        actions: Vec::new(),
+        copied: Vec::new(),
+    }
+}
+
+fn drawn(which: Builtin, width: f32, state: Scene) -> Harness<'static, Scene> {
+    Harness::builder()
+        .with_size(egui::vec2(width, 900.0))
+        .with_context_setup(move |ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(which));
+            apertrust_ui::set_locale(ctx, Locale::EnGb);
+        })
+        .build_ui_state(
+            |ui, scene: &mut Scene| {
+                let settings = Settings::default();
+                let (words, mut commands) = (translator(ui.ctx()), Vec::new());
+                let photo = described(&scene.mirror);
+                let head = Head {
+                    open: true,
+                    options: Metadata::options(&words, photo),
+                    enabled: true,
+                    presets: Some(presets::Menu {
+                        folder: scene.folder.clone(),
+                        chosen: None,
+                        alerts: true,
+                    }),
+                    ..Head::default()
+                };
+                let mut cx = Context {
+                    mirror: &scene.mirror,
+                    settings: &settings,
+                    words: &words,
+                    commands: &mut commands,
+                };
+                // The app's own routing; then its preset applied, as `App::metadata_preset`.
+                let mut out = crate::PhotosDrawn::default();
+                parts::PanelBody::new().show(ui, |ui| {
+                    crate::metadata_section(ui, &mut scene.tool, &mut cx, head, &mut out);
+                });
+                if let Some(item) = out.metadata_preset {
+                    scene.tool.apply_item(&scene.folder, &item);
+                }
+                scene.copied.extend(out.copied);
+                scene.actions.extend(out.actions);
+            },
+            state,
+        )
+}
+
+fn fact_named(harness: &Harness<'_, Scene>, label: &str) -> bool {
+    harness.query_all_by_role(Role::ListItem).any(|node| {
+        node.accesskit_node()
+            .label()
+            .is_some_and(|l| l.starts_with(label))
+    })
+}
+
+#[test]
+fn a_click_focuses_a_fact_and_ctrl_c_copies_it_the_arrows_moving() {
+    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
+    harness.run();
+    harness.get_by_label("Aperture: f/5.6").click();
+    harness.run();
+    harness.event(egui::Event::Copy);
+    harness.step();
+    let copied = &harness.output().platform_output.commands;
+    let wanted = egui::OutputCommand::CopyText("f/5.6".to_owned());
+    assert!(copied.contains(&wanted), "{copied:?}");
+    harness.run();
+    harness.key_press(egui::Key::ArrowDown);
+    harness.run();
+    assert!(
+        harness
+            .get_by_label("ISO: ISO 200")
+            .accesskit_node()
+            .is_focused()
+    );
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    assert!(
+        !harness
+            .get_by_label("ISO: ISO 200")
+            .accesskit_node()
+            .is_focused()
+    );
+}
+
+#[test]
+fn rows_shown_hides_a_row_and_a_group_with_none_shown() {
+    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
+    harness.run();
+    harness.get_by_label("Rows Shown").click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Exposure")
+        .click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MenuItemCheckBox, "Aperture")
+        .click();
+    harness.run();
+    assert!(!fact_named(&harness, "Aperture:"));
+    assert_eq!(harness.state().tool.view().hidden, ["aperture"]);
+    // The menu stays open at Exposure until Esc closes it.
+    assert!(
+        harness
+            .query_by_role_and_label(Role::MenuItemCheckBox, "Flash")
+            .is_some()
+    );
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    // Every row of Lens hidden, its group goes; one shown again brings it back.
+    for id in ["lens", "focal_length", "focal_length_35mm"] {
+        harness.state_mut().tool.view.toggle(id);
+    }
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Lens")
+            .is_none()
+    );
+    harness.state_mut().tool.view.toggle("lens");
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, "Lens")
+            .is_some()
+    );
+}
+
+#[test]
+fn closing_a_group_writes_the_groups_open() {
+    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Exposure")
+        .click();
+    harness.run();
+    assert_eq!(harness.state().tool.view().open, ["basic", "content"]);
+    assert!(!fact_named(&harness, "Aperture:"));
+}
+
+#[test]
+fn essentials_shows_its_rows_alone_and_default_settings_puts_them_back() {
+    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
+    harness.run();
+    harness.get_by_label("Metadata presets").click();
+    harness.run();
+    harness.get_by_label("Essentials").click();
+    harness.run();
+    assert!(fact_named(&harness, "Aperture:"));
+    assert!(!fact_named(&harness, "Folder:"));
+    assert!(!fact_named(&harness, "Metering mode:"));
+    harness.get_by_label("Metadata presets").click();
+    harness.run();
+    let essentials = harness.get_by_role_and_label(Role::MenuItemCheckBox, "Essentials");
+    assert_eq!(
+        essentials.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    harness.get_by_label("Default settings").click();
+    harness.run();
+    assert_eq!(*harness.state().tool.view(), View::default());
+    assert!(fact_named(&harness, "Folder:"));
+}
+
+#[test]
+fn copy_information_lists_every_row_shown() {
+    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
+    harness.run();
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    harness.get_by_label("Copy Information").click();
+    harness.run();
+    let copied = harness.state().copied.first().cloned().unwrap_or_default();
+    let lines: Vec<&str> = copied.lines().collect();
+    assert_eq!(lines[0], "File name: R0001225.DNG");
+    assert_eq!(lines[1], "Folder: ~/Pictures/2026-07 Lisbon");
+    assert!(lines.contains(&"Rating: —"));
+    assert!(lines.contains(&"Aperture: f/5.6"));
+    assert!(lines.contains(&"Make: RICOH IMAGING COMPANY, LTD."));
+    assert!(!lines.iter().any(|line| line.starts_with("Software")));
+    assert_eq!(lines.last(), Some(&"Altitude: 54 m"));
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    harness.get_by_label("Copy Coordinates").click();
+    harness.run();
+    assert_eq!(
+        harness.state().copied.last().unwrap(),
+        "38.710000, -9.130000"
+    );
+}
+
+#[test]
+fn copy_coordinates_rests_without_a_location() {
+    let mut photo = photo();
+    photo.exif.latitude = None;
+    let words = Translator::new(Locale::EnGb);
+    let options = Metadata::options(&words, Some(&photo));
+    let enabled: Vec<bool> = (options.iter())
+        .map(|entry| matches!(entry, Entry::Item(item) if item.enabled))
+        .collect();
+    assert_eq!(enabled, [true, false]);
+    assert_eq!(
+        (Metadata::options(&words, None).iter())
+            .filter(|entry| matches!(entry, Entry::Item(item) if item.enabled))
+            .count(),
+        0
+    );
+}
+
+#[test]
+fn open_this_folder_opens_the_photo_s_folder_and_rests_on_the_open_one() {
+    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
+    harness.run();
+    harness.get_by_label("Open This Folder").click();
+    harness.run();
+    assert_eq!(
+        harness.state().actions,
+        [library::Action::Open(PathBuf::from(FOLDER))]
+    );
+    let mut state = scene(Some(photo()));
+    state.mirror.folder.folder = Folder::Open(Listing {
+        name: "2026-07 Lisbon".to_owned(),
+        path: PathBuf::from(FOLDER),
+        subfolders: Vec::new(),
+        photos: Vec::new(),
+        done: true,
+        taken: None,
+        thumbnails: HashMap::new(),
+    });
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    let open = harness.get_by_label("Open This Folder");
+    assert!(open.accesskit_node().is_disabled());
+}
+
+#[test]
+fn several_photos_read_how_many_and_the_rest_wait() {
+    let mut state = scene(Some(photo()));
+    let photos: Vec<PathBuf> = (0..12)
+        .map(|n| PathBuf::from(format!("{FOLDER}/R00012{n:02}.DNG")))
+        .collect();
+    state
+        .mirror
+        .apply(apertrust_engine::session::Event::Selection(Selection {
+            photos: photos.clone(),
+            active: Some(photos[0].clone()),
+            previous: false,
+            through: 0,
+        }));
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    assert!(fact_named(&harness, "File name: 12 photos"));
+    let aperture = harness.get_by_label("Aperture: None");
+    assert!(aperture.accesskit_node().is_disabled());
+    // ⋯ copies nothing of the active photo under "12 photos".
+    assert!(described(&harness.state().mirror).is_none());
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    let copy = harness.get_by_label("Copy Information");
+    assert!(copy.accesskit_node().is_disabled());
+}
+
+/// Photographs the tool at `width` in the dark and light themes, `name-dark` and
+/// `name-light`, its scene made by `make` and left as `prepare` leaves it.
+fn photograph(name: &str, width: f32, make: fn() -> Scene, prepare: fn(&mut Harness<'_, Scene>)) {
+    let mut results = egui_kittest::SnapshotResults::new();
+    for (which, theme) in [(Builtin::Dark, "dark"), (Builtin::Light, "light")] {
+        let mut harness = drawn(which, width, make());
+        harness.run();
+        prepare(&mut harness);
+        harness.snapshot(format!("{name}-{theme}"));
+        results.extend_harness(&mut harness);
+    }
+}
+
+fn with_photo() -> Scene {
+    scene(Some(photo()))
+}
+
+/// One photo with the defaults: Basic and Exposure open, Content to Location disabled.
+#[test]
+fn one_photo_is_photographed() {
+    photograph("metadata-one-photo", 320.0, with_photo, |_| {});
+}
+
+/// Camera, Lens and GPS open as well.
+#[test]
+fn camera_lens_and_gps_open_are_photographed() {
+    fn open() -> Scene {
+        let mut scene = with_photo();
+        for group in ["camera", "lens", "gps"] {
+            scene.tool.view.set_open(group, true);
+        }
+        scene
+    }
+    photograph("metadata-groups-open", 320.0, open, |_| {});
+}
+
+/// ＋ open at Lens's rows.
+#[test]
+fn rows_shown_menu_is_photographed() {
+    photograph("metadata-rows-shown", 320.0, with_photo, |harness| {
+        harness.get_by_label("Rows Shown").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Lens")
+            .hover();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Lens")
+            .click();
+        harness.run();
+    });
+}
+
+/// No photo selected: every fact "—" and disabled.
+#[test]
+fn no_photo_is_photographed() {
+    photograph("metadata-no-photo", 320.0, || scene(None), |_| {});
+}
+
+/// Several photos selected: File name counts them, the rest wait.
+#[test]
+fn several_photos_are_photographed() {
+    fn several() -> Scene {
+        let mut state = with_photo();
+        let photos: Vec<PathBuf> = (0..12)
+            .map(|n| PathBuf::from(format!("{FOLDER}/R00012{n:02}.DNG")))
+            .collect();
+        state
+            .mirror
+            .apply(apertrust_engine::session::Event::Selection(Selection {
+                photos: photos.clone(),
+                active: Some(photos[0].clone()),
+                previous: false,
+                through: 0,
+            }));
+        state
+    }
+    photograph("metadata-several", 320.0, several, |_| {});
+}
+
+/// At the Tools panel's narrowest, 240 points, a long label cut at its cap.
+#[test]
+fn the_narrowest_panel_is_photographed() {
+    fn shown() -> Scene {
+        let mut scene = with_photo();
+        scene.tool.view.toggle("image_description");
+        scene.tool.view.set_open("camera", true);
+        scene
+    }
+    photograph("metadata-240", 240.0, shown, |_| {});
+}

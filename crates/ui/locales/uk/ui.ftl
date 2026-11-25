@@ -704,6 +704,8 @@ section-collections = Колекції
     .search = Колекції
 section-styles = Стилі
     .search = стилі вигляд
+section-metadata = Метадані
+    .search = метадані exif iptc відомості камера об’єктив gps
 collections-folders = Теки
 section-export = Експорт
     .search = Експорт
@@ -1690,3 +1692,153 @@ alert-preset-delete-message = Його файл буде вилучено.
 alert-preset-delete-button = Видалити
 alert-style-delete-title = Видалити стиль «{ $name }»?
 alert-style-delete-message = Його файл буде видалено. Знімки, до яких його застосовано, збережуть свої редагування.
+
+## Інструмент «Метадані» (рішення 110).
+
+tool-metadata-kind = Записує метадані знімків, ніколи не їх редагування
+metadata-copy-information = Копіювати відомості
+metadata-copy-coordinates = Копіювати координати
+metadata-select-a-photo = Виберіть знімок
+metadata-several-later = Кілька знімків з’являться в одній із наступних версій
+metadata-fact-unread = Apertrust поки не читає цього з файлів { $format }
+metadata-folder-open = Цю папку відкрито
+metadata-rating-later = Оцінки з’являться в одній із наступних версій
+metadata-labels-later = Кольорові мітки з’являться в одній із наступних версій
+metadata-map = Показати на мапі
+metadata-map-later = З’явиться разом із мапою
+preset-metadata-essentials = Основне
+preset-metadata-everything = Усе
+preset-metadata-iptc-for-agencies = IPTC для агенцій
+metadata-dimensions = { $width } × { $height } · { $megapixels } Мп
+metadata-dimensions-sensor = Сенсор { $width } × { $height }
+metadata-edited = { $when } · { $steps ->
+        [one] { $steps } крок
+        [few] { $steps } кроки
+        [many] { $steps } кроків
+       *[other] { $steps } кроку
+    }
+metadata-edited-never = Ніколи
+metadata-resolution = { $x } × { $y }
+metadata-resolution-inches = { $x } × { $y } ppi
+metadata-resolution-centimetres = { $x } × { $y } пікселів на см
+metadata-milliseconds = До мілісекунди: { $time }
+metadata-no-zone = Годинник камери; часовий пояс не записано
+metadata-sensitivity = Тип світлочутливості: { $type }
+metadata-light-source = Джерело світла: { $source }
+metadata-subject-range = Діапазон: { $range }
+metadata-millimetres = { $value } мм
+metadata-metres = { $value } м
+metadata-infinity = Нескінченність
+metadata-times = { $value }×
+metadata-digital-zoom-none = Немає
+metadata-lens-specification = { $focal } { $aperture }
+metadata-north = { $degrees }° { $minutes }′ пн. ш.
+metadata-south = { $degrees }° { $minutes }′ пд. ш.
+metadata-east = { $degrees }° { $minutes }′ сх. д.
+metadata-west = { $degrees }° { $minutes }′ зх. д.
+metadata-altitude-above = { $value } м
+metadata-altitude-below = { $value } м нижче рівня моря
+metadata-direction = { $degrees }°
+metadata-direction-true = { $degrees }° (істинний)
+metadata-direction-magnetic = { $degrees }° (магнітний)
+metadata-utc = { $time } UTC
+metadata-speed-kmh = { $value } км/год
+metadata-speed-mph = { $value } миль/год
+metadata-speed-knots = { $value } вузлів
+metadata-code-unknown = Невідомо ({ $code })
+metadata-flash-no-function = Немає спалаху
+metadata-flash = { $mode ->
+        [on] Увімкнено
+        [off] Вимкнено
+        [auto] Авто
+       *[unknown] Спалах
+    }, { $fired ->
+        [yes] спрацював
+       *[no] не спрацював
+    }{ $red_eye ->
+        [yes] , зменшення червоних очей
+       *[no] {""}
+    }
+metadata-exposure_program-0 = Не визначено
+metadata-exposure_program-1 = Ручний
+metadata-exposure_program-2 = Звичайна програма
+metadata-exposure_program-3 = Пріоритет діафрагми
+metadata-exposure_program-4 = Пріоритет витримки
+metadata-exposure_program-5 = Творча програма
+metadata-exposure_program-6 = Програма для руху
+metadata-exposure_program-7 = Портрет
+metadata-exposure_program-8 = Пейзаж
+metadata-exposure_program-9 = Ручна витримка (Bulb)
+metadata-exposure_mode-0 = Авто
+metadata-exposure_mode-1 = Ручний
+metadata-exposure_mode-2 = Автобрекетинг
+metadata-metering_mode-0 = Невідомо
+metadata-metering_mode-1 = Усереднений
+metadata-metering_mode-2 = Центрально-зважений
+metadata-metering_mode-3 = Точковий
+metadata-metering_mode-4 = Багатоточковий
+metadata-metering_mode-5 = Багатозонний
+metadata-metering_mode-6 = Частковий
+metadata-metering_mode-255 = Інший
+metadata-white_balance-0 = Авто
+metadata-white_balance-1 = Ручний
+metadata-light_source-0 = Невідомо
+metadata-light_source-1 = Денне світло
+metadata-light_source-2 = Люмінесцентне
+metadata-light_source-3 = Лампа розжарювання
+metadata-light_source-4 = Спалах
+metadata-light_source-9 = Ясна погода
+metadata-light_source-10 = Хмарно
+metadata-light_source-11 = Тінь
+metadata-light_source-12 = Люмінесцентне денне
+metadata-light_source-13 = Люмінесцентне денне біле
+metadata-light_source-14 = Люмінесцентне холодне біле
+metadata-light_source-15 = Люмінесцентне біле
+metadata-light_source-16 = Люмінесцентне тепле біле
+metadata-light_source-17 = Стандартне світло A
+metadata-light_source-18 = Стандартне світло B
+metadata-light_source-19 = Стандартне світло C
+metadata-light_source-20 = D55
+metadata-light_source-21 = D65
+metadata-light_source-22 = D75
+metadata-light_source-23 = D50
+metadata-light_source-24 = Студійна лампа розжарювання ISO
+metadata-light_source-255 = Інше
+metadata-scene_type-0 = Стандартна
+metadata-scene_type-1 = Пейзаж
+metadata-scene_type-2 = Портрет
+metadata-scene_type-3 = Нічна сцена
+metadata-subject_distance_range-0 = Невідомо
+metadata-subject_distance_range-1 = Макро
+metadata-subject_distance_range-2 = Близько
+metadata-subject_distance_range-3 = Далеко
+metadata-contrast-0 = Звичайний
+metadata-contrast-1 = Низький
+metadata-contrast-2 = Високий
+metadata-saturation-0 = Звичайна
+metadata-saturation-1 = Низька
+metadata-saturation-2 = Висока
+metadata-sharpness-0 = Звичайна
+metadata-sharpness-1 = М’яка
+metadata-sharpness-2 = Жорстка
+metadata-colour_space-1 = sRGB
+metadata-colour_space-65535 = Некалібрований
+metadata-orientation-1 = Горизонтальна (звичайна)
+metadata-orientation-2 = Віддзеркалена по горизонталі
+metadata-orientation-3 = Повернута на 180°
+metadata-orientation-4 = Віддзеркалена по вертикалі
+metadata-orientation-5 = Віддзеркалена по горизонталі, повернута на 270° за годинниковою стрілкою
+metadata-orientation-6 = Повернута на 90° за годинниковою стрілкою
+metadata-orientation-7 = Віддзеркалена по горизонталі, повернута на 90° за годинниковою стрілкою
+metadata-orientation-8 = Повернута на 270° за годинниковою стрілкою
+metadata-sensitivity_type-0 = Невідомо
+metadata-sensitivity_type-1 = Стандартна вихідна чутливість (SOS)
+metadata-sensitivity_type-2 = Рекомендований індекс експозиції (REI)
+metadata-sensitivity_type-3 = Світлочутливість ISO
+metadata-sensitivity_type-4 = SOS і REI
+metadata-sensitivity_type-5 = SOS і світлочутливість ISO
+metadata-sensitivity_type-6 = REI і світлочутливість ISO
+metadata-sensitivity_type-7 = SOS, REI і світлочутливість ISO
+metadata-flash_return-1 = Відбите світло: зарезервовано
+metadata-flash_return-2 = Відбите світло спалаху не виявлено
+metadata-flash_return-3 = Відбите світло спалаху виявлено

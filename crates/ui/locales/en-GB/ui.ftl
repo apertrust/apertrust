@@ -889,6 +889,8 @@ section-collections = Collections
     .search = collections
 section-styles = Styles
     .search = styles looks
+section-metadata = Metadata
+    .search = metadata exif iptc information camera lens gps
 collections-folders = Folders
 section-export = Export
     .search = export
@@ -2139,3 +2141,152 @@ alert-preset-delete-message = Its file is removed.
 alert-preset-delete-button = Delete
 alert-style-delete-title = Delete the style “{ $name }”?
 alert-style-delete-message = Its file is removed. Photos it was applied to keep their edits.
+
+## The Metadata tool (decision 110): its header, its rows' values and tooltips, the EXIF
+## codes in words (CIPA DC-008, EXIF 3.0), its presets.
+
+tool-metadata-kind = Writes the photos’ metadata, never their edit
+metadata-copy-information = Copy Information
+metadata-copy-coordinates = Copy Coordinates
+metadata-select-a-photo = Select a photo
+metadata-several-later = Several photos come in a later version
+metadata-fact-unread = Apertrust does not read this from { $format } files yet
+metadata-folder-open = This folder is open
+metadata-rating-later = Ratings come in a later version
+metadata-labels-later = Colour labels come in a later version
+metadata-map = Show on Map
+metadata-map-later = Coming with the map
+preset-metadata-essentials = Essentials
+preset-metadata-everything = Everything
+preset-metadata-iptc-for-agencies = IPTC for agencies
+metadata-dimensions = { $width } × { $height } · { $megapixels } MP
+metadata-dimensions-sensor = Sensor { $width } × { $height }
+metadata-edited = { $when } · { $steps ->
+        [one] { $steps } step
+       *[other] { $steps } steps
+    }
+metadata-edited-never = Never
+metadata-resolution = { $x } × { $y }
+metadata-resolution-inches = { $x } × { $y } ppi
+metadata-resolution-centimetres = { $x } × { $y } pixels per cm
+metadata-milliseconds = To the millisecond: { $time }
+metadata-no-zone = The camera’s clock; no time zone recorded
+metadata-sensitivity = Sensitivity type: { $type }
+metadata-light-source = Light source: { $source }
+metadata-subject-range = Range: { $range }
+metadata-millimetres = { $value } mm
+metadata-metres = { $value } m
+metadata-infinity = Infinity
+metadata-times = { $value }×
+metadata-digital-zoom-none = None
+metadata-lens-specification = { $focal } { $aperture }
+metadata-north = { $degrees }° { $minutes }′ N
+metadata-south = { $degrees }° { $minutes }′ S
+metadata-east = { $degrees }° { $minutes }′ E
+metadata-west = { $degrees }° { $minutes }′ W
+metadata-altitude-above = { $value } m
+metadata-altitude-below = { $value } m below sea level
+metadata-direction = { $degrees }°
+metadata-direction-true = { $degrees }° (true)
+metadata-direction-magnetic = { $degrees }° (magnetic)
+metadata-utc = { $time } UTC
+metadata-speed-kmh = { $value } km/h
+metadata-speed-mph = { $value } mph
+metadata-speed-knots = { $value } knots
+metadata-code-unknown = Unknown ({ $code })
+metadata-flash-no-function = No flash function
+metadata-flash = { $mode ->
+        [on] On
+        [off] Off
+        [auto] Auto
+       *[unknown] Flash
+    }, { $fired ->
+        [yes] fired
+       *[no] did not fire
+    }{ $red_eye ->
+        [yes] , red-eye reduction
+       *[no] {""}
+    }
+metadata-exposure_program-0 = Not defined
+metadata-exposure_program-1 = Manual
+metadata-exposure_program-2 = Normal program
+metadata-exposure_program-3 = Aperture priority
+metadata-exposure_program-4 = Shutter priority
+metadata-exposure_program-5 = Creative program
+metadata-exposure_program-6 = Action program
+metadata-exposure_program-7 = Portrait mode
+metadata-exposure_program-8 = Landscape mode
+metadata-exposure_program-9 = Bulb
+metadata-exposure_mode-0 = Auto
+metadata-exposure_mode-1 = Manual
+metadata-exposure_mode-2 = Auto bracket
+metadata-metering_mode-0 = Unknown
+metadata-metering_mode-1 = Average
+metadata-metering_mode-2 = Centre-weighted average
+metadata-metering_mode-3 = Spot
+metadata-metering_mode-4 = Multi-spot
+metadata-metering_mode-5 = Multi-segment
+metadata-metering_mode-6 = Partial
+metadata-metering_mode-255 = Other
+metadata-white_balance-0 = Auto
+metadata-white_balance-1 = Manual
+metadata-light_source-0 = Unknown
+metadata-light_source-1 = Daylight
+metadata-light_source-2 = Fluorescent
+metadata-light_source-3 = Tungsten
+metadata-light_source-4 = Flash
+metadata-light_source-9 = Fine weather
+metadata-light_source-10 = Cloudy
+metadata-light_source-11 = Shade
+metadata-light_source-12 = Daylight fluorescent
+metadata-light_source-13 = Day white fluorescent
+metadata-light_source-14 = Cool white fluorescent
+metadata-light_source-15 = White fluorescent
+metadata-light_source-16 = Warm white fluorescent
+metadata-light_source-17 = Standard light A
+metadata-light_source-18 = Standard light B
+metadata-light_source-19 = Standard light C
+metadata-light_source-20 = D55
+metadata-light_source-21 = D65
+metadata-light_source-22 = D75
+metadata-light_source-23 = D50
+metadata-light_source-24 = ISO studio tungsten
+metadata-light_source-255 = Other
+metadata-scene_type-0 = Standard
+metadata-scene_type-1 = Landscape
+metadata-scene_type-2 = Portrait
+metadata-scene_type-3 = Night scene
+metadata-subject_distance_range-0 = Unknown
+metadata-subject_distance_range-1 = Macro
+metadata-subject_distance_range-2 = Close
+metadata-subject_distance_range-3 = Distant
+metadata-contrast-0 = Normal
+metadata-contrast-1 = Low
+metadata-contrast-2 = High
+metadata-saturation-0 = Normal
+metadata-saturation-1 = Low
+metadata-saturation-2 = High
+metadata-sharpness-0 = Normal
+metadata-sharpness-1 = Soft
+metadata-sharpness-2 = Hard
+metadata-colour_space-1 = sRGB
+metadata-colour_space-65535 = Uncalibrated
+metadata-orientation-1 = Horizontal (normal)
+metadata-orientation-2 = Mirrored horizontally
+metadata-orientation-3 = Rotated 180°
+metadata-orientation-4 = Mirrored vertically
+metadata-orientation-5 = Mirrored horizontally, rotated 270° clockwise
+metadata-orientation-6 = Rotated 90° clockwise
+metadata-orientation-7 = Mirrored horizontally, rotated 90° clockwise
+metadata-orientation-8 = Rotated 270° clockwise
+metadata-sensitivity_type-0 = Unknown
+metadata-sensitivity_type-1 = Standard output sensitivity
+metadata-sensitivity_type-2 = Recommended exposure index
+metadata-sensitivity_type-3 = ISO speed
+metadata-sensitivity_type-4 = SOS and REI
+metadata-sensitivity_type-5 = SOS and ISO speed
+metadata-sensitivity_type-6 = REI and ISO speed
+metadata-sensitivity_type-7 = SOS, REI and ISO speed
+metadata-flash_return-1 = Return light: reserved
+metadata-flash_return-2 = Strobe return light not detected
+metadata-flash_return-3 = Strobe return light detected

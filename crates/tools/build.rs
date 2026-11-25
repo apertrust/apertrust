@@ -19,8 +19,13 @@
 //! which `src/settings.rs` includes as its `registry` (decisions 29 and 43). The generator
 //! embeds the schema, so a change to it reruns this script; one it refuses fails the
 //! build, naming the line. Exposure's and Colour calibration's pickers read settings so
-//! far; the next tool's settings join them here.
+//! far, and the Metadata tool keeps its view (decision 110); the next tool's settings join
+//! them here.
 
 fn main() {
-    apertrust_base::settings::codegen::build_all(&["tool:exposure", "tool:channelmixerrgb"]);
+    apertrust_base::settings::codegen::build_all(&[
+        "tool:exposure",
+        "tool:channelmixerrgb",
+        "tool:metadata",
+    ]);
 }

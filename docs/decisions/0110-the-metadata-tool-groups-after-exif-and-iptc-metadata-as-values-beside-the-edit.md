@@ -81,7 +81,7 @@ The design is drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn3
 
 ### Presets
 
-**The header's presets button, as every tool's** ([0106](0106-presets-and-styles-as-appreset-and-apstyle-files.md)). A Metadata preset stores the tool's view settings, which groups and rows are shown and which groups are open (`tools_panel.metadata.shown`, `.hidden` and `.open`, as `setting:` values in an `.appreset`), and never holds a field's value or writes a photo.
+**The header's presets button, as every tool's** ([0106](0106-presets-and-styles-as-appreset-and-apstyle-files.md)). A Metadata preset stores the tool's view settings, which groups and rows are shown and which groups are open (`metadata.shown`, `metadata.hidden` and `metadata.open`, as `setting:` values in an `.appreset`), and never holds a field's value or writes a photo.
 
 - **The pull-down:** Default settings, the rows shown at first with Basic, Exposure and Content open; the built-ins, Essentials (a short set for culling), Everything and IPTC for agencies, each a file in `data/presets/metadata/`; then the person's own.
 - **＋, Rows Shown,** lists the groups, each with its rows checked where shown, as Filters' ＋ lists its groups ([0073](0073-the-photos-tabs-tools-browse-first-filters-in-folder-mode.md)). A row hidden keeps its value and stays in exported files, Notes aside. The groups set the order; rows are not reordered.

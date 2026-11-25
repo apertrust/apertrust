@@ -881,6 +881,36 @@ page = "general"
 group = "diagnostics"
 applies = "at-once"
 
+# The Metadata tool's view (decision 110; docs/gui.md, The Metadata tool): which rows show and
+# which groups are open, kept app-wide and never in an edit, and held by its presets. The
+# rows are kept against the tool's declaration, so a row a later build adds shows as it
+# declares.
+
+# The rows shown that the declaration hides at first, by their ids.
+[metadata.shown]
+owner = "tool:metadata"
+kind = "list"
+of = "text"
+default = []
+applies = "at-once"
+
+# The rows hidden that the declaration shows at first, by their ids.
+[metadata.hidden]
+owner = "tool:metadata"
+kind = "list"
+of = "text"
+default = []
+applies = "at-once"
+
+# The groups open, by their ids. Content opens at first once it has rows; a group with none
+# is drawn closed whatever this says.
+[metadata.open]
+owner = "tool:metadata"
+kind = "list"
+of = "text"
+default = ["basic", "exposure", "content"]
+applies = "at-once"
+
 # Exposure's Picker target and Lightness (docs/tools/exposure.md; decisions 29 and 88),
 # the settings its picker reads, kept here as darktable keeps its own in its darktablerc,
 # never in an edit. The app sends them with the picker's On and Settings commands

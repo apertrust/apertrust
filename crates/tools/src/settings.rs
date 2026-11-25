@@ -55,11 +55,20 @@ mod tests {
     use super::*;
     use crate::{ControlKind, Row, TOOLS};
 
-    /// Every tool setting the schema declares is a row of its tool's page, with the
-    /// row's kind, range, decimals, options and default, darktable's.
+    /// Every processing tool's setting the schema declares is a row of its tool's page, with
+    /// the row's kind, range, decimals, options and default, darktable's; a utility's, the
+    /// Metadata tool's view under its own id, is its own (decision 110).
     #[test]
     fn each_declared_setting_is_its_tool_s_row() {
         for declared in registry::ALL {
+            let utility = declared
+                .id()
+                .split('.')
+                .next()
+                .and_then(crate::utility::utility);
+            if utility.is_some() {
+                continue;
+            }
             let mut parts = declared.id().split('.');
             let (Some("tools"), Some(tool), Some(name), None) =
                 (parts.next(), parts.next(), parts.next(), parts.next())
@@ -153,6 +162,10 @@ mod tests {
             registry::TOOLS_CHANNELMIXERRGB_AREA_MODE.owner,
             Owner::Tool("channelmixerrgb")
         ));
+        assert!(matches!(
+            registry::METADATA_OPEN.owner,
+            Owner::Tool("metadata")
+        ));
     }
 
     /// Every setting a tool's built pick reads is kept: Exposure's, Picker target,
@@ -163,6 +176,9 @@ mod tests {
         assert_eq!(
             ids,
             [
+                "metadata.shown",
+                "metadata.hidden",
+                "metadata.open",
                 "tools.exposure.target",
                 "tools.exposure.lightness",
                 "tools.exposure.reference_lightness",

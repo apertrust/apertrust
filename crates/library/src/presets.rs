@@ -45,10 +45,14 @@
 //! ```
 //!
 //! A style has `apertrust:style` in place of `apertrust:preset`. A utility's preset,
-//! Export's, holds the utility's id, `apertrust:tool`, and its settings as the `setting:`
-//! fields of the struct `apertrust:settings` ([`SETTING_NAMESPACE`]).
+//! Export's or the Metadata tool's, holds the utility's id, `apertrust:tool`, and its
+//! settings as the `setting:` fields of the struct `apertrust:settings`
+//! ([`SETTING_NAMESPACE`]), each as text: a list as its items joined by single spaces, as the
+//! Metadata tool's rows and groups, whose ids are snake_case; a value the tool's settings
+//! do not declare, as its `metadata.shown_only`, is the tool's own to read.
 //!
-//! The built-in presets, Export's For sharing and Full size JPEG, are the repository's
+//! The built-in presets, Export's For sharing and Full size JPEG and the Metadata tool's
+//! Essentials, Everything and IPTC for agencies, are the repository's
 //! `data/presets/<tool>/<id>.appreset`, and the built-in styles its
 //! `data/styles/<id>.apstyle`, embedded here, the one crate that parses them (decision
 //! 45), so the app and the CLI both have them ([`builtins`], [`builtin_styles`]); they are
@@ -107,6 +111,27 @@ const PRESETS: &[(&str, Builtin)] = &[
         Builtin {
             id: "full-size-jpeg",
             text: include_str!("../../../data/presets/export/full-size-jpeg.appreset"),
+        },
+    ),
+    (
+        "metadata",
+        Builtin {
+            id: "essentials",
+            text: include_str!("../../../data/presets/metadata/essentials.appreset"),
+        },
+    ),
+    (
+        "metadata",
+        Builtin {
+            id: "everything",
+            text: include_str!("../../../data/presets/metadata/everything.appreset"),
+        },
+    ),
+    (
+        "metadata",
+        Builtin {
+            id: "iptc-for-agencies",
+            text: include_str!("../../../data/presets/metadata/iptc-for-agencies.appreset"),
         },
     ),
 ];

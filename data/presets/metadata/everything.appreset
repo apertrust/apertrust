@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Apertrust 0.1.0">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:apertrust="https://apertrust.org/ns/xmp/"
+    xmlns:control="https://apertrust.org/ns/xmp/control/"
+    xmlns:setting="https://apertrust.org/ns/xmp/setting/"
+    apertrust:preset="1"
+    apertrust:name="Everything">
+   <apertrust:settings>
+    <rdf:Description
+      apertrust:tool="metadata"
+      setting:metadata.shown="file_name folder type size_on_disk dimensions rating colour_labels edited make model serial_number owner_name software date_time orientation resolution artist copyright image_description date_taken date_digitised exposure_time aperture iso exposure_bias exposure_program exposure_mode metering_mode flash white_balance scene_type subject_distance digital_zoom contrast saturation sharpness brightness colour_space unique_image_id lens lens_make lens_serial_number lens_specification focal_length focal_length_35mm crop_factor max_aperture latitude longitude altitude direction gps_time speed accuracy satellites map_datum"
+      setting:metadata.hidden=""
+      setting:metadata.open="basic exposure content"/>
+   </apertrust:settings>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

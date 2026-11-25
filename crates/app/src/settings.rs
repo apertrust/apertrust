@@ -245,6 +245,9 @@ pub struct Settings {
     pub keys: BTreeMap<String, Vec<String>>,
     /// The Export tool's last settings, `export.*`, kept as they are left.
     pub export: Values,
+    /// The Metadata tool's view, `metadata.*`: its rows shown and hidden and its groups
+    /// open (decision 110).
+    pub metadata: crate::metadata::View,
     /// The tools' settings, `tools.<tool>.*` (decision 29).
     pub tool_settings: ToolSettings,
     /// Whether Export and Export Again ask before replacing files, `export.ask_before_overwrite`:
@@ -297,6 +300,7 @@ impl Default for Settings {
             browser: BrowserSettings::default(),
             keys: BTreeMap::new(),
             export: Values::default(),
+            metadata: crate::metadata::View::default(),
             tool_settings: ToolSettings::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
             ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
@@ -392,6 +396,7 @@ impl Settings {
             },
             keys: store.get(&KEYS),
             export: Values::read(store),
+            metadata: crate::metadata::View::read(store),
             tool_settings: ToolSettings::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
             ask_before_discard: store.get(&HISTORY_ASK_BEFORE_DISCARD),
@@ -553,6 +558,9 @@ impl Settings {
         }
         if s.export != was.export {
             s.export.write(store);
+        }
+        if s.metadata != was.metadata {
+            s.metadata.write(store);
         }
         if s.tool_settings != was.tool_settings {
             s.tool_settings.write(store, &was.tool_settings);
@@ -1503,6 +1511,11 @@ mod tests {
                 high_quality: true,
                 profile: apertrust_export::settings::Profile::Srgb,
             },
+            metadata: crate::metadata::View {
+                shown: vec!["software".to_owned()],
+                hidden: vec!["aperture".to_owned()],
+                open: vec!["basic".to_owned(), "gps".to_owned()],
+            },
             tool_settings: {
                 let mut settings = ToolSettings::default();
                 settings.set("exposure", "target", ControlValue::Choice(1));
@@ -1650,6 +1663,7 @@ mod tests {
                 },
                 keys: BTreeMap::new(),
                 export: Values::default(),
+                metadata: crate::metadata::View::default(),
                 // Exposure's Picker target at Middle grey, Lightness at darktable's 50 %, and no
                 // reference; Colour calibration's area colour mapping at darktable's
                 // correction toward middle grey, taking the mixing into account.
@@ -1831,6 +1845,11 @@ folder = \"/photos/logs\"
 position = [400, 300]
 scale_factor = 2.0
 size = [720, 400]
+
+[metadata]
+hidden = [\"aperture\"]
+open = [\"basic\", \"gps\"]
+shown = [\"software\"]
 
 [scopes]
 channels = [\"red\", \"blue\", \"luminance\"]

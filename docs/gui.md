@@ -3298,11 +3298,11 @@ Built (decision 106, its phase 1; issues #371 and #625): a utility of the Photos
 
 ### The Metadata tool
 
-Planned (decision 110; the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK#artboard-MetadataTool)'s "Metadata tool · clean · proposal" board): a utility of the Photos tab, id `metadata`, title Metadata, between Keywords and Styles, closed at first. It is darktable's image information (`src/libs/metadata_view.c`) and metadata editor (`src/libs/metadata.c`) in one: it shows what the file and the camera recorded and edits what the person writes. It has no on switch and no kept markers, and it edits nothing of the edit.
+Decision 110; the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK#artboard-MetadataTool)'s "Metadata tool · clean · proposal" board. Its first slice is built, read-only for one photo ([As built](#as-built)); the rest is planned. A utility of the Photos tab, id `metadata`, title Metadata, between Keywords and Styles (built after Collections, before Styles: `["collections", "metadata", "styles", "export"]` in the Default workspace; Essentials keeps its Photos tab), closed at first. It is darktable's image information (`src/libs/metadata_view.c`) and metadata editor (`src/libs/metadata.c`) in one: it shows what the file and the camera recorded and edits what the person writes. It has no on switch and no kept markers, and it edits nothing of the edit.
 
 **It follows the selection, never the pointer.** It describes every selected photo, which is the active photo where one alone is selected; hovering a thumbnail changes nothing. With no photo, every value is "—" and every field is disabled, its tooltip "Select a photo".
 
-**The header:** the presets button, ＋ (Rows Shown) and ⋯; no ↺, since a wipe of many photos' fields must name its count, which an icon cannot. Its tooltip says what it holds: "What the camera recorded about the selected photos, and the title, description, creator, rights and place you write about them."
+**The header:** ＋ (Rows Shown), the presets button and ⋯; no ↺, since a wipe of many photos' fields must name its count, which an icon cannot. Its tooltip says what it holds: "What the camera recorded about the selected photos, and the title, description, creator, rights and place you write about them."
 
 **⋯, in order:**
 
@@ -3312,12 +3312,12 @@ Planned (decision 110; the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn3
 4. The section's layout items.
 
 ```text
-▾ Metadata                               ▤  ＋  ⋯
+▾ Metadata                               ＋  ▤  ⋯
   Basic ───────────────────────────────────── ⌄
       File name  R0001225.DNG
          Folder  ~/Pictures/2026-07 Lisbon      ⇱
            Type  DNG
-   Size on disk  32.4 MB
+   Size on disk  32 MB
      Dimensions  6000 × 4000 · 24.0 MP
          Rating  ★★★☆☆
   Colour labels  ○ ○ ● ○ ○
@@ -3348,6 +3348,21 @@ Planned (decision 110; the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn3
 
 `░` is a field's `sunken` fill, drawn with no border; `▤` the presets button; `⇱` Open This Folder. Status is not drawn: none of its rows shows at first.
 
+#### As built
+
+The first slice (decision 110's slice 1): the active photo's facts, read-only.
+
+- **The header:** ＋ (Rows Shown, `tool-metadata-rows-shown`), the presets button and ⋯, no ↺; its tooltip says what it holds, its Kind line "Writes the photos' metadata, never their edit" (`tool-metadata-kind`).
+- **⋯:** Copy Information and Copy Coordinates, the tool's own items until decision 98's generated actions, enabled with a photo open and, for the coordinates, a location; then the section's layout items. Clear Metadata Fields comes with the fields.
+- **The groups** are declared in `apertrust_tools::utility::metadata::METADATA`: Basic, Camera, Exposure, Lens and GPS with their facts, each title's tooltip its standard (`UtilityDefinition::tips`); Content, Creator, Rights and Location with no rows, drawn closed and disabled, "Coming in a later version". Status and Maker notes are not declared yet. A group whose every row is hidden is not drawn. Each group's open state is kept in `metadata.open`, never in an edit.
+- **Facts** are drawn with `apertrust-ui`'s `FactList`, Rating and Colour labels with its `FactMarks`, a run of a group's facts one list, the labels' column shared by the whole tool, at most 40% of the row. A value is worded by `crates/app/src/metadata/format.rs` from the session's `Photo`, its EXIF (`apertrust-raw`'s, the tags rawler lacks read through its TIFF parser) and its history. A row's tooltip is its whole value, or why it has none ("The camera recorded no subject distance", or "Apertrust does not read this from IIQ files yet" where the format's IFDs cannot be reached, every EXIF fact so where the file's metadata cannot be read at all, as a 3FR's; the crop factor still from darktable's table by the camera's model, and Make and Model the camera's names), what it adds (Dimensions' readout, Date taken's milliseconds, White balance's light source), then its tag. Size on disk is in the units Settings › Storage writes, one decimal below 10 ("32 MB", "4.5 MB").
+- **Rating and Colour labels** are drawn disabled, "Ratings come in a later version", until the library's step 14; Show on Map is a disabled button at the end of its row, under the GPS facts, right-aligned as a fact's end item, "Coming with the map". Edited reads the last applied step's time and how many applied steps the person made, the defaults a new photo starts with left out, or Never.
+- **Open This Folder** at Folder's end, Collections' own words: for photos opened alone it opens the photo's folder into folder mode; in folder mode it chooses it in the tree; it rests on the folder open, "This folder is open".
+- **No photo:** every fact "—", disabled, "Select a photo". **Several selected:** File name reads "12 photos", its tooltip the first five names, every other fact disabled at "—", "Several photos come in a later version".
+- **Keys:** each list is one Tab stop, ↑, ↓, Home and End moving in it and Enter on Folder running Open This Folder; Basic's two lists around Rating and Colour labels are two stops, and the disabled marks none. A click focuses a fact and selects its value; Ctrl+C (Cmd+C) copies it. A double-click selects the value, not a word.
+- **＋** lists every group, each a submenu of its rows checked where shown, those with no rows disabled; a choice shows or hides that row. Drawn, the menu opens again at its submenu; the Mac's native menu, which cannot open at a submenu, closes on the choice, as native menus do.
+- **Presets:** Default settings, Essentials, Everything and IPTC for agencies (`data/presets/metadata/`), then the person's, each the three settings, applied with no history step; `--conf` keeps its settings for the run.
+
 #### Its groups and rows
 
 Eleven collapsible groups, after EXIF's directories and IPTC Core's panels, each a `CollapsibleGroup` (decision 100) whose title is its plain name and whose tooltip names the standard it follows; each row's tooltip names its tag or property ("`ExposureTime`, EXIF 0x829A"). Basic, Exposure and Content are open at first, the rest closed, each group's state kept.
@@ -3358,7 +3373,7 @@ Eleven collapsible groups, after EXIF's directories and IPTC Core's panels, each
 | Camera (EXIF · IFD0) | Make (0x010F); Model (0x0110) | Serial number (`BodySerialNumber`); Owner name (`CameraOwnerName`); Software; Date and time of the file (`DateTime`); Orientation; Resolution; the camera's Artist, Copyright and Image description |
 | Exposure (EXIF · Exif IFD) | Date taken (`DateTimeOriginal`, with its sub-seconds and offset); Exposure time; Aperture (`FNumber`); ISO (`PhotographicSensitivity`); Exposure bias; Exposure program; Metering mode; Flash | Date digitised; Exposure mode; White balance; Scene type; Subject distance; Digital zoom; Contrast, Saturation, Sharpness; Brightness; Colour space; Unique image id |
 | Lens (EXIF · Exif IFD, the lens tags) | Lens (`LensModel`, else the maker notes'); Focal length; 35 mm equivalent (`FocalLengthIn35mmFilm`, else the focal length times the crop factor) | Lens make; Lens serial number; Lens specification; Crop factor; Maximum aperture |
-| GPS (EXIF · GPS IFD) | Latitude; Longitude; Altitude; then Show on Map, disabled until the Map layout | Direction; GPS time; Speed; Accuracy; Satellites and map datum |
+| GPS (EXIF · GPS IFD) | Latitude; Longitude; Altitude; then Show on Map at the row's end, disabled until the Map layout | Direction; GPS time; Speed; Accuracy; Satellites and map datum |
 | Content (IPTC Core · Content) | Title (`dc:title`); Description (`dc:description`); Notes (`apertrust:notes`), last | Headline (`photoshop:Headline`); Description writer (`photoshop:CaptionWriter`) |
 | Creator (IPTC Core · Contact) | Creator (`dc:creator`) | Job title (`photoshop:AuthorsPosition`); Email, Website, Phone, Address, City, Region, Postal code and Country (`Iptc4xmpCore:CreatorContactInfo`'s members) |
 | Rights (IPTC Core · Status, the rights) | Copyright notice (`dc:rights`); Publisher (`dc:publisher`) | Rights usage terms (`xmpRights:UsageTerms`); Copyright status (`xmpRights:Marked`, a pull-down of Copyrighted, Public domain and Unknown); Web statement (`xmpRights:WebStatement`); Credit line (`photoshop:Credit`); Source (`photoshop:Source`) |
@@ -3419,7 +3434,7 @@ Eleven collapsible groups, after EXIF's directories and IPTC Core's panels, each
 
 - **A value written** is trimmed of spaces at both ends. An empty one clears the field, writing an explicit empty where it showed the camera's text. An unchanged value commits nothing.
 - **Storage:** each committed field is the photo's current value, kept beside the edit with its clock, never a step. The History tab never lists it, and Undo takes it back ([library.md](library.md#metadata-beside-the-edit), [history.md](history.md#behaviour)).
-- **No right-click:** a fact takes the focus on a click, its value selected. Ctrl+C or Edit › Copy copies it, a focused fact counting as a focused field for decision 39's editing items. A double-click selects a word.
+- **No right-click:** a fact takes the focus on a click, its value selected. Ctrl+C or Edit › Copy copies it, a focused fact counting as a focused field for decision 39's editing items. A double-click selects the value, as a click does.
 
 #### Several photos
 
@@ -3448,7 +3463,7 @@ Eleven collapsible groups, after EXIF's directories and IPTC Core's panels, each
 
 #### Presets and Rows Shown
 
-- **The presets button,** as every tool's ([A tool's presets](#a-tools-presets)), holds views: which groups and rows are shown and which groups are open. These are the tool's settings `tools_panel.metadata.shown`, `.hidden` (against the defaults) and `.open`, kept app-wide and never in an edit; field values are never a preset's.
+- **The presets button,** as every tool's ([A tool's presets](#a-tools-presets)), holds views: which groups and rows are shown and which groups are open. These are the tool's settings `metadata.shown`, `metadata.hidden` (against the defaults) and `metadata.open`, kept app-wide and never in an edit ([settings.md](settings.md)); field values are never a preset's. A preset writes each list as its ids joined by spaces, and Essentials `metadata.shown_only`, a setting only a preset holds: its rows shown the only ones shown, so it stays valid as rows arrive, a row it names that the build lacks skipped.
   - **Default settings** first: the rows shown at first, Basic, Exposure and Content open.
   - **The built-ins,** files in `data/presets/metadata/`: Essentials (File name, Rating, Colour labels and Copy; Date taken, Exposure time, Aperture and ISO; Lens and Focal length; Title), Everything (every row) and IPTC for agencies (Default settings' facts and every row of the five IPTC groups).
   - Then the person's own.

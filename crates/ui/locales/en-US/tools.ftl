@@ -213,3 +213,4 @@ tool-metadata-fact-colour_space-label = Color space
 tool-metadata-fact-colour_space-none = The camera recorded no color space
 tool-metadata-fact-date_digitised-label = Date digitized
 tool-metadata-fact-date_digitised-none = The camera recorded no date digitized
+tool-metadata-fact-colour_labels-label = Color labels
