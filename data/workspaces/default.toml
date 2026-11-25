@@ -1,7 +1,8 @@
 # The Default workspace, built in (decisions 38 and 96): Photos, the tools by editing
-# stage, then History, Scopes pinned over the five editing tabs. The app embeds
-# this file and reads it as it reads a person's own (crates/app/src/layout.rs). A person's
-# changed copy is <user data>/workspaces/default.toml, in the same format.
+# stage, then History, Collections pinned over Photos and Scopes over the five editing
+# tabs. The app embeds this file and reads it as it reads a person's own
+# (crates/app/src/layout.rs). A person's changed copy is
+# <user data>/workspaces/default.toml, in the same format.
 #
 # A built-in tab names no title: its title is the message tab-<id>, so its words follow
 # the language. Nor does the file name the workspace: its name is the message
@@ -59,7 +60,10 @@ icon = "raw"
 id = "history"
 icon = "history"
 
+# Collections is pinned, and kept first in Photos' order too, where it shows pinned, so a
+# tool new to a person's copy, as Styles, still finds its place after it there.
 [pinned]
+photos = ["collections"]
 adjust = ["scopes"]
 detail = ["scopes"]
 geometry = ["scopes"]

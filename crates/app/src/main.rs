@@ -16406,7 +16406,7 @@ mod tests {
         assert!(shell.workspace.tab(photos).unwrap().holds("grain"));
         assert_eq!(shell.focused_section(&ctx), None);
         shell.run(ActionId::SECTION_PIN, &state, &ctx, &[]);
-        assert!(shell.workspace.tab(photos).unwrap().pinned.is_empty());
+        assert_eq!(shell.workspace.tab(photos).unwrap().pinned, [library::ID]);
     }
 
     /// A tool unpinned in a list scrolled down has its header, at the list's top, scrolled
