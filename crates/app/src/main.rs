@@ -6760,8 +6760,14 @@ impl App {
             fade::Fade::paint(&mut self.fade, &ui.painter_at(slot), placed, zoomed, open);
             // The active picker over the live photo, once the rest is drawn.
             if live {
-                // The frame's own pixels, which may be another scale's than the view's.
-                picking = Some((placed.photo, whole, viewport::frame_image(&frame.place)));
+                // The frame's own pixels, which may be another scale's than the view's,
+                // and the whole photo's size at Fit, which a click's area keeps on screen.
+                let fit = shown_room.map(|room| room.place(&zoom::Zoomed::FIT));
+                let fitted = fit.map_or(whole.size(), |fit| {
+                    whole_photo(placed.photo, &fit, ppp).size()
+                });
+                let pixels = viewport::frame_image(&frame.place);
+                picking = Some((placed.photo, whole, pixels, fitted));
             }
         } else if message.is_none()
             && failure.is_none()
@@ -6870,9 +6876,9 @@ impl App {
         // The picker on takes the photo, whichever door turned it on; Select's and Pan's
         // drags are the pan's ([`pan_photo`]).
         if self.mirror.pickers.active().is_some()
-            && let Some((area, photo, pixels)) = picking
+            && let Some((area, photo, pixels, fitted)) = picking
         {
-            self.picker_on_photo(ui, area, photo, pixels);
+            self.picker_on_photo(ui, area, photo, pixels, fitted);
         }
         if open {
             zoom_live_region(ui, slot.left_top(), &self.shell.zoom_said);
@@ -6893,7 +6899,8 @@ impl App {
     }
 
     /// The active colour picker over the photo area `area`, the whole photo's rectangle on
-    /// the screen `photo`, `pixels` of the frame's scale (`docs/pickers.md`, On the photo):
+    /// the screen `photo`, `pixels` of the frame's scale, `fitted` its size in points at Fit
+    /// (`docs/pickers.md`, On the photo):
     /// its marks, what the pointer and the keys send, the view moved by a drag past the
     /// area's edge, and the live region reading a pick out once it has rested.
     fn picker_on_photo(
@@ -6902,6 +6909,7 @@ impl App {
         area: egui::Rect,
         photo: egui::Rect,
         pixels: [u32; 2],
+        fitted: egui::Vec2,
     ) {
         let mirror = &self.mirror.pickers;
         let (Some(picker), Some(region)) = (mirror.active(), mirror.region()) else {
@@ -6931,6 +6939,7 @@ impl App {
             kind,
             area,
             photo,
+            fitted,
             pixels,
             region,
             switched: mirror.switched(region),
@@ -22051,6 +22060,7 @@ mod tests {
                             kind: picking.kind,
                             area: photo,
                             photo,
+                            fitted: photo.size(),
                             pixels: [400, 300],
                             region: Region::Point([0.5, 0.5]),
                             switched: Region::Area([0.02, 0.02, 0.98, 0.98]),
