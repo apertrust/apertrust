@@ -11221,7 +11221,7 @@ mod tests {
         ];
         image.camera.as_mut().unwrap().xyz_to_camera =
             Some(matrix.map(|row: [f32; 3]| row.map(|v| v / 10000.0)));
-        let photo = PhotoState::Open(Photo {
+        let photo = PhotoState::Open(Box::new(Photo {
             path: PathBuf::from("40D.CR2"),
             open: 1,
             camera: String::new(),
@@ -11231,8 +11231,12 @@ mod tests {
             exposure_time: None,
             aperture: None,
             focal_length: None,
+            exif: Box::default(),
+            format: "ARW".to_owned(),
+            file_size: 0,
+            sensor: [0, 0],
             image: Box::new(image.clone()),
-        });
+        }));
         assert_eq!(photo.image(), image);
 
         // White balance at its defaults, as the session reports it.

@@ -124,6 +124,10 @@ mod tests {
             exposure_time,
             aperture,
             focal_length,
+            exif: Box::default(),
+            format: "ARW".to_owned(),
+            file_size: 0,
+            sensor: [96, 72],
             image: Box::new(image),
         }
     }

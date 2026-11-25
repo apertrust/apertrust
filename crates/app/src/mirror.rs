@@ -650,7 +650,7 @@ impl Mirror {
             Event::OpenPreview(preview) => self.preview(preview),
             Event::Opened(photo) => {
                 self.saving.opened(&photo.path, photo.view_only.is_some());
-                self.photo = PhotoState::Open(photo);
+                self.photo = PhotoState::Open(Box::new(photo));
             }
             Event::Saved { path, through } => self.saving.saved(&path, through),
             // A style on several photos (decision 109): each photo changed marked edited in
@@ -1101,7 +1101,8 @@ pub enum PhotoState {
         path: PathBuf,
         open: u64,
     },
-    Open(Photo),
+    /// Boxed, as the photo with its EXIF is far larger than the other states.
+    Open(Box<Photo>),
     /// It could not be opened, as `message` says.
     Failed {
         path: PathBuf,
@@ -1576,6 +1577,10 @@ pub(crate) mod tests {
             exposure_time: None,
             aperture: None,
             focal_length: None,
+            exif: Box::default(),
+            format: "ARW".to_owned(),
+            file_size: 0,
+            sensor: [0, 0],
             image: Box::new(ImageContext::full(84, 62)),
         };
         let values = Event::Values(Values {
@@ -1607,7 +1612,7 @@ pub(crate) mod tests {
         let reading = || Event::Scopes(crate::scopes::testing::reading(true, false, false));
         assert!(opening.stale(&reading()));
         // Once it is open, everything is its own.
-        let open = PhotoState::Open(photo(5));
+        let open = PhotoState::Open(Box::new(photo(5)));
         assert!(!open.stale(&values));
         assert!(!open.stale(&reading()));
         // A file that failed to open still says where the next dialog starts.
@@ -1719,6 +1724,10 @@ pub(crate) mod tests {
             exposure_time: None,
             aperture: None,
             focal_length: None,
+            exif: Box::default(),
+            format: "ARW".to_owned(),
+            file_size: 0,
+            sensor: [0, 0],
             image: Box::new(ImageContext::full(84, 62)),
         }
     }

@@ -76,6 +76,13 @@ pub(crate) struct Metadata {
     pub sensor: ImageDesc,
     /// What an export's variables and the caption read of the raw beside its EXIF.
     pub shot: Shot,
+    /// The raw's EXIF as the open's one parse of its metadata read it, which the Metadata
+    /// tool shows (decision 110); every field `None` where it could not be read.
+    pub exif: Box<Exif>,
+    /// The file's format as its decoder names it ("DNG", "CR3") and its size on disk in
+    /// bytes.
+    pub format: String,
+    pub file_size: u64,
 }
 
 /// A decoded raw's mosaic, in memory, before its upload.
@@ -153,12 +160,12 @@ impl File {
             return Err(SessionError::NotAMosaic);
         }
         let shot = Shot::of(raw);
-        let shot = match exif {
-            Some(exif) => shot.with_exif(&exif),
+        let (shot, exif) = match exif {
+            Some(exif) => (shot.with_exif(&exif), exif),
             None => {
                 let path = self.path.display();
                 tracing::warn!(target: "raw", "{path}: no shooting data");
-                shot
+                (shot, Exif::unread_all())
             }
         };
         Ok(Metadata {
@@ -167,6 +174,9 @@ impl File {
             image: crate::raw::image_context(raw),
             sensor: ImageDesc::new(raw.width, raw.height, Format::Mosaic16),
             shot,
+            exif: Box::new(exif),
+            format: raw.format.to_owned(),
+            file_size: self.file.size(),
         })
     }
 }
@@ -775,6 +785,9 @@ pub(crate) mod testing {
             image,
             sensor: ImageDesc::new(width, height, Format::Mosaic16),
             shot: Shot::default(),
+            exif: Box::default(),
+            format: "ARW".to_owned(),
+            file_size: u64::from(width * height) * 2,
         };
         let mosaic = Mosaic {
             width,
