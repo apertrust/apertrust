@@ -61,9 +61,9 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, CursorDef, CursorGroup, Group, GroupKind,
-    Picker, PickerKind, ProcessingDefinition, ReadoutDef, Reset, Row, SettingRow, Slider, Space,
-    Surface, Tab, ToolCursor, ToolDefinition, Track, Unit, View,
+    ChoiceStyle, Control, ControlKind, Coordinate, CursorDef, CursorGroup, End, Group, GroupKind,
+    LineStart, Picker, PickerKind, ProcessingDefinition, ReadoutDef, Reset, Row, SettingRow,
+    Slider, Space, Surface, Tab, ToolCursor, ToolDefinition, Track, Unit, View,
 };
 use crate::pick::{AreaMode, Patch, PickKeys, Picked, Reading, Readout, Shown};
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
@@ -292,6 +292,7 @@ const fn list(control: &'static str) -> Row {
     Row::Choice {
         control,
         style: ChoiceStyle::List,
+        end: &[],
     }
 }
 
@@ -318,6 +319,7 @@ const MAPPING: Row = Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
         Row::Setting(SettingRow {
             id: CHANNEL_MIXING,
@@ -326,6 +328,7 @@ const MAPPING: Row = Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
         Row::Patches {
             picker: PICKER.id,
@@ -343,6 +346,7 @@ const MAPPING: Row = Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
         Row::Setting(SettingRow {
             id: TARGET_HUE,
@@ -356,6 +360,7 @@ const MAPPING: Row = Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
         Row::Setting(SettingRow {
             id: TARGET_CHROMA,
@@ -369,6 +374,7 @@ const MAPPING: Row = Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
     ],
 });
@@ -426,9 +432,9 @@ const CURSOR: ToolCursor = ToolCursor {
 /// darktable's readout row, `hbox(approx_cct, expand(illum_color), color_picker)`
 /// (`channelmixerrgb.c:4472-4491`): the light's correlated colour temperature and what
 /// models it, `_update_approx_cct`, its colour, `_illuminant_color_draw`, and the picker.
-const READOUT: Row = Row::Pickers {
-    label: None,
-    pickers: &[PICKER.id],
+const READOUT: Row = Row::Line {
+    start: LineStart::None,
+    end: &[End::Picker(PICKER.id)],
     readout: Some(ReadoutDef {
         id: CCT,
         texts: &CCT_TEXTS,
@@ -486,7 +492,10 @@ static CAT_TAB: [Row; 5] = [
         ],
     },
     Row::Slider(Slider::new("gamut").decimals(2).soft(0.0, 4.0)),
-    Row::Toggle { control: "clip" },
+    Row::Toggle {
+        control: "clip",
+        end: &[],
+    },
     MAPPING,
 ];
 
@@ -497,7 +506,10 @@ const fn page([r, g, b, n]: [&'static str; 4], soft: Option<(f32, f32)>) -> [Row
         input(r, soft),
         input(g, soft),
         input(b, soft),
-        Row::Toggle { control: n },
+        Row::Toggle {
+            control: n,
+            end: &[],
+        },
     ]
 }
 
@@ -580,6 +592,7 @@ static CHECKER: [Row; 1] = [Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
         Row::Setting(SettingRow {
             id: "optimise_for",
@@ -592,6 +605,7 @@ static CHECKER: [Row; 1] = [Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
         Row::Setting(SettingRow {
             id: "patch_scale",
@@ -605,6 +619,7 @@ static CHECKER: [Row; 1] = [Row::Group(Group {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         }),
     ],
 })];

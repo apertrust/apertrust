@@ -64,8 +64,9 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Group, GroupKind, Picker, PickerKind, ProcessingDefinition,
-    Quad, Range, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit, slider_step,
+    ActionEnd, ChoiceStyle, Control, ControlKind, End, Face, Group, GroupKind, LineStart, Picker,
+    PickerKind, ProcessingDefinition, Range, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit,
+    slider_step,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
@@ -369,11 +370,7 @@ const fn soft(control: &'static str, min: f32, max: f32) -> Row {
 
 /// An exposure or the pivot, with darktable's picker `picker`, over its soft range.
 const fn picked(control: &'static str, picker: &'static str, (min, max): (f32, f32)) -> Row {
-    Row::Slider(
-        Slider::new(control)
-            .quad(Quad::Picker(picker))
-            .soft(min, max),
-    )
+    Row::Slider(Slider::new(control).end(End::Picker(picker)).soft(min, max))
 }
 
 /// Pivot target output, which the `pivot_output` picker writes with the pivot.
@@ -433,13 +430,19 @@ static SETTINGS: [Row; 5] = [
             soft(SCALING, -50.0, 50.0),
             // darktable's labelled line with its picker setting both exposures at the end,
             // then its camera button, here on a row of its own.
-            Row::Pickers {
-                label: Some("auto_tune_levels"),
-                pickers: &["range"],
+            Row::Line {
+                start: LineStart::Label("auto_tune_levels"),
                 readout: None,
+                end: &[End::Picker("range")],
             },
-            Row::Action {
-                id: "read_exposure",
+            Row::Line {
+                start: LineStart::None,
+                readout: None,
+                end: &[End::Action(ActionEnd {
+                    id: "read_exposure",
+                    face: Face::Text,
+                    unported: true,
+                })],
             },
         ],
     }),
@@ -449,7 +452,7 @@ static SETTINGS: [Row; 5] = [
         rows: &[
             // The pivot's track spans the input range, here its default (`Agx::range`).
             picked(PIVOT, "pivot", (-10.0, 6.5)),
-            Row::Slider(Slider::new(OUTPUT).quad(Quad::Picker("pivot_output"))),
+            Row::Slider(Slider::new(OUTPUT).end(End::Picker("pivot_output"))),
             soft("curve_contrast_around_pivot", 0.1, 5.0),
             soft("curve_shoulder_power", 1.0, 5.0),
             soft("curve_toe_power", 1.0, 5.0),
@@ -471,6 +474,7 @@ static SETTINGS: [Row; 5] = [
             soft("curve_target_display_black_ratio", 0.0, 2.5),
             Row::Toggle {
                 control: "auto_gamma",
+                end: &[],
             },
             // darktable hides the gamma while it keeps the pivot on the diagonal.
             Row::When {
@@ -499,9 +503,11 @@ static PRIMARIES_PAGE: [Row; 3] = [
     Row::Choice {
         control: BASE_PRIMARIES,
         style: ChoiceStyle::List,
+        end: &[],
     },
     Row::Toggle {
         control: "disable_primaries_adjustments",
+        end: &[],
     },
     Row::When {
         control: "disable_primaries_adjustments",
@@ -509,8 +515,14 @@ static PRIMARIES_PAGE: [Row; 3] = [
         rows: &[
             // darktable's menu of three primaries to start from: Blender-like, Smooth and
             // Unmodified.
-            Row::Action {
-                id: "reset_primaries",
+            Row::Line {
+                start: LineStart::None,
+                readout: None,
+                end: &[End::Action(ActionEnd {
+                    id: "reset_primaries",
+                    face: Face::Text,
+                    unported: true,
+                })],
             },
             Row::Group(Group {
                 id: "before_tone_mapping",
@@ -530,10 +542,17 @@ static PRIMARIES_PAGE: [Row; 3] = [
                 rows: &[
                     Row::Toggle {
                         control: "completely_reverse_primaries",
+                        end: &[],
                     },
                     // darktable's button on Reverse all's line, insensitive while it is on.
-                    Row::Action {
-                        id: "set_from_above",
+                    Row::Line {
+                        start: LineStart::None,
+                        readout: None,
+                        end: &[End::Action(ActionEnd {
+                            id: "set_from_above",
+                            face: Face::Text,
+                            unported: true,
+                        })],
                     },
                     Row::When {
                         control: "completely_reverse_primaries",
@@ -869,7 +888,18 @@ mod tests {
         let actions: Vec<&str> = DEFINITION
             .rows()
             .filter_map(|row| match row {
-                Row::Action { id } => Some(*id),
+                Row::Line {
+                    start: LineStart::None,
+                    readout: None,
+                    end:
+                        [
+                            End::Action(ActionEnd {
+                                id,
+                                face: Face::Text,
+                                unported: true,
+                            }),
+                        ],
+                } => Some(*id),
                 _ => None,
             })
             .collect();
@@ -1114,7 +1144,7 @@ mod tests {
     /// darktable's pickers (`agx.c:1823`, `:1832`, `:2043`, `:2052`, `:2072`), each a
     /// denoised area: white and black relative exposure and Auto tune levels' both, the
     /// pivot kept within the new range (`:1103-1160`, `:1021-1040`), and the pivot, with
-    /// its target output too (`:1171-1220`). Auto tune levels' is on a row of pickers of
+    /// its target output too (`:1171-1220`). Auto tune levels' is on a line of pickers of
     /// its own under its label, as darktable's line has it (`:2068-2076`), and Read
     /// exposure, on that line in darktable, is still an action of its own.
     #[test]
@@ -1144,20 +1174,26 @@ mod tests {
         assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
         let rows: Vec<&Row> = DEFINITION
             .rows()
-            .filter(|row| matches!(row, Row::Pickers { .. } | Row::Action { .. }))
+            .filter(|row| matches!(row, Row::Line { .. }))
             .take(2)
             .collect();
         assert!(
             matches!(
                 rows[..],
                 [
-                    Row::Pickers {
-                        label: Some("auto_tune_levels"),
-                        pickers: ["range"],
+                    Row::Line {
+                        start: LineStart::Label("auto_tune_levels"),
                         readout: None,
+                        end: [End::Picker("range")],
                     },
-                    Row::Action {
-                        id: "read_exposure"
+                    Row::Line {
+                        start: LineStart::None,
+                        readout: None,
+                        end: [End::Action(ActionEnd {
+                            id: "read_exposure",
+                            face: Face::Text,
+                            unported: true,
+                        })],
                     },
                 ]
             ),

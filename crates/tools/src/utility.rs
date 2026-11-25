@@ -29,8 +29,8 @@ use std::collections::BTreeSet;
 use crate::about::WorksOn;
 use crate::definition::{is_id, shows_setting};
 use crate::{
-    ControlKind, DefinitionError, GroupKind, MenuEntry, MenuItem, Place, Reset, Row, Section, Tab,
-    ToolDefinition, ToolbarItem, Widget, check_menus, check_toolbar,
+    ControlKind, DefinitionError, GroupKind, LineStart, MenuEntry, MenuItem, Place, Reset, Row,
+    Section, Tab, ToolDefinition, ToolbarItem, Widget, check_menus, check_toolbar,
 };
 
 /// A utility tool, which edits nothing (decision 93): the [`ToolDefinition`] every tool
@@ -159,7 +159,10 @@ impl UtilityDefinition {
                 Row::Custom { widget, .. } if !widget.is_utility() => {
                     return Err(DefinitionError::Widget(*widget));
                 }
-                Row::Action { id } => return Err(DefinitionError::UtilityAction(id)),
+                // A line of actions alone, as `edits` leaves it.
+                Row::Line {
+                    end: [first, ..], ..
+                } => return Err(DefinitionError::UtilityAction(first.id())),
                 _ => {}
             }
             self.check_rows(row.rows(), seen)?;
@@ -169,27 +172,32 @@ impl UtilityDefinition {
 }
 
 /// What edits in `row`, if anything, for a utility, which edits nothing (decision 93): a
-/// control it names, a slider's, a choice's, a toggle's, the one rows follow, a button
-/// row's or a custom row's; a preset row, which writes controls; a picker's rows, a row of
-/// pickers whatever it holds; a computed value, which an operation computes; and the
-/// guides, a processing tool's. None for a setting, a group, rows following a setting, an
-/// action and a custom row naming no control.
+/// control it names, a slider's, a choice's, a toggle's, the one rows follow, a line's at
+/// its start or a custom row's; a preset row, which writes controls; a picker's rows, a
+/// line with a picker or with no end item; a computed value, which an operation computes;
+/// and the guides, a processing tool's. None for a setting, a group, rows following a
+/// setting, a line of actions alone and a custom row naming no control.
 fn edits(row: &Row) -> Option<&'static str> {
     match row {
         Row::Slider(slider) => Some(slider.control),
         Row::Choice { control, .. }
-        | Row::Toggle { control }
+        | Row::Toggle { control, .. }
         | Row::When { control, .. }
-        | Row::Buttons { control, .. } => Some(control),
+        | Row::Line {
+            start: LineStart::Control(control),
+            ..
+        } => Some(control),
         Row::Custom { controls, .. } => controls.first().copied(),
         Row::Preset { preset, .. } => Some(preset),
-        Row::Pickers { .. } => Some("pickers"),
+        Row::Line { end, .. } if end.is_empty() || end.iter().any(|e| e.picker().is_some()) => {
+            Some("pickers")
+        }
         Row::Patches { picker, .. } | Row::Reference { picker, .. } | Row::LastPick { picker } => {
             Some(picker)
         }
         Row::Computed(computed) => Some(computed.id),
         Row::Guides => Some("guides"),
-        Row::Group(_) | Row::WhenSetting { .. } | Row::Setting(_) | Row::Action { .. } => None,
+        Row::Group(_) | Row::WhenSetting { .. } | Row::Setting(_) | Row::Line { .. } => None,
     }
 }
 
@@ -412,7 +420,9 @@ pub fn opens(tool: &str, group: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ChoiceStyle, Computed, Group, SettingRow, Slider, Track, Word};
+    use crate::{
+        ActionEnd, ChoiceStyle, Computed, End, Face, Group, SettingRow, Slider, Track, Word,
+    };
 
     /// A row that edits nothing, Scopes' graph.
     const GRAPH_ROW: Row = Row::Custom {
@@ -452,6 +462,7 @@ mod tests {
         track: Track::Plain,
         key: None,
         words: None,
+        end: &[],
     };
 
     const SLIDER: Slider = Slider {
@@ -460,7 +471,7 @@ mod tests {
         soft: None,
         track: Track::Plain,
         fill: false,
-        quad: None,
+        end: None,
         label: None,
     };
 
@@ -532,7 +543,15 @@ mod tests {
     /// tool's widget is drawn over its controls, which a utility has none of.
     #[test]
     fn a_utility_has_no_action_row_yet_and_no_processing_tool_s_widget() {
-        let action = with(&[Row::Action { id: "refresh" }]);
+        let action = with(&[Row::Line {
+            start: LineStart::None,
+            readout: None,
+            end: &[End::Action(ActionEnd {
+                id: "refresh",
+                face: Face::Text,
+                unported: true,
+            })],
+        }]);
         assert_eq!(
             action.check(),
             Err(DefinitionError::UtilityAction("refresh"))
@@ -615,10 +634,17 @@ mod tests {
                 &[Row::Choice {
                     control: "mode",
                     style: ChoiceStyle::List,
+                    end: &[],
                 }],
                 "mode",
             ),
-            (&[Row::Toggle { control: "on" }], "on"),
+            (
+                &[Row::Toggle {
+                    control: "on",
+                    end: &[],
+                }],
+                "on",
+            ),
             (
                 &[Row::When {
                     control: "mode",
@@ -628,9 +654,10 @@ mod tests {
                 "mode",
             ),
             (
-                &[Row::Buttons {
-                    control: "turn",
-                    buttons: &[],
+                &[Row::Line {
+                    start: LineStart::Control("turn"),
+                    readout: None,
+                    end: &[],
                 }],
                 "turn",
             ),
@@ -649,19 +676,19 @@ mod tests {
                 "look",
             ),
             (
-                &[Row::Pickers {
-                    label: None,
-                    pickers: &["spot"],
+                &[Row::Line {
+                    start: LineStart::None,
                     readout: None,
+                    end: &[End::Picker("spot")],
                 }],
                 "pickers",
             ),
-            // A row of pickers holding none still edits.
+            // A line holding none still edits.
             (
-                &[Row::Pickers {
-                    label: None,
-                    pickers: &[],
+                &[Row::Line {
+                    start: LineStart::None,
                     readout: None,
+                    end: &[],
                 }],
                 "pickers",
             ),
@@ -687,7 +714,10 @@ mod tests {
                 &[Row::Group(Group {
                     id: "more",
                     kind: GroupKind::Collapsible,
-                    rows: &[Row::Toggle { control: "on" }],
+                    rows: &[Row::Toggle {
+                        control: "on",
+                        end: &[],
+                    }],
                 })],
                 "on",
             ),

@@ -583,11 +583,11 @@ fn declared<'m>(
 }
 
 /// A picker's name (`docs/pickers.md`, On the photo): its control's label where it sits in
-/// a slider's quad, else its own words.
+/// a slider's end, else its own words.
 pub fn name(words: &Translator, definition: &ProcessingDefinition, picker: &str) -> String {
     let tool = definition.tool.id;
     let quad = definition.rows().find_map(|row| match row {
-        Row::Slider(slider) if row.pickers() == [picker] => Some(slider),
+        Row::Slider(slider) if row.pickers().eq([picker]) => Some(slider),
         _ => None,
     });
     let id = match quad {

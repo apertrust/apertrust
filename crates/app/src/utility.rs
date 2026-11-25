@@ -568,6 +568,7 @@ mod tests {
                             track: Track::Plain,
                             key: Some("keeper.conflict"),
                             words: Some(&CONFLICT),
+                            end: &[],
                         })],
                     }),
                     Row::Group(Group {
@@ -581,6 +582,7 @@ mod tests {
                                 track: Track::Plain,
                                 key: Some("keeper.upscale"),
                                 words: Some(&UPSCALE),
+                                end: &[],
                             }),
                             Row::Custom {
                                 widget: Widget::Scopes,

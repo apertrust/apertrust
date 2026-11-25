@@ -295,6 +295,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Choice {
                     control: METHOD,
                     style: ChoiceStyle::List,
+                    end: &[],
                 },
                 Row::When {
                     control: METHOD,
@@ -312,6 +313,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     rows: &[Row::Choice {
                         control: "lmmse_refine",
                         style: ChoiceStyle::List,
+                        end: &[],
                     }],
                 },
                 Row::When {
@@ -320,6 +322,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     rows: &[Row::Choice {
                         control: "color_smoothing",
                         style: ChoiceStyle::List,
+                        end: &[],
                     }],
                 },
                 Row::When {
@@ -328,6 +331,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     rows: &[Row::Choice {
                         control: "green_eq",
                         style: ChoiceStyle::List,
+                        end: &[],
                     }],
                 },
                 Row::When {
@@ -336,6 +340,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     rows: &[
                         Row::Toggle {
                             control: "cs_enabled",
+                            end: &[],
                         },
                         Row::When {
                             control: "cs_enabled",

@@ -56,8 +56,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Computed, Control, ControlKind, CursorDef, CursorGroup, Picker, PickerKind,
-    ProcessingDefinition, Quad, Reset, Row, SettingRow, Slider, Space, Surface, Tab, ToolCursor,
+    ChoiceStyle, Computed, Control, ControlKind, CursorDef, CursorGroup, End, Picker, PickerKind,
+    ProcessingDefinition, Reset, Row, SettingRow, Slider, Space, Surface, Tab, ToolCursor,
     ToolDefinition, Track, Unit,
 };
 use crate::pick::{LastPick, Patch, PickKeys, PickWarnings, Picked, Reading, Short, Shown};
@@ -177,6 +177,7 @@ const TARGET: Row = Row::Setting(SettingRow {
     track: Track::Plain,
     key: None,
     words: None,
+    end: &[],
 });
 
 /// Lightness, under Picker target while it holds Lightness: the L the picked area is
@@ -198,6 +199,7 @@ const LIGHTNESS: Row = Row::WhenSetting {
         track: Track::Lightness,
         key: None,
         words: None,
+        end: &[],
     })],
 };
 
@@ -268,6 +270,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Choice {
                     control: "mode",
                     style: ChoiceStyle::Segmented,
+                    end: &[],
                 },
                 // The manual page (decision 88): the camera's rows first, as darktable's
                 // stack has them, then Exposure with its picker and Picker target right
@@ -278,15 +281,17 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     rows: &[
                         Row::Toggle {
                             control: "camera_bias",
+                            end: &[],
                         },
                         Row::Toggle {
                             control: "compensate_hilite_pres",
+                            end: &[],
                         },
                         Row::Slider(
                             Slider::new("exposure")
                                 .decimals(3)
                                 .soft(-3.0, 4.0)
-                                .quad(Quad::Picker("exposure")),
+                                .end(End::Picker("exposure")),
                         ),
                         TARGET,
                         LIGHTNESS,

@@ -30,9 +30,9 @@ use apertrust_operations::OPERATIONS;
 use apertrust_plugin::{Camera, ImageContext, Pattern};
 use apertrust_tools::utility::UTILITIES;
 use apertrust_tools::{
-    Base, Control, ControlKind, ControlValue, Controls, Owned, ProcessingDefinition,
-    ProcessingTool, Quad, Reset, Row, Setting, Slider, TOOLS, Tab, ToolDefinition, ToolValues,
-    Unit, check, messages,
+    Base, Control, ControlKind, ControlValue, Controls, End, Face, LineStart, Owned,
+    ProcessingDefinition, ProcessingTool, Reset, Row, Setting, Slider, TOOLS, Tab, ToolDefinition,
+    ToolValues, Unit, check, messages,
 };
 use apertrust_ui::icons::Icon;
 
@@ -115,8 +115,9 @@ fn every_built_in_tool_is_accepted() {
     assert_eq!(accepted.len(), TOOLS.len());
 }
 
-/// Each built tool's rows, groups' and modes' included, keep their order and their kinds,
-/// so a change to how rows are declared changes no page: a slider by whether a picker
+/// Decision 107's line row changed no page: each built tool's rows, groups' and modes'
+/// included, keep their order and their kinds, as the rows they replaced had them, a
+/// line by its shape (`pickers`, `buttons`, `action`) and a slider by whether a picker
 /// ends it.
 #[test]
 fn every_built_in_tool_s_rows_keep_their_kinds() {
@@ -188,7 +189,7 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
     ];
     let kind = |row: &Row| match row {
         Row::Slider(Slider {
-            quad: Some(Quad::Picker(_)),
+            end: Some(End::Picker(_)),
             ..
         }) => "slider+picker",
         Row::Slider(_) => "slider",
@@ -200,9 +201,15 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
         Row::Custom { .. } => "custom",
         Row::Preset { .. } => "preset",
         Row::Setting(_) => "setting",
-        Row::Buttons { .. } => "buttons",
-        Row::Action { .. } => "action",
-        Row::Pickers { .. } => "pickers",
+        Row::Line {
+            start: LineStart::Control(_),
+            ..
+        } => "buttons",
+        Row::Line {
+            end: [End::Action(_)],
+            ..
+        } => "action",
+        Row::Line { .. } => "pickers",
         Row::Patches { .. } => "patches",
         Row::Computed(_) => "computed",
         Row::Reference { .. } => "reference",
@@ -226,7 +233,7 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
 
 /// darktable's pickers on the built tools' sliders, each named by its quad (decision
 /// 79; `docs/pickers.md`, The first pass's pickers). Colour calibration's is on its
-/// readout row, AgX's Auto tune levels' on its row of pickers; Exposure's reference
+/// readout row, AgX's Auto tune levels' on its line of pickers; Exposure's reference
 /// picker is on its reference row (decision 88), and White balance's turned on by
 /// Settings' from image area until its button bar comes.
 #[test]
@@ -265,24 +272,9 @@ fn the_built_in_tools_declare_darktable_s_pickers_on_their_sliders() {
             ),
         ]
     );
-    // Every slider's quad picks: a line only where darktable draws one, as rotate and
-    // perspective's horizon, which no built tool has; which picker each names, and that
-    // each picker is in one row, are the tools' tables and `ProcessingDefinition::check`.
-    let not_pickers: Vec<(&str, &str, Quad)> = TOOLS
-        .iter()
-        .flat_map(|tool| {
-            let id = tool.definition().tool.id;
-            tool.definition().rows().filter_map(move |row| match row {
-                Row::Slider(Slider {
-                    control,
-                    quad: Some(quad),
-                    ..
-                }) if !matches!(quad, Quad::Picker(_)) => Some((id, *control, *quad)),
-                _ => None,
-            })
-        })
-        .collect();
-    assert_eq!(not_pickers, []);
+    // Every slider's end item picks, which `ProcessingDefinition::check` holds them to;
+    // which picker each names, and that each picker is in one row, are the tools' tables
+    // and the check.
 }
 
 /// The built tools' picker cursors (decision 104; `docs/cursors.md`, The API): White
@@ -365,10 +357,13 @@ fn the_built_in_tools_offer_their_toolbar_items() {
     let processing = TOOLS.iter().map(|tool| tool.definition());
     let buttons = |definition: &ProcessingDefinition| -> Vec<&str> {
         let rows = definition.rows().filter_map(|row| match row {
-            Row::Buttons { buttons, .. } => Some(buttons.iter().map(|button| button.id)),
+            Row::Line { end, .. } => Some(end.iter().filter_map(End::action)),
             _ => None,
         });
-        rows.flatten().collect()
+        let icons = rows
+            .flatten()
+            .filter(|action| matches!(action.face, Face::Icon(_)));
+        icons.map(|action| action.id).collect()
     };
     for definition in processing.clone() {
         for item in definition
@@ -627,6 +622,7 @@ fn list_problems(tool: &dyn ProcessingTool, images: &[ImageContext]) -> Vec<Stri
             Row::Choice {
                 control,
                 style: apertrust_tools::ChoiceStyle::Segmented,
+                ..
             } => Some(*control),
             _ => None,
         })
@@ -716,10 +712,12 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
                 Row::Choice {
                     control: "tone",
                     style: apertrust_tools::ChoiceStyle::List,
+                    end: &[],
                 },
                 Row::Choice {
                     control: "grid",
                     style: apertrust_tools::ChoiceStyle::Segmented,
+                    end: &[],
                 },
             ],
         }],
@@ -1024,6 +1022,7 @@ fn every_message_a_definition_implies_is_translated() {
             let Row::Choice {
                 control,
                 style: apertrust_tools::ChoiceStyle::Segmented,
+                ..
             } = row
             else {
                 continue;

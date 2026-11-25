@@ -33,7 +33,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    Button, ButtonIcon, Control, ControlKind, ProcessingDefinition, Reset, Row, Tab, ToolDefinition,
+    ActionEnd, ButtonIcon, Control, ControlKind, End, Face, LineStart, ProcessingDefinition, Reset,
+    Row, Tab, ToolDefinition,
 };
 use crate::{
     Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, ProcessingTool, Section,
@@ -84,31 +85,29 @@ static CONTROLS: [Control; 1] = [Control {
     unported: false,
 }];
 
+/// One of the transform row's buttons: `id`, an icon action.
+const fn button(id: &'static str, icon: ButtonIcon) -> End {
+    End::Action(ActionEnd {
+        id,
+        face: Face::Icon(icon),
+        unported: false,
+    })
+}
+
 static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     tool: ToolDefinition {
         id: FLIP,
         tabs: &[Tab {
             id: None,
             rows: &[
-                Row::Buttons {
-                    control: ORIENTATION,
-                    buttons: &[
-                        Button {
-                            id: ACTIONS[0],
-                            icon: ButtonIcon::RotateLeft,
-                        },
-                        Button {
-                            id: ACTIONS[1],
-                            icon: ButtonIcon::RotateRight,
-                        },
-                        Button {
-                            id: ACTIONS[2],
-                            icon: ButtonIcon::FlipHorizontal,
-                        },
-                        Button {
-                            id: ACTIONS[3],
-                            icon: ButtonIcon::FlipVertical,
-                        },
+                Row::Line {
+                    start: LineStart::Control(ORIENTATION),
+                    readout: None,
+                    end: &[
+                        button(ACTIONS[0], ButtonIcon::RotateLeft),
+                        button(ACTIONS[1], ButtonIcon::RotateRight),
+                        button(ACTIONS[2], ButtonIcon::FlipHorizontal),
+                        button(ACTIONS[3], ButtonIcon::FlipVertical),
                     ],
                 },
                 // darktable's guides widget (`IOP_FLAGS_GUIDES_WIDGET`, `flags()`).
@@ -311,11 +310,19 @@ mod tests {
     #[test]
     fn its_page_is_darktable_s() {
         let rows: Vec<&Row> = DEFINITION.rows().collect();
-        let [Row::Buttons { control, buttons }, Row::Guides] = rows[..] else {
+        let [
+            Row::Line {
+                start: LineStart::Control(control),
+                readout: None,
+                end,
+            },
+            Row::Guides,
+        ] = rows[..]
+        else {
             panic!("{rows:?}");
         };
         assert_eq!(*control, ORIENTATION);
-        let ids: Vec<&str> = buttons.iter().map(|button| button.id).collect();
+        let ids: Vec<&str> = end.iter().map(End::id).collect();
         assert_eq!(ids, ACTIONS);
     }
 

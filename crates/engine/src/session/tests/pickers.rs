@@ -23,7 +23,7 @@
 
 use apertrust_tools::colour_balance_rgb::ColourBalanceRgb;
 use apertrust_tools::orientation::Orientation;
-use apertrust_tools::{Picker, PickerKind, Quad, Space};
+use apertrust_tools::{End, Picker, PickerKind, Space};
 
 use super::*;
 use crate::picker::{DEFAULT_AREA, DEFAULT_POINT, pixels};
@@ -1051,7 +1051,7 @@ static SPOT: ProcessingDefinition = ProcessingDefinition {
         "spot",
         &[Tab {
             id: None,
-            rows: &[Row::Slider(Slider::new("red").quad(Quad::Picker("red")))],
+            rows: &[Row::Slider(Slider::new("red").end(End::Picker("red")))],
         }],
     ),
     version: 1,
@@ -1560,7 +1560,7 @@ static CONFIGURED: ProcessingDefinition = ProcessingDefinition {
         &[Tab {
             id: None,
             rows: &[
-                Row::Slider(Slider::new("level").quad(Quad::Picker("level"))),
+                Row::Slider(Slider::new("level").end(End::Picker("level"))),
                 Row::Slider(Slider::new("other")),
                 Row::Setting(apertrust_tools::SettingRow {
                     id: "gain",
@@ -1574,6 +1574,7 @@ static CONFIGURED: ProcessingDefinition = ProcessingDefinition {
                     track: apertrust_tools::Track::Plain,
                     key: None,
                     words: None,
+                    end: &[],
                 }),
             ],
         }],
@@ -3210,9 +3211,7 @@ static SWITCHED: ProcessingDefinition = ProcessingDefinition {
         "switched",
         &[Tab {
             id: None,
-            rows: &[Row::Slider(
-                Slider::new("level").quad(Quad::Picker("level")),
-            )],
+            rows: &[Row::Slider(Slider::new("level").end(End::Picker("level")))],
         }],
     ),
     version: 1,

@@ -130,6 +130,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Choice {
                     control: FLAT_FIELD,
                     style: ChoiceStyle::List,
+                    end: &[],
                 },
             ],
         }],

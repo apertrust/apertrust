@@ -76,12 +76,12 @@ use std::collections::BTreeMap;
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 
 pub use definition::{
-    Button, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
-    CursorDef, CursorGroup, CursorGroupDef, DefinitionError, Gesture, Group, GroupKind, MAX_POINTS,
-    MIN_GAP, MOST_IN_SUBMENU, MOST_ON_TOOLBAR, MenuEntry, MenuItem, Picker, PickerKind, Place,
-    PresetRow, ProcessingDefinition, Quad, Range, ReadoutDef, Reset, Row, Section, SettingRow,
-    SettingWords, Slider, Space, Surface, Tab, ToolCursor, ToolDefinition, ToolbarItem, Track,
-    Unit, View, Widget, Word, check_menus, check_section, check_toolbar, slider_step,
+    ActionEnd, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
+    CursorDef, CursorGroup, CursorGroupDef, DefinitionError, End, Face, Gesture, Group, GroupKind,
+    LineStart, MAX_POINTS, MIN_GAP, MOST_IN_SUBMENU, MOST_ON_TOOLBAR, MenuEntry, MenuItem, Picker,
+    PickerKind, Place, PresetRow, ProcessingDefinition, Range, ReadoutDef, Reset, Row, Section,
+    SettingRow, SettingWords, Slider, Space, Surface, Tab, ToolCursor, ToolDefinition, ToolbarItem,
+    Track, Unit, View, Widget, Word, check_menus, check_section, check_toolbar, slider_step,
 };
 use pick::{PickKeys, Picked, Reading, Readout};
 pub use values::{ControlValue, Controls, Mark, ToolValues};
@@ -311,7 +311,7 @@ pub trait ProcessingTool: Send + Sync {
         None
     }
 
-    /// What darktable's button `action` of a [`Row::Buttons`] writes when the tool's
+    /// What darktable's button `action`, an [`End::Action`], writes when the tool's
     /// controls hold `values`, every control, the edit's over the defaults: each control
     /// it sets with its new value, which a client sends as `SetControl`, one change, as
     /// orientation's rotate composes the orientation shown with a quarter turn. Pure, as
@@ -424,7 +424,7 @@ pub trait ProcessingTool: Send + Sync {
         true
     }
 
-    /// What the readout `readout` of a row of pickers ([`ReadoutDef`]) shows while the
+    /// What the readout `readout` of a line of pickers ([`ReadoutDef`]) shows while the
     /// tool's controls hold `values`, every control, the edit's over the defaults: one of
     /// its texts with its number, and its swatch's colour, as Colour calibration's CCT and
     /// the illuminant's colour. Pure, as [`Self::view`] is: the session asks after every
