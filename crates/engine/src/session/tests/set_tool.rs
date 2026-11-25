@@ -313,6 +313,7 @@ fn set_tools_in_one_step_share_a_batch_that_one_undo_takes_back() {
     let all = Move::Steps {
         first: made.steps[0].id,
         count: 3,
+        photos: 1,
     };
     assert_eq!(made.undo, Some(all));
     driven.run([Command::Undo]);

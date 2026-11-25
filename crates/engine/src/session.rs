@@ -413,6 +413,13 @@ pub enum Command {
     /// style ([`SessionError::UnknownStyle`]), and so is a `ClearStyle` inside a [`Command::Step`]
     /// ([`SessionError::NotInStep`]).
     ClearStyle { name: String, file: String },
+    /// Take back the batch `batch`, a style on several photos, from any photo (decision 109),
+    /// the notice's Undo: on each of its photos what Undo would do there for it, the active
+    /// one by its own Undo where that would take it back, the others by an `undo-batch` job,
+    /// quiet and cancellable, a photo changed since keeping it and named; a batch whose job
+    /// still runs cancelled first. Told by [`Event::Batch`]. A batch the session does not
+    /// remember, of the latest 64, refused ([`SessionError::UnknownBatch`]).
+    UndoBatch { batch: BatchId },
     /// The History tab's eye, held (decision 78): the live frame shows the tool as if it
     /// were reset while `hidden`, off for a switched tool and at its defaults for one
     /// every photo runs, whose operation is never skipped; with `hidden` false, as the edit
@@ -1424,6 +1431,10 @@ pub enum SessionError {
     /// ([`Values::styles`]): nothing changes.
     #[error("the style {name} is not applied to the photo")]
     UnknownStyle { name: String },
+    /// [`Command::UndoBatch`] named a batch the session does not remember, of the latest 64
+    /// it applied on several photos (decision 109): nothing changes.
+    #[error("batch {batch} is not remembered")]
+    UnknownBatch { batch: BatchId },
     /// [`Command::CancelJob`] named a job that cannot be cancelled: it goes on.
     #[error("job {job} cannot be cancelled")]
     NotCancellable { job: JobId },
@@ -2607,6 +2618,8 @@ struct Engine {
     batching: Option<styles::Batch>,
     /// The batches on several photos whose jobs have not ended, in the order sent.
     batches: Vec<Arc<batch::Pending>>,
+    /// The latest batches applied on several photos, for their Undo across photos.
+    remembered: VecDeque<Arc<batch::Pending>>,
     /// The batches' photos their jobs handed the engine thread, to route.
     routes: Vec<batch::Route>,
     /// The build every edit written records.
@@ -3257,6 +3270,7 @@ impl Engine {
             retired: apertrust_tools::RETIRED,
             batching: None,
             batches: Vec::new(),
+            remembered: VecDeque::new(),
             routes: Vec::new(),
             build,
             limits,
@@ -3834,6 +3848,11 @@ impl Engine {
                     self.export(photos, settings, places, None);
                     Ok(())
                 }
+                // A batch on several photos taken back from any photo (decision 109).
+                Command::UndoBatch { batch } => self.undo_batch(batch, &mut events).map(|effect| {
+                    render |= effect.render;
+                    save |= effect.save;
+                }),
                 // A style on several photos (decision 109): an earlier batch still to reach
                 // the active photo applied to it first.
                 Command::ApplyStyle {
@@ -3956,11 +3975,29 @@ impl Engine {
                         render |= caught.render;
                         save |= caught.save;
                     }
+                    // Undo or Redo moving over a remembered batch on several photos moves it
+                    // on its other photos too (decision 109).
+                    let redo = match command {
+                        Command::Undo => Some(false),
+                        Command::Redo => Some(true),
+                        _ => None,
+                    };
+                    // A change not yet a step, a gesture's among them, made one first, as
+                    // the move would, so what it moves over is read as it will move.
+                    if redo.is_some() && !self.remembered.is_empty() {
+                        self.step_pending();
+                    }
+                    let crossing = (self.open.as_ref())
+                        .zip(redo)
+                        .and_then(|(open, redo)| Some((open.history.batch_moving(redo)?, redo)));
                     let applied = self.apply_edit(command, at).map(|effect| {
                         render |= effect.render;
                         save |= effect.save;
                         cancelled |= effect.cancelled;
                     });
+                    if let (Some((batch, redo)), Ok(())) = (crossing, &applied) {
+                        self.batch_crossed(batch, redo, &mut events);
+                    }
                     // Discard History started a view-only edit's log afresh: `Opened` again,
                     // editable, before its values.
                     if let Some(open) = &self.open
@@ -4483,6 +4520,7 @@ impl Engine {
             | Command::PreviewExport { .. }
             | Command::Library(_)
             | Command::Selection(_)
+            | Command::UndoBatch { .. }
             | Command::Cache(_) => {
                 return Ok(Effect::default());
             }

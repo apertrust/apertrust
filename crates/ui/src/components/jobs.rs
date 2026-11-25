@@ -302,11 +302,12 @@ impl Job {
 /// Each kind of job's icon, as its row shows it on a tile at its start (decision 72). A
 /// new kind takes a line here; until it has one it shows [`GENERIC`], so it shows with no
 /// client code.
-const KIND_ICONS: [(&str, Icon); 4] = [
+const KIND_ICONS: [(&str, Icon); 5] = [
     ("export", Icon::Export),
     ("import", Icon::Import),
     ("folder", Icon::Folder),
     ("apply-style", Icon::Apply),
+    ("undo-batch", Icon::Undo),
 ];
 
 /// The icon of a kind [`KIND_ICONS`] does not list.

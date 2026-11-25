@@ -300,7 +300,7 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
         Some(Move::GoTo | Move::Compress | Move::Truncate | Move::DiscardHistory) => {
             assert!(moved.is_some(), "{context}");
         }
-        Some(Move::Steps { first, count }) => {
+        Some(Move::Steps { first, count, .. }) => {
             assert!(moved.is_some() && count > 0, "{context}");
             // Steps added put back or taken out move the default steps they kept with them.
             if redo {
@@ -553,6 +553,7 @@ fn one(id: StepId) -> Move {
     Move::Steps {
         first: id,
         count: 1,
+        photos: 1,
     }
 }
 
@@ -735,7 +736,11 @@ fn a_change_of_two_tools_is_two_steps_in_one_batch_which_undo_and_redo_move_whol
     assert!(batch.is_some() && steps[2].batch == batch && steps[0].batch.is_none());
     assert!(steps[1..].iter().all(|step| step.note == note));
     let (first, second) = (steps[1].id, steps[2].id);
-    let both_steps = Move::Steps { first, count: 2 };
+    let both_steps = Move::Steps {
+        first,
+        count: 2,
+        photos: 1,
+    };
     assert_eq!(history.next(true), Some(both_steps));
     assert_eq!(history.undo(&both), Some(exposed(1.0)));
     assert_eq!(history.log.steps().len(), 1);
@@ -806,6 +811,7 @@ fn go_to_lands_inside_a_batch() {
     let rest = Move::Steps {
         first: three[1],
         count: 2,
+        photos: 1,
     };
     assert_eq!(history.next(false), Some(rest));
     assert_eq!(history.redo(&exposed(1.0)), Some(both.clone()));
@@ -1092,7 +1098,7 @@ fn ms(duration: Duration) -> f64 {
 fn json(history: &History) -> String {
     let mut out = String::new();
     let moves = |next: &Option<Move>| match next {
-        Some(Move::Steps { first, count }) => {
+        Some(Move::Steps { first, count, .. }) => {
             format!(r#"{{"Steps":{{"first":"{first}","count":{count}}}}}"#)
         }
         Some(Move::GoTo) => r#""GoTo""#.to_owned(),

@@ -2355,8 +2355,9 @@ pub fn steps(history: Option<&History>, tools: &[&dyn ProcessingTool], tr: &Tran
     }
 }
 
-/// What `moved` does, as History names it; none for steps not in `history`, or whose first
-/// names no tool the app knows, as an operation's unowned parameters alone.
+/// What `moved` does, as History names it, with how many photos where it moves a batch on
+/// several; none for steps not in `history`, or whose first names no tool the app knows, as
+/// an operation's unowned parameters alone.
 fn named(
     history: &History,
     moved: Move,
@@ -2368,10 +2369,23 @@ fn named(
         Move::Compress => Some(tr.text("history-compress")),
         Move::Truncate => Some(tr.text("history-truncate")),
         Move::DiscardHistory => Some(tr.text("history-discard")),
-        Move::Steps { first, count } => {
+        Move::Steps {
+            first,
+            count,
+            photos,
+        } => {
             let at = history.steps.iter().position(|s| s.id == first)?;
             let steps = history.steps.get(at..at + count)?;
-            name(steps, tools, tr)
+            let named = name(steps, tools, tr)?;
+            // A batch on several photos, which it moves on each (decision 109): "Warm film
+            // on 12 Photos".
+            if photos < 2 {
+                return Some(named);
+            }
+            let mut args = Args::new();
+            args.set("step", named.as_str());
+            args.set("count", photos as f64);
+            Some(tr.text_with("history-on-photos", Some(&args)))
         }
     }
 }
@@ -2490,6 +2504,7 @@ pub(crate) mod tests {
         Move::Steps {
             first: StepId(first),
             count,
+            photos: 1,
         }
     }
 
@@ -2546,6 +2561,14 @@ pub(crate) mod tests {
         assert_eq!(undo(5, 1).as_deref(), Some("Reset"));
         // A batch with a note: its note.
         assert_eq!(undo(6, 2).as_deref(), Some("Style"));
+        // A batch on several photos: how many it moves (decision 109).
+        let on_photos = Move::Steps {
+            first: StepId(6),
+            count: 2,
+            photos: 12,
+        };
+        let across = named(Some(on_photos), None).undo;
+        assert_eq!(across.as_deref(), Some("Style on 12 Photos"));
         assert_eq!(undo(8, 1).as_deref(), Some("Brighter"));
         // A batch of steps the app does not all know: the first it knows, and how many more
         // it knows.

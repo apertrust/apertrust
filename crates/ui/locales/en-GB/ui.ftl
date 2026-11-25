@@ -468,6 +468,19 @@ job-apply-style-outcome =
         [one] { $style } applied to { $changed } of { $count } photo
        *[other] { $style } applied to { $changed } of { $count } photos
     }
+# Its Undo and Redo on the batch's other photos.
+job-undo-batch = Taking back “{ $style }” on { photo-count }
+job-redo-batch = Putting back “{ $style }” on { photo-count }
+job-undo-batch-outcome =
+    { $count ->
+        [one] { $style } taken back on { $changed } of { $count } photo
+       *[other] { $style } taken back on { $changed } of { $count } photos
+    }
+job-redo-batch-outcome =
+    { $count ->
+        [one] { $style } put back on { $changed } of { $count } photo
+       *[other] { $style } put back on { $changed } of { $count } photos
+    }
 
 ## What an export job reports of itself for its row. $number is the photo under way,
 ## from 1, and 0 before the first; $total the photos; $storage where they go, "disk" for
@@ -1393,6 +1406,13 @@ menu-recent-in = { $name } — { $parent }
 # Exposure", "Undo Go to Step". With nothing to name they read action-undo and action-redo.
 menu-undo-step = Undo { $step }
 menu-redo-step = Redo { $step }
+# Edit › Undo and Redo naming a batch on several photos (decision 109): $step is what
+# the step's name says, $count the photos: "Undo Warm film on 12 Photos".
+history-on-photos =
+    { $count ->
+        [one] { $step } on { $count } Photo
+       *[other] { $step } on { $count } Photos
+    }
 # File › Export… and Export Again while more than one photo is selected: how many they
 # export, $count, every selected photo.
 menu-export-photos =

@@ -40,12 +40,13 @@ use apertrust_library::listing;
 use apertrust_plugin::Operation;
 use apertrust_tools::{ProcessingTool, ToolValues};
 
+use super::history::PhotoHistory;
 use super::styles::{Batch, Style, style_log};
 use super::{
-    Command, Effect, Engine, Event, Inbox, Load, Outbox, Over, Reads, SessionError, StyleMode,
-    library,
+    Command, Effect, Engine, Event, Inbox, Load, Open, Outbox, Over, Reads, SessionError,
+    StyleMode, library,
 };
-use crate::history::{BatchId, Log};
+use crate::history::{BatchId, Clock, Log};
 use crate::jobs::{self, Context, Failure, Interrupted, Job, Message};
 use crate::sidecar::{self, Edits};
 
@@ -103,6 +104,10 @@ pub enum Skip {
     KeptChanging,
     /// Its write failed.
     Failed(String),
+    /// Its history moved since the batch: its end is no longer on the batch's last step, for
+    /// Undo, or its next step is not the batch's first, for Redo; the batch stays under its
+    /// own steps (decision 109).
+    ChangedSince,
 }
 
 /// A style as a batch keeps it while its job runs: what [`Command::ApplyStyle`] named.
@@ -150,6 +155,8 @@ impl Owned {
 pub(super) struct Pending {
     pub(super) batch: Batch,
     pub(super) style: Owned,
+    /// What it does to its photos: applies the style, or takes it back or puts it back.
+    action: BatchAction,
     /// The number of the command that started it.
     command: u64,
     /// How many photos it names.
@@ -164,8 +171,16 @@ struct Reached {
     to_come: Vec<PathBuf>,
     changed: Vec<PathBuf>,
     skipped: Vec<(PathBuf, Skip)>,
-    /// Its job, once the engine thread started it: one batch job runs at a time.
+    /// Its job, once the engine thread started it, which a take-back cancels while it runs:
+    /// one batch job runs at a time.
     job: Option<jobs::JobId>,
+    /// For the batch applying a style, its latest take-back or put-back, whose photos the
+    /// next one moves.
+    latest: Option<Arc<Pending>>,
+    /// For a take-back or a put-back, the move before it, whose photos changed it moves,
+    /// read again as it starts, after that one's job; let go as it starts or ends, so it
+    /// holds no cycle with the batch's `latest`.
+    from: Option<Arc<Pending>>,
     /// Set as its job ends, cancelled or not, or as it ends with no job: the photos not
     /// reached are left.
     ended: bool,
@@ -183,7 +198,11 @@ enum Outcome {
 }
 
 impl Pending {
-    fn new(batch: Batch, style: Owned, command: u64, photos: Vec<PathBuf>) -> Pending {
+    fn new(
+        (batch, style, action): (Batch, Owned, BatchAction),
+        command: u64,
+        photos: Vec<PathBuf>,
+    ) -> Pending {
         let mut to_come: Vec<PathBuf> = Vec::new();
         for photo in photos {
             if !to_come.contains(&photo) {
@@ -193,6 +212,7 @@ impl Pending {
         Pending {
             batch,
             style,
+            action,
             command,
             count: to_come.len(),
             state: Mutex::new(Reached {
@@ -233,6 +253,23 @@ impl Pending {
         self.state().job
     }
 
+    /// A take-back's or a put-back's photos, those its batch changed, as it starts, that
+    /// batch's job having ended.
+    fn take_from(&self) {
+        let Some(from) = self.state().from.take() else {
+            return;
+        };
+        let changed = from.state().changed.clone();
+        let mut state = self.state();
+        for photo in changed {
+            let reached = state.changed.contains(&photo)
+                || state.skipped.iter().any(|(skipped, _)| *skipped == photo);
+            if !reached && !state.to_come.contains(&photo) {
+                state.to_come.push(photo);
+            }
+        }
+    }
+
     /// Records `photo` reached, `outcome` how, once: whether it was still to come.
     fn reach(&self, photo: &Path, outcome: Outcome) -> bool {
         let mut state = self.state();
@@ -256,10 +293,11 @@ impl Pending {
             return None;
         }
         state.ended = true;
+        state.from = None;
         Some(Event::Batch(BatchEvent::Ended {
             command: self.command,
             batch: self.batch.id,
-            action: BatchAction::Applied,
+            action: self.action,
             style: self.style.name.clone(),
             named: self.count,
             changed: state.changed.clone(),
@@ -297,6 +335,10 @@ enum Routed {
     Handed(mpsc::Receiver<Over>),
 }
 
+/// How many batches on several photos the session remembers for their Undo across photos,
+/// the latest (decision 109).
+const REMEMBERED: usize = 64;
+
 /// How long a job waits before it looks again at a photo that is opening.
 const OPENING_WAIT: Duration = Duration::from_millis(20);
 
@@ -327,7 +369,13 @@ impl Engine {
             id,
             wall: wall_clock(),
         };
-        let pending = Arc::new(Pending::new(batch, style, self.applied, photos));
+        let what = (batch, style, BatchAction::Applied);
+        let pending = Arc::new(Pending::new(what, self.applied, photos));
+        // Remembered for its Undo across photos, the latest kept.
+        if self.remembered.len() == REMEMBERED {
+            self.remembered.pop_front();
+        }
+        self.remembered.push_back(Arc::clone(&pending));
         let active = self.open.as_ref().map(|open| open.sidecar.clone());
         let mut effect = Effect::default();
         match active.as_deref().and_then(|active| pending.to_come(active)) {
@@ -355,12 +403,27 @@ impl Engine {
         };
         for pending in self.batches.clone() {
             if let Some(photo) = pending.to_come(&active) {
-                let reached = self.reach(&pending, &photo, events);
+                let reached = self.reach_live(&pending, &photo, events);
                 effect.render |= reached.render;
                 effect.save |= reached.save;
             }
         }
         effect
+    }
+
+    /// The batch `pending` reached on the open photo, `photo`, as its action says: applied,
+    /// or taken back or put back.
+    fn reach_live(
+        &mut self,
+        pending: &Arc<Pending>,
+        photo: &Path,
+        events: &mut Vec<Event>,
+    ) -> Effect {
+        match pending.action {
+            BatchAction::Applied => self.reach(pending, photo, events),
+            BatchAction::TakenBack => self.move_live(pending, photo, false, events),
+            BatchAction::PutBack => self.move_live(pending, photo, true, events),
+        }
     }
 
     /// The batch `pending` applied to the open photo, `photo`, as the active photo's change
@@ -434,11 +497,20 @@ impl Engine {
 
     /// The batches waiting, started one at a time in the order sent, by the engine thread so
     /// none holds a job's worker while it waits (decision 109): the ended ones let go, and
-    /// where none runs the first waiting started, or ended at once where the active photo's
-    /// commands reached all its photos. Its `Ended` where it ends so.
+    /// where none runs the first waiting started, a take-back's photos read as it starts, or
+    /// ended at once where none is left to reach. Its `Ended` where it ends so, and the
+    /// history told again where a batch ended, its Undo naming how many photos it changed.
     pub(super) fn start_batches(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
-        self.batches.retain(|pending| !pending.has_ended());
+        // The batches that ended, by id, as they are let go.
+        let mut ended: Vec<BatchId> = Vec::new();
+        self.batches.retain(|pending| {
+            let gone = pending.has_ended();
+            if gone {
+                ended.push(pending.batch.id);
+            }
+            !gone
+        });
         while let Some(first) = self.batches.first().cloned() {
             let job = first.state().job;
             if let Some(job) = job {
@@ -446,23 +518,43 @@ impl Engine {
                 // here, so the batches after it start.
                 if self.jobs.control.state(job).is_none() {
                     events.extend(first.end(true));
+                    ended.push(first.batch.id);
                     self.batches.remove(0);
                     continue;
                 }
                 break;
             }
+            first.take_from();
             if first.state().to_come.is_empty() {
                 events.extend(first.end(false));
+                ended.push(first.batch.id);
                 self.batches.remove(0);
                 continue;
             }
             self.batch_job(first);
             break;
         }
+        // Undo or Redo over one that ended names another count of photos.
+        let moving = |open: &Open| {
+            let over = [
+                open.history.batch_moving(false),
+                open.history.batch_moving(true),
+            ];
+            over.into_iter()
+                .flatten()
+                .any(|batch| ended.contains(&batch))
+        };
+        if let Some(open) = &mut self.open
+            && moving(open)
+        {
+            open.history.tell_again();
+            events.extend(self.history_event());
+        }
         events
     }
 
-    /// The batch's job, `apply-style` on `UserForeground`, cancellable and quiet.
+    /// The batch's job, `apply-style` or `undo-batch` on `UserForeground`, cancellable and
+    /// quiet.
     fn batch_job(&mut self, pending: Arc<Pending>) {
         let run = Run {
             pending: Arc::clone(&pending),
@@ -482,6 +574,188 @@ impl Engine {
         pending.state().job = Some(job);
     }
 
+    /// How many photos Undo, or Redo where `redo`, would move the remembered batch `batch`
+    /// on, for the `History` fact's `Move::Steps::photos`: those its latest move left it on,
+    /// a put-back's for Undo or a take-back's for Redo, else those applying it changed;
+    /// while that runs, those it changed and those still to come, once ended those it
+    /// changed. `None` for one the session does not remember.
+    pub(super) fn batch_photos(&self, batch: BatchId, redo: bool) -> Option<usize> {
+        let pending = (self.remembered.iter()).find(|pending| pending.batch.id == batch)?;
+        let wanted = match redo {
+            true => BatchAction::TakenBack,
+            false => BatchAction::PutBack,
+        };
+        let latest = (pending.state().latest.clone()).filter(|latest| latest.action == wanted);
+        let source = latest.unwrap_or_else(|| Arc::clone(pending));
+        let state = source.state();
+        Some(match state.ended {
+            true => state.changed.len(),
+            false => state.changed.len() + state.to_come.len(),
+        })
+    }
+
+    /// After the open photo's Undo, or Redo where `redo`, moved over the batch `batch`: one
+    /// the session remembers moved on its other photos too (decision 109).
+    pub(super) fn batch_crossed(&mut self, batch: BatchId, redo: bool, events: &mut Vec<Event>) {
+        let Some(pending) = (self.remembered.iter())
+            .find(|pending| pending.batch.id == batch)
+            .cloned()
+        else {
+            return;
+        };
+        let active = self.open.as_ref().map(|open| open.sidecar.clone());
+        let active = active.as_deref().map(|active| (active, true));
+        self.move_others(&pending, redo, active, events);
+    }
+
+    /// [`Command::UndoBatch`]: the remembered batch `batch` taken back on each of its
+    /// photos still on it, the active one by its own Undo where that would take it back and
+    /// it is not open for viewing only, the others by an `undo-batch` job; one the session
+    /// does not remember refused.
+    pub(super) fn undo_batch(
+        &mut self,
+        batch: BatchId,
+        events: &mut Vec<Event>,
+    ) -> Result<Effect, SessionError> {
+        let Some(pending) = (self.remembered.iter())
+            .find(|pending| pending.batch.id == batch)
+            .cloned()
+        else {
+            return Err(SessionError::UnknownBatch { batch });
+        };
+        let active = self.open.as_ref().map(|open| open.sidecar.clone());
+        let on_active = (active.as_deref()).is_some_and(|active| {
+            let state = pending.state();
+            (state.changed.iter()).any(|photo| sidecar::path_for(photo) == active)
+        });
+        if on_active {
+            self.step_pending();
+        }
+        // A view-only photo refuses its Undo: skipped and named, as the job names others.
+        let moves = on_active
+            && (self.open.as_ref())
+                .is_some_and(|o| o.view_only.is_none() && o.history.moves_batch(batch, false));
+        let effect = match moves {
+            true => self.apply_edit(Command::Undo, Instant::now())?,
+            false => Effect::default(),
+        };
+        let done = (active.as_deref())
+            .filter(|_| on_active)
+            .map(|active| (active, moves));
+        self.move_others(&pending, false, done, events);
+        Ok(effect)
+    }
+
+    /// The remembered batch `pending` taken back, or put back where `redo`, on its photos
+    /// but `active`, the active photo's sidecar where it is among them and whether its own
+    /// move moved over the batch, one that did not skipped as open for viewing only or as
+    /// changed since: its `apply-style` job cancelled first where it still runs, then an
+    /// `undo-batch` job, after it, over the photos it changed, the batch's `Ended` naming
+    /// the active photo among them. With no other photo, the `Ended` comes now.
+    pub(super) fn move_others(
+        &mut self,
+        pending: &Arc<Pending>,
+        redo: bool,
+        active: Option<(&Path, bool)>,
+        events: &mut Vec<Event>,
+    ) {
+        // The batch's latest move, its applying or a take-back or put-back since, whose
+        // changed photos this one moves: a photo an Undo skipped is none Redo puts back.
+        let source = (pending.state().latest.clone()).unwrap_or_else(|| Arc::clone(pending));
+        let (job, ended) = {
+            let state = source.state();
+            (state.job, state.ended)
+        };
+        match job {
+            Some(job) if !ended => {
+                self.jobs.control.cancel(job);
+                source.cancel();
+            }
+            // Still waiting: it never starts.
+            None if !ended => events.extend(source.end(true)),
+            _ => {}
+        }
+        let action = match redo {
+            true => BatchAction::PutBack,
+            false => BatchAction::TakenBack,
+        };
+        // The photos it reached so far; a running job's are read again as this one's job
+        // starts, after it.
+        let photos = source.state().changed.clone();
+        let what = (pending.batch, pending.style.clone(), action);
+        let mut moving = Pending::new(what, self.applied, photos);
+        moving.count = pending.count;
+        moving.state().from = Some(source);
+        let moving = Arc::new(moving);
+        pending.state().latest = Some(Arc::clone(&moving));
+        if let Some((active, moved)) = active
+            && let Some(photo) = moving.to_come(active)
+        {
+            let view_only = self.open.as_ref().and_then(|open| open.view_only.clone());
+            let outcome = match (moved, view_only) {
+                (true, _) => Outcome::Changed,
+                (false, Some(view_only)) => Outcome::Skipped(Skip::ViewOnly(view_only)),
+                (false, None) => Outcome::Skipped(Skip::ChangedSince),
+            };
+            moving.reach(&photo, outcome);
+            if moved {
+                events.push(self.moved_event(&moving, &photo));
+            }
+        }
+        // Started by the engine thread once the batches before it end, its batch's job among
+        // them.
+        self.batches.push(moving);
+        events.extend(self.start_batches());
+    }
+
+    /// The `Changed` of the open photo, `photo`, a move of the batch `pending` reached: its
+    /// edit's state as the move left it.
+    fn moved_event(&self, pending: &Pending, photo: &Path) -> Event {
+        let edited = (self.open.as_ref()).is_some_and(|open| !open.edit.is_empty());
+        Event::Batch(BatchEvent::Changed {
+            batch: pending.batch.id,
+            photo: photo.to_owned(),
+            edit: match edited {
+                true => library::EditState::Edited,
+                false => library::EditState::None,
+            },
+        })
+    }
+
+    /// The batch `pending` taken back, or put back where `redo`, on the open photo, `photo`,
+    /// by its own Undo or Redo where that would move over it, and recorded; skipped and
+    /// named as changed since otherwise.
+    fn move_live(
+        &mut self,
+        pending: &Arc<Pending>,
+        photo: &Path,
+        redo: bool,
+        events: &mut Vec<Event>,
+    ) -> Effect {
+        let batch = pending.batch.id;
+        // A change not yet a step, a gesture's among them, is a later change: made one first.
+        self.step_pending();
+        if !(self.open.as_ref()).is_some_and(|open| open.history.moves_batch(batch, redo)) {
+            pending.reach(photo, Outcome::Skipped(Skip::ChangedSince));
+            return Effect::default();
+        }
+        let command = match redo {
+            true => Command::Redo,
+            false => Command::Undo,
+        };
+        match self.apply_edit(command, Instant::now()) {
+            Ok(effect) => {
+                pending.reach(photo, Outcome::Changed);
+                events.push(self.moved_event(pending, photo));
+                effect
+            }
+            Err(error) => {
+                pending.reach(photo, Outcome::Skipped(Skip::Refused(error.to_string())));
+                Effect::default()
+            }
+        }
+    }
+
     /// The batches' photos the job workers handed the engine thread since, each routed:
     /// open and live, the batch applied there; opening, told so; any other, handed to the
     /// writer over the file as read. What the live photo's change says.
@@ -499,7 +773,7 @@ impl Engine {
                 // Reached already, live, as a command caught it up: left as it is.
                 Routed::Live
             } else if live {
-                let effect = self.reach(&route.pending, &route.photo, &mut events);
+                let effect = self.reach_live(&route.pending, &route.photo, &mut events);
                 changed |= effect.render || effect.save;
                 Routed::Live
             } else {
@@ -515,8 +789,7 @@ impl Engine {
     }
 }
 
-/// What an `apply-style` job runs with, owned, so its body borrows nothing of the engine
-/// thread's.
+/// What a batch job runs with, owned, so its body borrows nothing of the engine thread's.
 struct Run {
     pending: Arc<Pending>,
     load: Load,
@@ -530,21 +803,24 @@ struct Run {
     outbox: Outbox,
 }
 
-/// The job applying a batch to its photos but the active one.
+/// The job of a batch on its photos but the active one: `apply-style`, applying it, or
+/// `undo-batch`, taking it back or putting it back.
 fn job(run: Run) -> Job {
     let pending = &run.pending;
     let total = pending.state().to_come.len() as u64;
-    let title = Message::new("job-apply-style")
+    let (kind, message) = match pending.action {
+        BatchAction::Applied => ("apply-style", "job-apply-style"),
+        BatchAction::TakenBack => ("undo-batch", "job-undo-batch"),
+        BatchAction::PutBack => ("undo-batch", "job-redo-batch"),
+    };
+    let title = Message::new(message)
         .with("style", pending.style.name.as_str())
         .with("count", pending.count as u64);
-    Job::new(
-        "apply-style",
-        format!("apply {}", pending.style.name),
-        move |context| body(&run, context),
-    )
-    .progress(title, true)
-    .total(total)
-    .quiet()
+    let description = format!("{kind} {}", pending.style.name);
+    Job::new(kind, description, move |context| body(&run, context))
+        .progress(title, true)
+        .total(total)
+        .quiet()
 }
 
 /// The job's body: each photo still to come reached in order until it is cancelled, then
@@ -560,7 +836,7 @@ fn body(run: &Run, context: &Context<'_>) -> Result<(), Failure> {
         if context.cancelled() {
             break;
         }
-        // The engine thread reached it first, applying the batch to it live.
+        // The engine thread reached it first, live.
         if pending.to_come(&sidecar::path_for(photo)).is_none() {
             continue;
         }
@@ -571,7 +847,12 @@ fn body(run: &Run, context: &Context<'_>) -> Result<(), Failure> {
                 .with("total", total)
                 .with("photo", name.as_str()),
         ));
-        let outcome = match reach(run, context, photo) {
+        let reached = match pending.action {
+            BatchAction::Applied => reach(run, context, photo),
+            BatchAction::TakenBack => moved(run, context, photo, false),
+            BatchAction::PutBack => moved(run, context, photo, true),
+        };
+        let outcome = match reached {
             Ok(Some(outcome)) => outcome,
             // Live, the engine thread recorded it.
             Ok(None) => continue,
@@ -595,8 +876,13 @@ fn body(run: &Run, context: &Context<'_>) -> Result<(), Failure> {
     let cancelled = context.cancelled();
     let ended = pending.end(cancelled);
     let changed = pending.state().changed.len() as u64;
+    let outcome = match pending.action {
+        BatchAction::Applied => "job-apply-style-outcome",
+        BatchAction::TakenBack => "job-undo-batch-outcome",
+        BatchAction::PutBack => "job-redo-batch-outcome",
+    };
     context.set_outcome(
-        Message::new("job-apply-style-outcome")
+        Message::new(outcome)
             .with("style", pending.style.name.as_str())
             .with("changed", changed)
             .with("count", pending.count as u64),
@@ -609,10 +895,134 @@ fn body(run: &Run, context: &Context<'_>) -> Result<(), Failure> {
     failure.map_or(Ok(()), Err)
 }
 
-/// One photo of the batch, not live as the job began it: on the disk, its metadata's image
-/// context, then its sidecar read through the edit writer, the style applied to its log and
-/// its XML handed to the engine thread to route, read again where the file changed since,
-/// twice more. `None` where the engine thread reached it live.
+/// A photo's sidecar as read: the file as text, its log, its copy's clock vector, and the
+/// stamp read.
+type Read = (Edits, Log, Vec<Clock>, Option<sidecar::FileStamp>);
+
+/// A photo's sidecar read through the edit writer after the writes handed over before, or
+/// why it is skipped: unreadable, or open for viewing only.
+fn read(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Result<Read, Skip>, Interrupted> {
+    let path = sidecar::path_for(photo);
+    let snapshot = context.wait(&run.reads.read(vec![path]))?.pop();
+    let Some(snapshot) = snapshot else {
+        return Err(Interrupted::Disconnected);
+    };
+    let (modified, stamp) = (snapshot.changed(), snapshot.file_stamp());
+    Ok(match snapshot.xml() {
+        Err(error) => Err(Skip::Unreadable(error.to_string())),
+        Ok(None) => Ok((Edits::new(""), Log::default(), Vec::new(), stamp)),
+        Ok(Some(xml)) => {
+            let (operations, tools) = (run.operations, &run.tools[..]);
+            match sidecar::from_xml_at(&xml, modified, operations, tools, run.retired) {
+                Err(error) => Err(Skip::Unreadable(error.to_string())),
+                Ok(loaded) => match loaded.view_only() {
+                    Some(view_only) => Err(Skip::ViewOnly(view_only)),
+                    None => {
+                        let clocks = loaded.clocks().to_vec();
+                        Ok((loaded.file, loaded.log, clocks, stamp))
+                    }
+                },
+            }
+        }
+    })
+}
+
+/// How a photo's file handed to the engine thread ended.
+enum Handed {
+    /// The engine thread reached it live and recorded it.
+    Live,
+    /// It is opening, or its write found the file changed: read again.
+    Again,
+    Written,
+    Changed,
+    Failed(String),
+}
+
+/// `log` with its vector `clocks`, laid on `file`, handed to the engine thread to route,
+/// over the file as read, `read` its stamp, again where its photo opened since.
+fn hand_over(
+    run: &Run,
+    context: &Context<'_>,
+    photo: &Path,
+    (mut file, log, clocks): (Edits, Log, Vec<Clock>),
+    read: Option<sidecar::FileStamp>,
+) -> Result<Handed, Interrupted> {
+    // What the file names the photo by, as `apertrust-cli edit` writes it.
+    file.photo = Some(sidecar::file_name(photo).into_owned());
+    if let Ok(fingerprint) = sidecar::read_fingerprint(photo) {
+        file.fingerprint = Some(fingerprint);
+    }
+    let (operations, tools) = (run.operations, &run.tools[..]);
+    let xml = sidecar::log_xml(&file, &log, &clocks, (operations, tools), &run.build);
+    loop {
+        let (answer, routed) = mpsc::channel();
+        let route = Route {
+            pending: Arc::clone(&run.pending),
+            photo: photo.to_owned(),
+            xml: xml.clone(),
+            read,
+            answer,
+        };
+        if run.inbox.send(Inbox::Route(Box::new(route))).is_err() {
+            return Err(Interrupted::Disconnected);
+        }
+        // Handed over, it completes, cancelled or not (decision 109): the engine thread
+        // answers at once, and the writer once the writes before it are done.
+        let gone = |_| Interrupted::Disconnected;
+        return match routed.recv().map_err(gone)? {
+            Routed::Live => Ok(Handed::Live),
+            // Read again once it is live, or its open has ended.
+            Routed::Opening => {
+                std::thread::sleep(OPENING_WAIT);
+                if context.cancelled() {
+                    return Err(Interrupted::Cancelled);
+                }
+                Ok(Handed::Again)
+            }
+            Routed::Handed(over) => match over.recv().map_err(gone)? {
+                Over::Written => Ok(Handed::Written),
+                Over::Changed => Ok(Handed::Changed),
+                // Its photo opened meanwhile: routed again.
+                Over::Dropped => continue,
+                Over::Failed(error) => Ok(Handed::Failed(error.to_string())),
+            },
+        };
+    }
+}
+
+/// One photo `change` makes a change of, read and handed over, read again where its file
+/// changed since, twice more, then named as changing; `None` where the engine thread
+/// reached it live. `change` gives the log and vector to write, or why it is left: as it
+/// is, or skipped.
+fn change_photo(
+    run: &Run,
+    context: &Context<'_>,
+    photo: &Path,
+    change: impl Fn(Log, Vec<Clock>) -> Result<(Log, Vec<Clock>), Outcome>,
+) -> Result<Option<Outcome>, Interrupted> {
+    let mut tries = 0;
+    while tries < TRIES {
+        let (file, log, clocks, stamp) = match read(run, context, photo)? {
+            Ok(read) => read,
+            Err(skip) => return Ok(Some(Outcome::Skipped(skip))),
+        };
+        let (log, clocks) = match change(log, clocks) {
+            Ok(changed) => changed,
+            Err(outcome) => return Ok(Some(outcome)),
+        };
+        match hand_over(run, context, photo, (file, log, clocks), stamp)? {
+            Handed::Live => return Ok(None),
+            Handed::Again => {}
+            Handed::Written => return Ok(Some(Outcome::Changed)),
+            Handed::Changed => tries += 1,
+            Handed::Failed(reason) => return Ok(Some(Outcome::Skipped(Skip::Failed(reason)))),
+        }
+    }
+    Ok(Some(Outcome::Skipped(Skip::KeptChanging)))
+}
+
+/// One photo of the batch to apply, not live as the job began it: on the disk, its
+/// metadata's image context, then the style applied to its log ([`change_photo`]).
 fn reach(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Option<Outcome>, Interrupted> {
     let skipped = |skip| Ok(Some(Outcome::Skipped(skip)));
     match std::fs::metadata(photo) {
@@ -624,87 +1034,55 @@ fn reach(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Option<Outcom
         Ok(metadata) => metadata.image,
         Err(error) => return skipped(Skip::Unreadable(error.to_string())),
     };
-    let path = sidecar::path_for(photo);
     let pending = &run.pending;
-    let mut tries = 0;
-    while tries < TRIES {
-        let snapshot = context.wait(&run.reads.read(vec![path.clone()]))?.pop();
-        let Some(snapshot) = snapshot else {
-            return Err(Interrupted::Disconnected);
-        };
-        let (modified, read) = (snapshot.changed(), snapshot.file_stamp());
-        let (mut file, log, clocks) = match snapshot.xml() {
-            Err(error) => return skipped(Skip::Unreadable(error.to_string())),
-            Ok(None) => (Edits::new(""), Log::default(), Vec::new()),
-            Ok(Some(xml)) => {
-                let (operations, tools) = (run.operations, &run.tools[..]);
-                match sidecar::from_xml_at(&xml, modified, operations, tools, run.retired) {
-                    Err(error) => return skipped(Skip::Unreadable(error.to_string())),
-                    Ok(loaded) => {
-                        if let Some(view_only) = loaded.view_only() {
-                            return skipped(Skip::ViewOnly(view_only));
-                        }
-                        let clocks = loaded.clocks().to_vec();
-                        (loaded.file, loaded.log, clocks)
-                    }
-                }
-            }
-        };
-        let styled = style_log(
+    change_photo(run, context, photo, |log, clocks| {
+        let style = pending.style.style();
+        match style_log(
             (log, clocks),
             &run.defaults,
-            pending.style.style(),
+            style,
             (&run.tools, &image),
             pending.batch,
-        );
-        let (log, clocks) = match styled {
-            Ok(Some(styled)) => styled,
-            Ok(None) => return Ok(Some(Outcome::Unchanged)),
-            Err(error) => return skipped(Skip::Refused(error.to_string())),
-        };
-        // What the file names the photo by, as `apertrust-cli edit` writes it.
-        file.photo = Some(sidecar::file_name(photo).into_owned());
-        if let Ok(fingerprint) = sidecar::read_fingerprint(photo) {
-            file.fingerprint = Some(fingerprint);
+        ) {
+            Ok(Some(styled)) => Ok(styled),
+            Ok(None) => Err(Outcome::Unchanged),
+            Err(error) => Err(Outcome::Skipped(Skip::Refused(error.to_string()))),
         }
-        let (operations, tools) = (run.operations, &run.tools[..]);
-        let xml = sidecar::log_xml(&file, &log, &clocks, (operations, tools), &run.build);
-        loop {
-            let (answer, routed) = mpsc::channel();
-            let route = Route {
-                pending: Arc::clone(pending),
-                photo: photo.to_owned(),
-                xml: xml.clone(),
-                read,
-                answer,
-            };
-            if run.inbox.send(Inbox::Route(Box::new(route))).is_err() {
-                return Err(Interrupted::Disconnected);
-            }
-            // Handed over, it completes, cancelled or not (decision 109): the engine thread
-            // answers at once, and the writer once the writes before it are done.
-            match routed.recv().map_err(|_| Interrupted::Disconnected)? {
-                Routed::Live => return Ok(None),
-                // Read again once it is live, or its open has ended.
-                Routed::Opening => {
-                    std::thread::sleep(OPENING_WAIT);
-                    if context.cancelled() {
-                        return Err(Interrupted::Cancelled);
-                    }
-                    break;
-                }
-                Routed::Handed(over) => match over.recv().map_err(|_| Interrupted::Disconnected)? {
-                    Over::Written => return Ok(Some(Outcome::Changed)),
-                    Over::Changed => {
-                        tries += 1;
-                        break;
-                    }
-                    // Its photo opened meanwhile: routed again.
-                    Over::Dropped => {}
-                    Over::Failed(error) => return skipped(Skip::Failed(error.to_string())),
-                },
-            }
-        }
+    })
+}
+
+/// One photo of the batch to take back, or put back where `redo`, by its end's move
+/// ([`moved_log`]): no raw read.
+fn moved(
+    run: &Run,
+    context: &Context<'_>,
+    photo: &Path,
+    redo: bool,
+) -> Result<Option<Outcome>, Interrupted> {
+    let batch = run.pending.batch.id;
+    change_photo(run, context, photo, |log, clocks| {
+        moved_log((log, clocks), batch, redo).map_err(Outcome::Skipped)
+    })
+}
+
+/// A photo's log, as its sidecar holds it, with its end moved back over the batch `batch`,
+/// or forward over it where `redo`, as Undo's and Redo's fallback move it with no undo
+/// record, the copy's clock vector advanced (decision 109): the log and vector to write;
+/// [`Skip::ChangedSince`] where its end is no longer on the batch's last step, or its next
+/// step after the end is not the batch's first.
+pub(super) fn moved_log(
+    (log, clocks): (Log, Vec<Clock>),
+    batch: BatchId,
+    redo: bool,
+) -> Result<(Log, Vec<Clock>), Skip> {
+    let mut history = PhotoHistory::read(log, clocks, &[]);
+    if !history.moves_batch(batch, redo) {
+        return Err(Skip::ChangedSince);
     }
-    skipped(Skip::KeptChanging)
+    let edit = history.stepped().clone();
+    match redo {
+        true => history.redo(&edit),
+        false => history.undo(&edit),
+    };
+    Ok(history.into_log())
 }

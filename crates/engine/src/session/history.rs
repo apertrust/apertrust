@@ -363,6 +363,12 @@ impl PhotoHistory {
         (self.log, self.clocks)
     }
 
+    /// Its history is told again, though it has not changed: what Undo and Redo would do
+    /// names another count of photos (decision 109).
+    pub(super) fn tell_again(&mut self) {
+        self.changed = true;
+    }
+
     /// A batch id no step of the log has.
     pub(super) fn new_batch(&self) -> BatchId {
         self.log.new_batch()
@@ -1145,6 +1151,7 @@ impl PhotoHistory {
                 return Some(Move::Steps {
                     first: first.id,
                     count: held.len() - kept,
+                    photos: 1,
                 });
             }
             Some(Record::Added { at, kept, .. }) => (at + kept, steps.len()),
@@ -1156,7 +1163,33 @@ impl PhotoHistory {
         Some(Move::Steps {
             first: first.id,
             count: end - start,
+            photos: 1,
         })
+    }
+
+    /// Whether Undo, or Redo where `redo`, would move over the steps of the batch `batch`
+    /// now (decision 109): by its record, or by its fallback where it has none.
+    pub(super) fn moves_batch(&self, batch: BatchId, redo: bool) -> bool {
+        self.batch_moving(redo) == Some(batch)
+    }
+
+    /// The batch whose steps Undo, or Redo where `redo`, would move over now, where they
+    /// are in one.
+    pub(super) fn batch_moving(&self, redo: bool) -> Option<BatchId> {
+        let Some(Move::Steps { first, count, .. }) = self.next(!redo) else {
+            return None;
+        };
+        let steps = || {
+            let held = (self.undone.iter()).flat_map(|record| match record {
+                Record::Added { held, .. } => held.as_slice(),
+                _ => &[],
+            });
+            self.log.steps().iter().chain(held)
+        };
+        let batch = steps().find(|step| step.id == first)?.batch?;
+        // Its whole batch, never the part of one `GoTo` left the end inside.
+        let all = steps().filter(|step| step.batch == Some(batch)).count();
+        (all == count).then_some(batch)
     }
 
     /// The `History` fact, through the first `through` commands, the photo's steps
@@ -1654,7 +1687,19 @@ impl Engine {
     /// The open photo's `History`, where it changed since it was last sent.
     pub(super) fn history_event(&mut self) -> Option<Event> {
         let open = self.open.as_mut().filter(|open| open.history.changed())?;
-        let fact = (open.history).fact(self.applied, &self.tools, self.operations, &open.image);
+        // The batches Undo and Redo would move over, by their records, the steps Redo puts
+        // back held outside the log.
+        let moving = [false, true].map(|redo| open.history.batch_moving(redo));
+        let mut fact = (open.history).fact(self.applied, &self.tools, self.operations, &open.image);
+        // A remembered batch on several photos names how many (decision 109).
+        let moves = [&mut fact.undo, &mut fact.redo].into_iter().zip(moving);
+        for ((moved, batch), redo) in moves.zip([false, true]) {
+            if let Some(Move::Steps { photos, .. }) = moved {
+                *photos = batch
+                    .and_then(|batch| self.batch_photos(batch, redo))
+                    .unwrap_or(1);
+            }
+        }
         Some(Event::History(fact))
     }
 }
