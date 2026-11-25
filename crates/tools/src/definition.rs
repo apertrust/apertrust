@@ -840,6 +840,37 @@ pub enum Row {
     /// ([`crate::messages::GUIDES`]). Until the tool's guides come the panel draws it
     /// disabled, off.
     Guides,
+    /// A read-only fact of a utility (decision 110), as the Metadata tool's rows: a label and
+    /// its value, which the utility gives, with its words `tool-<tool>-fact-<id>-label`,
+    /// `-tag` and `-none` ([`crate::messages::fact_words`]). It is no control and edits
+    /// nothing: [`ProcessingDefinition::check`] refuses it, and a utility holds each fact id
+    /// once among its facts.
+    Fact(Fact),
+}
+
+/// A [`Row::Fact`]: its id, whether it shows until the person hides it, where its value is
+/// cut when it is too long, and the item at its end, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Fact {
+    pub id: &'static str,
+    pub shown: bool,
+    pub cut: Cut,
+    pub end: Option<FactEnd>,
+}
+
+/// Where a fact's value too long for its row is cut with …: in its middle, a path or a file
+/// name, its extension kept; or at its end, a name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cut {
+    Middle,
+    End,
+}
+
+/// The item at a fact's end, an icon button its utility carries out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FactEnd {
+    /// Open This Folder: the photo's folder in folder mode, as Collections' is.
+    OpenFolder,
 }
 
 /// A readout at a line's start ([`Row::Line::readout`]): a text the tool
@@ -1033,7 +1064,8 @@ impl Row {
             | Row::Computed(_)
             | Row::Reference { .. }
             | Row::LastPick { .. }
-            | Row::Guides => &[],
+            | Row::Guides
+            | Row::Fact(_) => &[],
             Row::Custom { controls, .. } => controls,
         }
     }
@@ -1467,6 +1499,14 @@ pub enum Widget {
     ExportLater,
     /// Export's end: the Summary, the warnings, the Export button and its job's line.
     ExportEnd,
+    /// The Metadata tool's Rating row in Basic, its five stars, drawn disabled until the
+    /// global rating actions are built (decision 110).
+    MetadataRating,
+    /// Its Colour labels row in Basic, darktable's five label dots, drawn disabled the same
+    /// way.
+    MetadataLabels,
+    /// Show on Map after its GPS group's facts, drawn disabled until the map comes.
+    MetadataMap,
 }
 
 impl Widget {
@@ -1484,7 +1524,10 @@ impl Widget {
             | Widget::ExportPath
             | Widget::ExportSize
             | Widget::ExportLater
-            | Widget::ExportEnd => true,
+            | Widget::ExportEnd
+            | Widget::MetadataRating
+            | Widget::MetadataLabels
+            | Widget::MetadataMap => true,
             Widget::Curve
             | Widget::ColourWheels
             | Widget::Equalizer
@@ -1729,6 +1772,10 @@ pub enum DefinitionError {
         "the fields row {0}: not two or three number settings kept under keys, each once, with a separator before each but the first, in a utility"
     )]
     Fields(&'static str),
+    #[error("the fact {0} is a utility's read-only row, never a processing tool's")]
+    Fact(&'static str),
+    #[error("two facts are called {0}")]
+    DuplicateFact(&'static str),
     #[error("{0:?} is no key of dotted snake_case parts")]
     Key(&'static str),
     #[error("the setting {0}'s words name not each of its options")]
@@ -2121,6 +2168,8 @@ impl ProcessingDefinition {
                 } => return Err(DefinitionError::SegmentedPreset(preset)),
                 // A processing tool's fields come with Lens correction's, of controls.
                 Row::Fields(fields) => return Err(DefinitionError::Fields(fields.id)),
+                // Facts are a utility's, never the edit's.
+                Row::Fact(fact) => return Err(DefinitionError::Fact(fact.id)),
                 Row::Setting(setting) => {
                     if !settings.insert(setting.id) {
                         return Err(DefinitionError::DuplicateSetting(setting.id));
@@ -4705,6 +4754,22 @@ mod tests {
         assert_eq!(
             page(with_mode(&[fields])).check(),
             Err(DefinitionError::Fields("size"))
+        );
+    }
+
+    /// A fact is a utility's read-only row (decision 110), never a processing tool's.
+    #[test]
+    fn a_processing_tool_takes_no_fact() {
+        let fact = Row::Fact(Fact {
+            id: "make",
+            shown: true,
+            cut: Cut::End,
+            end: None,
+        });
+        assert!(fact.controls().is_empty());
+        assert_eq!(
+            page(with_mode(&[fact])).check(),
+            Err(DefinitionError::Fact("make"))
         );
     }
 

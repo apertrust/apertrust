@@ -1575,7 +1575,8 @@ impl Rows for Page<'_> {
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
-            | Row::Fields(_) => {}
+            | Row::Fields(_)
+            | Row::Fact(_) => {}
         }
     }
 }

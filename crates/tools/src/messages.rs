@@ -610,9 +610,26 @@ pub fn utility_presets(utility: &str) -> String {
     format!("{utility}-presets")
 }
 
+/// A utility's ＋'s name, Rows Shown, which shows or hides its rows:
+/// `tool-<utility>-rows-shown`, as the Metadata tool's (decision 110).
+pub fn rows_shown(utility: &str) -> String {
+    format!("tool-{utility}-rows-shown")
+}
+
+/// A fact's words (decision 110): its label, `tool-<tool>-fact-<id>-label`; its standard
+/// and tag, which its tooltip ends with, `-tag`; and why it has no value, `-none`.
+pub fn fact_words(tool: &str, fact: &str) -> [String; 3] {
+    let id = format!("tool-{tool}-fact-{fact}");
+    [
+        format!("{id}-label"),
+        format!("{id}-tag"),
+        format!("{id}-none"),
+    ]
+}
+
 /// Every message a utility's header and rows imply, each once, as [`of`] lists a
-/// processing tool's: its own ↺'s name, its presets button's words, each group's title, each
-/// line of fields' words, and each setting's and field's words and options, those it
+/// processing tool's: its own ↺'s name, its presets button's words, its ＋'s, its groups'
+/// tooltips, each group's title, each fact's words, each line of fields' words, and each setting's and field's words and options, those it
 /// declares where it does, a name an option declares needing none. Its custom rows' words
 /// are its widgets' own.
 pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
@@ -622,6 +639,7 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
             match row {
                 Row::Group(group) => ids.push(utility.title(group.id, group.kind)),
                 Row::Fields(fields) => ids.push(fields.words.to_owned()),
+                Row::Fact(fact) => ids.extend(fact_words(tool, fact.id)),
                 _ => {}
             }
             // A setting row's, or each field's of a line of fields.
@@ -647,6 +665,10 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
     if definition.presets {
         ids.push(utility_presets(definition.id));
     }
+    if utility.rows_shown {
+        ids.push(rows_shown(definition.id));
+    }
+    ids.extend(utility.tips.iter().map(|(_, tip)| (*tip).to_owned()));
     let tabs = definition.tabs.iter().map(|tab| tab.rows);
     for list in std::iter::once(definition.before)
         .chain(tabs)

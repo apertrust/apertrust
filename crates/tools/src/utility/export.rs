@@ -414,4 +414,6 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
         ("global", "export-global-options"),
     ],
     open: &["global"],
+    rows_shown: false,
+    tips: &[],
 };

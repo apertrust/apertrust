@@ -206,3 +206,10 @@ tool-hazeremoval-description = Removes haze and fog, bringing back contrast and 
 tool-primaries-description = Moves the red, green and blue primaries, shifting every color made of them. Reach for it for broad, smooth color grading.
 tool-vignette-description = Darkens or lightens the photo towards its edges, as a lens does. Reach for it to draw the eye to the center.
 tool-scopes-description = Shows how the photo’s tones and colors are spread: histogram, waveform, RGB parade or vectorscope. Reach for it to judge exposure and color as you edit.
+
+## The Metadata tool.
+
+tool-metadata-fact-colour_space-label = Color space
+tool-metadata-fact-colour_space-none = The camera recorded no color space
+tool-metadata-fact-date_digitised-label = Date digitized
+tool-metadata-fact-date_digitised-none = The camera recorded no date digitized
