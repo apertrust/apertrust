@@ -1033,6 +1033,17 @@ pub struct Photo {
     pub exposure_time: Option<f32>,
     pub aperture: Option<f32>,
     pub focal_length: Option<f32>,
+    /// The raw's EXIF as the open read it (decision 110), what the Metadata tool shows: the
+    /// open's one parse of its metadata, kept; every field `None` where none could be read.
+    /// Boxed, as it is large and the caption needs none of it.
+    pub exif: Box<apertrust_raw::Exif>,
+    /// The file's format as its decoder names it, "DNG", "ARW", "CR3".
+    pub format: String,
+    /// The raw's size on disk in bytes, as the open read it.
+    pub file_size: u64,
+    /// The raw's full readout in photosites, its masked borders included, which may be
+    /// larger than the developed `width` and `height`.
+    pub sensor: [u32; 2],
     /// The photo's image context at full resolution, the one every binding sees, so a
     /// client shows a tool's view and availability of its pending values as the session
     /// will (decision 27): White balance's temperature and tint read the camera's matrix.
@@ -5230,6 +5241,10 @@ impl Engine {
             exposure_time: metadata.shot.exposure_time,
             aperture: metadata.shot.aperture,
             focal_length: metadata.shot.focal_length,
+            exif: metadata.exif,
+            format: metadata.format,
+            file_size: metadata.file_size,
+            sensor: [metadata.sensor.width, metadata.sensor.height],
             image: Box::new(image.clone()),
         };
         let options = listed_options(&self.tools, &image);
@@ -7327,17 +7342,22 @@ mod tests {
     /// The synthetic photo with the shooting data a decode gives it.
     fn synthetic_shot(path: &Path) -> Result<(Metadata, Mosaic), SessionError> {
         let (mut metadata, mosaic) = synthetic(path)?;
-        metadata.shot = metadata.shot.with_exif(&apertrust_raw::Exif {
+        let exif = apertrust_raw::Exif {
             exposure_time: Some(1.0 / 250.0),
             aperture: Some(5.6),
             focal_length: Some(35.0),
+            software: Some("Ver.1.00".to_owned()),
             ..Default::default()
-        });
+        };
+        metadata.shot = metadata.shot.with_exif(&exif);
+        metadata.exif = Box::new(exif);
         Ok((metadata, mosaic))
     }
 
     /// A client shows the exposure time, the f-number and the focal length in the photo's
-    /// caption, and has them from the photo the session reports, not from the file.
+    /// caption, and has them from the photo the session reports, not from the file. So does the
+    /// Metadata tool, with the rest of the EXIF, the format, the size on disk and the readout
+    /// (decision 110).
     #[test]
     fn an_opened_photo_carries_the_shooting_data_its_decode_read() {
         let gpu = gpu();
@@ -7352,6 +7372,10 @@ mod tests {
             (photo.exposure_time, photo.aperture, photo.focal_length),
             (Some(1.0 / 250.0), Some(5.6), Some(35.0))
         );
+        assert_eq!(photo.exif.software.as_deref(), Some("Ver.1.00"));
+        assert_eq!(photo.exif.exposure_time, photo.exposure_time);
+        let sizes = (photo.format.as_str(), photo.file_size, photo.sensor);
+        assert_eq!(sizes, ("ARW", 96 * 72 * 2, [96, 72]));
         // A photo whose EXIF could not be read carries none.
         let (session, wakes) = start_with(&gpu, &[], synthetic);
         session.send(Command::Open(PathBuf::from("photo.ARW")));

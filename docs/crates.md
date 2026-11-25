@@ -135,7 +135,7 @@ Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, all built:
 
 `session` is an editing session on the engine thread: one photo, its edit and the viewport pipe. `Session::start` takes the memory budget, and every photo of the session is planned within it, and the disk cache, if any ([The cache](#the-cache)).
 
-**The photo.** It is reported as `Photo`, with its image context (decision 27) and the exposure time, f-number and focal length the raw's EXIF records, read as it decodes, for the caption under the photo. Its ISO is in its image context.
+**The photo.** It is reported as `Photo`, with its image context (decision 27) and the exposure time, f-number and focal length the raw's EXIF records, read as it decodes, for the caption under the photo. Its ISO is in its image context. It also carries what the Metadata tool shows (decision 110): the raw's EXIF (`exif`) as the open's one parse of its metadata read it, kept, its format as its decoder names it, its size on disk and its full readout in photosites.
 
 **Controls.** Each tool's controls are reported with their defaults, marks, and whether they can change the photo, asked of the tool with its values after every change (decision 30).
 
