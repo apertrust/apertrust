@@ -201,6 +201,7 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
         Row::Custom { .. } => "custom",
         Row::Preset { .. } => "preset",
         Row::Setting(_) => "setting",
+        Row::Fields(_) => "fields",
         Row::Line {
             start: LineStart::Control(_),
             ..

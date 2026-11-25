@@ -749,6 +749,12 @@ pub enum Row {
     /// panel draws it disabled at darktable's default, so the page reads as darktable's and
     /// shows what is missing.
     Setting(SettingRow),
+    /// Two or three compact fields on one line, sharing its width, with no label of its
+    /// own (decision 107), as Export's `[w] × [h] px`: below the width its fields need, it
+    /// folds into one labelled row each. Its fields are a utility's settings, by their
+    /// keys; [`ProcessingDefinition::check`] refuses it until Lens correction's port brings
+    /// fields of controls ([`DefinitionError::Fields`]). It is no control.
+    Fields(Fields),
     /// One line, darktable's widgets packed in a box (decision 107): a start, a readout in
     /// the label's place, and end items. Until decision 107's next step draws lines of any
     /// shape, [`ProcessingDefinition::check`] takes three ([`DefinitionError::LineShape`]):
@@ -980,6 +986,7 @@ impl Row {
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
+            | Row::Fields(_)
             | Row::Preset { .. }
             | Row::Line { .. }
             | Row::Patches { .. }
@@ -1004,6 +1011,18 @@ impl Row {
             _ => (None, &[]),
         };
         one.into_iter().chain(end.iter().filter_map(End::picker))
+    }
+
+    /// The setting rows the row shows itself: a setting row's, or a line of fields' one a
+    /// field; none for any other row, a group's and a mode's being their rows'.
+    pub fn setting_rows(&self) -> impl Iterator<Item = &SettingRow> {
+        let (one, fields): (Option<&SettingRow>, &[Field]) = match self {
+            Row::Setting(setting) => (Some(setting), &[]),
+            Row::Fields(fields) => (None, fields.fields),
+            _ => (None, &[]),
+        };
+        one.into_iter()
+            .chain(fields.iter().map(|field| &field.setting))
     }
 
     /// The rows inside a group or a mode's rows, a control's or a setting's; none for any
@@ -1188,6 +1207,75 @@ pub struct SettingRow {
     pub end: &'static [End],
 }
 
+/// A line of fields ([`Row::Fields`], decision 107): two or three of a utility's number
+/// settings, a separator before each but the first and a unit after it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Fields {
+    /// snake_case, unique among the tool's fields rows.
+    pub id: &'static str,
+    /// Its words, the group's name to screen readers, a utility's own message, as Export's
+    /// `export-size-pixels`.
+    pub words: &'static str,
+    pub fields: &'static [Field],
+}
+
+/// One field of a line of fields ([`Fields`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Field {
+    /// The setting it edits, by its key in full, with its kind, decimals and words, as a
+    /// setting row has them; its label is the field's name and its folded row's label.
+    pub setting: SettingRow,
+    /// Drawn before it, after the field before; none on the first.
+    pub before: Option<Separator>,
+    /// Its unit, in its name to screen readers, and drawn after it, once after the last of
+    /// fields side by side that share it, as `[w] × [h] px`.
+    pub unit: Option<Unit>,
+}
+
+/// What stands between two fields of a line ([`Field::before`]), written alike in every
+/// language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Separator {
+    /// "×", between a width and a height.
+    Times,
+    /// "@", before a resolution.
+    At,
+}
+
+impl Separator {
+    /// How it is written.
+    pub fn text(self) -> &'static str {
+        match self {
+            Separator::Times => "×",
+            Separator::At => "@",
+        }
+    }
+}
+
+impl Fields {
+    /// Whether it holds together (decision 107): a snake_case id and words, two or three
+    /// fields, each a number setting kept under a key, holding together as a setting row
+    /// does, with a separator before each but the first.
+    pub(crate) fn check(&self) -> Result<(), DefinitionError> {
+        let fails = DefinitionError::Fields(self.id);
+        if !is_id(self.id) {
+            return Err(DefinitionError::Id(self.id));
+        }
+        if self.words.is_empty() || !(2..=3).contains(&self.fields.len()) {
+            return Err(fails);
+        }
+        for (at, field) in self.fields.iter().enumerate() {
+            let setting = &field.setting;
+            let number = matches!(setting.kind, ControlKind::Number { .. });
+            if !number || setting.key.is_none() || field.before.is_some() != (at > 0) {
+                return Err(fails);
+            }
+            setting.check()?;
+        }
+        Ok(())
+    }
+}
+
 /// The words a setting row declares ([`SettingRow::words`]): message ids, but for an
 /// option's, which may be a name written alike in every language.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1325,8 +1413,8 @@ pub enum Widget {
     /// Export's path line: the path field on one line with the folder button at its end
     /// and no visible label, the resolved file name its tooltip.
     ExportPath,
-    /// Export's size line, `[w] × [h] px` or `[w] × [h] cm @ [dpi] dpi` with no label, or
-    /// the scale's field, for Set size's mode.
+    /// Export's print and scale lines for Set size's mode, `[w] × [h] cm @ [dpi] dpi` with
+    /// no label, or the scale's field; its line in pixels is a [`Row::Fields`].
     ExportSize,
     /// Export's groups still to come, Metadata and Multi-preset export, drawn disabled.
     ExportLater,
@@ -1580,6 +1668,10 @@ pub enum DefinitionError {
     UtilityAction(&'static str),
     #[error("a utility's ↺ is a registry action's, its own or none, never a processing tool's")]
     UtilityHeader,
+    #[error(
+        "the fields row {0}: not two or three number settings kept under keys, each once, with a separator before each but the first, in a utility"
+    )]
+    Fields(&'static str),
     #[error("{0:?} is no key of dotted snake_case parts")]
     Key(&'static str),
     #[error("the setting {0}'s words name not each of its options")]
@@ -1932,6 +2024,8 @@ impl ProcessingDefinition {
                     preset,
                     style: ChoiceStyle::Segmented,
                 } => return Err(DefinitionError::SegmentedPreset(preset)),
+                // A processing tool's fields come with Lens correction's, of controls.
+                Row::Fields(fields) => return Err(DefinitionError::Fields(fields.id)),
                 Row::Setting(setting) => {
                     if !settings.insert(setting.id) {
                         return Err(DefinitionError::DuplicateSetting(setting.id));
@@ -4309,6 +4403,50 @@ mod tests {
                 Err(DefinitionError::EndNotDrawn(id))
             );
         }
+    }
+
+    /// A processing tool's fields wait for Lens correction's port, which brings fields of
+    /// controls: a line of fields of settings is a utility's alone.
+    #[test]
+    fn a_processing_tool_takes_no_fields_row_yet() {
+        const WIDTH: SettingRow = SettingRow {
+            id: "width",
+            kind: ControlKind::Number {
+                min: 0.0,
+                max: 100.0,
+                step: 1.0,
+                default: 0.0,
+            },
+            key: Some("sample.width"),
+            ..CHART
+        };
+        const HEIGHT: SettingRow = SettingRow {
+            id: "height",
+            key: Some("sample.height"),
+            ..WIDTH
+        };
+        let fields = Row::Fields(Fields {
+            id: "size",
+            words: "sample-size",
+            fields: &[
+                Field {
+                    setting: WIDTH,
+                    before: None,
+                    unit: None,
+                },
+                Field {
+                    setting: HEIGHT,
+                    before: Some(Separator::Times),
+                    unit: None,
+                },
+            ],
+        });
+        assert_eq!(fields.setting_rows().count(), 2);
+        assert!(fields.controls().is_empty());
+        assert_eq!(
+            page(with_mode(&[fields])).check(),
+            Err(DefinitionError::Fields("size"))
+        );
     }
 
     /// What each shape of row shows: a line its control at its start and its pickers, a
