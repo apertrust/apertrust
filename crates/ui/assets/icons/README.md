@@ -49,6 +49,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `rotate-left`, `rotate-right` | Lucide's `rotate-ccw-square` and `rotate-cw-square` |
 | `flip-horizontal`, `flip-vertical` | Lucide's `triangles-centerline-dashed-vertical` and `triangles-centerline-dashed-horizontal` |
 | `primaries-menu` | Lucide's `list-restart`: AgX's Reset primaries menu (decision 107) |
+| `camera` | Lucide's `camera`: AgX's Read exposure (decision 107), as `raw` is Edit's Raw tab at 22 points |
 | `history`, `history-filled` | Lucide's `rotate-ccw-clock`, its arrow removed |
 | `folder`, `folder-filled` | Lucide's `folder` |
 | `folder-open` | Lucide's `folder-open` |
