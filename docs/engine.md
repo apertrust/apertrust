@@ -1691,6 +1691,8 @@ In the session protocol:
 ```rust
 pub presets: Vec<PresetState>,  // each preset row of the definition
 pub views: Vec<CoordinateState>, // every coordinate of every view, in the definition's order
+pub actions: Vec<ActionState>,   // each action at its rows' ends, a menu's items among them, and whether it can run (decision 107)
+pub warnings: Vec<WarningState>, // each warning at its sliders' ends and whether it shows (decision 107)
 
 pub struct PresetState {
     pub preset: &'static str,
