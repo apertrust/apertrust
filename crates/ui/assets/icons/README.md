@@ -48,6 +48,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `reject` | Lucide's `circle-x` |
 | `rotate-left`, `rotate-right` | Lucide's `rotate-ccw-square` and `rotate-cw-square` |
 | `flip-horizontal`, `flip-vertical` | Lucide's `triangles-centerline-dashed-vertical` and `triangles-centerline-dashed-horizontal` |
+| `primaries-menu` | Lucide's `list-restart`: AgX's Reset primaries menu (decision 107) |
 | `history`, `history-filled` | Lucide's `rotate-ccw-clock`, its arrow removed |
 | `folder`, `folder-filled` | Lucide's `folder` |
 | `folder-open` | Lucide's `folder-open` |

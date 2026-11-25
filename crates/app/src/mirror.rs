@@ -989,9 +989,9 @@ fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
             computed: Vec::new(),
             readouts,
             // None runs while the photo opens, as no control is live.
-            actions: (definition.action_ends())
-                .map(|end| ActionState {
-                    id: end.id,
+            actions: (definition.action_ids().into_iter())
+                .map(|(id, _)| ActionState {
+                    id,
                     available: false,
                 })
                 .collect(),

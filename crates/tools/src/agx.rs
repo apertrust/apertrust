@@ -49,9 +49,11 @@
 //! darktable's five pickers pick as its `color_picker_apply` does ([`Agx::pick`]): the
 //! quads on white and black relative exposure, Auto tune levels setting both, a row of
 //! its own with its picker at the end, and the quads on the pivot and its target output.
-//! Set from above copies the primaries before tone mapping to after it ([`Agx::action`]),
-//! unavailable while Reverse all or Disable adjustments is on ([`Agx::available`]); Read
-//! exposure and Reset primaries are drawn disabled until what they run is built. Show curve is empty until a read-only graph row
+//! Reset primaries opens a menu of darktable's three primaries to start from, Blender-like,
+//! Smooth and Unmodified, each one change; Set from above copies the primaries before tone
+//! mapping to after it ([`Agx::action`]), unavailable while Reverse all or Disable
+//! adjustments is on ([`Agx::available`]). Read exposure is drawn disabled until what it
+//! runs is built. Show curve is empty until a read-only graph row
 //! exists. darktable's presets wait for the presets menu's built-in presets (decision 106).
 
 #![allow(
@@ -65,9 +67,9 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ActionEnd, ChoiceStyle, Control, ControlKind, End, Face, Group, GroupKind, LineStart, Picker,
-    PickerKind, ProcessingDefinition, Range, Reset, Row, Slider, Space, Tab, ToolDefinition, Unit,
-    slider_step,
+    ActionEnd, ButtonIcon, ChoiceStyle, Control, ControlKind, End, Face, Group, GroupKind,
+    LineStart, Picker, PickerKind, ProcessingDefinition, Range, Reset, Row, Slider, Space, Tab,
+    ToolDefinition, Unit, slider_step,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
 use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
@@ -263,6 +265,90 @@ const INSETS: [f32; 3] = [0.29462451, 0.25861925, 0.14641371];
 const ROTATIONS: [f32; 3] = [0.03540329, -0.02108586, -0.06305724];
 const OUTSETS: [f32; 3] = [0.290776401758, 0.263155400753, 0.045810721815];
 
+/// Primaries to start from, as darktable's parameters: the base primaries by their option,
+/// each primary's attenuation and rotation before tone mapping, the two masters, and each
+/// purity boost and reverse rotation after it.
+struct Primaries {
+    base: &'static str,
+    insets: [f32; 3],
+    rotations: [f32; 3],
+    master_outset: f32,
+    master_unrotation: f32,
+    outsets: [f32; 3],
+    unrotations: [f32; 3],
+}
+
+/// Reset primaries' menu, in darktable's order (`agx.c:2100-2121`).
+const RESET_PRIMARIES: [&str; 3] = [
+    "primaries_blender_like",
+    "primaries_smooth",
+    "primaries_unmodified",
+];
+
+/// darktable's `deg2radf`, in f32 as it computes it: `deg · π / 180`.
+fn deg2radf(deg: f32) -> f32 {
+    deg * std::f32::consts::PI / 180.0
+}
+
+/// The primaries the menu item `id` starts from, darktable's `_set_blenderlike_primaries`,
+/// `_set_smooth_primaries` and `_set_unmodified_primaries` (`agx.c:317-397`).
+fn primaries(id: &str) -> Option<Primaries> {
+    match id {
+        // Blender's AgX: the scene-referred defaults, the reverse rotations not applied.
+        "primaries_blender_like" => Some(Primaries {
+            base: "rec2020",
+            insets: INSETS,
+            rotations: ROTATIONS,
+            master_outset: 1.0,
+            master_unrotation: 0.0,
+            outsets: OUTSETS,
+            unrotations: ROTATIONS,
+        }),
+        // Sigmoid's smooth primaries over the working profile, the purity not restored.
+        "primaries_smooth" => {
+            let rotations = [deg2radf(2.0), deg2radf(-1.0), deg2radf(-3.0)];
+            let insets = [0.1, 0.1, 0.15];
+            Some(Primaries {
+                base: "working_profile",
+                insets,
+                rotations,
+                master_outset: 0.0,
+                master_unrotation: 1.0,
+                outsets: insets,
+                unrotations: rotations,
+            })
+        }
+        "primaries_unmodified" => Some(Primaries {
+            base: "rec2020",
+            insets: [0.0; 3],
+            rotations: [0.0; 3],
+            master_outset: 1.0,
+            master_unrotation: 1.0,
+            outsets: [0.0; 3],
+            unrotations: [0.0; 3],
+        }),
+        _ => None,
+    }
+}
+
+/// What a control shows for darktable's parameter `param`, the control showing its
+/// parameter times `factor`: the f32 nearest `param × factor` whose `/ factor` is `param`
+/// to the bit, where one within eight f32 steps is, else `param × factor`, one f32 step
+/// from it at most (A4's bound, `docs/tools/agx.md`).
+fn shown_for(param: f32, factor: f32) -> f32 {
+    let near = param * factor;
+    let (mut up, mut down) = (near, near);
+    for _ in 0..=8 {
+        for shown in [up, down] {
+            if shown / factor == param {
+                return shown;
+            }
+        }
+        (up, down) = (up.next_up(), down.next_down());
+    }
+    near
+}
+
 /// darktable's hard ranges are the controls', in the units its sliders show; its soft
 /// ranges are the rows' (`Slider::soft`). Every default is the operation's, darktable's
 /// scene-referred default (`reload_defaults`).
@@ -442,6 +528,7 @@ static SETTINGS: [Row; 5] = [
                 end: &[End::Action(ActionEnd {
                     id: "read_exposure",
                     face: Face::Text,
+                    menu: &[],
                     unported: true,
                 })],
             },
@@ -514,15 +601,16 @@ static PRIMARIES_PAGE: [Row; 3] = [
         control: "disable_primaries_adjustments",
         is: &["false"],
         rows: &[
-            // darktable's menu of three primaries to start from: Blender-like, Smooth and
-            // Unmodified.
+            // darktable's labelled line with its menu of three primaries to start from:
+            // Blender-like, Smooth and Unmodified.
             Row::Line {
-                start: LineStart::None,
+                start: LineStart::Label("reset_primaries"),
                 readout: None,
                 end: &[End::Action(ActionEnd {
                     id: "reset_primaries",
-                    face: Face::Text,
-                    unported: true,
+                    face: Face::Icon(ButtonIcon::PrimariesMenu),
+                    menu: &RESET_PRIMARIES,
+                    unported: false,
                 })],
             },
             Row::Group(Group {
@@ -547,6 +635,7 @@ static PRIMARIES_PAGE: [Row; 3] = [
                         end: &[End::Action(ActionEnd {
                             id: "set_from_above",
                             face: Face::Text,
+                            menu: &[],
                             unported: false,
                         })],
                     },
@@ -675,6 +764,11 @@ impl ProcessingTool for Agx {
 
     /// darktable's buttons on the values shown:
     ///
+    /// - **Reset primaries' menu,** `primaries_blender_like`, `primaries_smooth` and
+    ///   `primaries_unmodified` (`primaries`): adjustments on, Reverse all off, the base
+    ///   primaries, and every primaries control as darktable sets it, in the units shown,
+    ///   each binding to darktable's parameter to the bit where a value of the control
+    ///   reaches it, else one f32 step from it (`shown_for`);
     /// - **`set_from_above`,** `_set_post_curve_primaries_from_pre_callback`
     ///   (`agx.c:2123-2140`): both masters 100 %, each purity boost its primary's
     ///   attenuation and each reverse rotation its rotation, as shown, so each parameter is
@@ -695,7 +789,36 @@ impl ProcessingTool for Agx {
                     writes.set(unrotation, ControlValue::Number(values.number(rotation)));
                 }
             }
-            _ => return None,
+            id => {
+                let primaries = primaries(id)?;
+                let base = PRIMARIES
+                    .iter()
+                    .position(|option| *option == primaries.base)?;
+                writes.set(BASE_PRIMARIES, ControlValue::Choice(base as u32));
+                for flag in [
+                    "disable_primaries_adjustments",
+                    "completely_reverse_primaries",
+                ] {
+                    writes.set(flag, ControlValue::Bool(false));
+                }
+                let mut number = |id: &'static str, param: f32| {
+                    let factor = PARAMETERS.iter().find(|p| p.control == id)?.factor;
+                    writes.set(id, ControlValue::Number(shown_for(param, factor)));
+                    Some(())
+                };
+                number("master_outset_ratio", primaries.master_outset)?;
+                number("master_unrotation_ratio", primaries.master_unrotation)?;
+                for (at, colour) in ["red", "green", "blue"].into_iter().enumerate() {
+                    for (part, values) in [
+                        ("inset", primaries.insets),
+                        ("rotation", primaries.rotations),
+                        ("outset", primaries.outsets),
+                        ("unrotation", primaries.unrotations),
+                    ] {
+                        number(control_of(colour, part), values[at])?;
+                    }
+                }
+            }
         }
         Some(writes)
     }
@@ -936,7 +1059,17 @@ mod tests {
             actions,
             [
                 ("read_exposure", true),
-                ("reset_primaries", true),
+                ("reset_primaries", false),
+                ("set_from_above", false)
+            ]
+        );
+        assert_eq!(
+            DEFINITION.own_actions(),
+            [
+                ("read_exposure", true),
+                ("primaries_blender_like", false),
+                ("primaries_smooth", false),
+                ("primaries_unmodified", false),
                 ("set_from_above", false)
             ]
         );
@@ -1225,6 +1358,7 @@ mod tests {
                         end: [End::Action(ActionEnd {
                             id: "read_exposure",
                             face: Face::Text,
+                            menu: [],
                             unported: true,
                         })],
                     },
@@ -1292,6 +1426,109 @@ mod tests {
             Some(Value::Float(1.0))
         );
         assert!(Agx.action("no_such_action", &values, &image).is_none());
+    }
+
+    /// Each of Reset primaries' menu items writes darktable's primaries: adjustments on,
+    /// Reverse all off, its base, and every primaries control, each binding to darktable's
+    /// f32 parameter to the bit where some value of the control reaches it, else one f32
+    /// step from it, A4's bound; and they leave the rest of the tool as it was.
+    #[test]
+    fn reset_primaries_menu_writes_darktable_s_primaries() {
+        let image = crate::testing::image();
+        // darktable's parameters for each, `agx.c:317-397`.
+        let rad = |deg: f32| deg * std::f32::consts::PI / 180.0;
+        let smooth_rotations = [rad(2.0), rad(-1.0), rad(-3.0)];
+        // Each: its id, the base primaries' option, the insets, the rotations, the master
+        // outset and unrotation, the outsets and the unrotations.
+        type Case = (
+            &'static str,
+            u32,
+            [f32; 3],
+            [f32; 3],
+            f32,
+            f32,
+            [f32; 3],
+            [f32; 3],
+        );
+        let cases: [Case; 3] = [
+            (
+                "primaries_blender_like",
+                2,
+                [0.29462451, 0.25861925, 0.14641371],
+                [0.03540329, -0.02108586, -0.06305724],
+                1.0,
+                0.0,
+                [0.290776401758, 0.263155400753, 0.045810721815],
+                [0.03540329, -0.02108586, -0.06305724],
+            ),
+            (
+                "primaries_smooth",
+                1,
+                [0.1, 0.1, 0.15],
+                smooth_rotations,
+                0.0,
+                1.0,
+                [0.1, 0.1, 0.15],
+                smooth_rotations,
+            ),
+            (
+                "primaries_unmodified",
+                2,
+                [0.0; 3],
+                [0.0; 3],
+                1.0,
+                1.0,
+                [0.0; 3],
+                [0.0; 3],
+            ),
+        ];
+        let mut values = DEFINITION.defaults();
+        values.set("disable_primaries_adjustments", ControlValue::Bool(true));
+        values.set("completely_reverse_primaries", ControlValue::Bool(true));
+        values.set("look_saturation", ControlValue::Number(150.0));
+        for (id, base, insets, rotations, outset, unrotation, outsets, unrotations) in cases {
+            let writes = Agx.action(id, &values, &image).unwrap();
+            assert_eq!(writes.choice(BASE_PRIMARIES), base, "{id}");
+            assert!(!writes.flag("disable_primaries_adjustments"), "{id}");
+            assert!(!writes.flag("completely_reverse_primaries"), "{id}");
+            assert_eq!(writes.get("look_saturation"), None, "{id}");
+            let mut expected = vec![
+                ("master_outset_ratio", outset),
+                ("master_unrotation_ratio", unrotation),
+            ];
+            for (at, colour) in ["red", "green", "blue"].into_iter().enumerate() {
+                expected.push((control_of(colour, "inset"), insets[at]));
+                expected.push((control_of(colour, "rotation"), rotations[at]));
+                expected.push((control_of(colour, "outset"), outsets[at]));
+                expected.push((control_of(colour, "unrotation"), unrotations[at]));
+            }
+            // 3 choices and toggles and 14 numbers.
+            assert_eq!(writes.iter().count(), 3 + expected.len(), "{id}");
+            for (control, darktable) in expected {
+                let p = PARAMETERS.iter().find(|p| p.control == control).unwrap();
+                let shown = writes.number(control);
+                let bound = p.param(shown);
+                // Whether some value of the control binds to darktable's exactly.
+                let mut reached = false;
+                let (mut up, mut down) = (darktable * p.factor, darktable * p.factor);
+                for _ in 0..64 {
+                    reached |= up / p.factor == darktable || down / p.factor == darktable;
+                    (up, down) = (up.next_up(), down.next_down());
+                }
+                if reached {
+                    assert_eq!(bound.to_bits(), darktable.to_bits(), "{id}: {control}");
+                } else {
+                    let step = (darktable.next_up() - darktable).abs();
+                    assert!((bound - darktable).abs() <= step, "{id}: {control}");
+                }
+                let range = DEFINITION.range(control).unwrap();
+                assert!(range.contains(shown), "{id}: {control} {shown}");
+            }
+        }
+        assert!(
+            Agx.action("primaries_nonexistent", &values, &image)
+                .is_none()
+        );
     }
 
     /// Set from above can run only while the primaries after tone mapping act, darktable's

@@ -489,6 +489,9 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
     for row in definition.rows() {
         for found in row.end().iter().filter_map(End::action) {
             ids.extend(action(tool, found.id));
+            for item in found.menu {
+                ids.extend(action(tool, item));
+            }
         }
         match row {
             Row::Group(found) => ids.push(group_title(tool, found.id, found.kind)),
@@ -964,6 +967,7 @@ mod tests {
                             end: &[End::Action(ActionEnd {
                                 id: "auto_tune",
                                 face: Face::Text,
+                                menu: &[],
                                 unported: true,
                             })],
                         },

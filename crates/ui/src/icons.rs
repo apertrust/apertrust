@@ -136,6 +136,8 @@ pub enum Icon {
     RotateRight,
     FlipHorizontal,
     FlipVertical,
+    /// A list with a turning arrow: AgX's menu of primaries to start again from.
+    PrimariesMenu,
     /// The Tools panel's tabs (decision 38): the Default workspace's Adjust, Detail and Raw;
     /// darktable's four module groups, base, color, correct and effect, in darktable's
     /// shapes and one colour, for a workspace's tabs to name, Correct and Effect also the
@@ -235,7 +237,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 118] = [
+    pub const ALL: [Icon; 119] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -287,6 +289,7 @@ impl Icon {
         Icon::RotateRight,
         Icon::FlipHorizontal,
         Icon::FlipVertical,
+        Icon::PrimariesMenu,
         Icon::Adjust,
         Icon::Detail,
         Icon::Raw,
@@ -516,6 +519,7 @@ impl Icon {
                 "triangles-centerline-dashed-horizontal",
                 14.0
             ),
+            Icon::PrimariesMenu => derived!("primaries-menu", "list-restart", 14.0),
             Icon::Adjust => derived!("adjust", "settings-2", 22.0),
             Icon::Detail => own!("detail", 22.0),
             Icon::Raw => derived!("raw", "camera", 22.0),
