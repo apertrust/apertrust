@@ -24,7 +24,7 @@ Apertrust should be usable from the desktop app, the command line, a browser or 
 - the photo library on the server, the client only browsing and editing it;
 - notices queued per connection and facts coalesced, a late client synced, one protocol number ([0059](0059-one-event-system.md)).
 
-**MCP, planned,** runs through `rmcp` as a thin client of the session protocol: listing images, reading tools and their controls, setting values, histograms and previews, which MCP tools can return as images. It connects only when the person allows it, read-only unless writes are allowed, and what it changes is ordinary history (principle 8).
+**MCP, planned,** runs through `rmcp` as a thin client of the session protocol: listing images, reading tools and their controls, setting values, histograms and previews, which MCP tools can return as images. It is `apertrust-mcp`, a program of its own over stdio, joining the running app's session over a local channel ([0108](0108-agents-through-apertrust-mcp-joining-the-apps-session.md)). It connects only when the person allows it, read-only unless writes are allowed, and what it changes is ordinary history (principle 8).
 
 **Scripts** reach the engine the same way, through the session protocol and MCP, from any language. Apertrust embeds no scripting language for now; an embedded one (Lua through `mlua`, or Rhai) is reconsidered if users ask.
 

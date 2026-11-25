@@ -2,11 +2,11 @@
 
 What runs models, how assistants and agents reach the editor, and how the pipeline's derivatives let Apertrust set the sliders towards a goal. Every client, agents included, goes through the [session protocol](session-protocol.md); the kernels' derivative entry points are [engine.md](engine.md#later-phases)'s and the `slang-kernels` skill's.
 
-**Status.** Built: every differentiable kernel exports its derivatives, checked against finite differences. Planned: the matching slice, Phase 3's first engine work; AI masks in Phase 4; MCP, AI denoise, AI erase and reference matching in Phase 6 (decisions 11, 58 and 60).
+**Status.** Built: every differentiable kernel exports its derivatives, checked against finite differences. Planned: the matching slice, Phase 3's first engine work; AI masks in Phase 4; MCP through `apertrust-mcp`, AI denoise, AI erase and reference matching in Phase 6 (decisions 11, 58, 60 and 108); the session protocol's types serializable and `Command::access()` now, as MCP's foundation (decision 108).
 
 ## AI inference
 
-ONNX Runtime stays, with its native WebGPU execution provider as the default; vendor providers become optional downloads (decision 60). Agents connect through MCP.
+ONNX Runtime stays, with its native WebGPU execution provider as the default; vendor providers become optional downloads (decision 60). Agents connect through MCP, `apertrust-mcp` ([Agents](#agents)).
 
 **The WebGPU execution provider** runs on Dawn, which dispatches to D3D12, Vulkan or Metal, and needs no vendor SDK on the user's machine ([ORT docs](https://onnxruntime.ai/docs/execution-providers/WebGPU-ExecutionProvider.html)). On Linux it needs only the Vulkan loader, which removes the CUDA, cuDNN and ROCm installation problem. It ships as a plugin provider loaded at run time, the `ort` crate exposes it, and the same native engine serves remote web clients from a home server.
 
@@ -64,6 +64,15 @@ Zero-copy means both devices use the same GPU memory allocation. On Vulkan, exte
 ## Agents
 
 **MCP** through `rmcp` is a thin adapter over the session protocol (decision 58). Its MCP tools cover listing images, reading tools and their controls, setting tool values, histograms and rendering previews; MCP tools can return images, so agents can see their edits.
+
+**`apertrust-mcp`** (decision 108, planned for Phase 6) is that adapter, a program of its own the agent's MCP client launches. It speaks MCP over stdio and joins the running app's session over a local channel only the user's own account reaches, so the person sees the agent's edits live, in the same history. The app never speaks MCP. [session-protocol.md](session-protocol.md#agents) holds the details:
+
+- **Off until allowed:** Allow assistants to connect, off by default, in Settings › Assistants; each connection approved in Apertrust's own window at one of five levels of access, View (the default, read-only), Edit the open photo, Photos, Export and Organise, a client remembered at the two lowest connecting with no sheet; the one view, the live picker and the history's moves stay the person's alone.
+- **Shared and its own:** the agent shares the edit, the history and the selection, never moves the person's view, and gets renders and scopes of its own; the live picker stays the person's, the agent picking once.
+- **The person first:** an agent's edit, or its opening or closing a photo, waits while the person drags a control, never the other way round.
+- **In the history:** each request that edits one `Step` of source Assistant with the agent's note, a history step of each tool it writes, sharing a batch that one Undo takes back, a one-shot pick its own command, never merged unless Merge an assistant's quick changes is on (planned, Settings › Assistants); the agent undoes only its own newest change, the person's Undo taking back whatever is newest.
+- **With no app running,** the agent is told to open Apertrust; `--headless` runs a session of its own, only when asked.
+- **The Toolbar** shows the assistant connected, busy while a request runs, with the access granted, Disconnect and Undo the assistant's last change in its menu ([gui.md](gui.md#the-toolbar)).
 
 **Assistants are a core capability, not the headline** (decision 1, principle 8). Scripts and AI assistants work through the same tools, layers, history and undo as a person, and nothing they can do is hidden from the editor. What they change appears in the history as ordinary tool values with a short note on what they did, and one undo reverts it. They check their results by measurement, such as histograms or the distance to a target, before showing them, and they connect only when the user allows it.
 

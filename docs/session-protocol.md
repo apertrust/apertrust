@@ -2,7 +2,7 @@
 
 Every client reaches the engine through one session protocol: the desktop app, the command line, and later the web client, MCP agents and scripts. A client sends commands and receives events; it never calls into the engine's state. This document describes the protocol: who speaks it, the commands as they are today, how they are numbered and batched, the transports, the commands planned, and what stays out on purpose. The events, their kinds, order and delivery, are in [events.md](events.md).
 
-**Status.** The in-process protocol is built, as `apertrust_engine::session`'s `Command` and `Event` (decisions 17 and 28, and the decisions that add commands). The library's first commands, a folder opened and closed, are built, and so is the selection of the folder's photos (decision 37). The library's other commands, remote transports and several photos in one session are planned (decisions 37, 54 and 59). The session's behaviour behind each command is in [engine.md](engine.md#session-and-threads).
+**Status.** The in-process protocol is built, as `apertrust_engine::session`'s `Command` and `Event` (decisions 17 and 28, and the decisions that add commands). The library's first commands, a folder opened and closed, are built, and so is the selection of the folder's photos (decision 37). The library's other commands, remote transports and several photos in one session are planned (decisions 37, 54 and 59); so are agents through `apertrust-mcp`, the remote protocol's first client, in Phase 6, but for two foundation pieces planned now (decision 108; [Agents](#agents)). The session's behaviour behind each command is in [engine.md](engine.md#session-and-threads).
 
 ## Every client through the session
 
@@ -30,7 +30,7 @@ The protocol's types are `Command` and `Event`, with the types they carry, in `c
 
 They stay in the engine, as a `protocol` module once they need one, until a client must compile them without the engine. That will be the web client, and `apertrust-protocol` is to be made for it then, for decision 65's dependency-direction reason (decision 59). `Frame`, which carries a GPU buffer in process, maps to an encoded frame there.
 
-Shape a new command so it moves unchanged: plain data, no references, no GPU objects (the `desktop-architecture` skill).
+Shape a new command so it moves unchanged: plain data, no references, no GPU objects (the `desktop-architecture` skill). Planned now (decision 108): the types serializable, every command and event going to JSON and back in a test, and `Command::access()`, each command's access for agents through an exhaustive match ([Access](#access)).
 
 ## The in-process session
 
@@ -48,7 +48,7 @@ The app sends commands from its frame and drains in `App::logic`, its `wake` `eg
 - **Numbers.** Commands are numbered in the order sent, 1 for the first, by `Session::send`; the engine thread counts them in the same order, since one channel carries them. Events name the commands they include or answer ([events.md](events.md#numbers)).
 - **Batches coalesce commands** (decision 17). The engine thread waits for a command, then takes every other that has arrived, and applies them in order as one batch. A folder's listing chunk that arrives after a command of the batch ends it: the chunk is applied first next turn, and the commands sent after it wait with it. A batch sends one `Values` after its commands on the edit, failed or not, and renders one `Frame`. So a fast drag renders only its latest value, and a client's pending value is replaced by the engine's either way. Nothing else merges commands: each is applied, and each refusal reported.
 - **Commands on the edit.** Every command acts on the open photo's edit except `Open`, `Resize`, `View` (decision 99), `Scopes`, `Hide`, `Picker`, `CancelJob`, `RetryJob`, `Export`, `PreviewExport`, `Library`, `Selection` and `Cache` (`on_edit` in `session.rs`). A command on the edit ends a gesture under way (decision 42), but for a change that goes on with it or takes it in and a `Step` refused as `DefaultSource` or `EmptyStep`, is followed by a `Values`, and is refused on a photo open for viewing only (decision 43), but `DiscardHistory` on an edit view-only because of a `sidecar::Problem`, never a newer build's (decision 78), and from an `Open` until its `Values { live: true }`, as `NotLive` (decision 77). Refused rather than held, so `through` keeps counting what a report includes and a newer `Open` is never held behind it; a client that edits waits for `live`. A new command that changes no edit, as `Readouts` and `Samples` will be, must join that list.
-- **Gestures.** A gesture is the `SetControl { done: false }` changes on one tool, of one source and note: they merge into one change on the `done: true` that ends them, or on a `Step` of their source and note writing their tool; a change of another source or note on the tool ends the gesture as a step of its own. Only a completed change saves the edit. `CancelGesture` takes a gesture back ([engine.md](engine.md#session-and-threads)). Another command on the edit that ends a gesture makes the gesture a step of its own first, as its own release refused does. A client's quick completed changes to one control, or one preset row, may merge into the step before them, timed from when the client sent them, as darktable's undo merges a widget's ([history.md](history.md#merging-consecutive-changes)), so one `Undo` takes them all back.
+- **Gestures.** A gesture is the `SetControl { done: false }` changes on one tool, of one source and note: they merge into one change on the `done: true` that ends them, or on a `Step` of their source and note writing their tool; a change of another source or note on the tool ends the gesture as a step of its own. Only a completed change saves the edit. `CancelGesture` takes a gesture back ([engine.md](engine.md#session-and-threads)). Another command on the edit that ends a gesture makes the gesture a step of its own first, as its own release refused does. Planned (decision 108), an agent's command on the edit is refused instead, `GestureUnderway`, while another client's gesture is under way ([Gestures](#gestures)). A client's quick completed changes to one control, or one preset row, may merge into the step before them, timed from when the client sent them, as darktable's undo merges a widget's ([history.md](history.md#merging-consecutive-changes)), so one `Undo` takes them all back.
 - **Refusals.** A value out of range or of the wrong kind (decision 21), out of the range its tool's values give (decision 30), or an option the photo does not list (decision 30) is refused whole, the command changing nothing, and reported as `SessionError::Refused` with the command's number. `SetTool` is the exception for a number outside its range, which it brings inside and takes (decision 106). A `Step` of source `Default` and one holding nothing are refused as `DefaultSource` and `EmptyStep` in any state, before `NotLive` and `ViewOnly`.
 
 ## Commands
@@ -136,13 +136,15 @@ The selection and the active photo are the session's (decision 37; [gui.md](gui.
   - Clients see `PhotoRef`, `Target` and `Rules`, never the library's lower layers ([library.md](library.md#planned)). Its events are `Event::Library(LibraryEvent)` ([events.md](events.md#lower-crates-report-through-an-observer)).
 - **A kept index removed**, `CacheCommand::Remove { index }`, with the library's step 23 (decisions 76 and 101): a `cache-clear` job as Clear's, skipping an index another process has open, and `Event::Cache` listing each kept index. The cache's types are `apertrust-base`'s `cache`, as the jobs' are its `jobs`.
 - **`Sync`** and the handshake, for remote clients ([below](#remote-clients)).
+- **For agents** (decision 108; [Agents](#agents)): `Render { size, region }`, a still for the client that asks, of its own topic; `Step`'s `seen`, the `through` the client last saw, refused as `Stale` when the open photo's edit changed after it, or another photo opened after it; `Picker(Once)`'s source and note, Assistant and the request's, from an agent; the refusals `GestureUnderway`, `NotOwnChange`, `NoAccess { needs }` and `PickerInUse`.
 - **Masks and layers**, later phases.
 
 ## Transports
 
-- **In process**, built: the app and the CLI, as above. A second in-process client, the app's MCP endpoint, is to get a receiver of its own from the session's outbox (decision 59).
+- **In process**, built: the app and the CLI, as above.
 - **IPC, WebSocket or WebTransport**, later: `apertrust-cli serve` for web and tablet clients on a home server (`apertrust-server`; [architecture.md](architecture.md#programs)). The engine is the same; only the transport differs. The same server may later, if asked, sync the desktop app's photos (decision 71), through the library's storage protocol, not this one ([library.md](library.md#a-server)).
-- **MCP**, later: `apertrust-cli mcp` over stdio and the app's endpoint (`apertrust-mcp`, through `rmcp`), a thin adapter over the protocol. Its MCP tools are generated from the tools' definitions and `LibraryCommand`'s schema, off until the person allows them and read-only unless writes are allowed (principle 8; decision 54).
+- **A local channel**, Phase 6: `apertrust-mcp` joining the running app's session, the remote protocol's first client, over a named pipe on Windows, an abstract socket on Linux and a socket in the per-user temporary folder on macOS, each only the user's own (decision 108; [The local channel](#the-local-channel)).
+- **MCP**, Phase 6: `apertrust-mcp`, a program of its own, speaks MCP over stdio through `rmcp` and the session protocol on the local channel, a thin adapter between them; the app never speaks MCP and has no HTTP endpoint. Its MCP tools are generated from the tools' definitions and `LibraryCommand`'s schema, off until the person allows them and read-only unless writes are allowed (principle 8; decisions 54 and 108).
 
 ## Web, tablets and remote access
 
@@ -162,7 +164,7 @@ Planned (decision 58). The web browser and tablets are remote clients of a nativ
 
 ## Remote clients
 
-Planned (decision 59), with the server or MCP, whichever comes first:
+Planned (decision 59), with MCP, its first client (decision 108):
 
 - **Per connection, notices are queued** in order, to a bound, 1024 to start with, **and facts are coalesced by topic**: a later fact replaces the queued one of its topic and takes its place after the notices before it, so the order guarantees still hold ([events.md](events.md#order-and-delivery)). A frame or a still is encoded only while none is in flight to that client.
 - **A connection that overflows its notices is closed as lagged.** Its client reconnects and syncs; the engine never waits for it.
@@ -170,6 +172,94 @@ Planned (decision 59), with the server or MCP, whichever comes first:
 - **Versioning:** `Hello { protocol, client }` and `Welcome { protocol, build }`, with one protocol number, raised only by a change a client cannot ignore. New variants and fields with defaults keep it, and a client ignores what it does not know.
 - **Encoding:** commands and events as JSON tagged by `type`; frames and stills as binary messages.
 - **Numbers** stay one sequence across connections, assigned as a command enters the inbox, each connection learning its own from the acknowledgement.
+- **Client identity** (decision 108): every connection, the app's in-process handle among them, has a `ClientId`, and each command is tagged with it as it enters the inbox. A refusal goes to the client whose command it names.
+- **Per-client facts** (decision 108): a client's renders, scopes readings, readouts, stored samples and Export's preview are facts of its own topic, keyed by its `ClientId` and sent to it alone, extending decision 90's rule for `ExportPreview`. `Sync` sends the shared facts and the client's own.
+
+## Agents
+
+Planned for Phase 6 with MCP, but for 108.1 and 108.2 ([Tests](#tests), [Access](#access)), planned now (decision 108). An agent reaches the person's session through `apertrust-mcp`, so the person sees its edits live, in the same history, and can undo them.
+
+```mermaid
+sequenceDiagram
+    participant C as MCP client
+    participant M as apertrust-mcp
+    participant A as apertrust
+    participant P as The person
+    C->>M: launches it; a tool call over stdio
+    M->>A: connect on the local channel; Hello with its name and the access it asks
+    A->>P: the approval sheet: name, access
+    P-->>A: Allow
+    A-->>M: Welcome
+    M->>A: Step of source Assistant, its note, seen
+    A-->>M: Values and History with through, or a refusal
+    M-->>C: the tool's result, with the new through
+```
+
+### Where it runs
+
+- **`apertrust-mcp`** is a program of its own, the binary of the `apertrust-mcp` crate. It speaks MCP over stdio through `rmcp`, its stdout JSON-RPC alone and its logs on stderr, and the session protocol on the local channel. There is no `apertrust-cli mcp`, and the app never speaks MCP.
+- **With no app running,** each MCP tool answers "Apertrust isn't running; open it to edit live". With the folder's lock held and no channel to join, the app running with assistants not allowed or a headless run on the folder: "Apertrust has this folder open with assistants not allowed (Settings › Assistants), or another assistant has it open headless". The adapter tells the two apart by trying the user data folder's `instance.lock`, letting it go at once where it takes it.
+- **`--headless`** starts a session of its own in the adapter's process, as `apertrust-cli export` does, never as a silent fallback. It holds `instance.lock` while it runs, so the app refuses to start on that folder meanwhile, with decision 89's refusal worded for an assistant, and it is refused itself on a folder the app holds. A run with its own `--user-data-dir` works beside the app.
+- **`--access LEVEL`** names the level of access it asks for and the MCP tools it lists, `view` by default ([Access](#access)).
+
+### The local channel
+
+A second endpoint beside decision 89's hand-off ([gui.md](gui.md#instances-and-windows)), with its own name and format version, bound by the app only while Allow assistants to connect is on, so with it off nothing listens. `<hash>` is the hand-off's.
+
+| Platform | The channel | Who may connect |
+| --- | --- | --- |
+| Windows | `\\.\pipe\apertrust-mcp-<hash>`, created with `FILE_FLAG_FIRST_PIPE_INSTANCE`, so the app's bind fails, binding nothing, where another process already holds the name, and with `PIPE_REJECT_REMOTE_CLIENTS` | A security descriptor for the current user alone; the app checks the client's token, and `apertrust-mcp` checks the server's user (`GetNamedPipeServerProcessId`) |
+| Linux | The abstract socket `apertrust-mcp-<uid>-<hash>` | `SO_PEERCRED`, both ways |
+| macOS | A Unix socket in the per-user temporary folder, `confstr(_CS_DARWIN_USER_TEMP_DIR)`, mode 0700, named by the hash | `getpeereid`, both ways; a stale file removed as the app binds when nothing answers on it |
+
+- **Sandboxed Linux packages,** Flatpak and Snap, sit in a network namespace of their own, which an abstract socket does not cross: there the channel is a socket file in a runtime folder both sides share, decided with packaging.
+- **Limits:** a message from the adapter over 4 MiB, or one that is not a protocol message, closes the connection, the app's stills to it being binary messages of the size `Render` asks, which the session caps; no `Hello` within 5 s closes it; an idle connection closes after 10 minutes with a notice saying so, and the adapter reconnects on its next call, its approval and its `ClientId` kept for the app's run by a token the app gives it as it approves, held in its memory alone, so its own changes stay its own for Undo. The adapter rate-limits every tool call, reads and renders as well as edits, as MCP's tools page requires of a server.
+- **One agent connection at a time:** a second asks "Replace *name*?", naming the client connected, in the app. Client identity is per connection from the start, so several can be added later without changing it.
+
+### Shared and per client
+
+| State | Shared or per client |
+| --- | --- |
+| The edit, its values and the history | Shared |
+| The selection and the active photo | Shared: read under View, changed only under Photos |
+| `View`, `Resize`, `Hide`, `Scopes` | The person's, acting on the one view every client shares: `Access::Person`, refused from an assistant's connection |
+| Renders, scopes readings, readouts, stored samples, Export's preview | Per client ([Remote clients](#remote-clients)); a render through `Render { size, region }`, which MCP returns as an image |
+| The live picker | The person's: its `On`, `Point`, `Area`, `Switch`, `Reset`, `Settings`, `Channel` and `Off` are `Access::Person`; an agent sends `Picker(Once)` alone, refused as `PickerInUse` while the person's picker is on, rather than turning it off |
+
+### Gestures
+
+- **An agent's command on the edit, its `Picker(Once)`, which writes the edit, and any command of its that would close or replace the open photo (`Open`, `Close`, a `Selection` that leaves the active photo out or opens another) are refused, `GestureUnderway`,** while another client's gesture is under way ([Numbers and batches](#numbers-and-batches)). The adapter retries for a few seconds, then tells the agent "the person is adjusting *tool*; try again", naming the tool.
+- **The person's commands are never refused because of the agent:** the adapter sends edits as `Step`s alone, holding no `SetControl { done: false }`, each one completed change, so an agent never holds a gesture.
+- **Gestures per client and per tool** come only if agents are often blocked in practice.
+
+### History
+
+- **Each request that edits is one `Step { source: Assistant, note }`,** its note the agent's own words, a step of each tool it writes in one batch, one Undo for the request ([history.md](history.md#commands)); a one-shot pick is `Picker(Once)` alone, which no `Step` holds, one Undo too unless the person's command splits it ([pickers.md](pickers.md#a-one-shot-pick)). The session sets the source of every `Step` from an agent's connection to Assistant itself, whatever it sends, so no agent's change is recorded as the person's.
+- **An Assistant step never merges,** unless Merge an assistant's quick changes is on, and then only with a step of the same client (`ClientId`) and note ([history.md](history.md#merging-consecutive-changes)).
+- **An agent's `Picker(Once)`** is a step of source Assistant with the request's note.
+- **The agent undoes and redoes only its own newest change,** planned with MCP: today `Undo` and `Redo` are the session's, whoever sends them (decision 78). From an agent's connection they are refused, `NotOwnChange`, unless the newest done record, or for Redo the newest undone one, is that connection's Assistant step. `GoTo`, `Compress`, `Truncate`, `DiscardHistory` and `Reset` are `Access::Person`, refused from an assistant's connection. The person's Undo stays global and linear.
+
+### Access
+
+Five levels, each including those above it, and a class for the person alone, `Access` in the code (not "scope", which names the Scopes tool's graphs). A connection asks one level in `Hello`; the person approves it in the app's own window, never through MCP elicitation, but for a remembered client at View or Edit the open photo and a reconnect within the app's run, which connect with no sheet; a command beyond it is refused, `NoAccess { needs }`.
+
+| `Access` | Commands |
+| --- | --- |
+| `View` | Reading: `Sync`, `Render`, the facts the session sends; the default |
+| `EditOpenPhoto` | Commands on the edit inside a `Step`, `Picker(Once)`, the agent's own `Undo` and `Redo` |
+| `Photos` | `Open`, `Close`, `Selection`, the library's reading commands; later edits of selected photos not open |
+| `Export` | `Export`, `PreviewExport`, allowed for the connection once granted; an export writes only new files, by the person's pattern |
+| `Organise` | Move to…, Copy to…, Rename and Delete, each put to the person as a question before it runs, every time; the person's settings and files, `Cache(Clear)`, `Cache(Limit)` and `Library(RawThumbnails)` |
+| `Person` | Never granted to an agent, at any level: `Resize`, `View`, `Scopes`, `Hide`, the live picker's `Picker` commands (all but `Once`), and `GoTo`, `Compress`, `Truncate`, `DiscardHistory` and `Reset` |
+
+**`Command::access()`** (108.2, planned now) gives each command's class through an exhaustive match beside `on_edit`, so each new command states where it belongs. A command whose effect depends on the session's state takes the most it can do; the session may narrow it later. Each command inside a `Step` is checked against its own class, so a `Step` holding `Reset` is refused whole, `NoAccess { needs: Person }`, applying none of its commands. The Toolbar's assistant connection shows the access granted ([gui.md](gui.md#the-toolbar)), and the app remembers a client by its self-declared name for View and Edit the open photo alone: a remembered client connects at that level with no sheet, in later runs of the app too, as does any process of the same account that sends the name, so no higher level is remembered ([settings.md](settings.md#the-settings-dialog), Settings › Assistants).
+
+### What the agent learns
+
+- **Tools first.** `get_state` returns the open photo's values, the history's tail, the selection and `through`; every editing tool's result carries the new `through`.
+- **The guard:** an editing call may carry the `through` the agent last saw, `Step`'s `seen`, refused as `Stale` when the open photo's edit changed after it, or another photo opened after it, which the adapter words "the photo has changed; read it again".
+- **Resources later,** with `subscriptions/listen` and `notifications/resources/updated` ([MCP, revision 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/subscriptions)), once the major MCP clients forward them to the model.
+- **MCP tools generated** from the tools' definitions and `LibraryCommand`'s schema, each with a real JSON Schema, grouped by level of access.
 
 ## What stays out
 
@@ -181,10 +271,11 @@ On purpose, so that the protocol stays one boundary:
 - **A bus.** No subscriptions and no handlers run inside the engine on a client's behalf ([events.md](events.md#against-darktable)).
 - **A second API.** The library has no API beside its commands here: no SQL or query language beyond darktable's rules, no traits with one implementation (decision 54).
 - **History in the client.** Undo and history are the session's; a client asks for them and draws the `History` fact ([history.md](history.md)).
+- **MCP in the app.** The protocol is the one boundary; `apertrust-mcp` turns MCP into it outside the app (decision 108).
 
 ## Tests
 
-Planned with the remote protocol: a JSON fixture for each variant, read and written byte for byte, so a change on the wire is deliberate; a client that syncs mid-session mirrors what a client there from the start mirrors; a slow connection closed as lagged while the live frame keeps its time. The in-process side is held by the session's tests ([events.md](events.md#tests)).
+Planned now (decision 108): every command and event to JSON and back unchanged, `Frame`'s GPU buffer the known exception, an encoded frame for remote clients, built through exhaustive matches so a new variant must join it (108.1); and `Command::access()` over every command (108.2). Planned with the remote protocol: a JSON fixture for each variant, read and written byte for byte, so a change on the wire is deliberate; a client that syncs mid-session mirrors what a client there from the start mirrors; a slow connection closed as lagged while the live frame keeps its time. The in-process side is held by the session's tests ([events.md](events.md#tests)).
 
 ## Open questions
 

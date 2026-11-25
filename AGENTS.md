@@ -72,7 +72,7 @@ The skills, agents and commands live in the agent kit, [apertrust/agent-kit](htt
 - an edit to a `.slang` file regenerates the WGSL and validates every kernel with naga; an edit to generated WGSL is refused with a pointer to its source;
 - at the end of a turn, pre-commit's quick checks on the files it changed (`pre-commit run --files`; without pre-commit, `cargo fmt --check` where Rust changed); where it changed Rust, the kernels, the engine or the golden harness, clippy for this platform, then the golden checks, ΔE and gradients where `APERTRUST_TEST_IMAGES` is set (put it in `.claude/settings.local.json`), otherwise `gradient --synthetic`. Failures send Claude back to fix them; changes made before the turn never trigger them.
 
-The agent kit adds DeepWiki's public MCP server for questions about darktable, wgpu, Slang, egui and rawler (its README says how). It indexes their current branches, so it is for orientation only: a port reads darktable's source at the reference release's tag. Apertrust's own MCP server, `apertrust-cli mcp`, is planned.
+The agent kit adds DeepWiki's public MCP server for questions about darktable, wgpu, Slang, egui and rawler (its README says how). It indexes their current branches, so it is for orientation only: a port reads darktable's source at the reference release's tag. Apertrust's own MCP server, `apertrust-mcp`, is planned (decision 108).
 
 ## Commands
 
@@ -187,12 +187,12 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | Crate | Role |
 | --- | --- |
 | `apertrust-engine` | The GPU-resident pipeline and the editing session; no UI dependencies |
-| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `import`, `batch`, `serve` and `mcp` later |
+| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `import`, `batch` and `serve` later |
 | `apertrust-golden` | The golden-image harness against darktable-cli, and Phase 1's exit test |
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it |
 | `apertrust` | The desktop app (egui), in `crates/app` |
 | `apertrust-ui` | The design system (decision 36): tokens, themes, fonts, icons, translation, components; no engine or tool types; `apertrust-base` for `settings::Choice` alone |
-| `apertrust-display` | The window's platform code, FFI that may use `unsafe`: display colour, the window frame and menu bar where winit and muda cannot (decision 39), native popups (decision 40), modal dialogs and alerts (decision 41), the files Finder opens with the app (decision 46), Windows' named pipe and Linux's peer credentials for the single-instance hand-off (decision 89), and the Windows app's terminal, attached to at its start (`docs/packaging.md`, Windows) |
+| `apertrust-display` | The window's platform code, FFI that may use `unsafe`: display colour, the window frame and menu bar where winit and muda cannot (decision 39), native popups (decision 40), modal dialogs and alerts (decision 41), the files Finder opens with the app (decision 46), Windows' named pipe and Linux's peer credentials for the single-instance hand-off (decision 89) and, planned, the assistants' channel beside it (decision 108), and the Windows app's terminal, attached to at its start (`docs/packaging.md`, Windows) |
 | `apertrust-op-<id>` | One operation each, in `crates/op/<id>`: Slang kernel, generated WGSL, CPU-side setup, manifest and schema (decision 20) |
 | `apertrust-operations` | The list of built-in operations, in darktable's order |
 | `apertrust-base` | What every program sets up as it starts, nothing about images, colour, the GPU or the UI (decision 43): logging, version, folders, settings, the safe write, darktable's control jobs; the disk cache, planned (decision 76) |
@@ -202,7 +202,8 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | `apertrust-export` | What an export writes and where, with no GPU (decision 56): settings, size, variables, file-on-disk rules, JPEG and PNG |
 | `apertrust-library` | One photo, folders and optional Libraries, with no GPU (decisions 46, 47, 52 to 55 and 101); never depends on the engine, tools, plugin or wgpu |
 | `apertrust-fs` | Planned, only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover (decision 65) |
-| `apertrust-protocol`, `apertrust-server`, `apertrust-mcp` | Session protocol; the server, the engine for browsers (decision 58) and, later, if asked, sync (decision 71); MCP; later phases |
+| `apertrust-protocol`, `apertrust-server` | Session protocol; the server, the engine for browsers (decision 58) and, later, if asked, sync (decision 71); later phases |
+| `apertrust-mcp` | Planned for Phase 6 (decision 108): a library and its binary, the MCP server agents launch, MCP over stdio, joining the running app's session over a local channel, or `--headless` a session of its own |
 
 - Each crate lives in `crates/<name>`, its package name without `apertrust-`: the app in `crates/app`, operation crates in `crates/op/<id>` (decision 65). A new crate goes into `members` in the root `Cargo.toml`.
 - Add a crate when its first real code lands, and only when a module of an existing crate cannot do: `unsafe` FFI, a dependency direction that would otherwise break, or a decided boundary such as an operation's (decision 65). Keep the number of crates small.

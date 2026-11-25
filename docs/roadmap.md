@@ -246,6 +246,13 @@ darktable's packed lines as one line row, and the buttons at a row's end as a cl
 - [ ] 107.3 `Row::Fields`, two or three compact controls on one line, folding into labelled rows when narrow, with Export's pixels line moved to it; the centimetre and inch lines and the scale stay `Widget::ExportSize`.
 - [ ] 107.4 The rest with each tool's port: computes (the tone equalizer's wands, demosaic's capture sharpen radius, Rotate and perspective's detect lines and fit), mode cursors and the Geometry group with Straighten, mask views, a tab strip's end items, and the colour kind of setting.
 
+### The protocol, ready for agents
+
+The foundation of Phase 6's MCP, laid now so every command added from here on is ready for it (decision 108; [session-protocol.md](session-protocol.md#agents)), one pull request each:
+
+- [ ] 108.1 The session protocol's types serializable: every command and event to JSON and back unchanged in a test, built through exhaustive matches so a new variant must join it, `Frame`'s GPU buffer the known exception.
+- [ ] 108.2 `Command::access()`: each command's access for agents (View, Edit the open photo, Photos, Export or Organise, or `Access::Person` for the commands never granted to an agent, the one view, the live picker and the history's moves) through an exhaustive match, so each new command states where it belongs.
+
 ### Scopes
 
 - [x] Histogram, waveform, RGB parade and vectorscope, counted on the GPU after each frame, with clipping totals (decision 19).
@@ -431,7 +438,12 @@ Goal: the signature features.
 
 - [ ] Matching a look: show a photo, and get editable settings that reach it, through the differentiable pipeline, building on Phase 3's matching test.
 - [ ] AI denoise and AI erase, run locally (erase removes small distractions; it never generates new content).
-- [ ] An MCP server in the app and on the command line, so assistants edit through the same sliders and history as you, and check their work.
+- [ ] `apertrust-mcp`, an MCP server of its own that joins the running app's session, so assistants edit the photo you have open through the same sliders and history as you, and check their work (decision 108; [session-protocol.md](session-protocol.md#agents)):
+  - [ ] the remote protocol over a local channel only your own account reaches, bound only while assistants are allowed, with client identity and per-client renders, scopes and previews;
+  - [ ] each connection approved in Apertrust's window at five levels of access from View, read-only, to Organise, a client remembered at the two lowest connecting with no sheet; remembered clients and Allow assistants to connect in Settings › Assistants;
+  - [ ] an agent's edit, or its opening or closing a photo, refused while you drag, retried; each request one Assistant step that never merges, unless Merge an assistant's quick changes is on; the agent undoing only its own newest change;
+  - [ ] the Toolbar's assistant connection, with the access granted, Disconnect and Undo the assistant's last change;
+  - [ ] MCP tools generated from the tools' definitions and the library's commands, `get_state` and the `through` guard; `--headless` for a session of its own.
 
 ## Phase 7: remote, HDR and packaging
 

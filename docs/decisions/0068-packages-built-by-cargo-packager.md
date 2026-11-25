@@ -2,7 +2,7 @@
 
 ## Context
 
-Apertrust has to be installable on macOS, Windows and Linux, as two programs, the app and the CLI ([0006](0006-two-programs-on-three-desktop-platforms.md)): a signed app bundle, an installer and a Linux package in the end, each with its icon, version, file types and licences. Each platform has its own formats and tools. How are the packages built, with what installer on Windows, and from how many descriptions of the app?
+Apertrust has to be installable on macOS, Windows and Linux, as its programs, the app and the CLI, and later `apertrust-mcp` ([0006](0006-two-programs-on-three-desktop-platforms.md), [0108](0108-agents-through-apertrust-mcp-joining-the-apps-session.md)): a signed app bundle, an installer and a Linux package in the end, each with its icon, version, file types and licences. Each platform has its own formats and tools. How are the packages built, with what installer on Windows, and from how many descriptions of the app?
 
 ## Decision
 
