@@ -309,6 +309,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 
 ### Planned
 
+- **A style on every selected photo** (decision 109, #373): `ApplyStyle`'s `photos`, the photos not open changed by an `apply-style` job from their metadata and sidecars with no decode or GPU, one batch id, `UndoBatch` and Undo across the batch's photos, `Event::Batch` ([history.md](history.md#a-batch-on-several-photos)).
 - **Several photos in one session** (decision 37, once spike W1 measures it): the active one live and every other on screen a still, rendered once from its saved edit; background work one tile per submission; decoding off the engine thread on a job worker (decision 57), as the live photo's is (decision 77); kernels kept for the session, as they are across photos (decision 77).
 - **Readouts** (decision 19): what an operation measures of the photo for its tool's panel, the tone equalizer's mask histogram first. Its readout pass is planned in the viewport alone and dispatched while a client asks (`Command::Readouts`, by tool) and its key, a whole-image result's, has changed. Its counts are read back through the scopes' staging pair, decoded by the operation and sent as `Event::Readout`. A failure turns readouts off, never the frame.
 - **Preset rows' camera options and tuning** (decision 27): `PresetState::listed` and `PresetState::tuning`, `ApplyPreset` at the row's tuning, and `SetControl`, `ResetControl` and `Keep` on a tuning's id, for White balance's Finetune.
