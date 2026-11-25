@@ -28,15 +28,16 @@ use crate::components::{
     About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CaptionStyle, CellPicture,
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
-    Equalizer, EqualizerAction, FileManager, FindBar, FindBarAction, GridCell, Histogram,
-    HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin, Mark, Marker,
-    MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
-    Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup,
-    Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, SaveState, Scale, Scope,
-    ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill,
-    Swatches, Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar,
-    ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar,
-    ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
+    Equalizer, EqualizerAction, FieldsRow, FileManager, FindBar, FindBarAction, GridCell,
+    Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin,
+    Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab,
+    Patch, Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place,
+    PlainGroup, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, RowField,
+    SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow,
+    Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow,
+    ToolButton, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins,
+    ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup,
+    WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -121,6 +122,23 @@ impl Gallery {
     pub fn show_cursor_well(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
         cursor_wells(ui, &t, &mut self.demo.cursors);
+    }
+
+    /// Draws the Fields row section's line alone, as the snapshot tests photograph it.
+    pub fn show_fields_row(&mut self, ui: &mut Ui) {
+        fields_row(ui, &mut self.demo.fields, Fold::Line);
+    }
+
+    /// Draws the Fields row section's line folded, narrower than its least width, as the
+    /// snapshot tests photograph it.
+    pub fn show_fields_row_folded(&mut self, ui: &mut Ui) {
+        fields_row(ui, &mut self.demo.fields, Fold::Folded);
+    }
+
+    /// Draws the Fields row section's line with its height given for the run, as the
+    /// snapshot tests photograph it.
+    pub fn show_fields_row_given(&mut self, ui: &mut Ui) {
+        fields_row(ui, &mut self.demo.fields, Fold::Given);
     }
 
     /// Draws the Settings controls section alone, as the snapshot tests photograph it in
@@ -210,6 +228,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Cursor well");
         cursor_wells(ui, &t, &mut self.demo.cursors);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Fields row");
+        fields_rows(ui, &t, &mut self.demo.fields);
         ui.add_space(t.spacing.l);
         heading(ui, "Timeline rail");
         rails(ui, &t);
@@ -638,6 +659,67 @@ fn over_photos(ui: &mut Ui, t: &Theme, rows: &[(&str, bool, OverPhoto)]) {
         });
         ui.add_space(t.spacing.xs);
     }
+}
+
+/// The fields row's three looks, each at the Tools panel's row width or under its least.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fold {
+    /// One line, at the Tools panel's 320 points less its gutters.
+    Line,
+    /// Folded, 140 points wide, under its least width.
+    Folded,
+    /// One line, the height given for the run, drawn disabled.
+    Given,
+}
+
+/// The fields row (decision 107): Export's size in pixels on one line, the same folded
+/// below its least width, and with one field given for the run.
+fn fields_rows(ui: &mut Ui, t: &Theme, demo: &mut [f64; 2]) {
+    for (fold, about) in [
+        (
+            Fold::Line,
+            "One line, the fields sharing its width, no label: Size in pixels.",
+        ),
+        (
+            Fold::Folded,
+            "Below its least width, a labelled row per field, its unit after it.",
+        ),
+        (
+            Fold::Given,
+            "A field --conf gives: disabled, saying so in its tooltip.",
+        ),
+    ] {
+        ui.label(RichText::new(about).color(t.colors.text_secondary));
+        fields_row(ui, demo, fold);
+        ui.add_space(t.spacing.s);
+    }
+}
+
+/// One of the fields row's looks, `fold`, over the width and height `demo` holds.
+fn fields_row(ui: &mut Ui, demo: &mut [f64; 2], fold: Fold) {
+    let width = if fold == Fold::Folded { 140.0 } else { 296.0 };
+    let mut args = Args::new();
+    args.set("flag", "--conf");
+    let given = crate::translator(ui.ctx()).text_with("settings-overridden", Some(&args));
+    let mut height = RowField::new("Height", demo[1], 0.0..=100_000.0)
+        .before("×")
+        .unit("px");
+    if fold == Fold::Given {
+        height = height.disabled(&given);
+    }
+    let fields = [
+        RowField::new("Width", demo[0], 0.0..=100_000.0).unit("px"),
+        height,
+    ];
+    ui.push_id(("fields row", fold as u8), |ui| {
+        ui.allocate_ui(vec2(width, 0.0), |ui| {
+            ui.set_width(width);
+            let id = ui.make_persistent_id("size");
+            if let Some((at, value)) = FieldsRow::new(id, "Size in pixels", &fields).show(ui) {
+                demo[at] = value.round();
+            }
+        });
+    });
 }
 
 /// The cursors' well (decision 104; `docs/cursors.md`, The well): Phase 2's Select, Pan and
@@ -1513,6 +1595,8 @@ struct Demo {
     settings: SettingsDemo,
     /// The cursors' well's state, as the app keeps it.
     cursors: CursorsDemo,
+    /// The fields row's width and height in pixels.
+    fields: [f64; 2],
 }
 
 /// The cursors' well's state, which the app keeps (`docs/cursors.md`, A cursor): the chosen
@@ -1616,6 +1700,7 @@ impl Default for Demo {
             markers: [-4.0, 0.0, 4.0, 1.28],
             settings: SettingsDemo::default(),
             cursors: CursorsDemo::default(),
+            fields: [2048.0, 1365.0],
         }
     }
 }
