@@ -261,6 +261,7 @@ mod tests {
                 size: 1,
                 modified: None,
                 edit: EditState::None,
+                rating: Default::default(),
             })
             .collect();
         for event in [

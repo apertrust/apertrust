@@ -78,6 +78,7 @@ use std::time::UNIX_EPOCH;
 use thiserror::Error;
 
 use crate::clock::{self, Clock, ClockError, MachineId};
+use crate::fields::{self, FieldEntry};
 use crate::xmp::{ArrayKind, Name, Namespace, Node, Property, Value, Xmp};
 
 use super::{
@@ -193,6 +194,16 @@ pub enum Problem {
     /// of its steps is past, and a save could be taken for holding all the file does.
     #[error("the clock of step {step} of copy {copy} is past its copy's clock vector")]
     ClockPastVector { copy: String, step: String },
+    /// An entry of a copy's `apertrust:fields` that cannot be read as written, as `what`
+    /// says, of the field `field`, empty where it names none (decision 110): it is left out;
+    /// or one whose clock is past its copy's clock vector, or of a machine the vector lacks,
+    /// as a step's in [`Problem::ClockPastVector`], whose value is still read to be shown.
+    #[error("copy {copy} holds {what} among its fields ({field})")]
+    Field {
+        copy: String,
+        field: String,
+        what: &'static str,
+    },
     /// A step's `apertrust:styles` holding what cannot be read as a style applied
     /// (decision 106), as `what` says: an item that is no struct, one lacking its name or
     /// file, or its before or after, a before and an after that are not the same tools'
@@ -225,6 +236,9 @@ pub struct VirtualCopy {
     /// `apertrust:clocks`, an `rdf:Bag` of the latest clock of each machine that changed
     /// it: read in the file's order, written in the order of their machine ids.
     pub clocks: Vec<Clock>,
+    /// `apertrust:fields`, its values beside the edit, each with the clock of its last
+    /// change ([`crate::fields`], decision 110); written only where it holds any.
+    pub fields: Vec<FieldEntry>,
     /// `apertrust:history`, its steps oldest first, those after the end among them.
     pub history: Vec<Step>,
 }
@@ -447,6 +461,7 @@ impl Edits {
             name: String::new(),
             end: String::new(),
             clocks: Vec::new(),
+            fields: Vec::new(),
             history: Vec::new(),
         };
         if !document.entries.is_empty() {
@@ -649,7 +664,7 @@ fn struct_fields<'a>(
 fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
     let text = |local: &str| own_field(fields, local).unwrap_or_default().to_owned();
     let id = text("id");
-    let known = ["id", "number", "name", "end", "clocks", "history"];
+    let known = ["id", "number", "name", "end", "clocks", "fields", "history"];
     unknown_fields(fields, &known, || format!("copy {id}"), problems);
     let mut clocks = Vec::new();
     // Whether every clock of the vector reads, so the steps' clocks can be held to it.
@@ -687,6 +702,9 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
             }
         }
     }
+    let entries = (own_node(fields, "fields"))
+        .map(|node| fields::read(node, &id, problems))
+        .unwrap_or_default();
     let history = array_items(
         own_node(fields, "history"),
         ArrayKind::Seq,
@@ -706,6 +724,7 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
         end: text("end"),
         id,
         clocks,
+        fields: entries,
         history,
     };
     if !copy.end.is_empty() && copy.history.iter().all(|step| step.id != copy.end) {
@@ -715,6 +734,9 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
         });
     }
     let mut seen = std::collections::HashSet::new();
+    let covered = |clock: &Clock| {
+        (copy.clocks.iter()).any(|kept| kept.machine == clock.machine && kept >= clock)
+    };
     for step in &copy.history {
         if !seen.insert(step.id.as_str()) {
             problems.push(Problem::DuplicateStep {
@@ -722,13 +744,20 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
                 step: step.id.clone(),
             });
         }
-        let covered = |clock: &Clock| {
-            (copy.clocks.iter()).any(|kept| kept.machine == clock.machine && kept >= clock)
-        };
         if whole && step.clock.as_ref().is_some_and(|clock| !covered(clock)) {
             problems.push(Problem::ClockPastVector {
                 copy: copy.id.clone(),
                 step: step.id.clone(),
+            });
+        }
+    }
+    // A field's clock held to the vector as a step's is, its value still read to be shown.
+    for entry in &copy.fields {
+        if whole && entry.clock.as_ref().is_some_and(|clock| !covered(clock)) {
+            problems.push(Problem::Field {
+                copy: copy.id.clone(),
+                field: entry.field.clone(),
+                what: "a clock past its copy's clock vector",
             });
         }
     }
@@ -1039,8 +1068,8 @@ fn clock_fields(clock: &Clock) -> impl Iterator<Item = Property> {
         .map(|(local, text)| own(local, &text))
 }
 
-/// A virtual copy as a struct: its id, number, name and end, its clock vector and its
-/// history.
+/// A virtual copy as a struct: its id, number, name and end, its clock vector, its fields
+/// where it has any, and its history.
 fn copy_node(copy: &VirtualCopy) -> Node {
     let list = |local: &str, kind, items| {
         Property::new(
@@ -1054,18 +1083,25 @@ fn copy_node(copy: &VirtualCopy) -> Node {
         .into_iter()
         .map(|clock| Node::structure(clock_fields(clock).collect()))
         .collect();
-    Node::structure(vec![
+    let mut fields = vec![
         own("id", &copy.id),
         own("number", &copy.number),
         own("name", &copy.name),
         own("end", &copy.end),
         list("clocks", ArrayKind::Bag, clocks),
-        list(
-            "history",
-            ArrayKind::Seq,
-            copy.history.iter().map(step_node).collect(),
-        ),
-    ])
+    ];
+    if !copy.fields.is_empty() {
+        fields.push(Property::new(
+            Name::new("apertrust", NAMESPACE, "fields"),
+            fields::node(&copy.fields),
+        ));
+    }
+    fields.push(list(
+        "history",
+        ArrayKind::Seq,
+        copy.history.iter().map(step_node).collect(),
+    ));
+    Node::structure(fields)
 }
 
 /// A step as a struct: its id, clock, source, note and batch, then its note's arguments

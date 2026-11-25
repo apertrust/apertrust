@@ -732,6 +732,7 @@ fn a_photo_a_panic_closes_mid_gesture_reads_as_listed() {
         size: 0,
         modified: None,
         edit: library::EditState::None,
+        rating: Default::default(),
     };
     let selection = &mut driven.engine.selection;
     selection.folder_opened(1, folder);
@@ -771,6 +772,7 @@ fn a_photo_saved_then_closed_by_a_panic_reads_as_its_sidecar() {
         size: 0,
         modified: None,
         edit: library::EditState::None,
+        rating: Default::default(),
     };
     let selection = &mut driven.engine.selection;
     selection.folder_opened(1, folder);

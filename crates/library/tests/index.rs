@@ -237,3 +237,69 @@ fn a_folder_that_cannot_be_listed_is_an_error() {
 
     assert!(Index::build(&missing, Options::default(), &|| false).is_err());
 }
+
+/// Each photo's rating: its `.apxmp`'s first copy's, else darktable's `.xmp`'s beside it,
+/// which is not looked for where the photo has an `.apxmp`, else none (decision 110).
+#[test]
+fn a_rating_is_read_from_the_apxmp_else_from_darktable_s_xmp() {
+    use apertrust_library::clock::{Clock, MachineId};
+    use apertrust_library::fields::{self, FieldValue};
+    use apertrust_library::{Rating, darktable};
+
+    let dir = TempDir::new().unwrap();
+    let darktable_xmp = |name: &str, rating: &str| {
+        let xml = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF
+            xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
+            xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="{rating}"/>
+            </rdf:RDF></x:xmpmeta>"#
+        );
+        fs::write(darktable::path_for(&dir.path().join(name)), xml).unwrap();
+    };
+    // Rated in Apertrust, with darktable's sidecar beside it too.
+    raw(dir.path(), "A.RAF");
+    let mut edits = sidecar::Edits::new("test");
+    edits.copies.push(sidecar::VirtualCopy {
+        id: sidecar::FIRST_COPY.to_owned(),
+        number: "0".to_owned(),
+        name: String::new(),
+        end: String::new(),
+        clocks: Vec::new(),
+        fields: Vec::new(),
+        history: Vec::new(),
+    });
+    let clock = Clock::at(1, None, MachineId::UNKNOWN);
+    let first = &mut edits.copies[0].fields;
+    fields::set(first, fields::RATING, Some(FieldValue::Stars(4)), clock);
+    fields::set(
+        first,
+        fields::REJECTED,
+        Some(FieldValue::Marked(true)),
+        clock,
+    );
+    sidecar::write_xml(
+        &sidecar::path_for(&dir.path().join("A.RAF")),
+        &edits.to_xml(),
+    )
+    .unwrap();
+    darktable_xmp("A.RAF", "1");
+    // Rated in darktable alone.
+    raw(dir.path(), "B.RAF");
+    darktable_xmp("B.RAF", "3");
+    // Neither.
+    raw(dir.path(), "C.RAF");
+
+    let index = build(dir.path());
+
+    let ratings: Vec<Rating> = index.photos.iter().map(|photo| photo.rating()).collect();
+    let rated = |stars, rejected| Rating {
+        stars,
+        rejected,
+        labels: 0,
+    };
+    assert_eq!(ratings, [rated(4, true), rated(3, false), rated(0, false)]);
+    assert_eq!(read(&index, "A.RAF").rating, rated(4, true));
+    assert_eq!(index.photos[0].darktable, None);
+    // A rating does not make a photo edited.
+    assert_eq!(index.counts().edited, 0);
+}

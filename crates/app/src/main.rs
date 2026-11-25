@@ -12003,6 +12003,7 @@ mod tests {
             size: 1,
             modified: None,
             edit: EditState::None,
+            rating: Default::default(),
         };
         let photos = names.iter().map(cell).collect();
         Event::Library(LibraryEvent::Listed { open, photos, done })

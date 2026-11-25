@@ -233,8 +233,8 @@ pub fn to_xml(
 }
 
 /// The XMP of `log` as `build` writes it, version 2, the build recorded in `x:xmptk`:
-/// `file`'s photo, fingerprint and copies as read, but the first copy's log, end and clock
-/// vector, which are `log`'s and `clocks`; for a file with no copy, the first copy,
+/// `file`'s photo, fingerprint and copies as read, its first copy's fields among them, but
+/// the first copy's log, end and clock vector, which are `log`'s and `clocks`; for a file with no copy, the first copy,
 /// [`FIRST_COPY`]. Each step's entries in its order, each written as version 1 writes it.
 pub fn log_xml(
     file: &Edits,
@@ -250,6 +250,7 @@ pub fn log_xml(
         name: first.map(|copy| copy.name.clone()).unwrap_or_default(),
         end: (log.steps()[..log.end()].last()).map_or_else(String::new, |step| step.id.to_string()),
         clocks: clocks.to_vec(),
+        fields: first.map(|copy| copy.fields.clone()).unwrap_or_default(),
         history: (log.steps().iter())
             .map(|step| step_text(step, operations, tools))
             .collect(),
@@ -2128,6 +2129,7 @@ pub(crate) mod tests {
             Problem::DuplicateStep { .. } => "duplicate step",
             Problem::ClockPastVector { .. } => "clock past vector",
             Problem::AppliedStyle { .. } => "applied style",
+            Problem::Field { .. } => "field",
         }
     }
 
@@ -2220,6 +2222,15 @@ pub(crate) mod tests {
                      </rdf:Seq></apertrust:styles>",
                 ),
             ),
+            (
+                "field",
+                replaced(
+                    "<apertrust:history>",
+                    "<apertrust:fields><rdf:Bag><rdf:li><rdf:Description \
+                     apertrust:field=\"dc:title\"/></rdf:li></rdf:Bag></apertrust:fields>\
+                     <apertrust:history>",
+                ),
+            ),
         ]
     }
 
@@ -2228,7 +2239,7 @@ pub(crate) mod tests {
     #[test]
     fn every_problem_opens_the_edit_for_viewing_only() {
         let cases = damaged();
-        assert_eq!(cases.len(), 14, "one case of each kind of problem");
+        assert_eq!(cases.len(), 15, "one case of each kind of problem");
         for (name, xml) in cases {
             let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
             assert_eq!(loaded.newer, None, "{name}");

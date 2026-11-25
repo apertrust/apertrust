@@ -29,8 +29,10 @@
 //! not arrived. Owned readers stop before their next read.
 //!
 //! A sidecar that cannot be read or parsed is that photo's alone to report
-//! ([`Sidecar::Unreadable`]); the rest are indexed. Ratings and other metadata, and changes
-//! made outside, are planned.
+//! ([`Sidecar::Unreadable`]); the rest are indexed. Each photo's rating is read with its
+//! sidecar, the first copy's ([`Edit::rating`]), or, for a photo with no `.apxmp`, from
+//! darktable's `.xmp` beside it on the same readers ([`Entry::darktable`], decision 110).
+//! Other metadata, and changes made outside, are planned.
 
 use std::io;
 use std::panic::{self, AssertUnwindSafe};
@@ -38,6 +40,7 @@ use std::path::Path;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
+use crate::fields::Rating;
 use crate::sidecar::{Edits, Newer};
 
 use crate::listing::{Error, Event, FileStat, Folder, Listing, Options, Orphan, Photo, Summary};
@@ -77,6 +80,8 @@ pub struct Edit {
     pub edited: bool,
     /// Why the photo opens for viewing only, where it does (decision 43).
     pub view_only: Option<Newer>,
+    /// The first virtual copy's rating, stars, reject and colour labels (decision 110).
+    pub rating: Rating,
 }
 
 /// One photo of the folder.
@@ -88,6 +93,25 @@ pub struct Entry {
     /// The sidecar's size and modified time, where it has one.
     pub file: Option<FileStat>,
     pub sidecar: Sidecar,
+    /// The rating darktable's `.xmp` gives a photo with no `.apxmp`, where it has one that
+    /// reads (decision 110); `None` for the rest.
+    pub darktable: Option<Rating>,
+}
+
+impl Entry {
+    /// The photo's rating: its sidecar's, else darktable's, else none.
+    pub fn rating(&self) -> Rating {
+        match &self.sidecar {
+            Sidecar::Read(edit) => edit.rating,
+            _ => self.darktable.unwrap_or_default(),
+        }
+    }
+}
+
+/// What one read of the build gives: a sidecar's, or darktable's rating.
+enum Read {
+    Sidecar(Sidecar),
+    Darktable(Option<Rating>),
 }
 
 /// What an index counted of the photos' sidecars.
@@ -162,11 +186,26 @@ fn build(
     let listed = list(folder, options, cancel)?;
     let mut cancelled = listed.summary.cancelled;
 
-    // Only photos with a sidecar are read; the rest are settled already.
-    let mut photos: Vec<Entry> = listed
-        .photos
-        .into_iter()
-        .map(|Photo { name, raw, sidecar }| Entry {
+    // Only photos with a sidecar, or with darktable's, are read; the rest are settled
+    // already.
+    let mut to_read = Vec::new();
+    let mut photos: Vec<Entry> = Vec::with_capacity(listed.photos.len());
+    for Photo {
+        name,
+        raw,
+        sidecar,
+        darktable,
+    } in listed.photos
+    {
+        let path = match (sidecar, darktable) {
+            (Some(_), _) => Some(sidecar_name(&name)),
+            (None, Some(_)) => Some(format!("{name}{}", crate::darktable::SUFFIX)),
+            (None, None) => None,
+        };
+        if let Some(path) = path {
+            to_read.push((photos.len(), folder.join(path)));
+        }
+        photos.push(Entry {
             sidecar: if sidecar.is_some() {
                 Sidecar::NotRead
             } else {
@@ -175,28 +214,28 @@ fn build(
             name,
             raw,
             file: sidecar,
-        })
-        .collect();
-    let to_read: Vec<usize> = (0..photos.len())
-        .filter(|&i| photos[i].file.is_some())
-        .collect();
+            darktable: None,
+        });
+    }
 
     if !cancelled && !to_read.is_empty() {
-        let paths = to_read
-            .iter()
-            .map(|&photo| folder.join(sidecar_name(&photos[photo].name)))
-            .collect();
+        let paths = to_read.iter().map(|(_, path)| path.clone()).collect();
         let (results, stopped) = crate::reads::read(
             paths,
             READERS,
             move |path| {
-                panic::catch_unwind(AssertUnwindSafe(|| read_sidecar(path, &reader)))
-                    .unwrap_or_else(|_| Sidecar::Unreadable("reading it panicked".to_owned()))
+                panic::catch_unwind(AssertUnwindSafe(|| read_one_of(path, &reader))).unwrap_or_else(
+                    |_| Read::Sidecar(Sidecar::Unreadable("reading it panicked".to_owned())),
+                )
             },
             cancel,
         );
-        for (at, sidecar) in results {
-            photos[to_read[at]].sidecar = sidecar;
+        for (at, read) in results {
+            let photo = &mut photos[to_read[at].0];
+            match read {
+                Read::Sidecar(sidecar) => photo.sidecar = sidecar,
+                Read::Darktable(rating) => photo.darktable = rating,
+            }
         }
         cancelled = stopped;
     }
@@ -276,6 +315,21 @@ pub fn read_one(path: &Path) -> Sidecar {
     }
 }
 
+/// Reads one file of the build: an `.apxmp`, as [`read_sidecar`] does, or darktable's
+/// `.xmp`, for its rating alone; one that cannot be read or is no XMP gives no rating.
+fn read_one_of(path: &Path, reader: &impl Fn(&Path) -> io::Result<Vec<u8>>) -> Read {
+    if path
+        .as_os_str()
+        .to_string_lossy()
+        .ends_with(crate::sidecar::SUFFIX)
+    {
+        return Read::Sidecar(read_sidecar(path, reader));
+    }
+    let read = reader(path).ok();
+    let fields = read.and_then(|bytes| crate::darktable::parse_bytes(path, &bytes));
+    Read::Darktable(fields.map(|read| Rating::of(&read.fields)))
+}
+
 /// Reads one sidecar: its bytes, their hash and what [`crate::sidecar`] makes of them.
 fn read_sidecar(path: &Path, reader: &impl Fn(&Path) -> io::Result<Vec<u8>>) -> Sidecar {
     match reader(path) {
@@ -298,6 +352,9 @@ fn parse_sidecar(bytes: &[u8]) -> Sidecar {
                 file_hash: hash(bytes),
                 edited: edits.edited() || view_only.is_some(),
                 view_only,
+                rating: (edits.copies.first())
+                    .map(|copy| Rating::of(&copy.fields))
+                    .unwrap_or_default(),
             })
         }
         Err(error) => Sidecar::Unreadable(error.to_string()),

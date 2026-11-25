@@ -43,6 +43,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_raw::DateTime;
 
+use crate::fields::Rating;
 use crate::index::{Index, READERS, Sidecar};
 use crate::listing::Options;
 pub use crate::listing::browser_order;
@@ -215,6 +216,9 @@ pub struct Photo {
     /// The raw's modified time, `None` where the system gives none.
     pub modified: Option<SystemTime>,
     pub edit: EditState,
+    /// Its rating, stars, reject and colour labels: its `.apxmp`'s first copy's, else
+    /// darktable's `.xmp`'s, else none (decision 110).
+    pub rating: Rating,
 }
 
 /// What a photo's sidecar says of its edit.
@@ -1021,12 +1025,14 @@ pub fn sidecar_state(path: &Path) -> EditState {
 
 /// A photo of the index as a client sees it.
 fn photo(entry: crate::index::Entry) -> Photo {
+    let rating = entry.rating();
     let edit = edit_state(entry.sidecar);
     Photo {
         name: entry.name,
         size: entry.raw.size,
         modified: entry.raw.modified,
         edit,
+        rating,
     }
 }
 

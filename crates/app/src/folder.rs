@@ -272,6 +272,7 @@ impl FolderState {
             size: 0,
             modified: None,
             edit: library::EditState::None,
+            rating: Default::default(),
         };
         let photos = unique.iter().map(cell).collect();
         let before = std::mem::take(&mut self.folder);
@@ -865,6 +866,7 @@ mod tests {
             size: 1,
             modified: None,
             edit,
+            rating: Default::default(),
         }
     }
 

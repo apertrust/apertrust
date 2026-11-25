@@ -20,7 +20,8 @@
 //! Built so far: [`sidecar`], the `.apxmp` file's text layer (layer 1), versions 1 and 2,
 //! [`presets`], the preset and style files of the user data folder, outside the layers
 //! (decision 106), [`clock`], the hybrid logical clock and the machine id that version 2
-//! holds, [`listing`], one folder's raws and their sidecars, listed on a worker thread, [`index`], that listing
+//! holds, [`fields`], a virtual copy's values beside the edit, its rating first, [`darktable`],
+//! what darktable's own `.xmp` says of them, [`listing`], one folder's raws and their sidecars, listed on a worker thread, [`index`], that listing
 //! with each sidecar read, in memory, [`walk`], the walk of a folder's whole tree for its
 //! folders' raw counts, and [`ops`], the commands and events clients see (layer 4),
 //! opening a folder first.
@@ -28,6 +29,8 @@
 mod reads;
 
 pub mod clock;
+pub mod darktable;
+pub mod fields;
 pub mod index;
 pub mod listing;
 pub mod ops;
@@ -38,6 +41,7 @@ pub mod testing;
 pub mod walk;
 pub mod xmp;
 
+pub use fields::Rating;
 pub use index::{Counts, Edit, Index, Sidecar};
 
 pub use listing::{Error, Event, FileStat, Folder, Listing, Options, Orphan, Photo, Summary};

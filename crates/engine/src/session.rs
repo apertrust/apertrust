@@ -16756,6 +16756,7 @@ mod tests {
                             number: "0".to_owned(),
                             name: String::new(),
                             end: String::new(),
+                            fields: Vec::new(),
                             clocks: Vec::new(),
                             history: Vec::new(),
                         });
