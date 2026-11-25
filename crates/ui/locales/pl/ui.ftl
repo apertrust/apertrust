@@ -152,6 +152,43 @@ styles-create-button = Utwórz
 style-created = Utworzono styl „{ $name }”
 style-not-created = Nie udało się utworzyć stylu „{ $name }”: { $error }
 
+## Narzędzie Style na karcie Zdjęcia
+
+styles-find = Znajdź styl
+styles-empty = Nie ma jeszcze stylów.
+styles-applied = Zastosowane style
+styles-applied-item = { $name }, zastosowany
+styles-tree = Style
+styles-no-photo = Otwórz zdjęcie, by zastosować styl
+styles-view-only = Zdjęcie jest otwarte tylko do podglądu
+styles-parked = Utworzony przez nowszy Apertrust
+styles-parked-retired = Zawiera tylko narzędzia, których Apertrust już nie ma
+styles-row-menu = Menu „{ $name }”
+styles-apply = Zastosuj
+styles-clear = Usuń
+styles-rename = Zmień nazwę stylu…
+styles-delete = Usuń styl…
+styles-mode = Tryb
+styles-mode-append = Dołącz
+styles-mode-replace = Zastąp
+styles-import = Importuj styl…
+styles-export = Eksportuj styl…
+styles-later = Pojawi się w późniejszej wersji
+styles-left-out = { $count ->
+    [one] { $count } narzędzie stylu „{ $name }” pominięto: { $reason }
+    [few] { $count } narzędzia stylu „{ $name }” pominięto: { $reason }
+    [many] { $count } narzędzi stylu „{ $name }” pominięto: { $reason }
+   *[other] { $count } narzędzia stylu „{ $name }” pominięto: { $reason }
+}
+styles-reason-newer = utworzone przez nowszy Apertrust
+styles-reason-retired = narzędzie, którego Apertrust już nie ma
+styles-find-clear = Wyczyść wyszukiwanie
+styles-applied-state = zastosowany
+styles-rename-title = Zmień nazwę stylu
+styles-rename-button = Zmień nazwę
+style-not-renamed = Nie udało się zmienić nazwy stylu „{ $name }”: { $error }
+style-not-deleted = Nie udało się usunąć stylu „{ $name }”: { $error }
+
 ## Znacznik suwaka
 
 slider-kept = Zablokowany: ta wartość została ustawiona przez Ciebie, więc Auto i Dopasowanie jej nie zmieniają. Kliknij, aby odblokować.
@@ -532,6 +569,8 @@ action-open-folder = Otwórz folder…
 open-folder-title = Otwórz folder
 section-collections = Kolekcje
     .search = kolekcje
+section-styles = Style
+    .search = style wygląd
 collections-folders = Foldery
 section-export = Eksport
     .search = eksportuj
@@ -1028,6 +1067,9 @@ history-compress = Kompresja historii
 history-truncate = Przycięcie historii
 history-discard = Odrzucenie historii
 history-preset = Preset { $name }
+history-style = Styl { $style }
+history-clear-style = Usuń { $style }
+history-styles-applied = Zastosowane style
 history-default-settings = Ustawienia domyślne
 history-options-compress = Kompresuj historię
 history-options-truncate = Przytnij historię
@@ -1473,3 +1515,5 @@ alert-preset-update-button = Zaktualizuj
 alert-preset-delete-title = Usunąć preset „{ $name }”?
 alert-preset-delete-message = Jego plik zostanie usunięty.
 alert-preset-delete-button = Usuń
+alert-style-delete-title = Usunąć styl „{ $name }”?
+alert-style-delete-message = Jego plik zostanie usunięty. Zdjęcia, do których go zastosowano, zachowają swoje edycje.

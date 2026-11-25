@@ -1256,6 +1256,9 @@ pub enum Widget {
     /// Collections' Folders: its group, holding the open folder's tree in a list that
     /// scrolls under the top line, so Collections keeps its height (decision 93).
     CollectionsGroups,
+    /// The Styles tool's page (decision 106): the styles applied to the active photo, Find
+    /// style, and the tree of the person's styles.
+    Styles,
     /// Export's Target storage, File on disk the one that can be chosen until the other
     /// storages come, with no setting yet (decision 93).
     ExportStorage,
@@ -1281,6 +1284,7 @@ impl Widget {
             | Widget::Scopes
             | Widget::CollectionsTopLine
             | Widget::CollectionsGroups
+            | Widget::Styles
             | Widget::ExportStorage
             | Widget::ExportPath
             | Widget::ExportSize
@@ -2876,6 +2880,7 @@ mod tests {
             Widget::History,
             Widget::CollectionsTopLine,
             Widget::CollectionsGroups,
+            Widget::Styles,
         ] {
             let rows = Box::leak(Box::new([Row::Custom {
                 widget,

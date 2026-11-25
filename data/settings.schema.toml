@@ -848,6 +848,16 @@ applies = "at-once"
 page = "general"
 group = "confirmations"
 
+# How a click on a style in the Styles tool applies it (decision 106): append sets the
+# style's tools alone, replace resets the whole edit first, darktable's append and overwrite.
+# Chosen from the tool's ⋯ › Mode, so it has no page in Settings.
+[styles.mode]
+owner = "app"
+kind = "choice"
+type = "apertrust_engine::session::StyleMode"
+default = "append"
+applies = "at-once"
+
 # Whether the app keeps this session's log in memory for its log window (docs/gui.md, The
 # log window): from the moment it is on, never written to a file by itself. Off, nothing
 # is kept and nothing listens to keep it (apertrust_base::log::Kept).

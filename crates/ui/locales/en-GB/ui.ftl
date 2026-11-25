@@ -218,6 +218,56 @@ styles-create-button = Create
 style-created = Style “{ $name }” created
 style-not-created = Style “{ $name }” not created: { $error }
 
+## The Styles tool, the Photos tab's: the styles applied to the photo, and the person's
+## styles as a tree (decision 106)
+
+# The search field over the tree, its name and its placeholder.
+styles-find = Find style
+# What the tool shows while the styles folder holds no style.
+styles-empty = No styles yet.
+# The list of the styles applied to the photo, and each one as screen readers hear it.
+styles-applied = Styles applied
+styles-applied-item = { $name }, applied
+# The tree of the person's styles, as screen readers name it.
+styles-tree = Styles
+# Why the tree's styles can't be applied now.
+styles-no-photo = Open a photo to apply a style
+styles-view-only = The photo is open for viewing only
+# A style file this build can't apply, its tooltip.
+styles-parked = Made by a newer Apertrust
+styles-parked-retired = Holds only tools Apertrust has retired
+# The menus of an applied style and of a style in the tree, $name its name.
+styles-row-menu = { $name } menu
+styles-apply = Apply
+styles-clear = Clear
+styles-rename = Rename Style…
+styles-delete = Delete Style…
+# The tool's ⋯: how a click applies a style, and what comes later.
+styles-mode = Mode
+styles-mode-append = Append
+styles-mode-replace = Replace
+styles-import = Import Style…
+styles-export = Export Style…
+styles-later = Comes in a later version
+# Said over the photo where a style's tools could not all be applied: $count of them, of the
+# style $name, left out, and why.
+styles-left-out = { $count ->
+    [one] 1 tool of “{ $name }” was left out: { $reason }
+   *[other] { $count } tools of “{ $name }” were left out: { $reason }
+}
+styles-reason-newer = made by a newer Apertrust
+styles-reason-retired = a tool Apertrust has retired
+# Find style's ×, which clears it.
+styles-find-clear = Clear search
+# What screen readers hear of a style applied to the photo, in the tree.
+styles-applied-state = applied
+# Rename Style…'s dialog.
+styles-rename-title = Rename Style
+styles-rename-button = Rename
+# Said over the photo where a style could not be renamed or deleted.
+style-not-renamed = Style “{ $name }” not renamed: { $error }
+style-not-deleted = Style “{ $name }” not deleted: { $error }
+
 ## A slider's marker
 
 slider-kept = Kept: you set it, so Auto and Match leave it. Click to release it.
@@ -698,6 +748,8 @@ open-folder-title = Open Folder
 # of folders. Albums and Smart albums join it with the library.
 section-collections = Collections
     .search = collections
+section-styles = Styles
+    .search = styles looks
 collections-folders = Folders
 section-export = Export
     .search = export
@@ -1349,6 +1401,11 @@ history-truncate = Truncate History
 history-discard = Discard History
 # A tool's preset applied, $name its name, and its Default settings.
 history-preset = Preset { $name }
+# A style's steps, its Clear's, $style its name, and the step that keeps the styles applied
+# after Compress.
+history-style = Style { $style }
+history-clear-style = Clear { $style }
+history-styles-applied = Styles applied
 history-default-settings = Default settings
 # The History section's options (⋯), as items, each with its tip: Compress History,
 # Truncate History, Create a Style… and Discard History…'s tip.
@@ -1894,3 +1951,5 @@ alert-preset-update-button = Update
 alert-preset-delete-title = Delete the preset “{ $name }”?
 alert-preset-delete-message = Its file is removed.
 alert-preset-delete-button = Delete
+alert-style-delete-title = Delete the style “{ $name }”?
+alert-style-delete-message = Its file is removed. Photos it was applied to keep their edits.

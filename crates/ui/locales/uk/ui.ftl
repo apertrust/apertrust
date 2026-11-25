@@ -152,6 +152,42 @@ styles-create-button = Створити
 style-created = Стиль «{ $name }» створено
 style-not-created = Не вдалося створити стиль «{ $name }»: { $error }
 
+## Інструмент «Стилі» на вкладці «Знімки»
+
+styles-find = Знайти стиль
+styles-empty = Стилів ще немає.
+styles-applied = Застосовані стилі
+styles-applied-item = { $name }, застосовано
+styles-tree = Стилі
+styles-no-photo = Відкрийте знімок, щоб застосувати стиль
+styles-view-only = Знімок відкрито лише для перегляду
+styles-parked = Створено новішою версією Apertrust
+styles-parked-retired = Містить лише інструменти, яких Apertrust більше не має
+styles-row-menu = Меню «{ $name }»
+styles-apply = Застосувати
+styles-clear = Прибрати
+styles-rename = Перейменувати стиль…
+styles-delete = Видалити стиль…
+styles-mode = Режим
+styles-mode-append = Додати
+styles-mode-replace = Замінити
+styles-import = Імпортувати стиль…
+styles-export = Експортувати стиль…
+styles-later = З’явиться в наступній версії
+styles-left-out = { $count ->
+    [one] { $count } інструмент стилю «{ $name }» пропущено: { $reason }
+    [few] { $count } інструменти стилю «{ $name }» пропущено: { $reason }
+   *[other] { $count } інструментів стилю «{ $name }» пропущено: { $reason }
+}
+styles-reason-newer = створено новішою версією Apertrust
+styles-reason-retired = інструмент, який Apertrust більше не має
+styles-find-clear = Очистити пошук
+styles-applied-state = застосовано
+styles-rename-title = Перейменувати стиль
+styles-rename-button = Перейменувати
+style-not-renamed = Не вдалося перейменувати стиль «{ $name }»: { $error }
+style-not-deleted = Не вдалося видалити стиль «{ $name }»: { $error }
+
 ## Позначка повзунка
 
 slider-kept = Зафіксовано: ви встановили це значення, тож Авто та Зіставлення його не змінюють. Клацніть, щоб звільнити.
@@ -530,6 +566,8 @@ action-open-folder = Відкрити теку…
 open-folder-title = Відкрити теку
 section-collections = Колекції
     .search = Колекції
+section-styles = Стилі
+    .search = стилі вигляд
 collections-folders = Теки
 section-export = Експорт
     .search = Експорт
@@ -1025,6 +1063,9 @@ history-compress = Стиснення історії
 history-truncate = Обрізання історії
 history-discard = Відкидання історії
 history-preset = Шаблон { $name }
+history-style = Стиль { $style }
+history-clear-style = Прибрати { $style }
+history-styles-applied = Застосовані стилі
 history-default-settings = Типові налаштування
 history-options-compress = Стиснути історію
 history-options-truncate = Обрізати історію
@@ -1472,3 +1513,5 @@ alert-preset-update-button = Оновити
 alert-preset-delete-title = Видалити шаблон «{ $name }»?
 alert-preset-delete-message = Його файл буде вилучено.
 alert-preset-delete-button = Видалити
+alert-style-delete-title = Видалити стиль «{ $name }»?
+alert-style-delete-message = Його файл буде видалено. Знімки, до яких його застосовано, збережуть свої редагування.

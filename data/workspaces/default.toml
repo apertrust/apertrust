@@ -70,7 +70,7 @@ raw = ["scopes"]
 # for the edit's tone mapper; the Tone curve has RGB curve's place until RGB curve replaces
 # it. Detail is drawn disabled until its first tool.
 [order]
-photos = ["collections", "export"]
+photos = ["collections", "styles", "export"]
 adjust = [
     "temperature",
     "channelmixerrgb",

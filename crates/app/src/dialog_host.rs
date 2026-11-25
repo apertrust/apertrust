@@ -325,6 +325,8 @@ pub enum Output {
     Preset(crate::presets::Asked),
     /// What Create a Style… asked as Create was pressed.
     Style(crate::styles::Asked),
+    /// What Rename Style… asked as Rename was pressed: the style `from` named `to`.
+    StyleRename { from: String, to: String },
 }
 
 /// The key presses a dialog's window left alone in a frame: none of Escape, Cmd+W and

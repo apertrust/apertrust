@@ -204,14 +204,29 @@ pub fn context_menu(
     name: &str,
     entries: impl FnOnce() -> Vec<Entry>,
 ) -> Option<String> {
-    let ctx = ui.ctx();
-    let id = response.id.with("context menu");
     let keys = response.has_focus()
         && ui.input_mut(|i| {
             i.consume_key(Modifiers::NONE, Key::Menu) || i.consume_key(Modifiers::SHIFT, Key::F10)
         });
-    if response.secondary_clicked() || keys {
-        let at = if keys {
+    let asked = response.secondary_clicked() || keys;
+    menu_of(ui, response, name, (asked, keys), entries)
+}
+
+/// [`context_menu`]'s pull-down, opened where `asked` says so: under the control where
+/// `under`, as the keys open it, else at the pointer. For a control that opens its menu on
+/// more than a right-click, as an item whose click offers one command, or whose keys come
+/// from [`menu_asked`]. Returns the id of the item chosen this frame.
+pub fn menu_of(
+    ui: &egui::Ui,
+    response: &Response,
+    name: &str,
+    (asked, under): (bool, bool),
+    entries: impl FnOnce() -> Vec<Entry>,
+) -> Option<String> {
+    let ctx = ui.ctx();
+    let id = response.id.with("context menu");
+    if asked {
+        let at = if under {
             response.rect.left_bottom()
         } else {
             response
