@@ -140,6 +140,32 @@ pub struct Camera {
     pub alias: String,
 }
 
+impl RawImage {
+    /// The part of the readout a photo develops to, and so its size: the active area cut
+    /// by the default crop where the two overlap, else the active area.
+    pub fn developed_size(&self) -> Rect {
+        let active = self.active_area;
+        self.default_crop
+            .map_or(active, |declared| intersect(declared, active))
+    }
+}
+
+/// The part of `a` inside `b`; `b` itself when they do not overlap.
+fn intersect(a: Rect, b: Rect) -> Rect {
+    let (x0, y0) = (a.x.max(b.x), a.y.max(b.y));
+    let x1 = (a.x + a.width).min(b.x + b.width);
+    let y1 = (a.y + a.height).min(b.y + b.height);
+    if x1 <= x0 || y1 <= y0 {
+        return b;
+    }
+    Rect {
+        x: x0,
+        y: y0,
+        width: x1 - x0,
+        height: y1 - y0,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
     pub x: u32,
