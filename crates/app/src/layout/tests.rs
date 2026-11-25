@@ -1485,6 +1485,73 @@ fn an_emptied_tab_takes_a_tool_back() {
     assert!(workspace.tabs()[effects].enabled());
 }
 
+/// Add Tool ▸ lists every tool of the Tools panel a tab does not hold, each once, none of
+/// its own: those in other tabs first, by the tab holding them, then the hidden ones, each
+/// group in Find Tool…'s order; an emptied tab lists them too, one still to come nothing
+/// (decision 96).
+#[test]
+fn add_tool_lists_every_tool_not_in_the_tab_hidden_ones_last() {
+    let mut workspace = default_workspace();
+    moved(&mut workspace, Move::Hide { tool: "vignette" });
+    moved(&mut workspace, Move::Hide { tool: "grain" });
+    let effects = workspace.position("effects").unwrap();
+    let listed = workspace.addable(effects, None).unwrap();
+    let ids: Vec<&str> = listed.iter().map(|(tool, _)| *tool).collect();
+    let tab = &workspace.tabs()[effects];
+    let mut expected: Vec<&str> = known().into_iter().filter(|t| !tab.holds(t)).collect();
+    expected.sort_by_key(|id| {
+        let at = workspace.holding(id).unwrap_or(usize::MAX);
+        (at, hidden_order(id))
+    });
+    assert_eq!(ids, expected);
+    assert!(ids.iter().all(|tool| !tab.holds(tool)));
+    for (tool, at) in &listed {
+        assert_eq!(*at, workspace.holding(tool), "{tool}");
+    }
+    // The hidden ones last, in pipeline order.
+    let hidden: Vec<&str> = (listed.iter())
+        .skip_while(|(_, at)| at.is_some())
+        .map(|(tool, at)| {
+            assert!(at.is_none(), "{tool}");
+            *tool
+        })
+        .collect();
+    let mut both = ["grain", "vignette"];
+    both.sort_by_key(|id| hidden_order(id));
+    assert_eq!(hidden, both);
+    // Emptied, Effects lists them all; Detail, still to come, takes none.
+    for tool in shown_tab(&workspace, "effects").order.clone() {
+        moved(&mut workspace, Move::Hide { tool });
+    }
+    let emptied = workspace.addable(effects, None).unwrap();
+    assert!(emptied.iter().any(|(tool, _)| *tool == "vignette"));
+    let detail = workspace.position("detail").unwrap();
+    assert_eq!(workspace.addable(detail, None), None);
+}
+
+/// A tool in several tabs, as Scopes, is listed under the tab shown where that holds it,
+/// the tab its move takes it from, else under the first tab holding it (decision 96).
+#[test]
+fn add_tool_lists_a_tool_in_several_tabs_under_the_tab_it_leaves() {
+    let workspace = default_workspace();
+    let photos = workspace.position("photos").unwrap();
+    let effects = workspace.position("effects").unwrap();
+    assert!(workspace.tabs()[effects].holds(SCOPES));
+    let first = workspace.holding(SCOPES);
+    assert_ne!(first, Some(effects));
+    let under = |shown| {
+        let listed = workspace.addable(photos, shown).unwrap();
+        listed
+            .into_iter()
+            .find(|(tool, _)| *tool == SCOPES)
+            .unwrap()
+            .1
+    };
+    assert_eq!(under(Some(effects)), Some(effects));
+    assert_eq!(under(None), first);
+    assert_eq!(under(Some(photos)), first);
+}
+
 /// A workspace whose file a newer build wrote stays known as one through a move and a
 /// switch back, so its file is never written.
 #[test]

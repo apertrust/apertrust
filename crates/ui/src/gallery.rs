@@ -2725,6 +2725,7 @@ fn tools_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
             Some(TabBarAction::Select(i)) => demo.panel_tab = i,
             Some(TabBarAction::ShowNames(on)) => demo.tab_names = on,
             Some(TabBarAction::Customise) => demo.last = "Customise tabs".to_owned(),
+            Some(TabBarAction::Menu(_)) => demo.last = "Tab bar menu".to_owned(),
             Some(TabBarAction::Chosen(_)) => {
                 demo.finding = Some(String::new());
                 demo.find_focus = true;

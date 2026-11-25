@@ -19,7 +19,7 @@
 
 use apertrust_ui::components::{
     CollapsibleGroup, PanelBody, PanelTab, PlainGroup, Section, SectionAction, SliderRow, TabBar,
-    TabBarAction, section_body, section_list,
+    TabBarAction, TabMenu, section_body, section_list,
 };
 use apertrust_ui::icons::STROKE;
 use apertrust_ui::popup::{Item, Submenu};
@@ -1015,7 +1015,9 @@ fn tab_bar(width: f32) -> Harness<'static, (usize, bool, Vec<TabBarAction>)> {
                     match action {
                         TabBarAction::Select(i) => state.0 = i,
                         TabBarAction::ShowNames(on) => state.1 = on,
-                        TabBarAction::Customise | TabBarAction::Chosen(_) => {}
+                        TabBarAction::Customise
+                        | TabBarAction::Chosen(_)
+                        | TabBarAction::Menu(_) => {}
                     }
                     state.2.push(action);
                 }
@@ -1032,6 +1034,62 @@ fn a_tab_is_chosen_by_clicking_it() {
     harness.get_by_role_and_label(Role::Tab, "Correct").click();
     harness.run();
     assert_eq!(harness.state().0, 3);
+}
+
+/// A right-click on a tab's icon, one drawn disabled too, or on the bar's empty end asks
+/// for the tab bar's menu at the pointer, on that tab or none, choosing no tab; Shift+F10
+/// on a focused tab asks for it under the tab, with the tab as its opener (decision 96).
+#[test]
+fn the_tab_bar_asks_for_its_menu_on_a_right_click_or_the_keys() {
+    let mut harness = tab_bar(440.0);
+    harness.run();
+    let right_click = |harness: &mut Harness<'_, (usize, bool, Vec<TabBarAction>)>, at| {
+        harness.hover_at(at);
+        harness.run();
+        for pressed in [true, false] {
+            harness.event(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+        harness.run();
+        harness.state_mut().2.pop()
+    };
+    let tab = |harness: &Harness<'_, _>, name| {
+        let node = harness.get_by_role_and_label(Role::Tab, name);
+        node.rect()
+    };
+    let correct = tab(&harness, "Correct").center();
+    let history = tab(&harness, "History");
+    let options = harness.get_by_label("Tab options").rect();
+    let end = egui::pos2((history.right() + options.left()) / 2.0, history.center().y);
+    assert!(end.x > history.right() + 2.0 && end.x < options.left());
+    let asked = [(correct, Some(3)), (history.center(), Some(5)), (end, None)];
+    for (at, on) in asked {
+        let menu = TabMenu {
+            tab: on,
+            at,
+            opener: None,
+        };
+        assert_eq!(
+            right_click(&mut harness, at),
+            Some(TabBarAction::Menu(menu))
+        );
+        assert_eq!(harness.state().0, 1, "no tab chosen");
+    }
+    let node = harness.get_by_role_and_label(Role::Tab, "Correct");
+    node.focus();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, Key::F10);
+    harness.run();
+    let Some(TabBarAction::Menu(menu)) = harness.state().2.last() else {
+        panic!("asked for no menu: {:?}", harness.state().2);
+    };
+    assert_eq!(menu.tab, Some(3));
+    assert_eq!(menu.at, tab(&harness, "Correct").left_bottom());
+    assert!(menu.opener.is_some());
 }
 
 #[test]

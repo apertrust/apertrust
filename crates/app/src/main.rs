@@ -3119,7 +3119,12 @@ impl Shell {
     /// Hidden Tools is off (decision 96). Anything else, as an operation's unowned
     /// parameters, changes nothing.
     fn reveal(&mut self, tool: &'static str) {
-        let tab = self.workspace.holding(tool);
+        self.reveal_in(tool, self.workspace.holding(tool));
+    }
+
+    /// Opens `tool`'s section in the tab shown at `tab`, chosen, as [`Shell::reveal`] does in
+    /// the first tab that lists it; a hidden tool's in the Hidden tab, where `tab` is none.
+    fn reveal_in(&mut self, tool: &'static str, tab: Option<usize>) {
         if tab.is_none() && !self.workspace.hides(tool) {
             return;
         }
@@ -3876,6 +3881,7 @@ impl Shell {
     ) -> Option<ActionId> {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
+        self.tab_menu(&ctx, state);
         if self.find.is_some() {
             self.find_bar(ui, &words);
             return None;
@@ -3914,7 +3920,8 @@ impl Shell {
         let given = self.show_hidden_given.then(|| utility::overridden(&words));
         let tip = given.as_deref().or(says.as_deref());
         let workspaces = self.workspace_items(&ctx);
-        let items = menus::tools_panel(&ctx, &self.keymap, state, tip, &workspaces);
+        let add = (self.adding_to(None)).and_then(|tab| self.add_tool_entry(&ctx, tab));
+        let items = menus::tools_panel(&ctx, &self.keymap, state, tip, &workspaces, add);
         match TabBar::new(&tabs, chosen, self.tab_names)
             .customise(false)
             .items(items)
@@ -3927,8 +3934,110 @@ impl Shell {
                 self.tab_names = on;
                 None
             }
-            Some(TabBarAction::Chosen(id)) => menus::chosen(&id),
+            Some(TabBarAction::Chosen(id)) => match menus::tool_added(&id) {
+                Some((tab, tool)) => {
+                    self.add_tool(tab, tool, state, &ctx);
+                    None
+                }
+                None => menus::chosen(&id),
+            },
+            Some(TabBarAction::Menu(asked)) => {
+                self.open_tab_menu(&ctx, asked.tab, asked.at, asked.opener);
+                None
+            }
             Some(TabBarAction::Customise) | None => None,
+        }
+    }
+
+    /// The tab Add Tool ▸ adds to (decision 96): `asked`, a tab's place among the tabs
+    /// shown, else the tab shown; none for the Hidden tab, or past the tabs shown.
+    fn adding_to(&self, asked: Option<usize>) -> Option<usize> {
+        let hidden = self.hidden_chosen && self.hidden_shown();
+        match asked {
+            Some(tab) => (tab < self.workspace.tabs().len()).then_some(tab),
+            None => (!hidden).then_some(self.panel_tab),
+        }
+    }
+
+    /// Add Tool ▸ for the tab shown at `tab` ([`menus::add_tool`]), listing the tools it
+    /// does not hold as the workspace has them, each with where it is: its tab's name, or
+    /// Hidden ([`layout::Workspace::addable`]); none for a tab that takes no tool.
+    fn add_tool_entry(&self, ctx: &egui::Context, tab: usize) -> Option<popup::Entry> {
+        let words = translator(ctx);
+        let hidden = tab_name(ctx, self.workspace.hidden_tab());
+        // Each under the tab its move takes it from ([`Shell::acting_tab`]).
+        let hidden_chosen = self.hidden_chosen && self.hidden_shown();
+        let shown = (!hidden_chosen).then_some(self.panel_tab);
+        let listed: Vec<menus::AddTool> = (self.workspace.addable(tab, shown)?.into_iter())
+            .map(|(tool, at)| menus::AddTool {
+                tool,
+                name: tools::title(&words, tool),
+                place: match at.and_then(|at| self.workspace.tab(at)) {
+                    Some(holding) => tab_name(ctx, holding),
+                    None => hidden.clone(),
+                },
+            })
+            .collect();
+        Some(menus::add_tool(ctx, tab, &listed))
+    }
+
+    /// The tab bar's menu's popup (decision 96; `menus::Place::TabBar`).
+    fn tab_menu_id() -> egui::Id {
+        egui::Id::unique("tab bar menu")
+    }
+
+    /// Opens the tab bar's menu, hung from `at`, adding to the tab `asked` on, by its place
+    /// among the tabs shown, else to the tab shown ([`Shell::adding_to`]): Add Tool ▸ alone
+    /// for now. Nothing opens where it would hold nothing, on the Hidden tab or a tab still to
+    /// come. Asked from the keys, the focus goes back to `opener` as it closes.
+    fn open_tab_menu(
+        &self,
+        ctx: &egui::Context,
+        asked: Option<usize>,
+        at: egui::Pos2,
+        opener: Option<egui::Id>,
+    ) {
+        let add = self.adding_to(asked);
+        let Some(add) = add.and_then(|tab| self.add_tool_entry(ctx, tab)) else {
+            return;
+        };
+        let request = menus::tab_bar(ctx, add, egui::Rect::from_min_size(at, egui::Vec2::ZERO));
+        let request = match opener {
+            Some(opener) => request.opened_by(opener),
+            None => request,
+        };
+        popup::open(ctx, Self::tab_menu_id(), request);
+    }
+
+    /// The tab bar's menu, drawn while open; a tool chosen in it is added to its tab
+    /// ([`Shell::add_tool`]).
+    fn tab_menu(&mut self, ctx: &egui::Context, state: &State) {
+        let id = Self::tab_menu_id();
+        if popup::is_open(ctx, id) {
+            popup::show(ctx);
+        }
+        if let Some(popup::Answer::Chosen(chosen)) = popup::answer(ctx, id)
+            && let Some((tab, tool)) = menus::tool_added(&chosen)
+        {
+            self.add_tool(tab, tool, state, ctx);
+        }
+    }
+
+    /// Adds `tool` to the tab shown at `tab`, as Add Tool ▸ asks (decision 96): from another
+    /// tab, as its ⋯'s Move Tool to Tab ▸ moves it, or hidden, as Show Tool in Tab ▸ shows
+    /// it, each `section-move-to-tab-<tab + 1>` on it ([`Shell::run_on_section`]); then that
+    /// tab is shown with the tool's section open, scrolled to ([`Shell::reveal_in`]).
+    fn add_tool(&mut self, tab: usize, tool: &'static str, state: &State, ctx: &egui::Context) {
+        let Some(&id) = ActionId::SECTION_MOVE_TO_TAB.get(tab) else {
+            return;
+        };
+        self.run_on_section(tool, id, state, ctx);
+        if self
+            .workspace
+            .tab(tab)
+            .is_some_and(|added| added.holds(tool))
+        {
+            self.reveal_in(tool, Some(tab));
         }
     }
 
@@ -4086,15 +4195,24 @@ impl Shell {
             }
             Intent::ResetToolbar => self.move_toolbar(layout::Move::ResetToolbar, ctx),
             Intent::View(view) => self.view = view,
-            Intent::PanelTab(tab) => self.choose_tab(tab),
+            // A tab bar's menu lists tools under the tab shown as it opened.
+            Intent::PanelTab(tab) => {
+                popup::dismiss(ctx, Self::tab_menu_id());
+                self.choose_tab(tab);
+            }
             Intent::HiddenTab => {
+                popup::dismiss(ctx, Self::tab_menu_id());
                 if self.hidden_shown() {
                     self.choose_hidden();
                 }
             }
             Intent::ShowHiddenTools => self.toggle_show_hidden(),
             Intent::FindTool => self.toggle_find(),
-            Intent::Workspace(id) => self.switch_workspace(id),
+            Intent::Workspace(id) => {
+                // A tab bar's menu open on the workspace left lists its tabs' places.
+                popup::dismiss(ctx, Self::tab_menu_id());
+                self.switch_workspace(id);
+            }
             Intent::Section(change) => {
                 if let Some(tool) = self.focused_section(ctx) {
                     self.move_section(tool, change, ctx);
@@ -9706,9 +9824,9 @@ fn edit_tab(
             ..head
         };
         let resettable = utility::resettable(definition, state);
-        let (pressed, (changes, actions)) = history::tab(ui, head, resettable, |ui| {
-            utility::rows(ui, &mut history, &mut cx)
-        });
+        let rows = |ui: &mut egui::Ui| utility::rows(ui, &mut history, &mut cx);
+        let below = |ui: &mut egui::Ui| space_menu(ui, shell);
+        let (pressed, (changes, actions)) = history::tab(ui, head, resettable, rows, below);
         tab.pressed = pressed;
         tab.changes = changes;
         tab.history = actions;
@@ -10009,6 +10127,7 @@ fn panel_body(
     let draw = |ui: &mut egui::Ui, id: &'static str| {
         let mut drawn = drawn.borrow_mut();
         let (cx, others, (scopes_asked, changes, pressed, history_asked)) = &mut *drawn;
+        let top = ui.cursor().top();
         match id {
             scopes::ID => {
                 let mut scopes = scopes::ScopesTool;
@@ -10041,19 +10160,7 @@ fn panel_body(
                 changes.extend(drawn.changes);
                 history_asked.extend(drawn.actions);
             }
-            library::ID | export::ID | styles::tool::ID => {
-                let top = ui.cursor().top();
-                others(ui, id, cx);
-                // Collections revealed in the Hidden tab, its header at the top; Export
-                // scrolls itself ([`photos_tool`]).
-                if id == library::ID && shell.revealing() && shell.reveal == Some(id) {
-                    let drawn = egui::Rect::from_x_y_ranges(
-                        ui.max_rect().x_range(),
-                        top..=ui.cursor().top(),
-                    );
-                    ui.scroll_to_rect(drawn, Some(egui::Align::TOP));
-                }
-            }
+            library::ID | export::ID | styles::tool::ID => others(ui, id, cx),
             _ => {
                 let tool = tools.iter().find(|tool| tool.definition().tool.id == id);
                 let state_of = values.tools.iter().find(|state| state.tool == id);
@@ -10073,13 +10180,16 @@ fn panel_body(
                             pickers,
                         )
                     });
-                    // The section a History line opened, its header at the top.
-                    if shell.revealing() && shell.reveal == Some(id) {
-                        ui.scroll_to_rect(drawn.response.rect, Some(egui::Align::TOP));
-                    }
                     changes.extend(drawn.inner);
                 }
             }
+        }
+        // The section revealed, by a History line, View › Collections or Add Tool ▸, its
+        // header at the top; Export scrolls itself ([`photos_tool`]).
+        if id != export::ID && shell.revealing() && shell.reveal == Some(id) {
+            let x = ui.max_rect().x_range();
+            let section = egui::Rect::from_x_y_ranges(x, top..=ui.cursor().top());
+            ui.scroll_to_rect(section, Some(egui::Align::TOP));
         }
     };
     // The header a move handed the focus to, drawn in `list`, scrolled into view in its
@@ -10130,8 +10240,20 @@ fn panel_body(
             draw(ui, id);
         }
         reveal(ui, &tab.order);
+        space_menu(ui, shell);
     });
     drawn.into_inner().2
+}
+
+/// The empty space under the tab's last tool, the rest of `ui`, opening the tab bar's menu
+/// for the tab shown on a right-click (decision 96); never Find Tool…'s list's.
+fn space_menu(ui: &mut egui::Ui, shell: &Shell) {
+    let space = ui.scope_id().with("space below");
+    if shell.find.is_none()
+        && let Some(at) = components::space_below(ui, space)
+    {
+        shell.open_tab_menu(ui.ctx(), None, at, None);
+    }
 }
 
 /// What a tab's body says in place of its tools, centred in `text_secondary` (decision 96):
@@ -17212,6 +17334,261 @@ mod tests {
         );
     }
 
+    /// The Effects tab with Grain hidden, the tab bar's menu closed.
+    fn effects_without_grain(folder: &settings::testing::Folder) -> Harness<'static, Editing> {
+        let mut harness = effects_tab(folder);
+        let ctx = egui::Context::default();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let shell = &mut harness.state_mut().shell;
+        shell.run_on_section("grain", ActionId::SECTION_HIDE, &state, &ctx);
+        harness.run();
+        harness
+    }
+
+    /// Whether the tab bar's menu is open.
+    fn tab_menu_open(harness: &Harness<'_, Editing>) -> bool {
+        let menu = harness.query_by_role_and_label(Role::Menu, "Tools panel tabs");
+        menu.is_some()
+    }
+
+    /// `tool`'s section is open in the tab shown, `tab`.
+    fn added_here(harness: &Harness<'_, Editing>, tool: &str, tab: &str) {
+        let shell = &harness.state().shell;
+        assert_eq!(shown_id(shell), tab);
+        assert!(shell.shown_tab().unwrap().holds(tool), "{tool} in {tab}");
+        assert_eq!(shell.sections.get(tool), Some(&true), "{tool} open");
+    }
+
+    /// ⋮'s Add Tool ▸ lists the tools the tab shown does not hold, under the tab holding
+    /// them, the hidden ones last under Hidden, none of its own; one in another tab moves
+    /// into it, a hidden one is shown there, each opened (decision 96).
+    #[test]
+    fn add_tool_in_the_tools_panel_s_options_moves_or_shows_a_tool_here() {
+        let folder = settings::testing::Folder::new("add-tool-options");
+        let mut harness = effects_without_grain(&folder);
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        harness.get_by_label("Add Tool").click();
+        harness.run();
+        let top = |role, label| harness.get_by_role_and_label(role, label).rect().top();
+        assert!(top(Role::Label, "Adjust") < top(Role::MenuItem, "Exposure"));
+        assert!(top(Role::MenuItem, "Exposure") < top(Role::Label, "Hidden"));
+        assert!(top(Role::Label, "Hidden") < top(Role::MenuItem, "Grain"));
+        let own = harness.query_by_role_and_label(Role::MenuItem, "Vignetting");
+        assert!(own.is_none());
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Exposure")
+            .click();
+        harness.run();
+        added_here(&harness, "exposure", "effects");
+        let adjust = harness.state().shell.workspace.position("adjust").unwrap();
+        let workspace = &harness.state().shell.workspace;
+        assert!(!workspace.tab(adjust).unwrap().holds("exposure"));
+        assert_eq!(harness.state().shell.announced, "Exposure moved to Effects");
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        harness.get_by_label("Add Tool").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Grain")
+            .click();
+        harness.run();
+        added_here(&harness, "grain", "effects");
+        assert_eq!(harness.state().shell.announced, "Grain shown in Effects");
+    }
+
+    /// A right-click on another tab's icon opens the tab bar's menu for that tab: the tool
+    /// chosen moves there, and that tab is shown with it open. On the bar's empty end it
+    /// adds to the tab shown (decision 96).
+    #[test]
+    fn add_tool_on_another_tab_s_icon_adds_to_that_tab() {
+        let folder = settings::testing::Folder::new("add-tool-icon");
+        let mut harness = effects_without_grain(&folder);
+        let adjust = harness.get_by_role_and_label(Role::Tab, "Adjust").rect();
+        right_click_at(&mut harness, adjust.center());
+        assert!(tab_menu_open(&harness));
+        harness.get_by_label("Add Tool").click();
+        harness.run();
+        assert!(
+            harness
+                .query_by_role_and_label(Role::MenuItem, "Exposure")
+                .is_none()
+        );
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Vignetting")
+            .click();
+        harness.run();
+        added_here(&harness, "vignette", "adjust");
+        assert!(!effects_order(&harness).contains(&"vignette"));
+        // The empty end: the tab shown, Adjust.
+        let options = harness.get_by_label("Tab options").rect();
+        right_click_at(
+            &mut harness,
+            egui::pos2(options.left() - 8.0, adjust.center().y),
+        );
+        harness.get_by_label("Add Tool").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Grain")
+            .click();
+        harness.run();
+        added_here(&harness, "grain", "adjust");
+    }
+
+    /// The tab bar's menu holds nothing on the Hidden tab or a tab still to come, so none
+    /// opens there, and ⋮ has no Add Tool ▸ while the Hidden tab is shown (decision 96).
+    #[test]
+    fn add_tool_is_not_offered_on_the_hidden_tab_or_a_tab_to_come() {
+        let folder = settings::testing::Folder::new("add-tool-hidden");
+        let mut harness = effects_without_grain(&folder);
+        harness.state_mut().shell.choose_hidden();
+        harness.run();
+        for tab in ["Hidden", "Detail"] {
+            let icon = harness.get_by_role_and_label(Role::Tab, tab).rect();
+            right_click_at(&mut harness, icon.center());
+            assert!(!tab_menu_open(&harness), "{tab}");
+        }
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        assert!(harness.query_by_label("Add Tool").is_none());
+    }
+
+    /// A workspace chosen while the tab bar's menu is open, by a key bound to it, closes the
+    /// menu, whose items name the tabs of the workspace left (decision 96).
+    #[test]
+    fn a_workspace_switch_closes_the_tab_bar_s_menu() {
+        let folder = settings::testing::Folder::new("add-tool-switch");
+        let mut harness = effects_without_grain(&folder);
+        right_click_at(&mut harness, egui::pos2(200.0, 2900.0));
+        assert!(tab_menu_open(&harness));
+        let ctx = harness.ctx.clone();
+        let state = harness.state().shell.state(&ctx, false, false);
+        let essentials = actions::workspace(layout::ESSENTIALS);
+        (harness.state_mut().shell).run(essentials, &state, &ctx, &[]);
+        harness.run();
+        assert_eq!(harness.state().shell.workspace.id, layout::ESSENTIALS);
+        assert!(!tab_menu_open(&harness));
+    }
+
+    /// A tab chosen by its key while the tab bar's menu is open, a key the drawn menu leaves
+    /// to the app's, closes the menu, whose items each move from the tab shown as it opened
+    /// (decision 96).
+    #[test]
+    fn a_tab_chosen_by_its_key_closes_the_tab_bar_s_menu() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.run();
+        let at = harness.state().shell.workspace.position("effects").unwrap();
+        assert_ne!(harness.state().shell.panel_tab, at);
+        let adjust = harness.get_by_role_and_label(Role::Tab, "Adjust").rect();
+        right_click_at(&mut harness, adjust.center());
+        let menu = |harness: &Harness<'_, Bench>| {
+            (harness.query_by_role_and_label(Role::Menu, "Tools panel tabs")).is_some()
+        };
+        assert!(menu(&harness));
+        let key = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5][at];
+        harness.key_press_modifiers(Modifiers::COMMAND, key);
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, at);
+        assert!(!menu(&harness));
+    }
+
+    /// A utility added to a tab scrolled down, landing at its top, is scrolled into view,
+    /// as a processing tool is (decision 96).
+    #[test]
+    fn a_utility_added_to_a_scrolled_tab_is_scrolled_into_view() {
+        let folder = settings::testing::Folder::new("add-tool-scroll");
+        let mut harness = tools_panel_in(&folder, egui::vec2(560.0, 900.0), Theme::default());
+        let shell = &mut harness.state_mut().shell;
+        let adjust = shell.workspace.position("adjust").unwrap();
+        shell.choose_tab(adjust);
+        for tool in shell.workspace.tab(adjust).unwrap().order.clone() {
+            shell.sections.insert(tool.to_owned(), true);
+        }
+        harness.run();
+        let first = harness.get_by_role_and_label(Role::Button, "White balance");
+        let below = first.rect().top();
+        harness.hover_at(egui::pos2(200.0, 300.0));
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -20000.0),
+            modifiers: Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+        });
+        harness.run_steps(30);
+        let first = harness.get_by_role_and_label(Role::Button, "White balance");
+        assert!(first.rect().top() < below - 900.0, "scrolled down");
+        harness.get_by_label("Tab options").click();
+        harness.run();
+        harness.get_by_label("Add Tool").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "History")
+            .click();
+        harness.run();
+        added_here(&harness, "history", "adjust");
+        let header = harness
+            .get_by_role_and_label(Role::Button, "History")
+            .rect();
+        assert!(
+            header.top() >= below - 1.0 && header.bottom() <= 400.0,
+            "{header:?}"
+        );
+    }
+
+    /// The History tab, History alone in it with its header kept at the top, opens the tab
+    /// bar's menu on a right-click under its list too (decision 96).
+    #[test]
+    fn the_empty_space_under_history_alone_opens_the_tab_bar_s_menu() {
+        let folder = settings::testing::Folder::new("add-tool-history");
+        let mut harness = tools_panel(&folder);
+        let shell = &mut harness.state_mut().shell;
+        let history = shell.workspace.position("history").unwrap();
+        shell.choose_tab(history);
+        harness.run();
+        assert!(history_alone(harness.state().shell.shown_tab().unwrap()));
+        right_click_at(&mut harness, egui::pos2(200.0, 2900.0));
+        assert!(tab_menu_open(&harness));
+        harness.get_by_label("Add Tool").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Exposure")
+            .click();
+        harness.run();
+        added_here(&harness, "exposure", "history");
+    }
+
+    /// A right-click on the Tools panel's empty space under the tab's last tool opens the
+    /// tab bar's menu for the tab shown; one on a tool's header or its rows opens none
+    /// (decisions 91 and 96).
+    #[test]
+    fn the_empty_space_under_the_tools_opens_the_tab_bar_s_menu() {
+        let folder = settings::testing::Folder::new("add-tool-space");
+        let mut harness = effects_without_grain(&folder);
+        harness
+            .get_by_role_and_label(Role::Button, "Vignetting")
+            .click();
+        harness.run();
+        let header = harness.get_by_role_and_label(Role::Button, "Vignetting");
+        let header = header.rect();
+        right_click_at(&mut harness, header.center());
+        assert!(!tab_menu_open(&harness));
+        let row = egui::pos2(header.center().x, header.bottom() + 12.0);
+        right_click_at(&mut harness, row);
+        assert!(!tab_menu_open(&harness));
+        harness.key_press(Key::Escape);
+        harness.run();
+        right_click_at(&mut harness, egui::pos2(header.center().x, 2900.0));
+        assert!(tab_menu_open(&harness));
+        harness.get_by_label("Add Tool").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Grain")
+            .click();
+        harness.run();
+        added_here(&harness, "grain", "effects");
+    }
+
     /// ⋯ with the layout's items, of a tool in a tab with Move Tool to Tab ▸ open and of a
     /// hidden tool with Show Tool in Tab ▸ open, in the dark and light themes, at the Tools
     /// panel's 320 points.
@@ -17245,6 +17622,31 @@ mod tests {
                 harness.snapshot(format!("tool-options-layout-{what}-{name}"));
                 results.extend(harness.take_snapshot_results());
             }
+        }
+    }
+
+    /// The tab bar's menu on the Effects tab, Grain hidden, with Add Tool ▸ open: the tools
+    /// under the tabs holding them, then Hidden, in the dark and light themes.
+    #[test]
+    fn add_tool_is_photographed() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, name) in [(Builtin::Dark, "dark"), (Builtin::Light, "light")] {
+            let folder = settings::testing::Folder::new("add-tool-snapshot");
+            let size = egui::vec2(560.0, 740.0);
+            let mut harness = tools_panel_in(&folder, size, Theme::builtin(which));
+            let ctx = egui::Context::default();
+            let shell = &mut harness.state_mut().shell;
+            let effects = shell.workspace.position("effects").unwrap();
+            shell.choose_tab(effects);
+            let state = shell.state(&ctx, false, false);
+            shell.run_on_section("grain", ActionId::SECTION_HIDE, &state, &ctx);
+            harness.run();
+            let effects = harness.get_by_role_and_label(Role::Tab, "Effects").rect();
+            right_click_at(&mut harness, effects.center());
+            harness.get_by_label("Add Tool").click();
+            harness.run();
+            harness.snapshot(format!("tab-bar-add-tool-{name}"));
+            results.extend(harness.take_snapshot_results());
         }
     }
 

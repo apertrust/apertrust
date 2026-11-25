@@ -24,7 +24,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
   - the Browser's empty area, `Place::Browser` (built: Select All, Select None, —, then the browser bar's options, read from the list the browser bar builds its own from);
   - a History step, `Place::Step` (built): Go to Step, Show Tool, Compress up to Here and Truncate after Here;
   - the jobs window's rows, `Place::Job` (built): Cancel, Show in Folder and Copy Error;
-  - the Tools panel's tab bar, `Place::TabBar`, on a tab's icon or its empty end: Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab, Processing Order and Workspace ▸'s Restore Defaults, the same items in the Tools panel's ⋮ (planned, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md));
+  - the Tools panel's tab bar, `Place::TabBar`, on a tab's icon or its empty end, and the Tools panel's empty space under a tab's last tool: Find Tool…, Show Hidden Tools, Workspace ▸, Add Tool ▸, Reset Tab, Processing Order and Workspace ▸'s Restore Defaults, the same items in the Tools panel's ⋮ ([0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md); built with Add Tool ▸ alone, the rest planned);
   - a layer (Phase 4), the scopes.
 - Another place opens to tools' items only by a decision of its own, which adds it to `apertrust-tools`' `Place`.
 - The Toolbar, `Toolbar`, is the app's alone: a right-click anywhere on it, an item or its empty areas, opens the toolbar menu, built ([0092](0092-the-toolbar.md)), and on an item with a menu of its own, as Guides', that item's own items before the toolbar menu's, built, the system's window menu staying on the system's own key and on the menu button's right-click ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)).
