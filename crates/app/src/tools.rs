@@ -1790,6 +1790,7 @@ pub fn icon(icon: ButtonIcon) -> apertrust_ui::Icon {
         ButtonIcon::FlipHorizontal => apertrust_ui::Icon::FlipHorizontal,
         ButtonIcon::FlipVertical => apertrust_ui::Icon::FlipVertical,
         ButtonIcon::PrimariesMenu => apertrust_ui::Icon::PrimariesMenu,
+        ButtonIcon::Camera => apertrust_ui::Icon::Camera,
     }
 }
 
@@ -7179,7 +7180,7 @@ mod tests {
                 .accesskit_node()
                 .is_disabled()
         };
-        assert!(disabled(&harness, Role::Button, "Read exposure"));
+        assert!(!disabled(&harness, Role::Button, "Read exposure"));
         assert!(!disabled(&harness, Role::Slider, "Dynamic range scaling"));
         assert!(!disabled(&harness, Role::Slider, "White relative exposure"));
         assert!(!disabled(&harness, Role::Slider, "Pivot relative exposure"));
@@ -9183,7 +9184,7 @@ mod tests {
         let slider = harness.get_by_role_and_label(Role::Slider, "Dynamic range scaling");
         assert!(!slider.accesskit_node().is_disabled());
         let read = harness.get_by_role_and_label(Role::Button, "Read exposure");
-        assert!(read.accesskit_node().is_disabled());
+        assert!(!read.accesskit_node().is_disabled());
 
         harness
             .get_by_role_and_label(Role::Button, "White relative exposure: pick from the photo")
@@ -9317,6 +9318,86 @@ mod tests {
         harness.run();
         harness.snapshot("agx-primaries-menu-dark");
         results.extend_harness(&mut harness);
+    }
+
+    /// Read exposure reads Exposure's effective exposure as the panel shows Exposure, and
+    /// sets the range from it as darktable does: with Exposure at +1 EV and Compensate
+    /// camera exposure on, on a photo whose camera biased it +0.7 EV, from 0.3 EV, one
+    /// gesture. A press on its button sends its action.
+    #[test]
+    fn read_exposure_sets_the_range_from_exposure_s_effective_exposure() {
+        let mut image = testing::image();
+        let camera = image.camera.as_mut().unwrap();
+        camera.exposure_bias = 0.7;
+        camera.highlight_preservation = 0.0;
+        let mut exposure = untouched(&Exposure);
+        set(&mut exposure, "exposure", ControlValue::Number(1.0), None);
+        set(&mut exposure, "camera_bias", ControlValue::Bool(true), None);
+        let states = [untouched(&Agx), exposure];
+        let tools: &[&dyn ProcessingTool] = &[&Agx, &Exposure];
+        let read = published(tools, &states, "agx", "read_exposure", &image);
+        let fact = apertrust_tools::Published {
+            tool: "exposure",
+            id: "effective_exposure",
+        };
+        let e = read.get(&fact).unwrap();
+        assert!((e - 0.3).abs() < 1e-6, "{e}");
+        let values = values(&states[0]);
+        let writes = action_writes(tools, "agx", "read_exposure", &values, &read, &image, false);
+        let scaling = 1.0 + values.number("dynamic_range_scaling") / 100.0;
+        let black = (-8.0 + 0.5 * e) * scaling;
+        let white = ((4.0 + 0.8 * f64::from(e)) * f64::from(scaling)) as f32;
+        assert_eq!(
+            writes,
+            [
+                (
+                    "range_black_relative_ev",
+                    ControlValue::Number(black),
+                    false
+                ),
+                ("range_white_relative_ev", ControlValue::Number(white), true),
+            ]
+        );
+        // Only what an action declares it reads: nothing for Set from above.
+        let none = published(tools, &states, "agx", "set_from_above", &image);
+        assert_eq!(none, PublishedValues::new());
+
+        let mut harness = toned(Builtin::Dark);
+        harness
+            .get_by_role_and_label(Role::Button, "Read exposure")
+            .click();
+        harness.run();
+        let pressed = harness.state().changes.last();
+        assert!(
+            matches!(
+                pressed,
+                Some(Change::Action {
+                    tool: "agx",
+                    action: "read_exposure",
+                    ..
+                })
+            ),
+            "{pressed:?}"
+        );
+    }
+
+    /// On AgX's Settings tab, Tab meets Auto tune levels' picker and then Read exposure, the
+    /// reading order of darktable's line.
+    #[test]
+    fn tab_meets_auto_tune_levels_then_read_exposure() {
+        let mut harness = toned(Builtin::Dark);
+        let mut met = Vec::new();
+        for _ in 0..20 {
+            harness.key_press(Key::Tab);
+            harness.run();
+            let focused = harness.get_by(|node| node.is_focused());
+            met.push(focused.accesskit_node().label().unwrap_or_default());
+        }
+        let at = met
+            .iter()
+            .position(|label| label == "Auto tune levels: pick from the photo")
+            .unwrap_or_else(|| panic!("{met:?}"));
+        assert_eq!(met[at + 1], "Read exposure", "{met:?}");
     }
 
     /// AgX's Settings tab with its pickers drawn, Auto tune levels' on, in each theme.

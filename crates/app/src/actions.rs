@@ -5080,9 +5080,16 @@ pub(crate) mod tests {
         ] {
             assert!(!rotate.enabled(&rest), "{rest:?}");
         }
+        // Read exposure runs, once ported (decision 107).
         let read = named("tool-agx-read_exposure").expect("Read exposure");
-        assert_eq!(read.emits, Emit::Later);
-        assert!(!read.enabled(&everything()));
+        assert_eq!(
+            read.emits,
+            Emit::Intent(Intent::ToolAction {
+                tool: "agx",
+                action: "read_exposure"
+            })
+        );
+        assert!(read.enabled(&everything()));
         // Only while its tool's rule allows it, as the mirror reports it.
         let at = tool_actions()
             .iter()

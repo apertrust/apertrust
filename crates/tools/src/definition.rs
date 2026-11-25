@@ -992,6 +992,8 @@ pub enum ButtonIcon {
     FlipVertical,
     /// A list with a turning arrow: AgX's menu of primaries to start again from.
     PrimariesMenu,
+    /// darktable's camera (`dtgtk_cairo_paint_camera`): AgX's Read exposure.
+    Camera,
 }
 
 impl Row {

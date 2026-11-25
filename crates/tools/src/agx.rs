@@ -20,7 +20,8 @@
 //! controls in `gui_init`'s order under its labels.
 //!
 //! - **Settings:** the input exposure range, white and black relative exposure and
-//!   dynamic range scaling, with Auto tune levels and Read exposure; the basic curve
+//!   dynamic range scaling, with Auto tune levels and Read exposure on one line; the basic
+//!   curve
 //!   parameters, the pivot, contrast and the shoulder's and toe's powers; then darktable's
 //!   collapsible sections, Show curve, Advanced curve parameters and Look.
 //! - **Primaries:** the base primaries and Disable adjustments; while adjustments are on,
@@ -49,11 +50,11 @@
 //! darktable's five pickers pick as its `color_picker_apply` does ([`Agx::pick`]): the
 //! quads on white and black relative exposure, Auto tune levels setting both, a row of
 //! its own with its picker at the end, and the quads on the pivot and its target output.
-//! Reset primaries opens a menu of darktable's three primaries to start from, Blender-like,
-//! Smooth and Unmodified, each one change; Set from above copies the primaries before tone
-//! mapping to after it ([`Agx::action`]), unavailable while Reverse all or Disable
-//! adjustments is on ([`Agx::available`]). Read exposure is drawn disabled until what it
-//! runs is built. Show curve is empty until a read-only graph row
+//! Read exposure sets the range from Exposure's published effective exposure; Reset
+//! primaries opens a menu of darktable's three primaries to start from, Blender-like, Smooth
+//! and Unmodified, each one change; Set from above copies the primaries before tone mapping
+//! to after it ([`Agx::action`]), unavailable while Reverse all or Disable adjustments is on
+//! ([`Agx::available`]). Show curve is empty until a read-only graph row
 //! exists. darktable's presets wait for the presets menu's built-in presets (decision 106).
 
 #![allow(
@@ -68,8 +69,8 @@ use apertrust_plugin::{ImageContext, Value};
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     ActionEnd, ButtonIcon, ChoiceStyle, Control, ControlKind, End, Face, Group, GroupKind,
-    LineStart, Picker, PickerKind, ProcessingDefinition, Range, Reset, Row, Slider, Space, Tab,
-    ToolDefinition, Unit, slider_step,
+    LineStart, Picker, PickerKind, ProcessingDefinition, Published, Range, Reset, Row, Slider,
+    Space, Tab, ToolDefinition, Unit, slider_step,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
 use crate::{
@@ -279,6 +280,12 @@ struct Primaries {
     outsets: [f32; 3],
     unrotations: [f32; 3],
 }
+
+/// What Read exposure reads: Exposure's effective exposure (decision 107).
+const EXPOSURE_READ: Published = Published {
+    tool: "exposure",
+    id: "effective_exposure",
+};
 
 /// Reset primaries' menu, in darktable's order (`agx.c:2100-2121`).
 const RESET_PRIMARIES: [&str; 3] = [
@@ -517,23 +524,21 @@ static SETTINGS: [Row; 5] = [
             picked(BLACK, "black", (-20.0, -1.0)),
             // darktable sets only its soft maximum, 0.5; its soft minimum is its hard one.
             soft(SCALING, -50.0, 50.0),
-            // darktable's labelled line with its picker setting both exposures at the end,
-            // then its camera button, here on a row of its own.
+            // darktable's labelled line with its picker setting both exposures, then its
+            // camera button setting them from Exposure's effective exposure.
             Row::Line {
                 start: LineStart::Label("auto_tune_levels"),
                 readout: None,
-                end: &[End::Picker("range")],
-            },
-            Row::Line {
-                start: LineStart::None,
-                readout: None,
-                end: &[End::Action(ActionEnd {
-                    id: "read_exposure",
-                    face: Face::Text,
-                    menu: &[],
-                    reads: &[],
-                    unported: true,
-                })],
+                end: &[
+                    End::Picker("range"),
+                    End::Action(ActionEnd {
+                        id: "read_exposure",
+                        face: Face::Icon(ButtonIcon::Camera),
+                        menu: &[],
+                        reads: &[EXPOSURE_READ],
+                        unported: false,
+                    }),
+                ],
             },
         ],
     }),
@@ -770,6 +775,13 @@ impl ProcessingTool for Agx {
 
     /// darktable's buttons on the values shown:
     ///
+    /// - **`read_exposure`,** `_adjust_relative_exposure_from_exposure_params`
+    ///   (`agx.c:1042-1052`), with `e` Exposure's effective exposure, read, and `s` Dynamic
+    ///   range scaling over 100: black `(−8 + 0.5 e) · (1 + s)` held to −20 to −0.1 EV in
+    ///   f32, and white `(4 + 0.8 e) · (1 + s)` held to 0.1 to 20 EV in f64, as darktable's
+    ///   `0.8` is a double, then taken to f32. The pivot keeps its exposure, clamped into the
+    ///   new range, as a pick keeps it (`keep_pivot`). Curve y gamma is never written
+    ///   (decision 63). With no effective exposure read, it writes nothing;
     /// - **Reset primaries' menu,** `primaries_blender_like`, `primaries_smooth` and
     ///   `primaries_unmodified` (`primaries`): adjustments on, Reverse all off, the base
     ///   primaries, and every primaries control as darktable sets it, in the units shown,
@@ -784,11 +796,23 @@ impl ProcessingTool for Agx {
         &self,
         action: &str,
         values: &Controls,
-        _: &PublishedValues,
+        read: &PublishedValues,
         _: &ImageContext,
     ) -> Option<Controls> {
         let mut writes = Controls::new();
         match action {
+            "read_exposure" => {
+                let Some(e) = read.get(&EXPOSURE_READ) else {
+                    return Some(writes);
+                };
+                let scaling = 1.0 + values.number(SCALING) / 100.0;
+                let black = ((-8.0 + 0.5 * e) * scaling).clamp(-20.0, -0.1);
+                let white = ((4.0 + 0.8 * f64::from(e)) * f64::from(scaling))
+                    .clamp(f64::from(0.1f32), 20.0) as f32;
+                writes.set(BLACK, ControlValue::Number(black));
+                writes.set(WHITE, ControlValue::Number(white));
+                keep_pivot(&mut writes, values.number(PIVOT), black, white);
+            }
             "set_from_above" => {
                 for master in ["master_outset_ratio", "master_unrotation_ratio"] {
                     writes.set(master, ControlValue::Number(100.0));
@@ -922,10 +946,7 @@ impl ProcessingTool for Agx {
                     white = picked_white;
                     writes.set(WHITE, ControlValue::Number(white));
                 }
-                let kept = pivot.clamp(black, white);
-                if kept != pivot {
-                    writes.set(PIVOT, ControlValue::Number(kept));
-                }
+                keep_pivot(&mut writes, pivot, black, white);
             }
             "pivot" | "pivot_output" => {
                 let [r, g, b, _] = reading.input.mean;
@@ -949,6 +970,16 @@ impl ProcessingTool for Agx {
             writes,
             shown: Shown::default(),
         })
+    }
+}
+
+/// The pivot at `pivot` EV kept at its exposure within the new range `black` to `white`,
+/// darktable's `_update_pivot_x`, which keeps the pivot's exposure clamped into the range:
+/// the pivot is stored in EV, so it is written into `writes` only where the clamp moves it.
+fn keep_pivot(writes: &mut Controls, pivot: f32, black: f32, white: f32) {
+    let kept = pivot.clamp(black, white);
+    if kept != pivot {
+        writes.set(PIVOT, ControlValue::Number(kept));
     }
 }
 
@@ -1070,7 +1101,7 @@ mod tests {
         assert_eq!(
             actions,
             [
-                ("read_exposure", true),
+                ("read_exposure", false),
                 ("reset_primaries", false),
                 ("set_from_above", false)
             ]
@@ -1078,7 +1109,7 @@ mod tests {
         assert_eq!(
             DEFINITION.own_actions(),
             [
-                ("read_exposure", true),
+                ("read_exposure", false),
                 ("primaries_blender_like", false),
                 ("primaries_smooth", false),
                 ("primaries_unmodified", false),
@@ -1350,34 +1381,31 @@ mod tests {
             area("pivot_output", OUTPUT, &[PIVOT, OUTPUT]),
         ];
         assert_eq!(crate::testing::pickers_on_sliders(&DEFINITION), darktable);
-        let rows: Vec<&Row> = DEFINITION
+        // Auto tune levels' line: its label, its picker, then Read exposure's camera, as
+        // darktable's line has them.
+        let line = DEFINITION
             .rows()
-            .filter(|row| matches!(row, Row::Line { .. }))
-            .take(2)
-            .collect();
+            .find(|row| matches!(row, Row::Line { .. }))
+            .unwrap();
         assert!(
             matches!(
-                rows[..],
-                [
-                    Row::Line {
-                        start: LineStart::Label("auto_tune_levels"),
-                        readout: None,
-                        end: [End::Picker("range")],
-                    },
-                    Row::Line {
-                        start: LineStart::None,
-                        readout: None,
-                        end: [End::Action(ActionEnd {
+                line,
+                Row::Line {
+                    start: LineStart::Label("auto_tune_levels"),
+                    readout: None,
+                    end: [
+                        End::Picker("range"),
+                        End::Action(ActionEnd {
                             id: "read_exposure",
-                            face: Face::Text,
+                            face: Face::Icon(ButtonIcon::Camera),
                             menu: [],
-                            reads: [],
-                            unported: true,
-                        })],
-                    },
-                ]
+                            reads: [EXPOSURE_READ],
+                            unported: false,
+                        }),
+                    ],
+                }
             ),
-            "{rows:?}"
+            "{line:?}"
         );
     }
 
@@ -1554,6 +1582,67 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    /// Read exposure is darktable's `_adjust_relative_exposure_from_exposure_params`,
+    /// restated in f64: black `(−8 + 0.5 e) · (1 + s)` and white `(4 + 0.8 e) · (1 + s)`,
+    /// each held to its range, at effective exposures of −2, 0, +0.7 and +3 EV, and at
+    /// the ends, and Dynamic range scaling at −50 %, +10 % and +200 %; the pivot kept at its
+    /// exposure, clamped into the new range as `_update_pivot_x` keeps it; nothing written
+    /// with no effective exposure read.
+    #[test]
+    fn read_exposure_sets_the_range_from_the_effective_exposure() {
+        let image = crate::testing::image();
+        for e in [-2.0f32, 0.0, 0.7, 3.0, -5.0, 16.0, 30.0] {
+            for s in [-50.0f32, 10.0, 200.0] {
+                for pivot in [0.0f32, 5.0, -9.0] {
+                    let mut values = DEFINITION.defaults();
+                    values.set(SCALING, ControlValue::Number(s));
+                    values.set(PIVOT, ControlValue::Number(pivot));
+                    let mut read = PublishedValues::new();
+                    read.set(EXPOSURE_READ, e);
+                    let writes = Agx.action("read_exposure", &values, &read, &image).unwrap();
+                    let scale = 1.0 + f64::from(s / 100.0);
+                    let e = f64::from(e);
+                    let black = ((-8.0 + 0.5 * e) * scale).clamp(-20.0, f64::from(-0.1f32));
+                    let white = ((4.0 + 0.8 * e) * scale).clamp(f64::from(0.1f32), 20.0);
+                    let (got_black, got_white) = (writes.number(BLACK), writes.number(WHITE));
+                    assert!((f64::from(got_black) - black).abs() < 1e-5, "{e} {s}");
+                    assert!((f64::from(got_white) - white).abs() < 1e-5, "{e} {s}");
+                    assert!((-20.0..=-0.1).contains(&got_black));
+                    assert!((0.1..=20.0).contains(&got_white));
+                    // `_update_pivot_x`: the pivot's exposure, clamped into the new range.
+                    let kept = pivot.clamp(got_black, got_white);
+                    let written = writes.get(PIVOT).map(|_| writes.number(PIVOT));
+                    assert_eq!(written.unwrap_or(pivot), kept, "{e} {s} {pivot}");
+                    assert_eq!(written.is_some(), kept != pivot);
+                    // Curve y gamma never (decision 63), nor anything else.
+                    assert!(
+                        writes
+                            .iter()
+                            .all(|(id, _)| [BLACK, WHITE, PIVOT].contains(&id))
+                    );
+                }
+            }
+        }
+        // The ends: white at 0.1 and black at −20 at the low end, black at −0.1 and white
+        // at 20 at the high end.
+        let ends = |e: f32, s: f32| {
+            let mut values = DEFINITION.defaults();
+            values.set(SCALING, ControlValue::Number(s));
+            let mut read = PublishedValues::new();
+            read.set(EXPOSURE_READ, e);
+            let writes = Agx.action("read_exposure", &values, &read, &image).unwrap();
+            (writes.number(BLACK), writes.number(WHITE))
+        };
+        assert_eq!(ends(-5.0, 10.0).1, 0.1);
+        assert_eq!(ends(-20.0, 200.0).0, -20.0);
+        assert_eq!(ends(16.0, 10.0).0, -0.1);
+        assert_eq!(ends(30.0, 200.0).1, 20.0);
+        // No effective exposure read: nothing written.
+        let values = DEFINITION.defaults();
+        let none = Agx.action("read_exposure", &values, &PublishedValues::new(), &image);
+        assert!(none.unwrap().is_empty());
     }
 
     /// Set from above can run only while the primaries after tone mapping act, darktable's

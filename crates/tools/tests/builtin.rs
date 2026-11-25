@@ -134,8 +134,10 @@ fn every_fact_an_action_reads_is_a_built_tool_s() {
             assert!(tool.publish(id, &values, &image).is_some(), "{id}");
         }
     }
-    // None reads one until Read exposure runs.
-    assert!(read.is_empty(), "{read:?}");
+    assert_eq!(
+        read,
+        [("agx", "read_exposure", "exposure", "effective_exposure")]
+    );
 }
 
 #[test]
@@ -166,7 +168,7 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
         ("colorin", "choice choice choice"),
         (
             "agx",
-            "group slider+picker slider+picker slider pickers action group slider+picker \
+            "group slider+picker slider+picker slider pickers group slider+picker \
              slider+picker slider slider slider group group slider slider slider slider \
              toggle when slider group slider slider slider slider slider choice toggle \
              when action group slider slider slider slider slider slider group toggle \

@@ -865,9 +865,9 @@ fn line_rows(ui: &mut Ui, t: &Theme, reverse_all: &mut bool) {
                     false,
                 )),
                 EndItem::Icon {
-                    icon: Icon::Reset,
-                    name: "Reset levels",
-                    promise: None,
+                    icon: Icon::Camera,
+                    name: "Read exposure",
+                    promise: Some("Read exposure from the metadata and the Exposure tool."),
                     enabled: true,
                 },
             ],
