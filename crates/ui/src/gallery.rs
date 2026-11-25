@@ -28,16 +28,16 @@ use crate::components::{
     About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CaptionStyle, CellPicture,
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
-    EndItem, Equalizer, EqualizerAction, FieldsRow, FileManager, FindBar, FindBarAction, GridCell,
-    Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, LineRow,
-    LineStart, Margin, Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge,
-    PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks,
-    PickerPlace, Place, PlainGroup, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
-    ReferenceRow, RowField, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
-    Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track,
-    VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor,
-    WellGroup, WellSetting, Zoom,
+    EndItem, Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldsRow, FileManager,
+    FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure,
+    JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker, MaskHistogram,
+    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption,
+    PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine,
+    RailNode, ReadoutRow, Reference, ReferenceRow, RowField, SaveState, Scale, Scope, ScopeView,
+    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
+    Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction,
+    ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction,
+    WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -248,6 +248,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Fields row");
         fields_rows(ui, &t, &mut self.demo.fields);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Fact list");
+        fact_lists(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Timeline rail");
         rails(ui, &t);
@@ -737,6 +740,73 @@ fn fields_row(ui: &mut Ui, demo: &mut [f64; 2], fold: Fold) {
             }
         });
     });
+}
+
+/// The Metadata tool's facts (decision 110): a file name cut in its middle keeping its
+/// extension, a folder with its end item, a name, a value with none, its "—" saying why,
+/// and a disabled row; then the same at 240 points, a long label cut at its 40% cap.
+fn fact_lists(ui: &mut Ui, t: &Theme) {
+    let fact = |label, value, tip, cut| Fact {
+        label,
+        value,
+        tip,
+        cut,
+        end: None,
+        enabled: true,
+    };
+    let facts = [
+        fact(
+            "File name",
+            Some("R0001225-a-very-long-name-for-a-photo.DNG"),
+            "~/Pictures/2026-07 Lisbon/R0001225-a-very-long-name-for-a-photo.DNG",
+            FactCut::File,
+        ),
+        Fact {
+            end: Some(FactEnd {
+                icon: crate::Icon::ChooseFolder,
+                name: "Open This Folder",
+                enabled: true,
+                tip: None,
+            }),
+            ..fact(
+                "Folder",
+                Some("~/Pictures/2026-07 Lisbon/Day two/Morning"),
+                "~/Pictures/2026-07 Lisbon/Day two/Morning",
+                FactCut::Middle,
+            )
+        },
+        fact(
+            "Make",
+            Some("RICOH IMAGING COMPANY, LTD."),
+            "Make, EXIF 0x010F",
+            FactCut::End,
+        ),
+        fact(
+            "Subject distance",
+            None,
+            "The camera recorded no subject distance",
+            FactCut::End,
+        ),
+        Fact {
+            enabled: false,
+            ..fact("Aperture", None, "Select a photo", FactCut::End)
+        },
+        fact(
+            "Image description (camera’s)",
+            Some("A view over the river"),
+            "ImageDescription, EXIF 0x010E",
+            FactCut::End,
+        ),
+    ];
+    for width in [296.0, 240.0] {
+        ui.push_id(("fact list", width as u32), |ui| {
+            ui.allocate_ui(vec2(width, 0.0), |ui| {
+                ui.set_width(width);
+                FactList::new("Basic", &facts).show(ui);
+            });
+        });
+        ui.add_space(t.spacing.s);
+    }
 }
 
 /// The cursors' well (decision 104; `docs/cursors.md`, The well): Phase 2's Select, Pan and
@@ -2929,6 +2999,24 @@ fn tools_panel(page: &mut Ui, t: &Theme, demo: &mut Demo) {
                 .peek(peek)
                 .show(ui, |_| {});
             scrolling_out.push((7, "Export", out));
+            // A utility with presets and ＋, Rows Shown, as the Metadata tool's header, with
+            // no ↺.
+            let rows = vec![Entry::Submenu(Submenu::new(
+                "exposure",
+                "Exposure",
+                vec![
+                    Entry::Item(Item::new("aperture", "Aperture").checked(true)),
+                    Entry::Item(Item::new("exposure_mode", "Exposure mode").checked(false)),
+                ],
+            ))];
+            Section::new("Metadata", false)
+                .rows_shown("Rows Shown")
+                .rows_menu(rows)
+                .utility_presets("Metadata presets")
+                .presets(false)
+                .options(false)
+                .peek(peek)
+                .show(ui, |_| {});
             for (k, title) in tools.into_iter().enumerate() {
                 let i = k + 2;
                 let mut section = Section::new(title, open[i]).edits().peek(peek);

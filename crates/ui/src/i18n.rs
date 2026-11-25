@@ -276,6 +276,41 @@ impl Translator {
         date_time(self.locale, at).unwrap_or_default()
     }
 
+    /// `at`, a date and a time as a clock showed it, the camera's, in the locale's medium
+    /// date with its weekday and the time to the second, 24- or 12-hour as the language has
+    /// it, through CLDR as [`Self::format_date_time`] is, then the clock's `offset` from UTC
+    /// in minutes where it is known: "Sat, 4 Jul 2026, 08:10:01 (+01:00)" in British English.
+    /// Empty for a time the calendar cannot place.
+    pub fn format_long_date_time(&self, at: chrono::NaiveDateTime, offset: Option<i16>) -> String {
+        let Some(text) = to_second(self.locale, at, true) else {
+            return String::new();
+        };
+        match offset {
+            Some(minutes) => {
+                let sign = if minutes < 0 { '−' } else { '+' };
+                let minutes = minutes.unsigned_abs();
+                format!("{text} ({sign}{:02}:{:02})", minutes / 60, minutes % 60)
+            }
+            None => text,
+        }
+    }
+
+    /// `at` as [`Self::format_long_date_time`] writes it, without its weekday or an offset:
+    /// "4 Jul 2026, 08:10:01".
+    pub fn format_date_time_to_second(&self, at: chrono::NaiveDateTime) -> String {
+        to_second(self.locale, at, false).unwrap_or_default()
+    }
+
+    /// A size on disk, `size` with `decimals` decimals in `unit`, `kb`, `mb` or `gb` of 10³,
+    /// 10⁶ and 10⁹ bytes, as the engine's `size_in_unit` gives it: "32 MB", "4.5 MB", in the
+    /// language's numbers, the words Settings › Storage and a cache's Clear write a size in.
+    pub fn format_bytes(&self, size: f64, decimals: usize, unit: &str) -> String {
+        let mut args = Args::new();
+        args.set("size", self::decimals(size, decimals));
+        args.set("unit", unit);
+        self.text_with("job-cache-size", Some(&args))
+    }
+
     /// The local calendar day `day` ([`local_day`]) as the locale writes a date with no
     /// time, CLDR's long month and day: "12 November" in English, "12 листопада" in
     /// Ukrainian, "12 listopada" in Polish; with its year where it is not `today`'s year's:
@@ -506,6 +541,51 @@ fn date_time(locale: Locale, at: u64) -> Option<String> {
     Some(formatter.format(&at).to_string())
 }
 
+/// The CLDR formatters of a medium date with its weekday and a time to the second, and of
+/// one without its weekday, for British English, Ukrainian, Polish and American English,
+/// made when first used.
+static WEEKDAYS_TO_SECOND: [OnceLock<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::YMDET>>;
+    4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+static DAYS_TO_SECOND: [OnceLock<DateTimes>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+
+/// `at` in `locale`'s medium date, with its weekday where `weekday`, and its time to the
+/// second; `None` where the calendar cannot place it.
+fn to_second(locale: Locale, at: chrono::NaiveDateTime, weekday: bool) -> Option<String> {
+    use chrono::{Datelike as _, Timelike as _};
+    let date = Date::try_new_gregorian(at.year(), at.month() as u8, at.day() as u8).ok()?;
+    let time = Time::try_new(at.hour() as u8, at.minute() as u8, at.second() as u8, 0).ok()?;
+    let at = DateTime { date, time };
+    let language = || -> icu_locale_core::Locale {
+        (locale.language().parse()).expect("the locales' ids are valid; tested")
+    };
+    let words = if weekday {
+        let formatter = WEEKDAYS_TO_SECOND[locale.numbers()].get_or_init(|| {
+            let fields = fieldsets::YMDE::medium().with_time_hms();
+            FixedCalendarDateTimeFormatter::try_new((&language()).into(), fields)
+                .expect("CLDR data for every locale's language is compiled in")
+        });
+        formatter.format(&at).to_string()
+    } else {
+        let formatter = DAYS_TO_SECOND[locale.numbers()].get_or_init(|| {
+            let fields = fieldsets::YMD::medium().with_time_hms();
+            FixedCalendarDateTimeFormatter::try_new((&language()).into(), fields)
+                .expect("CLDR data for every locale's language is compiled in")
+        });
+        formatter.format(&at).to_string()
+    };
+    Some(words)
+}
+
 /// The local calendar day `at` falls on, milliseconds since 1970 in UTC on the local
 /// clock, counted in days from 1 January of the year 1: a day's number, the one before it
 /// one less; none where the local clock cannot place it.
@@ -663,6 +743,42 @@ mod tests {
         assert_eq!(written(Locale::Uk), "21.10.2026, 17:52");
         assert_eq!(written(Locale::Pl), "21.10.2026, 17:52");
         assert_eq!(written(Locale::Pseudo), written(Locale::EnGb));
+    }
+
+    /// A camera's clock, to the second, with its weekday and its offset, and the size of a
+    /// file, in each language (decision 110).
+    #[test]
+    fn a_clock_s_time_and_a_size_follow_each_language() {
+        let at = chrono::NaiveDate::from_ymd_opt(2026, 7, 4)
+            .and_then(|day| day.and_hms_opt(8, 10, 1))
+            .expect("a time");
+        let long = |locale, offset| Translator::new(locale).format_long_date_time(at, offset);
+        assert_eq!(
+            long(Locale::EnGb, Some(60)),
+            "Sat, 4 Jul 2026, 08:10:01 (+01:00)"
+        );
+        assert_eq!(
+            long(Locale::EnGb, Some(-330)),
+            "Sat, 4 Jul 2026, 08:10:01 (−05:30)"
+        );
+        assert_eq!(
+            long(Locale::EnUs, None),
+            "Sat, Jul 4, 2026, 8:10:01\u{202f}AM"
+        );
+        assert_eq!(
+            long(Locale::Uk, None),
+            "сб, 4 лип. 2026\u{202f}р., 08:10:01"
+        );
+        assert_eq!(long(Locale::Pl, None), "sob., 4 lip 2026, 08:10:01");
+        let short = |locale| Translator::new(locale).format_date_time_to_second(at);
+        assert_eq!(short(Locale::EnGb), "4 Jul 2026, 08:10:01");
+        let bytes = |locale, size, decimals, unit| {
+            Translator::new(locale).format_bytes(size, decimals, unit)
+        };
+        assert_eq!(bytes(Locale::EnGb, 32.0, 0, "mb"), "32 MB");
+        assert_eq!(bytes(Locale::EnGb, 1.5, 1, "gb"), "1.5 GB");
+        assert_eq!(bytes(Locale::Uk, 1.5, 1, "gb"), "1,5 ГБ");
+        assert_eq!(bytes(Locale::Pl, 4.0, 1, "kb"), "4,0 kB");
     }
 
     #[test]

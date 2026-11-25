@@ -38,13 +38,16 @@
 //!   disabled, as a tab with no rows is ([`CollapsibleGroup::disabled`]): its title and
 //!   chevron dimmed, closed whatever the caller keeps, its tooltip saying it is to come,
 //!   reporting no toggle, and to screen readers a disabled button.
+//! - A tooltip on its title, as the Metadata tool's name the standard each group follows
+//!   ([`CollapsibleGroup::tip`], decision 110), which screen readers hear as the description
+//!   of its rows' group.
 //!
 //! [`PlainGroup`]: super::PlainGroup
 
 use egui::{Rect, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 
 use super::focus_ring;
-use super::group::{group_label_text, group_scope};
+use super::group::{described_group, group_label_text};
 use crate::i18n::Args;
 use crate::{Icon, theme, translator};
 
@@ -58,6 +61,8 @@ pub struct CollapsibleGroup<'a> {
     /// The tooltip of a group with nothing behind it yet, drawn disabled.
     disabled: Option<&'a str>,
     first: bool,
+    /// Its title's tooltip, where it has one.
+    tip: Option<&'a str>,
 }
 
 impl<'a> CollapsibleGroup<'a> {
@@ -69,7 +74,16 @@ impl<'a> CollapsibleGroup<'a> {
             set: 0,
             disabled: None,
             first: false,
+            tip: None,
         }
+    }
+
+    /// Its title's tooltip, `tip`, translated, as the Metadata tool's name the standard each
+    /// group follows (decision 110): before the "to come" of a disabled group, and to screen
+    /// readers the description of its rows' group.
+    pub fn tip(mut self, tip: &'a str) -> Self {
+        self.tip = Some(tip);
+        self
     }
 
     /// Whether the group is the first row its container draws, a tool's body, a tab or a
@@ -179,12 +193,17 @@ impl<'a> CollapsibleGroup<'a> {
             }
         }
 
-        if let Some(tip) = self.disabled {
+        match (self.disabled, self.tip) {
             // The row senses hover only, so its tooltip is a live one.
-            response.clone().on_hover_text(tip);
+            (Some(later), Some(tip)) => {
+                drop(response.clone().on_hover_text(format!("{tip}\n{later}")))
+            }
+            (Some(later), None) => drop(response.clone().on_hover_text(later)),
+            (None, Some(tip)) => drop(response.clone().on_hover_text(tip)),
+            (None, None) => {}
         }
         if open {
-            group_scope(ui, ("collapsible group rows", title), title, rows);
+            described_group(ui, ("collapsible group rows", title), title, self.tip, rows);
             // The group's end shows: 4 points after its last row while it is open.
             ui.add_space(t.spacing.xs);
         }

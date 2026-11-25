@@ -42,6 +42,7 @@ mod colour_swatch;
 mod cursor_well;
 mod curve;
 mod equalizer;
+mod fact_list;
 mod fields_row;
 mod grid_cell;
 mod group;
@@ -93,6 +94,7 @@ pub use colour_swatch::ColourSwatch;
 pub use cursor_well::{CursorWell, CursorWellAction, WellCursor, WellGroup, WellSetting};
 pub use curve::{Axis, Curve, CurveAction};
 pub use equalizer::{Equalizer, EqualizerAction, MaskHistogram, Settle};
+pub use fact_list::{Fact, FactCut, FactEnd, FactList, FactListOutput, FactMarks, Marks};
 pub use fields_row::{FieldsRow, RowField};
 pub use grid_cell::{
     CellAction, CellPicture, CellRating, CellStatus, ColourLabel, ColourLabels, GridCell,

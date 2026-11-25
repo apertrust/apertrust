@@ -84,6 +84,9 @@ pub struct SectionOutput {
     /// The presets button where it opens a menu, by which its menu's popup is known, as
     /// [`SectionOutput::options`].
     pub presets: Option<egui::Id>,
+    /// The id of the row chosen this frame in the menu ＋ opens, given by
+    /// [`Section::rows_menu`]: a row to show or hide.
+    pub rows: Option<String>,
     /// The header's toggle, its chevron and title, by which its caller gives screen readers
     /// what else it can do to the section (AccessKit's custom actions).
     pub header: Option<egui::Id>,
@@ -104,6 +107,10 @@ pub struct Section<'a> {
     utility_reset: Option<&'a str>,
     /// A utility's presets button, by its name, where it has one.
     utility_presets: Option<&'a str>,
+    /// A utility's ＋, Rows Shown, by its name, where it has one.
+    rows_shown: Option<&'a str>,
+    /// What ＋ opens: the groups, each a submenu of its rows checked where shown.
+    rows_menu: Option<Vec<Entry>>,
     presets: bool,
     options: bool,
     /// What the options button opens, a pull-down of the popup service's, where the
@@ -149,6 +156,8 @@ impl<'a> Section<'a> {
             reset: true,
             utility_reset: None,
             utility_presets: None,
+            rows_shown: None,
+            rows_menu: None,
             presets: true,
             options: true,
             menu: None,
@@ -212,6 +221,22 @@ impl<'a> Section<'a> {
     /// [`Self::presets`] says and opening [`Self::presets_menu`] where it is given.
     pub fn utility_presets(mut self, name: &'a str) -> Self {
         self.utility_presets = Some(name);
+        self
+    }
+
+    /// A utility with ＋, Rows Shown, named `name`, translated, before its presets button and
+    /// its options, as the Metadata tool's header has one (decision 110), opening
+    /// [`Self::rows_menu`].
+    pub fn rows_shown(mut self, name: &'a str) -> Self {
+        self.rows_shown = Some(name);
+        self
+    }
+
+    /// What ＋ opens, `entries` translated: a pull-down of the popup service's whose checked
+    /// items keep it open, it opening again at the submenu chosen in, the item chosen coming
+    /// back as [`SectionOutput::rows`].
+    pub fn rows_menu(mut self, entries: Vec<Entry>) -> Self {
+        self.rows_menu = Some(entries);
         self
     }
 
@@ -315,6 +340,8 @@ impl<'a> Section<'a> {
         let mut options_id = None;
         let mut preset = None;
         let mut presets_id = None;
+        let rows_menu = self.rows_menu;
+        let mut rows = None;
 
         // The buttons, right to left, each `sizes.section_button` wide round its icon and
         // a control high, `spacing.section_button_gap` apart. The last one's ink, not its
@@ -404,6 +431,10 @@ impl<'a> Section<'a> {
                                 None if presets.clicked() => pressed.push(SectionAction::Presets),
                                 None => {}
                             }
+                        }
+                        // Right to left: ＋ before the presets button, as the header reads.
+                        if let Some(name) = self.rows_shown {
+                            rows = rows_shown(ui, name, rows_menu);
                         }
                         if let Some(reset) = self.utility_reset
                             && IconButton::new(Icon::Reset, reset)
@@ -658,6 +689,7 @@ impl<'a> Section<'a> {
         output.chosen = chosen;
         output.preset = preset;
         output.presets = presets_id;
+        output.rows = rows;
         output.options = options_id;
         output.header = Some(id);
         output.focused = focused;
@@ -672,6 +704,50 @@ impl<'a> Section<'a> {
         output.actions.append(&mut pressed);
         output
     }
+}
+
+/// A utility's ＋, `name`, opening `entries` as a pull-down, and the item chosen in it this
+/// frame. Drawn here, a choice opens it again at the submenu it was chosen in, the next
+/// frame, from the entries that frame gives, so a row shown or hidden is checked or not as
+/// the menu stays. The native menu, which opens at its top whatever submenu is asked,
+/// closes on a choice, as any native menu does.
+fn rows_shown(ui: &mut Ui, name: &str, entries: Option<Vec<Entry>>) -> Option<String> {
+    let t = theme(ui.ctx());
+    let button = IconButton::new(Icon::Plus, name)
+        .width(t.sizes.section_button)
+        .enabled(entries.is_some())
+        .show(ui);
+    let entries = entries?;
+    let reopen_id = button.id.with("reopen");
+    let reopen = ui.data_mut(|d| d.remove_temp::<String>(reopen_id));
+    if let Some(submenu) = reopen {
+        let request = crate::popup::Request::pull_down(button.rect, name, entries.clone())
+            .expanded(submenu)
+            .opened_by(button.id);
+        crate::popup::open(ui.ctx(), crate::popup::button_menu(button.id), request);
+    }
+    let found = entries.clone();
+    let chosen = pull_down(ui, &button, name, || entries)?;
+    let request = crate::popup::Request::pull_down(button.rect, name, found.clone());
+    if crate::popup::is_native(ui.ctx(), &request) {
+        return Some(chosen);
+    }
+    let submenu = found.iter().find_map(|entry| match entry {
+        Entry::Submenu(submenu) if holds(&submenu.entries, &chosen) => Some(submenu.id.clone()),
+        _ => None,
+    });
+    if let Some(submenu) = submenu {
+        ui.data_mut(|d| d.insert_temp(reopen_id, submenu));
+        ui.ctx().request_repaint();
+    }
+    Some(chosen)
+}
+
+/// Whether `entries` hold an item `id`.
+fn holds(entries: &[Entry], id: &str) -> bool {
+    entries
+        .iter()
+        .any(|entry| matches!(entry, Entry::Item(item) if item.id == id))
 }
 
 /// The body of a section whose header is drawn apart ([`Section::show_header`]): its rows

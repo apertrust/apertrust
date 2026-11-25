@@ -22,8 +22,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use apertrust_ui::components::{Choice, ChoiceAction};
-use apertrust_ui::popup::{self, Answer, Kind, Request, Service};
+use apertrust_ui::components::{Choice, ChoiceAction, Section};
+use apertrust_ui::popup::{self, Answer, Item, Kind, Request, Service, Submenu};
 use apertrust_ui::{Theme, install};
 use egui::accesskit::Role;
 use egui::{Id, Rect, vec2};
@@ -279,4 +279,40 @@ fn closing_a_service_popup_answers_at_once_and_tells_the_service() {
     popup::answered(&harness.ctx, id, Answer::Chosen("export".to_owned()));
     harness.run();
     assert_eq!(harness.state().answers, vec![Answer::Dismissed]);
+}
+
+/// A utility's ＋ as the native menu: its choice reported, the menu closing on it as a
+/// native menu does, never opened again at the top as a drawn one opens at its submenu.
+#[test]
+fn rows_shown_closes_on_a_native_choice() {
+    let service = Recording::new(true);
+    let ctx_service = service.clone();
+    let mut harness = Harness::builder()
+        .with_size(vec2(400.0, 300.0))
+        .with_context_setup(move |ctx| {
+            install(ctx, Theme::default());
+            popup::install(ctx, ctx_service.clone());
+        })
+        .build_ui_state(
+            |ui, chosen: &mut Vec<String>| {
+                let flash = Item::new("flash", "Flash").checked(false).into();
+                let rows = vec![Submenu::new("exposure", "Exposure", vec![flash]).into()];
+                let out = Section::new("Metadata", false)
+                    .rows_shown("Rows Shown")
+                    .rows_menu(rows)
+                    .options(false)
+                    .show(ui, |_| {});
+                chosen.extend(out.rows);
+            },
+            Vec::new(),
+        );
+    harness.run();
+    harness.get_by_label("Rows Shown").click();
+    harness.run();
+    let [(id, _)] = service.opened().try_into().unwrap();
+    popup::answered(&harness.ctx, id, Answer::Chosen("flash".to_owned()));
+    harness.run();
+    assert_eq!(*harness.state(), ["flash"]);
+    assert_eq!(service.opened().len(), 1);
+    assert!(!popup::is_open(&harness.ctx, id));
 }

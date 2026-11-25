@@ -323,6 +323,12 @@ pub fn answered(ctx: &Context, id: Id, answer: Answer) {
     ctx.request_repaint();
 }
 
+/// Whether the installed [`Service`] takes `request`, showing it natively, not drawn here.
+pub fn is_native(ctx: &Context, request: &Request) -> bool {
+    let service = drawn::with(ctx, |popups| popups.service.clone());
+    service.is_some_and(|service| service.takes(request))
+}
+
 /// Opens `request` as the popup `id`, in place of any open under that id. A request the
 /// installed [`Service`] takes is the service's until it answers. Any other is drawn: it
 /// shows from [`show`] on, takes the keyboard focus, and gives it back to its opener, or
