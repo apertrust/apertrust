@@ -375,7 +375,7 @@ fn a_change_is_added_as_a_step_of_each_sharing_a_batch() {
     let mut log = Log::default();
     let one = Change::between(&Edit::default(), &brightened(0.5), &[]);
     assert!(
-        log.add_change(one, StepSource::Auto, None, clock)
+        log.add_change(one, StepSource::Auto, None, None, clock)
             .is_empty()
     );
     assert_eq!(log.steps()[0].batch, None);
@@ -383,7 +383,7 @@ fn a_change_is_added_as_a_step_of_each_sharing_a_batch() {
     let two = Change::between(&brightened(0.5), &grained(&brightened(1.0), 30.0), &[]);
     let note = Note::Text("warmer".to_owned());
     assert!(
-        log.add_change(two, StepSource::Assistant, Some(note.clone()), clock)
+        log.add_change(two, StepSource::Assistant, Some(note.clone()), None, clock)
             .is_empty()
     );
     let [_, first, second] = log.steps() else {
@@ -398,10 +398,16 @@ fn a_change_is_added_as_a_step_of_each_sharing_a_batch() {
     // Below the end, the steps after it dropped and returned; a Reset noted as one.
     log.set_end(1);
     let reset = Change::between(&brightened(0.5), &Edit::default(), &[Wrote::All]);
-    let dropped = log.add_change(reset, StepSource::You, None, clock);
+    let dropped = log.add_change(reset, StepSource::You, None, None, clock);
     assert_eq!(dropped.len(), 2);
     assert_eq!(log.steps()[1].note, Some(Note::reset()));
     assert_eq!(log.fold(), Edit::default());
+    // The caller's batch, as a command on several photos gives it, on a change of one step
+    // too (decision 109).
+    let batch = BatchId(109);
+    let one = Change::between(&log.fold(), &brightened(0.25), &[]);
+    log.add_change(one, StepSource::Style, None, Some(batch), clock);
+    assert_eq!(log.steps().last().unwrap().batch, Some(batch));
 }
 
 /// A copy's clock vector keeps the latest clock of each machine; the latest clock read

@@ -186,7 +186,7 @@ fn parse_counter(text: &str) -> Result<u32, ClockError> {
 }
 
 /// The wall clock in milliseconds since 1970, 0 for a clock set before it.
-fn wall_clock() -> u64 {
+pub fn wall_clock() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| {

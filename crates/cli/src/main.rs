@@ -1165,7 +1165,7 @@ fn edit_once(
     }
     let clock = Clock::now(last.as_ref(), machine);
     let note = args.note.map(|words| Note::Text(words.to_owned()));
-    log.add_change(changes, StepSource::You, note, clock);
+    log.add_change(changes, StepSource::You, note, None, clock);
     advance(&mut clocks, clock);
     let written = write_history(
         photo,

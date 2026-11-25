@@ -533,6 +533,7 @@ fn write_elsewhere(path: &Path, (tool, values): (&dyn ProcessingTool, ToolValues
         changes,
         StepSource::Style,
         Some(Note::style("Other")),
+        None,
         clock,
     );
     if styled {
@@ -864,4 +865,256 @@ fn a_built_in_style_applied_again_in_another_language_moves_to_the_top() {
     assert!(edit(&driven).tool("grain").is_none());
     assert!(edit(&driven).tool("vignette").is_some());
     remove(&path);
+}
+
+/// The tools of the photos a style is applied to open or not: two with default steps, White
+/// balance redrawn on the photo, and the switched tools a style sets.
+const BOTH: &[&dyn ProcessingTool] = &[
+    &Grain,
+    &Soften,
+    &Vignetting,
+    &apertrust_tools::white_balance::WhiteBalance,
+    &apertrust_tools::exposure::Exposure,
+];
+
+/// Another machine's step on the sidecar beside `path`, Soften at 5, its clock at `when`
+/// milliseconds, as `apertrust-cli edit` on a computer whose clock is ahead would write it.
+fn step_at(path: &Path, when: u64) {
+    let sidecar = sidecar::path_for(path);
+    let read = sidecar::read(&sidecar, OPERATIONS, BOTH, &[]).unwrap();
+    let mut log = read.log.clone();
+    let clock = Clock::at(when, None, "00000000".parse().unwrap());
+    let mut edit = log.fold();
+    (edit.set_tool(&Soften, &on("amount", 5.0), &testing::image())).unwrap();
+    let changes = Change::between(&log.fold(), &edit, &[]);
+    log.add_change(changes, StepSource::You, None, None, clock);
+    let mut clocks = read.clocks().to_vec();
+    crate::history::advance(&mut clocks, clock);
+    let build = "cli";
+    sidecar::write_log(
+        &sidecar,
+        &read.file,
+        &log,
+        &clocks,
+        (OPERATIONS, BOTH),
+        build,
+    )
+    .unwrap();
+}
+
+/// What a step says of the photo's history, its id and clock left out: its source, note,
+/// change and list, and whether it is in `batch`, else its own batch.
+type Seen = (
+    StepSource,
+    Option<Note>,
+    Change,
+    Option<Vec<AppliedStyle>>,
+    Option<Result<(), BatchId>>,
+);
+
+fn seen(log: &Log, batch: BatchId) -> (Vec<Seen>, usize) {
+    let steps = (log.steps().iter())
+        .map(|step| {
+            let batch = step
+                .batch
+                .map(|of| if of == batch { Ok(()) } else { Err(of) });
+            let styles = step.styles.clone();
+            (
+                step.source,
+                step.note.clone(),
+                step.change.clone(),
+                styles,
+                batch,
+            )
+        })
+        .collect();
+    (steps, log.end())
+}
+
+/// A style gives the same log on a photo opened or not (decision 109): each case's photo is
+/// edited open, saved, then the style is applied by the session to the photo opened again
+/// and by [`style_log`] to the log its sidecar holds, on the image context the open read.
+/// The two logs hold the same steps, their ids and clocks apart, the style's in one batch,
+/// each after every clock before it, the photo not open's at the command's wall time.
+#[test]
+fn a_style_gives_the_same_log_on_a_photo_opened_or_not() {
+    use crate::session::styles::{Batch, Style, style_log};
+    let go_to = |at: fn(&Log) -> usize| {
+        move |driven: &mut Driven| {
+            let step = Some(log(driven).steps()[at(&log(driven))].id);
+            driven.run([Command::GoTo { step }]);
+        }
+    };
+    let edited = |driven: &mut Driven| {
+        driven.run([set_tool(grain(30.0))]);
+        driven.run([set_tool(soften(20.0))]);
+    };
+    type Setup = Box<dyn Fn(&mut Driven)>;
+    // (the case, what is done to the photo first, the style); a case named `ahead-<ms>` has
+    // another machine's step at the wall clock and that many milliseconds laid on its file.
+    let cases: Vec<(&str, Setup, Command)> = vec![
+        (
+            "append",
+            Box::new(edited),
+            append("Warm film", &[grain(40.0), vignette(50.0)]),
+        ),
+        (
+            "replace",
+            Box::new(edited),
+            apply("Warm film", StyleMode::Replace, &[grain(40.0)]),
+        ),
+        (
+            "applied-again",
+            Box::new(|driven: &mut Driven| {
+                driven.run([append("Warm film", &[grain(40.0)])]);
+                driven.run([set_tool(soften(10.0))]);
+            }),
+            append("Warm film", &[grain(60.0), vignette(50.0)]),
+        ),
+        (
+            "no-history",
+            Box::new(|_: &mut Driven| {}),
+            append("Faded", &[soften(30.0)]),
+        ),
+        (
+            "end-among-defaults",
+            Box::new(move |driven: &mut Driven| {
+                edited(driven);
+                go_to(|_| 0)(driven);
+            }),
+            append("Faded", &[soften(30.0)]),
+        ),
+        (
+            "replace-among-defaults",
+            Box::new(move |driven: &mut Driven| {
+                edited(driven);
+                go_to(|_| 0)(driven);
+            }),
+            apply("Faded", StyleMode::Replace, &[]),
+        ),
+        (
+            "end-below-the-last-step",
+            Box::new(move |driven: &mut Driven| {
+                edited(driven);
+                go_to(|log| log.steps().len() - 2)(driven);
+            }),
+            append("Faded", &[vignette(50.0)]),
+        ),
+        // Another machine's clock ahead, within the drift bound, then past it.
+        (
+            "ahead-120000",
+            Box::new(edited),
+            append("Warm film", &[grain(40.0), vignette(50.0)]),
+        ),
+        (
+            "ahead-3600000",
+            Box::new(edited),
+            append("Warm film", &[grain(40.0), vignette(50.0)]),
+        ),
+    ];
+    for (case, setup, command) in cases {
+        let path = scratch(&format!("styles-opened-or-not-{case}"));
+        let mut driven = Driven::new(BOTH);
+        driven.open(&path);
+        setup(&mut driven);
+        driven.writes();
+        drop(driven);
+        if let Some(ahead) = case.strip_prefix("ahead-") {
+            let ahead: u64 = ahead.parse().unwrap();
+            step_at(&path, apertrust_library::clock::wall_clock() + ahead);
+        }
+        let sidecar = sidecar::path_for(&path);
+        let (log_read, clocks) = match sidecar.exists() {
+            true => {
+                let read = sidecar::read(&sidecar, OPERATIONS, BOTH, &[]).unwrap();
+                let clocks = read.clocks().to_vec();
+                (read.log, clocks)
+            }
+            false => (Log::default(), Vec::new()),
+        };
+        // The latest clock this machine honours, another's past the drift bound ignored.
+        let read = (log_read.steps().iter().map(|step| &step.clock)).chain(&clocks);
+        let latest = crate::history::latest(read, crate::history::MachineId::current());
+        // Opened again, the style applied by the session.
+        let mut driven = Driven::new(BOTH);
+        driven.open(&path);
+        let image = driven.engine.open.as_ref().unwrap().image.clone();
+        let events = driven.run([command.clone()]);
+        assert!(failures(&events).is_empty(), "{case}: {events:?}");
+        let opened = log(&driven);
+        let ours = opened.steps().last().unwrap().batch.unwrap();
+        // Not open: the same style on the log the sidecar holds.
+        let Command::ApplyStyle {
+            name,
+            file,
+            mode,
+            tools,
+        } = &command
+        else {
+            unreachable!("an ApplyStyle")
+        };
+        let style = Style {
+            name,
+            file,
+            mode: *mode,
+            tools,
+        };
+        let batch = Batch {
+            id: BatchId(0x109),
+            wall: apertrust_library::clock::wall_clock(),
+        };
+        let defaults = crate::history::default_tools(BOTH, OPERATIONS);
+        let (not_open, vector) = style_log(
+            (log_read.clone(), clocks.clone()),
+            &defaults,
+            style,
+            (BOTH, &image),
+            batch,
+        )
+        .unwrap()
+        .unwrap_or_else(|| panic!("{case}: a change"));
+        // Every case's log begins with White balance's and Exposure's default steps.
+        assert_eq!(not_open.defaults(), 2, "{case}: {not_open:?}");
+        assert_eq!(
+            seen(&not_open, batch.id),
+            seen(&opened, ours),
+            "{case}: the same log"
+        );
+        // Every step the style made carries the batch, at the wall time or, past a clock
+        // ahead within the bound, just after it.
+        let made: Vec<_> = (not_open.steps().iter())
+            .filter(|step| log_read.position(step.id).is_none())
+            .filter(|step| step.source != StepSource::Default)
+            .collect();
+        assert!(!made.is_empty(), "{case}");
+        let when = latest.map_or(batch.wall, |latest| latest.when.max(batch.wall));
+        for step in made {
+            assert_eq!(
+                step.batch,
+                Some(batch.id),
+                "{case}: every step in the batch"
+            );
+            assert!(
+                Some(step.clock) > latest,
+                "{case}: after the latest honoured"
+            );
+            assert_eq!(step.clock.when, when, "{case}: the command's wall time");
+        }
+        if case == "ahead-3600000" {
+            assert_eq!(when, batch.wall, "{case}: the clock past the bound ignored");
+        }
+        if case == "ahead-120000" {
+            assert!(when > batch.wall, "{case}: after the clock ahead");
+        }
+        let last = not_open.steps().iter().map(|step| step.clock).max();
+        assert_eq!(
+            vector.iter().copied().max(),
+            last,
+            "{case}: the vector advanced"
+        );
+        // The batch reached it already: left as it is.
+        let again = style_log((not_open, vector), &defaults, style, (BOTH, &image), batch);
+        assert!(again.unwrap().is_none(), "{case}: applied once");
+        remove(&path);
+    }
 }

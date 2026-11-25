@@ -112,7 +112,7 @@ A photo is skipped, unchanged and named, when its raw is not on the disk; its ra
 
 ## Consequences
 
-- **`apertrust-engine`'s `history`:** `Log::add_change` takes a batch and a wall time the caller gives, since the session's change draws `Clock::now` itself; a style applied to a log, a pure function the session's active photo and the job share, tested to give the same log on a photo opened or not; a built-in's item matched by its `builtin:<id>` file.
+- **`apertrust-engine`'s `history`:** `Log::add_change` takes a batch the caller gives, and the session's `PhotoHistory::complete` the command's wall time, since it drew `Clock::now` itself; a style applied to a log, a pure function the session's active photo and the job share, tested to give the same log on a photo opened or not; a built-in's item matched by its `builtin:<id>` file.
 - **Its session:** `ApplyStyle`'s `photos`; the `apply-style` and `undo-batch` jobs, `quiet`, one batch job at a time; a pending batch applied to the active photo before a later command; the writer's generation by file and its writes of a photo that is not live over the file as read, by size, modified time and hash; the remembered batches; `UndoBatch` and `SessionError::UnknownBatch`; `Move::Steps::photos`; `Event::Batch`.
 - **`apertrust-base`'s `jobs`:** `Added` gains `quiet`, which a client reads to leave its jobs window closed ([0072](0072-each-job-reports-its-own-row.md)).
 - **The app:** the Styles tool applying to the selection, its rows' tooltips, the notice and its Undo, the Browser's pencil from `Changed`, Edit › Undo naming the count; the two job kinds' icons in the design system's table.

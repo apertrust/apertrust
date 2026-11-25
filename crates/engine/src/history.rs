@@ -538,7 +538,8 @@ pub struct Step {
     pub source: StepSource,
     pub note: Option<Note>,
     /// Shared by the steps of one completed change that touched several tools, which
-    /// Undo and Redo move whole; `None` for a change of one.
+    /// Undo and Redo move whole, and a style's on each of its steps, one step's too, as on
+    /// every photo it changes (decision 109); `None` for a change of one tool but a style's.
     pub batch: Option<BatchId>,
     /// The tool it touched, with its whole state after it, or Reset's, or none.
     pub change: Change,
@@ -706,18 +707,20 @@ impl Log {
     }
 
     /// Adds the steps of one completed change, `changes` ([`Change::between`]), of `source`
-    /// with `note`, at `clock`: a step of each, sharing a new batch where there are several,
-    /// a Reset's noted `history-reset`, holding the empty list of styles applied where the
-    /// list was not empty (decision 106). The first drops the steps after the end, which it
-    /// returns, as [`Log::add`] does.
+    /// with `note`, at `clock`: a step of each, each in `batch`, the caller's, as a command
+    /// on several photos gives every step of every photo its one batch (decision 109), else
+    /// sharing a new batch where there are several; a Reset's noted `history-reset`,
+    /// holding the empty list of styles applied where the list was not empty (decision 106).
+    /// The first drops the steps after the end, which it returns, as [`Log::add`] does.
     pub fn add_change(
         &mut self,
         changes: Vec<Change>,
         source: StepSource,
         note: Option<Note>,
+        batch: Option<BatchId>,
         clock: Clock,
     ) -> Vec<Step> {
-        let batch = (changes.len() > 1).then(|| self.new_batch());
+        let batch = batch.or_else(|| (changes.len() > 1).then(|| self.new_batch()));
         let mut dropped = Vec::new();
         for change in changes {
             let (note, styles) = match change {
@@ -861,7 +864,7 @@ impl Log {
         let mut log = Log::default();
         log.add_defaults(&before, clock);
         let changes = Change::between(&Edit::default(), edit, &[]);
-        log.add_change(changes, StepSource::You, Some(Note::discard()), clock);
+        log.add_change(changes, StepSource::You, Some(Note::discard()), None, clock);
         let end = log.end;
         for tool in after {
             let id = log.new_id();
@@ -979,11 +982,7 @@ pub fn advance(vector: &mut Vec<Clock>, clock: Clock) {
 /// vector, with its wall clock now: each observed in turn ([`Clock::observe`]), so another
 /// machine's clock far past the wall clock is ignored. What the next step's clock follows.
 pub fn latest<'c>(clocks: impl IntoIterator<Item = &'c Clock>, me: MachineId) -> Option<Clock> {
-    let wall = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| {
-            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
-        });
+    let wall = apertrust_library::clock::wall_clock();
     (clocks.into_iter()).fold(None, |last, read| {
         Clock::observe(last.as_ref(), read, wall, me)
     })
