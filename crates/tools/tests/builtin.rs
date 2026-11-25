@@ -140,7 +140,7 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
              slider+picker slider slider slider group group slider slider slider slider \
              toggle when slider group slider slider slider slider slider choice toggle \
              when action group slider slider slider slider slider slider group toggle \
-             action when slider slider slider slider slider slider slider slider",
+             when slider slider slider slider slider slider slider slider",
         ),
         ("colorout", "choice"),
         (

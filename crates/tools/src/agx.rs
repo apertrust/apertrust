@@ -25,8 +25,8 @@
 //!   collapsible sections, Show curve, Advanced curve parameters and Look.
 //! - **Primaries:** the base primaries and Disable adjustments; while adjustments are on,
 //!   Reset primaries, each primary's attenuation and rotation before tone mapping, Reverse
-//!   all and Set from above, and while Reverse all is off the purity boosts and reverse
-//!   rotations after it.
+//!   all with Set from above at its end, and while Reverse all is off the purity boosts and
+//!   reverse rotations after it.
 //!
 //! Each control is one `agx` parameter, its id the parameter's name, shown as darktable's
 //! slider shows it: its percentages as percentages, so the binding divides them by 100,
@@ -49,8 +49,9 @@
 //! darktable's five pickers pick as its `color_picker_apply` does ([`Agx::pick`]): the
 //! quads on white and black relative exposure, Auto tune levels setting both, a row of
 //! its own with its picker at the end, and the quads on the pivot and its target output.
-//! The three actions, Read exposure, Reset primaries and Set from above, are drawn
-//! disabled until what they run is built. Show curve is empty until a read-only graph row
+//! Set from above copies the primaries before tone mapping to after it ([`Agx::action`]),
+//! unavailable while Reverse all or Disable adjustments is on ([`Agx::available`]); Read
+//! exposure and Reset primaries are drawn disabled until what they run is built. Show curve is empty until a read-only graph row
 //! exists. darktable's presets wait for the presets menu's built-in presets (decision 106).
 
 #![allow(
@@ -540,18 +541,13 @@ static PRIMARIES_PAGE: [Row; 3] = [
                 id: "after_tone_mapping",
                 kind: GroupKind::Plain,
                 rows: &[
+                    // darktable's button on Reverse all's line, insensitive while it is on.
                     Row::Toggle {
                         control: "completely_reverse_primaries",
-                        end: &[],
-                    },
-                    // darktable's button on Reverse all's line, insensitive while it is on.
-                    Row::Line {
-                        start: LineStart::None,
-                        readout: None,
                         end: &[End::Action(ActionEnd {
                             id: "set_from_above",
                             face: Face::Text,
-                            unported: true,
+                            unported: false,
                         })],
                     },
                     Row::When {
@@ -662,6 +658,46 @@ impl ProcessingTool for Agx {
             soft: (black, white),
             step: slider_step(0.0, 1.0, white - black),
         })
+    }
+
+    /// Set from above can run only while the primaries after tone mapping are shown and
+    /// act, darktable's `post_curve_primaries_available` (`agx.c:1744-1746`): neither
+    /// Reverse all nor Disable adjustments on. Every control can change something.
+    fn available(&self, id: &str, values: &Controls, _: &ImageContext) -> bool {
+        match id {
+            "set_from_above" => {
+                !values.flag("completely_reverse_primaries")
+                    && !values.flag("disable_primaries_adjustments")
+            }
+            _ => true,
+        }
+    }
+
+    /// darktable's buttons on the values shown:
+    ///
+    /// - **`set_from_above`,** `_set_post_curve_primaries_from_pre_callback`
+    ///   (`agx.c:2123-2140`): both masters 100 %, each purity boost its primary's
+    ///   attenuation and each reverse rotation its rotation, as shown, so each parameter is
+    ///   darktable's to the bit: a boost and its attenuation, a reverse rotation and its
+    ///   rotation, share a factor.
+    fn action(&self, action: &str, values: &Controls, _: &ImageContext) -> Option<Controls> {
+        let mut writes = Controls::new();
+        match action {
+            "set_from_above" => {
+                for master in ["master_outset_ratio", "master_unrotation_ratio"] {
+                    writes.set(master, ControlValue::Number(100.0));
+                }
+                for colour in ["red", "green", "blue"] {
+                    let [outset, unrotation, inset, rotation] =
+                        ["outset", "unrotation", "inset", "rotation"]
+                            .map(|part| control_of(colour, part));
+                    writes.set(outset, ControlValue::Number(values.number(inset)));
+                    writes.set(unrotation, ControlValue::Number(values.number(rotation)));
+                }
+            }
+            _ => return None,
+        }
+        Some(writes)
     }
 
     /// Each number off its default sets its parameter, the value shown over its factor;
@@ -781,6 +817,13 @@ impl ProcessingTool for Agx {
     }
 }
 
+/// The control of `colour`'s primary `part`: `red_inset`, `blue_unrotation`.
+fn control_of(colour: &str, part: &str) -> &'static str {
+    let id = format!("{colour}_{part}");
+    let found = CONTROLS.iter().find(|control| control.id == id);
+    found.expect("a primary's control").id
+}
+
 /// darktable's exposure of `v` relative to mid-grey, floored at its `_epsilon` first:
 /// `log2(max(ε, v) / 0.18)` (`agx.c:1110`, `:1126`, `:1178`).
 fn relative_ev(v: f32) -> f32 {
@@ -885,27 +928,17 @@ mod tests {
                 ("after_tone_mapping", plain),
             ]
         );
-        let actions: Vec<&str> = DEFINITION
-            .rows()
-            .filter_map(|row| match row {
-                Row::Line {
-                    start: LineStart::None,
-                    readout: None,
-                    end:
-                        [
-                            End::Action(ActionEnd {
-                                id,
-                                face: Face::Text,
-                                unported: true,
-                            }),
-                        ],
-                } => Some(*id),
-                _ => None,
-            })
+        let actions: Vec<(&str, bool)> = DEFINITION
+            .action_ends()
+            .map(|end| (end.id, end.unported))
             .collect();
         assert_eq!(
             actions,
-            ["read_exposure", "reset_primaries", "set_from_above"]
+            [
+                ("read_exposure", true),
+                ("reset_primaries", true),
+                ("set_from_above", false)
+            ]
         );
         assert!(!DEFINITION.layers && !DEFINITION.auto);
     }
@@ -1199,6 +1232,86 @@ mod tests {
             ),
             "{rows:?}"
         );
+    }
+
+    /// Set from above writes darktable's `_set_post_curve_primaries_from_pre_callback`: both
+    /// masters 100 %, the boosts the attenuations and the reverse rotations the rotations,
+    /// each bound to darktable's parameter, the copy of the one before it, to the bit.
+    #[test]
+    fn set_from_above_copies_the_primaries_before_tone_mapping_after_it() {
+        let image = crate::testing::image();
+        let mut values = DEFINITION.defaults();
+        let before = [
+            ("red_inset", 12.0),
+            ("green_inset", 33.0),
+            ("blue_inset", 7.5),
+            ("red_rotation", -4.3),
+            ("green_rotation", 2.0),
+            ("blue_rotation", 29.9),
+        ];
+        for (id, value) in before {
+            values.set(id, ControlValue::Number(value));
+        }
+        let writes = Agx.action("set_from_above", &values, &image).unwrap();
+        let written: Vec<(&str, f32)> = writes
+            .iter()
+            .map(|(id, value)| match value {
+                ControlValue::Number(number) => (id, *number),
+                other => panic!("{id}: {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            written,
+            [
+                ("blue_outset", 7.5),
+                ("blue_unrotation", 29.9),
+                ("green_outset", 33.0),
+                ("green_unrotation", 2.0),
+                ("master_outset_ratio", 100.0),
+                ("master_unrotation_ratio", 100.0),
+                ("red_outset", 12.0),
+                ("red_unrotation", -4.3),
+            ]
+        );
+        // Each copy binds to its original's parameter to the bit, as darktable copies it.
+        let mut set: Vec<(&str, ControlValue)> = before
+            .iter()
+            .map(|&(id, value)| (id, ControlValue::Number(value)))
+            .collect();
+        set.extend(writes.iter().map(|(id, value)| (id, value.clone())));
+        let settings = bind(&set);
+        for colour in ["red", "green", "blue"] {
+            for (after, before) in [("outset", "inset"), ("unrotation", "rotation")] {
+                let after = value(&settings, &format!("{colour}_{after}"));
+                assert_eq!(after, value(&settings, &format!("{colour}_{before}")));
+            }
+        }
+        assert_eq!(value(&settings, "master_outset_ratio"), None);
+        assert_eq!(
+            value(&settings, "master_unrotation_ratio"),
+            Some(Value::Float(1.0))
+        );
+        assert!(Agx.action("no_such_action", &values, &image).is_none());
+    }
+
+    /// Set from above can run only while the primaries after tone mapping act, darktable's
+    /// `post_curve_primaries_available`: not while Reverse all or Disable adjustments is on.
+    #[test]
+    fn set_from_above_is_unavailable_while_reverse_all_or_disable_adjustments_is_on() {
+        let image = crate::testing::image();
+        for (reverse, disable) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut values = DEFINITION.defaults();
+            values.set("completely_reverse_primaries", ControlValue::Bool(reverse));
+            values.set("disable_primaries_adjustments", ControlValue::Bool(disable));
+            let available = Agx.available("set_from_above", &values, &image);
+            assert_eq!(available, !reverse && !disable, "{reverse} {disable}");
+            // Every control can change something.
+            assert!(
+                CONTROLS
+                    .iter()
+                    .all(|c| Agx.available(c.id, &values, &image))
+            );
+        }
     }
 
     /// The pivot's slider follows the input range as darktable's does (decision 30): it

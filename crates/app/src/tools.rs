@@ -7022,9 +7022,10 @@ mod tests {
     /// AgX's page as darktable draws it: on Settings, Read exposure drawn disabled until
     /// what it runs is built, dynamic range scaling live, and the three collapsible groups, Show curve disabled, Advanced curve
     /// parameters showing the gamma only while the pivot is not kept on the diagonal; on
-    /// Primaries, while adjustments are on, Reset primaries and the primaries before tone
-    /// mapping, Reverse all and Set from above, both actions disabled, and while Reverse
-    /// all is off the purity boosts after it.
+    /// Primaries, while adjustments are on, Reset primaries, disabled, and the primaries
+    /// before tone mapping, Reverse all with Set from above at its end, which runs on the
+    /// values shown and is disabled at once as Reverse all turns on, and while Reverse all
+    /// is off the purity boosts after it.
     #[test]
     fn agx_draws_darktable_s_page_its_actions_disabled() {
         let mut harness = panel(&Agx, untouched(&Agx));
@@ -7077,20 +7078,42 @@ mod tests {
             tab: 1,
         });
         harness.run();
-        for action in ["Reset primaries", "Set from above"] {
-            assert!(disabled(&harness, Role::Button, action), "{action}");
-        }
+        assert!(disabled(&harness, Role::Button, "Reset primaries"));
+        assert!(!disabled(&harness, Role::Button, "Set from above"));
         assert!(harness.query_by_label("Red attenuation").is_some());
         assert!(harness.query_by_label("Red purity boost").is_some());
-        set(
-            &mut harness.state_mut().state,
-            "completely_reverse_primaries",
-            ControlValue::Bool(true),
-            None,
+        harness
+            .get_by_role_and_label(Role::Button, "Set from above")
+            .click();
+        harness.run();
+        let pressed = harness.state().changes.last();
+        assert!(
+            matches!(
+                pressed,
+                Some(Change::Action {
+                    tool: "agx",
+                    action: "set_from_above",
+                    ..
+                })
+            ),
+            "{pressed:?}"
         );
+        // Reverse all on: Set from above is disabled at once, on the change pending.
+        harness
+            .get_by_role_and_label(Role::Switch, "Reverse all")
+            .click();
         harness.run();
         assert!(harness.query_by_label("Red purity boost").is_none());
-        assert!(harness.query_by_label("Set from above").is_some());
+        assert!(disabled(&harness, Role::Button, "Set from above"));
+        let state = &harness.state().state;
+        let shown = state.actions.iter().find(|a| a.id == "set_from_above");
+        assert_eq!(shown.map(|a| a.available), Some(false));
+        // So is its registry action, as the mirror shows the change pending.
+        let mirrored = crate::actions::tool_action_bits(std::slice::from_ref(state));
+        let at = (crate::actions::tool_actions().iter())
+            .position(|a| a.id.0 == "tool-agx-set_from_above")
+            .unwrap();
+        assert_eq!(mirrored & (1 << at), 0);
         set(
             &mut harness.state_mut().state,
             "disable_primaries_adjustments",
@@ -7101,13 +7124,44 @@ mod tests {
         for gone in ["Red attenuation", "Reset primaries", "Set from above"] {
             assert!(harness.query_by_label(gone).is_none(), "{gone}");
         }
-        assert!(
-            harness
-                .state()
-                .changes
-                .iter()
-                .all(|change| matches!(change, Change::Tab { .. } | Change::Group { .. }))
+        assert!(harness.state().changes.iter().all(|change| matches!(
+            change,
+            Change::Tab { .. } | Change::Group { .. } | Change::Action { .. } | Change::Set { .. }
+        )));
+    }
+
+    /// Set from above's writes as the app sends them: one `SetControl` for each control it
+    /// writes, every one but the last `done: false`, so they are one gesture and one
+    /// history step.
+    #[test]
+    fn set_from_above_is_sent_as_one_gesture() {
+        let mut values = values(&untouched(&Agx));
+        values.set("red_inset", ControlValue::Number(20.0));
+        let writes = action_writes(
+            &[&Agx],
+            "agx",
+            "set_from_above",
+            &values,
+            &testing::image(),
+            false,
         );
+        assert_eq!(writes.len(), 8);
+        let done: Vec<bool> = writes.iter().map(|(_, _, done)| *done).collect();
+        assert_eq!(
+            done,
+            [false, false, false, false, false, false, false, true]
+        );
+        assert!(writes.contains(&("red_outset", ControlValue::Number(20.0), false)));
+        // Nothing on a photo open for viewing only.
+        let viewing = action_writes(
+            &[&Agx],
+            "agx",
+            "set_from_above",
+            &values,
+            &testing::image(),
+            true,
+        );
+        assert!(viewing.is_empty());
     }
 
     /// Every slider row of every built tool, at either end of its range, in each
