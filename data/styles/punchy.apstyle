@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Apertrust 0.1.0">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:apertrust="https://apertrust.org/ns/xmp/"
+    xmlns:control="https://apertrust.org/ns/xmp/control/"
+    apertrust:style="1"
+    apertrust:name="Punchy">
+   <apertrust:tools>
+    <rdf:Seq>
+     <rdf:li>
+      <rdf:Description
+        apertrust:tool="agx"
+        apertrust:toolVersion="1"
+        control:curve_contrast_around_pivot="2.4535246"
+        control:curve_shoulder_power="1.5"
+        control:curve_gamma="2.4"
+        control:look_brightness="0.5486968"
+        control:look_saturation="140"/>
+     </rdf:li>
+    </rdf:Seq>
+   </apertrust:tools>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

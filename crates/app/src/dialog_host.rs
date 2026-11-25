@@ -325,8 +325,14 @@ pub enum Output {
     Preset(crate::presets::Asked),
     /// What Create a Style… asked as Create was pressed.
     Style(crate::styles::Asked),
-    /// What Rename Style… asked as Rename was pressed: the style `from` named `to`.
-    StyleRename { from: String, to: String },
+    /// What Rename Style… asked as Rename was pressed: the style `from` named `to`; or,
+    /// `copy`, what Copy to Custom Styles… asked as Copy was pressed: the built-in style
+    /// shown as `from` copied as `to`.
+    StyleRename {
+        from: String,
+        to: String,
+        copy: bool,
+    },
 }
 
 /// The key presses a dialog's window left alone in a frame: none of Escape, Cmd+W and

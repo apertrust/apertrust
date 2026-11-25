@@ -31,7 +31,9 @@
 //!   no photo changes.
 //!
 //! The Styles tool, which lists, applies and clears styles, is [`tool`]; its Rename Style…
-//! is [`RenameDialog`], over [`rename`].
+//! and Copy to Custom Styles… are [`RenameDialog`], over [`rename`] and [`copy`]. A name a
+//! person's style takes is refused where another of the person's styles, or a built-in
+//! style as shown, has it ([`refused`]).
 
 use std::path::{Path, PathBuf};
 
@@ -109,6 +111,14 @@ pub fn taken(folder: &Path) -> Vec<String> {
     (stored(folder).into_iter())
         .map(|stored| stored.name.trim().to_owned())
         .collect()
+}
+
+/// The names a dialog refuses a person's style: those `folder`'s styles hold ([`taken`]),
+/// then the built-in styles' as `words` show them (decision 106).
+pub fn refused(folder: &Path, words: &Translator) -> Vec<String> {
+    let builtins =
+        (files::builtin_styles().into_iter()).map(|(id, _)| tool::builtin_name(id, words));
+    taken(folder).into_iter().chain(builtins).collect()
 }
 
 /// The style files in `folder`, each read; a file that cannot be read is left out with a
@@ -274,39 +284,69 @@ impl SheetContent for StyleDialog {
     }
 }
 
-/// Rename Style…, a [`Sheet`](crate::presets::Sheet)'s content: Name, its first focus,
-/// holding the style's name, above Rename, which an empty name or another style's disables,
-/// saying why under the field.
+/// Rename Style… or Copy to Custom Styles…, a [`Sheet`](crate::presets::Sheet)'s content:
+/// Name, its first focus, holding the style's name, above Rename or Copy, which an empty
+/// name or one refused disables, saying why under the field.
 #[derive(Debug)]
 pub struct RenameDialog {
     from: String,
-    /// The other styles' names, trimmed.
+    /// Whether it copies the built-in style `from` into Custom Styles, rather than renaming
+    /// the person's.
+    copy: bool,
+    /// The names it refuses, trimmed.
     taken: Vec<String>,
     name: String,
     focused: bool,
 }
 
 impl RenameDialog {
-    /// Rename Style… for the style `from`, `taken` every style's name, its own among them,
-    /// which it may keep.
+    /// Rename Style… for the style `from`, `taken` every name refused ([`refused`]), its
+    /// own among them, which it may keep.
     pub fn new(from: String, taken: Vec<String>) -> Self {
         let taken = taken.into_iter().filter(|name| *name != from).collect();
         RenameDialog {
             name: from.clone(),
             from,
+            copy: false,
             taken,
             focused: false,
+        }
+    }
+
+    /// Copy to Custom Styles… for the built-in style `from`, as shown, its name at first,
+    /// `taken` every name refused ([`refused`]), the built-in's own among them.
+    pub fn copy(from: String, taken: Vec<String>) -> Self {
+        RenameDialog {
+            name: from.clone(),
+            from,
+            copy: true,
+            taken,
+            focused: false,
+        }
+    }
+
+    /// Its id, its title's message and its button's: Rename Style…'s or Copy to Custom
+    /// Styles…'s.
+    fn words(&self) -> [&'static str; 3] {
+        if self.copy {
+            ["style-copy", "styles-copy-title", "styles-copy-button"]
+        } else {
+            [
+                "style-rename",
+                "styles-rename-title",
+                "styles-rename-button",
+            ]
         }
     }
 }
 
 impl SheetContent for RenameDialog {
     fn id(&self) -> &'static str {
-        "style-rename"
+        self.words()[0]
     }
 
     fn title(&self, ctx: &egui::Context) -> String {
-        tr(ctx, "styles-rename-title")
+        tr(ctx, self.words()[1])
     }
 
     fn rows(&mut self, ui: &mut egui::Ui, words: &Translator) -> bool {
@@ -317,13 +357,14 @@ impl SheetContent for RenameDialog {
 
     fn button(&self, words: &Translator) -> (String, bool) {
         let refused = refusal(&self.name, &self.taken, REFUSED, &Args::new(), words);
-        (words.text("styles-rename-button"), refused.is_none())
+        (words.text(self.words()[2]), refused.is_none())
     }
 
     fn output(&self) -> Output {
         Output::StyleRename {
             from: self.from.clone(),
             to: self.name.trim().to_owned(),
+            copy: self.copy,
         }
     }
 }
@@ -341,6 +382,24 @@ pub fn rename(folder: &Path, from: &str, to: &str) -> Result<PathBuf, PresetErro
     files::rename(&path_of(folder, from)?, to)
 }
 
+/// Copies the style built in as `id` into `folder` as `to`, its entries and description as
+/// they are, `build` recorded in it, refusing a name a style in the folder holds. Returns
+/// its path.
+pub fn copy(folder: &Path, id: &str, to: &str, build: &str) -> Result<PathBuf, PresetError> {
+    let to = to.trim();
+    if taken(folder).iter().any(|taken| taken == to) {
+        return Err(PresetError::NameTaken(to.to_owned()));
+    }
+    let (_, builtin) = (files::builtin_styles().into_iter())
+        .find(|(builtin, _)| *builtin == id)
+        .ok_or(PresetError::NotAPreset)?;
+    let stored = Stored {
+        name: to.to_owned(),
+        ..builtin
+    };
+    files::write(folder, &stored, build)
+}
+
 /// Deletes the style `name` in `folder`.
 pub fn delete(folder: &Path, name: &str) -> Result<(), PresetError> {
     files::delete(&path_of(folder, name)?)
@@ -354,17 +413,18 @@ fn path_of(folder: &Path, name: &str) -> Result<PathBuf, PresetError> {
         .ok_or(PresetError::NotAPreset)
 }
 
-/// What the Viewer says where the style `name` could not be renamed, or deleted, in
-/// `words`, `error` why.
-pub fn not_changed(words: &Translator, name: &str, error: &PresetError, renamed: bool) -> String {
+/// The message ids of what the Viewer says where a style could not be renamed, deleted or
+/// copied ([`not_changed`]).
+pub const NOT_RENAMED: &str = "style-not-renamed";
+pub const NOT_DELETED: &str = "style-not-deleted";
+pub const NOT_COPIED: &str = "style-not-copied";
+
+/// What the Viewer says, the message `id`, where the style `name` could not be renamed,
+/// deleted or copied, in `words`, `error` why.
+pub fn not_changed(words: &Translator, id: &str, name: &str, error: &PresetError) -> String {
     let mut args = Args::new();
     args.set("name", name);
     args.set("error", error.to_string());
-    let id = if renamed {
-        "style-not-renamed"
-    } else {
-        "style-not-deleted"
-    };
     words.text_with(id, Some(&args))
 }
 
