@@ -225,6 +225,20 @@ pub struct ProcessingDefinition {
     /// darktable flags `IOP_FLAGS_INCLUDE_IN_STYLES` at the reference release, those that
     /// make a look rather than correct one photo; false for every other.
     pub in_styles: bool,
+    /// The facts it publishes for other tools' actions to read, each snake_case and once
+    /// (decision 107), each given by its [`crate::ProcessingTool::publish`]: Exposure's
+    /// `effective_exposure`; none for every other tool.
+    pub publishes: &'static [&'static str],
+}
+
+/// A fact another tool publishes, which an action reads ([`ActionEnd::reads`]; decision
+/// 107): the publishing tool's id and the fact's, one of its
+/// [`ProcessingDefinition::publishes`]. Named apart from the header tooltip's facts
+/// ([`crate::about::Fact`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Published {
+    pub tool: &'static str,
+    pub id: &'static str,
 }
 
 /// One of the tool's colour pickers (decision 79; `docs/pickers.md`, Declaring
@@ -948,6 +962,10 @@ pub struct ActionEnd {
     /// none with a menu of its own. The button's words name the menu and it runs nothing,
     /// so it is no registry action.
     pub menu: &'static [&'static str],
+    /// The facts other tools publish that it reads, and nothing else of the edit, as AgX's
+    /// Read exposure reads Exposure's `effective_exposure`: each a built tool's published
+    /// fact (`crates/tools/tests/builtin.rs`). A menu's items read their button's.
+    pub reads: &'static [Published],
     /// Drawn disabled and never run until what it runs is built, as [`Control::unported`]
     /// is for a control (decision 29).
     pub unported: bool,
@@ -1559,6 +1577,8 @@ pub enum DefinitionError {
         "the action {0}'s menu is no icon button's, or holds fewer than 2 or more than {MOST_IN_SUBMENU} actions"
     )]
     ActionMenu(&'static str),
+    #[error("the tool publishes {0} twice")]
+    DuplicatePublished(&'static str),
     #[error("two computed values are called {0}")]
     DuplicateComputed(&'static str),
     #[error(
@@ -1853,6 +1873,15 @@ impl ProcessingDefinition {
         }
         if self.version == 0 {
             return Err(DefinitionError::Version);
+        }
+        let mut published = BTreeSet::new();
+        for id in self.publishes {
+            if !is_id(id) {
+                return Err(DefinitionError::Id(id));
+            }
+            if !published.insert(*id) {
+                return Err(DefinitionError::DuplicatePublished(id));
+            }
         }
         let mut ids = BTreeSet::new();
         for control in self.controls {
@@ -2370,6 +2399,14 @@ impl ProcessingDefinition {
         ids
     }
 
+    /// The facts the action `id`, at a row's end or in a menu, reads ([`ActionEnd::reads`]).
+    pub fn reads(&self, id: &str) -> &'static [Published] {
+        let found = self
+            .action_ends()
+            .find(|end| end.id == id || end.menu.contains(&id));
+        found.map_or(&[], |end| end.reads)
+    }
+
     /// The tool's actions that run, with whether each is not ported, in the page's order:
     /// each action at its rows' ends with no menu, and each item of a menu in its button's
     /// place, the button running nothing (decision 107).
@@ -2859,6 +2896,7 @@ mod tests {
                     id: $id,
                     face: Face::Text,
                     menu: &[],
+                    reads: &[],
                     unported: true,
                 })],
             }
@@ -2871,6 +2909,7 @@ mod tests {
             id,
             face: Face::Icon(ButtonIcon::RotateLeft),
             menu: &[],
+            reads: &[],
             unported: false,
         })
     }
@@ -2956,6 +2995,7 @@ mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: CONTROLS,
         preset_rows: &[],
         views: &[],
@@ -3100,6 +3140,7 @@ mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: PAGE_CONTROLS,
         preset_rows: &[],
         views: &[],
@@ -4308,6 +4349,7 @@ mod tests {
             id,
             face,
             menu: &[],
+            reads: &[],
             unported,
         })
     }
@@ -4383,6 +4425,7 @@ mod tests {
                         id: "auto",
                         face: Face::Text,
                         menu: &[],
+                        reads: &[],
                         unported: false,
                     })],
                 },
@@ -4468,6 +4511,7 @@ mod tests {
                     id: "reset",
                     face,
                     menu,
+                    reads: &[],
                     unported: false,
                 })],
             )
@@ -4500,6 +4544,24 @@ mod tests {
             check(menu(icon, &["soft", "detail"])),
             Err(DefinitionError::ActionIsControl("detail"))
         );
+    }
+
+    /// The facts a tool publishes are snake_case, each once (decision 107).
+    #[test]
+    fn a_tool_publishes_each_fact_once() {
+        let publishing = |publishes: &'static [&'static str]| {
+            ProcessingDefinition {
+                publishes,
+                ..DEFINITION
+            }
+            .check()
+        };
+        assert_eq!(publishing(&["level"]), Ok(()));
+        assert_eq!(
+            publishing(&["level", "level"]),
+            Err(DefinitionError::DuplicatePublished("level"))
+        );
+        assert_eq!(publishing(&["Level"]), Err(DefinitionError::Id("Level")));
     }
 
     /// A choice's and a setting's end items wait for decision 107's next steps.
@@ -5382,6 +5444,7 @@ mod tests {
             switched: false,
             copy_safe: true,
             in_styles: false,
+            publishes: &[],
             controls: &CONTROLS[..1],
             preset_rows: &[],
             views: &[],
@@ -5462,6 +5525,7 @@ mod tests {
             switched: false,
             copy_safe: true,
             in_styles: false,
+            publishes: &[],
             controls,
             preset_rows: &[],
             views: &[],

@@ -37,8 +37,8 @@ use crate::definition::{
     Row, Tab, ToolDefinition,
 };
 use crate::{
-    Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, ProcessingTool, Section,
-    Setting, ToolValues, ToolbarItem,
+    Base, ControlValue, Controls, MenuEntry, MenuItem, Owned, Place, ProcessingTool,
+    PublishedValues, Section, Setting, ToolValues, ToolbarItem,
 };
 
 pub struct Orientation;
@@ -91,6 +91,7 @@ const fn button(id: &'static str, icon: ButtonIcon) -> End {
         id,
         face: Face::Icon(icon),
         menu: &[],
+        reads: &[],
         unported: false,
     })
 }
@@ -162,6 +163,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     // src/iop/flip.c's flags: `IOP_FLAGS_UNSAFE_COPY`, not `_INCLUDE_IN_STYLES`.
     copy_safe: false,
     in_styles: false,
+    publishes: &[],
 };
 
 static OWNS: [Owned; 1] = [Owned::new(FLIP, ORIENTATION)];
@@ -192,7 +194,13 @@ impl ProcessingTool for Orientation {
 
     /// darktable's buttons on the orientation shown, auto the photo's own: the new
     /// orientation, written by its choice.
-    fn action(&self, action: &str, values: &Controls, image: &ImageContext) -> Option<Controls> {
+    fn action(
+        &self,
+        action: &str,
+        values: &Controls,
+        _: &PublishedValues,
+        image: &ImageContext,
+    ) -> Option<Controls> {
         let shown = match values.get(ORIENTATION) {
             Some(ControlValue::Choice(choice)) => *choice,
             _ => 0,
@@ -392,7 +400,8 @@ mod tests {
                 for (choice, image) in [(u32::from(bits) + 1, photo(0)), (0, photo(bits))] {
                     let mut values = Orientation.defaults(&image);
                     values.set(ORIENTATION, ControlValue::Choice(choice));
-                    let writes = Orientation.action(action, &values, &image).unwrap();
+                    let read = PublishedValues::new();
+                    let writes = Orientation.action(action, &values, &read, &image).unwrap();
                     let expected = u32::from(darktable(action, bits)) + 1;
                     assert_eq!(
                         writes.get(ORIENTATION),

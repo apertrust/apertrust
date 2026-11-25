@@ -313,6 +313,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     // src/iop/toneequal.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
     copy_safe: true,
     in_styles: true,
+    publishes: &[],
 };
 
 /// Every parameter of `toneequal`, each by the control of its name: the tool is

@@ -3656,6 +3656,7 @@ mod tests {
             switched: false,
             copy_safe: true,
             in_styles: false,
+            publishes: &[],
             controls: &[],
             preset_rows: &[],
             views: &[],

@@ -130,6 +130,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     // src/iop/grain.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
     copy_safe: true,
     in_styles: true,
+    publishes: &[],
 };
 
 /// Every parameter of `grain`: the tool is darktable's and owns them all.

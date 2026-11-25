@@ -5557,11 +5557,21 @@ impl App {
                 let PhotoState::Open(photo) = &self.mirror.photo else {
                     return;
                 };
+                // The facts it reads, from the publishing tools as the mirror shows them, so
+                // a button and its registry action, which both come here, read the same.
+                let read = tools::published(
+                    self.mirror.tools(),
+                    &self.mirror.values.tools,
+                    tool,
+                    action,
+                    &photo.image,
+                );
                 let writes = tools::action_writes(
                     self.mirror.tools(),
                     tool,
                     action,
                     &values,
+                    &read,
                     &photo.image,
                     self.view_only(),
                 );
@@ -20727,7 +20737,9 @@ mod tests {
         };
         assert_eq!((tool, action), ("flip", "rotate_cw"));
         let image = mirror.photo.image();
-        let writes = tools::action_writes(mirror.tools(), tool, action, &values, &image, false);
+        let read = tools::published(mirror.tools(), &mirror.values.tools, tool, action, &image);
+        let writes =
+            tools::action_writes(mirror.tools(), tool, action, &values, &read, &image, false);
         assert_eq!(writes.len(), 1, "{writes:?}");
         assert_eq!((writes[0].0, writes[0].2), ("orientation", true));
     }

@@ -1165,6 +1165,7 @@ pub(crate) mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: &[
             Control {
                 id: "strength",

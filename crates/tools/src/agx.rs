@@ -72,7 +72,9 @@ use crate::definition::{
     ToolDefinition, Unit, slider_step,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
-use crate::{Base, ControlValue, Controls, Owned, ProcessingTool, Setting, ToolValues};
+use crate::{
+    Base, ControlValue, Controls, Owned, ProcessingTool, PublishedValues, Setting, ToolValues,
+};
 
 pub struct Agx;
 
@@ -529,6 +531,7 @@ static SETTINGS: [Row; 5] = [
                     id: "read_exposure",
                     face: Face::Text,
                     menu: &[],
+                    reads: &[],
                     unported: true,
                 })],
             },
@@ -610,6 +613,7 @@ static PRIMARIES_PAGE: [Row; 3] = [
                     id: "reset_primaries",
                     face: Face::Icon(ButtonIcon::PrimariesMenu),
                     menu: &RESET_PRIMARIES,
+                    reads: &[],
                     unported: false,
                 })],
             },
@@ -636,6 +640,7 @@ static PRIMARIES_PAGE: [Row; 3] = [
                             id: "set_from_above",
                             face: Face::Text,
                             menu: &[],
+                            reads: &[],
                             unported: false,
                         })],
                     },
@@ -700,6 +705,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     // src/iop/agx.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
     copy_safe: true,
     in_styles: true,
+    publishes: &[],
 };
 
 /// Every parameter of `agx`: the tool is darktable's and owns them all, each with its
@@ -774,7 +780,13 @@ impl ProcessingTool for Agx {
     ///   attenuation and each reverse rotation its rotation, as shown, so each parameter is
     ///   darktable's to the bit: a boost and its attenuation, a reverse rotation and its
     ///   rotation, share a factor.
-    fn action(&self, action: &str, values: &Controls, _: &ImageContext) -> Option<Controls> {
+    fn action(
+        &self,
+        action: &str,
+        values: &Controls,
+        _: &PublishedValues,
+        _: &ImageContext,
+    ) -> Option<Controls> {
         let mut writes = Controls::new();
         match action {
             "set_from_above" => {
@@ -1359,6 +1371,7 @@ mod tests {
                             id: "read_exposure",
                             face: Face::Text,
                             menu: [],
+                            reads: [],
                             unported: true,
                         })],
                     },
@@ -1386,7 +1399,9 @@ mod tests {
         for (id, value) in before {
             values.set(id, ControlValue::Number(value));
         }
-        let writes = Agx.action("set_from_above", &values, &image).unwrap();
+        let writes = Agx
+            .action("set_from_above", &values, &PublishedValues::new(), &image)
+            .unwrap();
         let written: Vec<(&str, f32)> = writes
             .iter()
             .map(|(id, value)| match value {
@@ -1425,7 +1440,10 @@ mod tests {
             value(&settings, "master_unrotation_ratio"),
             Some(Value::Float(1.0))
         );
-        assert!(Agx.action("no_such_action", &values, &image).is_none());
+        assert!(
+            Agx.action("no_such_action", &values, &PublishedValues::new(), &image)
+                .is_none()
+        );
     }
 
     /// Each of Reset primaries' menu items writes darktable's primaries: adjustments on,
@@ -1487,7 +1505,9 @@ mod tests {
         values.set("completely_reverse_primaries", ControlValue::Bool(true));
         values.set("look_saturation", ControlValue::Number(150.0));
         for (id, base, insets, rotations, outset, unrotation, outsets, unrotations) in cases {
-            let writes = Agx.action(id, &values, &image).unwrap();
+            let writes = Agx
+                .action(id, &values, &PublishedValues::new(), &image)
+                .unwrap();
             assert_eq!(writes.choice(BASE_PRIMARIES), base, "{id}");
             assert!(!writes.flag("disable_primaries_adjustments"), "{id}");
             assert!(!writes.flag("completely_reverse_primaries"), "{id}");
@@ -1526,8 +1546,13 @@ mod tests {
             }
         }
         assert!(
-            Agx.action("primaries_nonexistent", &values, &image)
-                .is_none()
+            Agx.action(
+                "primaries_nonexistent",
+                &values,
+                &PublishedValues::new(),
+                &image
+            )
+            .is_none()
         );
     }
 

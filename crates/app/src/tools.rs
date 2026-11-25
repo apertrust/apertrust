@@ -77,9 +77,9 @@ use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
     ActionEnd, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, End, Face, Fields, Group,
-    GroupKind, LineStart, MAX_POINTS, PickerKind, ProcessingDefinition, ProcessingTool, ReadoutDef,
-    Reset, Row, SettingRow, Slider, ToolDefinition, Track, Unit, View, Widget, Word, check,
-    messages,
+    GroupKind, LineStart, MAX_POINTS, PickerKind, ProcessingDefinition, ProcessingTool,
+    PublishedValues, ReadoutDef, Reset, Row, SettingRow, Slider, ToolDefinition, Track, Unit, View,
+    Widget, Word, check, messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
@@ -1711,8 +1711,45 @@ fn buttons_row(
     }
 }
 
+/// The facts `tool`'s action `action` reads ([`apertrust_tools::ActionEnd::reads`]), each
+/// from its publishing tool's own `publish` on the values `states` show for that tool, its
+/// defaults included, on `image` (decision 107): what the action is given of the rest of
+/// the edit, and nothing else. A fact whose tool is not built or gives none is left out,
+/// and so is one whose tool's code panics: the tool's code never takes the UI thread down.
+pub fn published(
+    tools: &[&dyn ProcessingTool],
+    states: &[ToolState],
+    tool: &str,
+    action: &str,
+    image: &ImageContext,
+) -> PublishedValues {
+    let mut read = PublishedValues::new();
+    let found = tools
+        .iter()
+        .find(|found| found.definition().tool.id == tool);
+    let reads = found.map_or(&[][..], |found| found.definition().reads(action));
+    for fact in reads {
+        let publisher = tools
+            .iter()
+            .find(|found| found.definition().tool.id == fact.tool);
+        let state = states.iter().find(|state| state.tool == fact.tool);
+        let (Some(publisher), Some(state)) = (publisher, state) else {
+            continue;
+        };
+        let shown = values(state);
+        let value = catch_unwind(AssertUnwindSafe(|| {
+            publisher.publish(fact.id, &shown, image)
+        }));
+        if let Ok(Some(value)) = value {
+            read.set(*fact, value);
+        }
+    }
+    read
+}
+
 /// What a button's action sends, as `SetControl`s: each control `tool`'s action writes
-/// on `values`, the values shown, every write but the last `done: false` and the last
+/// on `values`, the values shown, and `read`, the facts it reads ([`published`]), every
+/// write but the last `done: false` and the last
 /// `done: true`, so several writes are one gesture, one change and one history step.
 /// None on a photo open for viewing only, nor for a tool or action the tools do not
 /// have.
@@ -1721,6 +1758,7 @@ pub fn action_writes(
     tool: &str,
     action: &str,
     values: &Controls,
+    read: &PublishedValues,
     image: &ImageContext,
     view_only: bool,
 ) -> Vec<(&'static str, ControlValue, bool)> {
@@ -1730,7 +1768,7 @@ pub fn action_writes(
     let found = tools
         .iter()
         .find(|found| found.definition().tool.id == tool);
-    let writes = found.and_then(|found| found.action(action, values, image));
+    let writes = found.and_then(|found| found.action(action, values, read, image));
     let writes: Vec<(&'static str, ControlValue)> = writes
         .iter()
         .flat_map(Controls::iter)
@@ -5787,6 +5825,7 @@ mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: &[
             apertrust_tools::Control {
                 id: "mode",
@@ -6808,7 +6847,13 @@ mod tests {
             fn bind(&self, _: &ToolValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
                 Vec::new()
             }
-            fn action(&self, _: &str, _: &Controls, _: &ImageContext) -> Option<Controls> {
+            fn action(
+                &self,
+                _: &str,
+                _: &Controls,
+                _: &PublishedValues,
+                _: &ImageContext,
+            ) -> Option<Controls> {
                 let mut writes = Controls::new();
                 writes.set("first", ControlValue::Choice(1));
                 writes.set("second", ControlValue::Choice(2));
@@ -6819,20 +6864,52 @@ mod tests {
         let image = testing::image();
         let values = Orientation.defaults(&image);
         let orientation: &[&dyn ProcessingTool] = &[&Orientation];
+        let read = PublishedValues::new();
         assert_eq!(
-            action_writes(orientation, "flip", "rotate_cw", &values, &image, false),
+            action_writes(
+                orientation,
+                "flip",
+                "rotate_cw",
+                &values,
+                &read,
+                &image,
+                false
+            ),
             [("orientation", ControlValue::Choice(6), true)]
         );
-        assert!(action_writes(orientation, "flip", "rotate_cw", &values, &image, true).is_empty());
-        assert!(action_writes(orientation, "flip", "spin", &values, &image, false).is_empty());
         assert!(
-            action_writes(orientation, "exposure", "rotate_cw", &values, &image, false).is_empty()
+            action_writes(
+                orientation,
+                "flip",
+                "rotate_cw",
+                &values,
+                &read,
+                &image,
+                true
+            )
+            .is_empty()
+        );
+        assert!(
+            action_writes(orientation, "flip", "spin", &values, &read, &image, false).is_empty()
+        );
+        assert!(
+            action_writes(
+                orientation,
+                "exposure",
+                "rotate_cw",
+                &values,
+                &read,
+                &image,
+                false
+            )
+            .is_empty()
         );
         let twice: &[&dyn ProcessingTool] = &[&Twice];
-        let dones: Vec<bool> = action_writes(twice, "flip", "rotate_cw", &values, &image, false)
-            .into_iter()
-            .map(|(_, _, done)| done)
-            .collect();
+        let dones: Vec<bool> =
+            action_writes(twice, "flip", "rotate_cw", &values, &read, &image, false)
+                .into_iter()
+                .map(|(_, _, done)| done)
+                .collect();
         assert_eq!(dones, [false, true]);
     }
 
@@ -6888,7 +6965,10 @@ mod tests {
         };
         // On auto, the photo's own orientation, none here: a quarter turn clockwise.
         let image = testing::image();
-        let writes = Orientation.action("rotate_cw", values, &image).unwrap();
+        let read = PublishedValues::new();
+        let writes = Orientation
+            .action("rotate_cw", values, &read, &image)
+            .unwrap();
         assert_eq!(
             writes.get("orientation"),
             Some(&ControlValue::Choice(6)),
@@ -7199,6 +7279,7 @@ mod tests {
             "agx",
             "set_from_above",
             &values,
+            &PublishedValues::new(),
             &testing::image(),
             false,
         );
@@ -7215,6 +7296,7 @@ mod tests {
             "agx",
             "set_from_above",
             &values,
+            &PublishedValues::new(),
             &testing::image(),
             true,
         );
@@ -9201,11 +9283,15 @@ mod tests {
             "agx",
             "primaries_smooth",
             &values,
+            &PublishedValues::new(),
             &testing::image(),
             false,
         );
         let image = testing::image();
-        let smooth = Agx.action("primaries_smooth", &values, &image).unwrap();
+        let read = PublishedValues::new();
+        let smooth = Agx
+            .action("primaries_smooth", &values, &read, &image)
+            .unwrap();
         assert_eq!(writes.len(), smooth.iter().count());
         assert!(writes[..writes.len() - 1].iter().all(|(_, _, done)| !done));
         assert!(writes.last().unwrap().2);
