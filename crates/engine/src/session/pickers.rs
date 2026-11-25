@@ -652,9 +652,26 @@ impl Engine {
         let mut active = (self.pickers.active)
             .filter(|active| active.once.is_none())
             .ok_or(SessionError::NoPicker)?;
+        // A tool's picker that takes one kind keeps it (decision 105): refused before its
+        // place or kind changes, a drag under way going on.
+        if let Some(takes @ (PickerKind::Area | PickerKind::Point)) =
+            active.tool.map(|on| on.picker.kind)
+            && match command {
+                PickerCommand::Switch => true,
+                PickerCommand::Point { .. } => takes == PickerKind::Area,
+                PickerCommand::Area { .. } => takes == PickerKind::Point,
+                _ => false,
+            }
+        {
+            return Err(SessionError::OneKind { takes });
+        }
         let geometries = self.geometries()?;
         let places = self.pickers.places.entry(active.picker).or_default();
         let before = (active.area, places.of_kind(active.area, &geometries));
+        let pressed = matches!(
+            command,
+            PickerCommand::Point { .. } | PickerCommand::Area { .. }
+        );
         let (done, keys) = match command {
             PickerCommand::Point { at, done, keys } => {
                 places.point = Some(Place::of(Region::Point(at), &geometries));
@@ -696,7 +713,14 @@ impl Engine {
         };
         if let Some(on) = &mut active.tool {
             let pickers = &mut self.pickers;
-            if after != before {
+            // A press that leaves the place as it was with other keys than the latest
+            // reading's, Ctrl on a one-kind picker's area, is read again for them.
+            let rekeyed =
+                pressed && (pickers.latest.get(on.tool)).is_some_and(|latest| latest.keys != keys);
+            if rekeyed {
+                on.measured = None;
+            }
+            if after != before || rekeyed {
                 // A move after the last drag's release begins the next.
                 if pickers.released == pickers.drag {
                     pickers.drag += 1;
