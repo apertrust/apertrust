@@ -76,7 +76,7 @@ use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
-    ActionEnd, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, End, Face, Group,
+    ActionEnd, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, End, Face, Fields, Group,
     GroupKind, LineStart, MAX_POINTS, PickerKind, ProcessingDefinition, ProcessingTool, ReadoutDef,
     Reset, Row, SettingRow, Slider, ToolDefinition, Track, Unit, View, Widget, Word, check,
     messages,
@@ -1495,7 +1495,7 @@ impl Rows for Page<'_> {
                 pickers_row(ui, self, label, readout.as_ref(), &pickers, changes);
             }
             Row::Guides => guides_row(ui, words),
-            // The page drawer's own; a line of fields only a utility's, so far.
+            // The page drawer's own.
             Row::Group(_)
             | Row::When { .. }
             | Row::WhenSetting { .. }
@@ -1614,6 +1614,7 @@ fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &
             }
         }
         Row::Setting(setting) => setting_row(ui, rows, setting, changes),
+        Row::Fields(fields) => fields_row(ui, rows, fields, changes),
         _ => rows.own(ui, row, changes),
     }
 }
@@ -1858,6 +1859,87 @@ fn preset_row(ui: &mut egui::Ui, page: &Page, id: &'static str, changes: &mut Ve
     }
 }
 
+/// A line of a utility's settings as fields (decision 107), Export's `[w] × [h] px`: each
+/// field its setting's value as the page shows it, named by its words with its unit, its
+/// tooltip a setting row's ([`setting_tips`]), and drawn disabled, that tooltip its reason,
+/// where the page says it is not live, as where `--conf` gives it. A value typed is
+/// reported as [`Change::Setting`] by its key, rounded to the decimals the field shows.
+fn fields_row(ui: &mut egui::Ui, page: &dyn Rows, fields: &Fields, changes: &mut Vec<Change>) {
+    /// What a field shows, owned for the row to borrow.
+    struct Shown {
+        name: String,
+        unit: Option<String>,
+        tip: Option<String>,
+        live: bool,
+        value: f64,
+        range: (f32, f32),
+    }
+    let (words, tool) = (page.words(), page.definition().id);
+    let shown: Vec<Shown> = (fields.fields.iter())
+        .map(|field| {
+            let setting = &field.setting;
+            let [_, full, _] = messages::setting_row(tool, setting);
+            let (value, live) = page
+                .setting(setting)
+                .unwrap_or_else(|| (setting.default(), false));
+            Shown {
+                name: full.map(|id| words.text(&id)).unwrap_or_default(),
+                unit: field.unit.map(|unit| words.text(&messages::unit(unit))),
+                tip: setting_tips(page, setting).0,
+                live,
+                value: match value {
+                    ControlValue::Number(value) => widen(value),
+                    _ => 0.0,
+                },
+                range: match setting.kind {
+                    ControlKind::Number { min, max, .. } => (min, max),
+                    _ => (0.0, 0.0),
+                },
+            }
+        })
+        .collect();
+    let row: Vec<parts::RowField<'_>> = (fields.fields.iter().zip(&shown))
+        .map(|(field, shown)| {
+            let (min, max) = shown.range;
+            let mut row = parts::RowField::new(&shown.name, shown.value, widen(min)..=widen(max))
+                .decimals(usize::from(field.setting.decimals));
+            if let Some(before) = field.before {
+                row = row.before(before.text());
+            }
+            if let Some(unit) = &shown.unit {
+                row = row.unit(unit);
+            }
+            match (&shown.tip, shown.live) {
+                (tip, false) => row = row.disabled(tip.as_deref().unwrap_or_default()),
+                (Some(tip), true) => row = row.tip(tip),
+                (None, true) => {}
+            }
+            row
+        })
+        .collect();
+    let name = words.text(fields.words);
+    let id = egui::Id::unique(("fields row", tool, fields.id));
+    if let Some((at, typed)) = parts::FieldsRow::new(id, &name, &row).show(ui) {
+        let (setting, (min, max)) = (&fields.fields[at].setting, shown[at].range);
+        changes.push(Change::Setting {
+            tool,
+            setting: setting.key.unwrap_or(setting.id),
+            value: ControlValue::Number(shown_as(typed, setting.decimals, min, max)),
+            done: true,
+        });
+    }
+}
+
+/// What a setting's row says over it, in the page's words: its tooltip, the page's for it
+/// where the page gives one, else the setting's promise; and the page's alone, which is its
+/// description too where the row shows one.
+fn setting_tips(page: &dyn Rows, setting: &SettingRow) -> (Option<String>, Option<String>) {
+    let (words, tool) = (page.words(), page.definition().id);
+    let [_, _, promise] = messages::setting_row(tool, setting);
+    let tip = page.tip(&Row::Setting(*setting));
+    (tip.clone().or(promise.map(|id| words.text(&id))), tip)
+}
+
 /// One of darktable's own settings for a tool, or a utility's: no control, so nothing an
 /// edit stores. One the app keeps in settings is drawn live with its value there, a change
 /// reported as [`Change::Setting`] by its key in full where it names one, else by its id;
@@ -1874,12 +1956,11 @@ fn setting_row(
     changes: &mut Vec<Change>,
 ) {
     let (words, tool) = (page.words(), page.definition().id);
-    let [label, full, promise] =
+    let [label, full, _] =
         messages::setting_row(tool, setting).map(|id| id.map(|id| words.text(&id)));
     let (label, full) = (label.unwrap_or_default(), full.unwrap_or_default());
     // The page's tooltip for it, its description too, else its promise.
-    let tip = page.tip(&Row::Setting(*setting));
-    let promise = tip.clone().or(promise);
+    let (promise, tip) = setting_tips(page, setting);
     let (value, live) = page
         .setting(setting)
         .unwrap_or_else(|| (setting.default(), false));

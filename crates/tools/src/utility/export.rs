@@ -27,12 +27,14 @@
 //!   resampling and Store masks are darktable's choices of No and Yes.
 //! - **Store masks, Intent and Style** have no setting yet: drawn disabled at darktable's
 //!   default.
-//! - **Its custom rows** are Target storage, the path line, the size line, the groups to
-//!   come and the tool's end, the Summary with the Export button.
+//! - **Its size line in pixels,** `[w] × [h] px`, is a line of fields (decision 107) over
+//!   `export.size.width` and `export.size.height`.
+//! - **Its custom rows** are Target storage, the path line, the print and scale lines, the
+//!   groups to come and the tool's end, the Summary with the Export button.
 
 use crate::{
-    ControlKind, Group, GroupKind, Reset, Row, SettingRow, SettingWords, Tab, ToolDefinition,
-    Track, Widget, Word,
+    ControlKind, Field, Fields, Group, GroupKind, Reset, Row, Separator, SettingRow, SettingWords,
+    Tab, ToolDefinition, Track, Unit, Widget, Word,
 };
 
 use super::{UtilityDefinition, item};
@@ -161,6 +163,38 @@ const SIZE_MODE: SettingWords = words(
         Word::Message("export-mode-scale"),
     ],
 );
+const WIDTH: SettingWords = words("export-width", None, &[]);
+const HEIGHT: SettingWords = words("export-height", None, &[]);
+/// The largest width or height in pixels, 0 for no limit, as a field of the size line.
+const fn side(id: &'static str, key: &'static str, words: &'static SettingWords) -> SettingRow {
+    SettingRow {
+        id,
+        kind: whole(0.0, 100_000.0, 0.0),
+        decimals: 0,
+        track: Track::Plain,
+        key: Some(key),
+        words: Some(words),
+        end: &[],
+    }
+}
+/// The size line in pixels, `[w] × [h] px`, one line with no label at every width the
+/// Tools panel takes, to screen readers "Size in pixels".
+const SIZE_IN_PIXELS: Fields = Fields {
+    id: "size",
+    words: "export-size-pixels",
+    fields: &[
+        Field {
+            setting: side("width", "export.size.width", &WIDTH),
+            before: None,
+            unit: Some(Unit::Pixels),
+        },
+        Field {
+            setting: side("height", "export.size.height", &HEIGHT),
+            before: Some(Separator::Times),
+            unit: Some(Unit::Pixels),
+        },
+    ],
+};
 const UPSCALE: SettingWords = words("export-upscale", None, NO_YES);
 const HIGH_QUALITY: SettingWords = words(
     "export-high-quality",
@@ -313,6 +347,14 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
                             choice(&["pixels", "cm", "inch", "scale"], 0),
                             &SIZE_MODE,
                         ),
+                        Row::WhenSetting {
+                            setting: "size_mode",
+                            is: &["pixels"],
+                            rows: &[Row::Fields(SIZE_IN_PIXELS)],
+                        },
+                        // The print and scale lines, which draw nothing in pixels mode but
+                        // count the resolution and the scale in Global options' "N set" in
+                        // every mode, as before.
                         custom(Widget::ExportSize),
                         setting(
                             "upscale",

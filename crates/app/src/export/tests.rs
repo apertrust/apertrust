@@ -35,8 +35,8 @@ const WIDEST: f32 = 600.0;
 /// The narrowest it can be dragged to.
 const NARROWEST: f32 = 240.0;
 
-/// What the app made of a frame of the tool: the settings it kept, when they changed, and
-/// whether a press started an export or asked first.
+/// What the app made of a frame of the tool: the settings it kept, when they changed or a
+/// press exports them, and whether a press started an export or asked first.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Seen {
     values: Option<Values>,
@@ -265,7 +265,10 @@ fn tool_on(
                         bench.content.note_started(ui.ctx().input(|i| i.time));
                     }
                     bench.asked.push(Seen {
-                        values: asked.changed.then(|| bench.content.values().clone()),
+                        // A press exports the settings as they stand, the frame's setting
+                        // changes routed to it included, as the app's shell holds them.
+                        values: (asked.changed || asked.pressed)
+                            .then(|| bench.content.values().clone()),
                         start: press == Some(Press::Start),
                         confirm: press == Some(Press::Confirm),
                     });
@@ -2145,13 +2148,58 @@ fn a_closed_global_options_says_how_many_of_its_settings_are_off_their_defaults(
     let values = held(&mut harness);
     assert_eq!((values.size_mode, values.upscale), (SizeMode::Cm, true));
     assert_eq!(values.set_in_size(), 0);
-    // A size typed is the size line's, counted with them.
+    // A size typed is the print line's, counted with them; in pixels its width is the line
+    // of fields', which counts it, and the resolution still the print line's.
     let sized = Values {
         width: 2048,
         dpi: 240,
         ..Values::default()
     };
-    assert_eq!(sized.set_in_size(), 2);
+    assert_eq!(sized.set_in_size(), 1);
+    let print = Values {
+        size_mode: SizeMode::Cm,
+        ..sized
+    };
+    assert_eq!(print.set_in_size(), 2);
+}
+
+/// Global options' "N set" counts the width, the height, the resolution and the scale off
+/// their defaults in every mode, as it did before the line in pixels was a line of fields:
+/// in pixels the fields count the width and the height, and the print line, which draws
+/// nothing there, the resolution and the scale.
+#[test]
+fn global_options_counts_the_size_s_settings_in_every_mode() {
+    let closed = |values: Values| {
+        let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+        harness
+            .get_by_role_and_label(Role::Button, "Global options")
+            .click();
+        settle(&mut harness);
+        let group = harness.get_by_role_and_label(Role::Button, "Global options");
+        group.accesskit_node().description()
+    };
+    let sized = Values {
+        width: 2048,
+        height: 1365,
+        dpi: 240,
+        scale: "1/2".to_owned(),
+        ..Values::default()
+    };
+    // In pixels, the width and the height, then the resolution and the scale not shown.
+    assert_eq!(closed(sized.clone()).as_deref(), Some("4 set"));
+    let resolution = Values {
+        dpi: 240,
+        ..Values::default()
+    };
+    assert_eq!(closed(resolution).as_deref(), Some("1 set"));
+    // In the other modes, Set size too.
+    for mode in [SizeMode::Cm, SizeMode::Inch, SizeMode::Scale] {
+        let values = Values {
+            size_mode: mode,
+            ..sized.clone()
+        };
+        assert_eq!(closed(values).as_deref(), Some("5 set"), "{mode:?}");
+    }
 }
 
 #[test]
@@ -3298,6 +3346,89 @@ fn the_size_row_is_one_line_with_no_label_its_fields_sharing_the_width() {
     }
 }
 
+/// The line in pixels is where it was before it was a line of fields, at each width,
+/// its group and its two fields to the tenth of a point (the custom row's measures then).
+#[test]
+fn the_line_in_pixels_is_where_it_was() {
+    let before = [
+        (NARROWEST, [20.0, 295.0, 202.1, 319.0], 92.0, [111.2, 183.2]),
+        (PANEL, [20.0, 295.0, 282.1, 319.0], 132.0, [151.2, 263.2]),
+        (WIDEST, [20.0, 295.0, 562.1, 319.0], 272.0, [291.2, 543.2]),
+    ];
+    let near = |a: f32, b: f32| (a - b).abs() < 0.05;
+    for (width, group, w_right, [h_left, h_right]) in before {
+        let mut harness = tool(Values::default(), Builtin::Dark, Locale::EnGb, width);
+        answer(&mut harness, 1, preview());
+        let rects = size_line_of(
+            &harness,
+            "Size in pixels",
+            &["Width, in px", "Height, in px"],
+        );
+        let (g, w, h) = (rects[0], rects[1], rects[2]);
+        let [left, top, right, bottom] = group;
+        assert!(
+            near(g.left(), left)
+                && near(g.top(), top)
+                && near(g.right(), right)
+                && near(g.bottom(), bottom),
+            "{width}: {g:?}"
+        );
+        assert!(
+            near(w.left(), 20.0) && near(w.top(), 298.0) && near(w.right(), w_right),
+            "{width}: {w:?}"
+        );
+        assert!(
+            near(h.left(), h_left) && near(h.right(), h_right) && near(h.bottom(), 316.0),
+            "{width}: {h:?}"
+        );
+    }
+}
+
+/// Set size's mode chooses its line: the fields in pixels, the print line in cm and inch,
+/// and the fields again on the way back; a problem with the size is the note under the
+/// line shown.
+#[test]
+fn set_size_shows_the_fields_in_pixels_and_the_print_line_otherwise() {
+    let mut harness = open();
+    let mut p = preview();
+    p.size = Some(ActiveSize {
+        source: PathBuf::from("/Users/anna/Pictures/IMG_2041.ARW"),
+        size: Err(SizeProblem::TooLarge {
+            format: "JPEG",
+            largest: 65535,
+            width: 70000,
+            height: 50000,
+        }),
+    });
+    answer(&mut harness, 1, p);
+    let note = "JPEG is at most 65535 px a side.";
+    let under = |harness: &Harness<'_, Bench>, group: &str| {
+        let line = harness.get_by_role_and_label(Role::Group, group).rect();
+        let note = harness.get_by_label(note).rect();
+        note.top() >= line.bottom() - 0.5 && note.top() - line.bottom() < 4.0
+    };
+    assert!(under(&harness, "Size in pixels"));
+    harness.get_by_role_and_label(Role::TextInput, "Width, in px");
+    choose(&mut harness, "Set size", "In cm (for print)");
+    assert!(harness.query_by_label("Size in pixels").is_none());
+    assert!(harness.query_by_label("Width, in px").is_none());
+    assert!(under(&harness, "Size in centimetres"));
+    // One note, under the line shown.
+    assert_eq!(harness.query_all_by_label(note).count(), 1);
+    choose(&mut harness, "Set size", "In pixels (for file)");
+    assert!(harness.query_by_label("Size in centimetres").is_none());
+    assert!(under(&harness, "Size in pixels"));
+    // Typed in pixels, the width and the height are the settings', whole numbers.
+    type_into(&mut harness, Role::TextInput, "Width, in px", "2048.4");
+    harness.key_press(egui::Key::Tab);
+    harness.run();
+    harness.event(egui::Event::Text("1365".to_owned()));
+    harness.key_press(egui::Key::Enter);
+    settle(&mut harness);
+    let values = held(&mut harness);
+    assert_eq!((values.width, values.height), (2048, 1365));
+}
+
 #[test]
 fn every_row_stays_inside_the_panel_at_each_width_in_each_language() {
     for locale in [Locale::EnGb, Locale::Uk, Locale::Pl, Locale::Pseudo] {
@@ -3610,8 +3741,9 @@ fn every_slider_paints_its_fill_between_the_handle_and_the_settings_default() {
     }
 }
 
-/// Every setting row of Export's page names a key the export settings declare, of the
-/// row's kind and range, its default the settings' own, and binds to [`Values`] both ways
+/// Every setting row of Export's page, and each field of its line in pixels, names a key
+/// the export settings declare, of the row's kind and range (a field's top the schema may
+/// leave open), its default the settings' own, and binds to [`Values`] both ways
 /// by id: each option a choice lists is one the settings hold under its id, or one not
 /// built, drawn disabled; but Overwrite, which the settings hold and a platform that cannot
 /// ask draws disabled (decision 93). The rows with no key have no setting yet and are drawn
@@ -3620,11 +3752,11 @@ fn every_slider_paints_its_fill_between_the_handle_and_the_settings_default() {
 fn every_setting_row_is_an_export_setting_of_its_kind_bound_both_ways() {
     use apertrust_base::settings::Kind;
     use apertrust_export::settings::registry::ALL;
-    fn settings(rows: &'static [Row], into: &mut Vec<&'static SettingRow>) {
+    // Setting rows', and the line of fields', whose reach the schema leaves open.
+    fn settings(rows: &'static [Row], into: &mut Vec<(&'static SettingRow, bool)>) {
         for row in rows {
-            if let Row::Setting(setting) = row {
-                into.push(setting);
-            }
+            let field = matches!(row, Row::Fields(_));
+            into.extend(row.setting_rows().map(|setting| (setting, field)));
             settings(row.rows(), into);
         }
     }
@@ -3633,7 +3765,7 @@ fn every_setting_row_is_an_export_setting_of_its_kind_bound_both_ways() {
     let words = Translator::new(Locale::EnGb);
     let export = home(Values::default()).alerts(false);
     let mut keyed = 0;
-    for row in rows {
+    for (row, field) in rows {
         let Some(key) = row.key else {
             assert!(["masks", "intent", "style"].contains(&row.id), "{}", row.id);
             continue;
@@ -3643,7 +3775,12 @@ fn every_setting_row_is_an_export_setting_of_its_kind_bound_both_ways() {
         let declared = declared.unwrap_or_else(|| panic!("{key} is no export setting"));
         match (row.kind, declared.kind()) {
             (ControlKind::Number { min, max, .. }, Kind::Number(number)) => {
-                assert_eq!((number.min, number.max), (Some(min), Some(max)), "{key}");
+                let reach = if field {
+                    number.max.or(Some(max))
+                } else {
+                    number.max
+                };
+                assert_eq!((number.min, reach), (Some(min), Some(max)), "{key}");
             }
             (ControlKind::Choice { .. }, Kind::Choice(_))
             | (ControlKind::Bool { .. }, Kind::Boolean) => {}
@@ -3676,7 +3813,7 @@ fn every_setting_row_is_an_export_setting_of_its_kind_bound_both_ways() {
             }
         }
     }
-    assert_eq!(keyed, 10);
+    assert_eq!(keyed, 12);
 }
 
 /// The options the page names apart from the settings' ids are held under the ids the
