@@ -114,7 +114,7 @@ use apertrust_engine::session::{
 };
 use apertrust_engine::sidecar::Reason;
 use apertrust_engine::view::{FramePlace, Placement};
-use apertrust_tools::{ProcessingTool, ToolDefinition};
+use apertrust_tools::{PickerKind, ProcessingTool, ToolDefinition};
 use apertrust_ui::components::{
     ActivityAction, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
     CaptionStyle, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
@@ -6923,8 +6923,12 @@ impl App {
         let badge = declared.map_or(apertrust_ui::Icon::Pick, |(definition, picker)| {
             pickers::badge(definition, picker)
         });
+        // The Colour picker's takes both kinds.
+        let kind = (declared.and_then(|(definition, picker)| definition.picker(picker)))
+            .map_or(PickerKind::PointArea, |declared| declared.kind);
         let on = pickers::OnPhoto {
             picker,
+            kind,
             area,
             photo,
             pixels,
@@ -21999,9 +22003,10 @@ mod tests {
     }
 
     /// The app's keys read first, as its frame reads them, then a point picker on the photo
-    /// (`docs/pickers.md`, On the photo), and what each asked for.
+    /// (`docs/pickers.md`, On the photo), of the kinds it takes, and what each asked for.
     struct Picking {
         shell: Shell,
+        kind: PickerKind,
         pressed: Vec<ActionId>,
         sent: Vec<PickerCommand>,
     }
@@ -22009,7 +22014,8 @@ mod tests {
     /// With the picker on the photo focused, its keys reach it before the app's actions,
     /// as a focused slider's do: → and Space are Next Photo's, ← and Backspace Previous
     /// Photo's, and here ↑ and Delete open Settings. Without the focus, the actions take
-    /// them and the picker hears none.
+    /// them and the picker hears none. Space switches only a picker that takes both kinds;
+    /// one that takes a point alone keeps it from Next Photo all the same (decision 105).
     #[test]
     fn the_focused_picker_takes_its_keys_before_the_app_s_actions() {
         use apertrust_engine::session::{PickerRef, Region};
@@ -22020,92 +22026,98 @@ mod tests {
             )]),
             ..Settings::default()
         };
-        let mut harness = Harness::builder()
-            .with_size(egui::vec2(800.0, 600.0))
-            .with_context_setup(|ctx| {
-                apertrust_ui::install(ctx, Theme::default());
-                registry_keys_only(ctx);
-            })
-            .build_ui_state(
-                |ui, picking: &mut Picking| {
-                    let ctx = ui.ctx().clone();
-                    let state = State {
-                        photos: 2,
-                        ..picking.shell.state(&ctx, true, false)
-                    };
-                    let keys = actions::read(&ctx, &picking.shell.keymap, &state);
-                    picking.pressed.extend(keys.pressed);
-                    let photo = egui::Rect::from_min_size(
-                        egui::pos2(100.0, 100.0),
-                        egui::vec2(400.0, 300.0),
-                    );
-                    let on = pickers::OnPhoto {
-                        picker: PickerRef::ColourPicker,
-                        area: photo,
-                        photo,
-                        pixels: [400, 300],
-                        region: Region::Point([0.5, 0.5]),
-                        switched: Region::Area([0.02, 0.02, 0.98, 0.98]),
-                        colour: egui::Color32::GRAY,
-                        name: "",
-                        label: "",
-                        badge: apertrust_ui::Icon::Pick,
-                        panning: false,
-                    };
-                    picking.sent.extend(pickers::on_photo(ui, &on).commands);
-                },
-                Picking {
-                    shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
-                    pressed: Vec::new(),
-                    sent: Vec::new(),
-                },
+        for kind in [PickerKind::PointArea, PickerKind::Point] {
+            let mut harness = Harness::builder()
+                .with_size(egui::vec2(800.0, 600.0))
+                .with_context_setup(|ctx| {
+                    apertrust_ui::install(ctx, Theme::default());
+                    registry_keys_only(ctx);
+                })
+                .build_ui_state(
+                    |ui, picking: &mut Picking| {
+                        let ctx = ui.ctx().clone();
+                        let state = State {
+                            photos: 2,
+                            ..picking.shell.state(&ctx, true, false)
+                        };
+                        let keys = actions::read(&ctx, &picking.shell.keymap, &state);
+                        picking.pressed.extend(keys.pressed);
+                        let photo = egui::Rect::from_min_size(
+                            egui::pos2(100.0, 100.0),
+                            egui::vec2(400.0, 300.0),
+                        );
+                        let on = pickers::OnPhoto {
+                            picker: PickerRef::ColourPicker,
+                            kind: picking.kind,
+                            area: photo,
+                            photo,
+                            pixels: [400, 300],
+                            region: Region::Point([0.5, 0.5]),
+                            switched: Region::Area([0.02, 0.02, 0.98, 0.98]),
+                            colour: egui::Color32::GRAY,
+                            name: "",
+                            label: "",
+                            badge: apertrust_ui::Icon::Pick,
+                            panning: false,
+                        };
+                        picking.sent.extend(pickers::on_photo(ui, &on).commands);
+                    },
+                    Picking {
+                        shell: Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac),
+                        kind,
+                        pressed: Vec::new(),
+                        sent: Vec::new(),
+                    },
+                );
+            harness.run();
+            let keys = [
+                Key::ArrowRight,
+                Key::Space,
+                Key::ArrowLeft,
+                Key::Backspace,
+                Key::ArrowUp,
+                Key::Delete,
+            ];
+            for key in keys {
+                harness.key_press(key);
+                harness.run();
+            }
+            assert_eq!(
+                harness.state().pressed,
+                [ActionId::SETTINGS, ActionId::SETTINGS]
             );
-        harness.run();
-        let keys = [
-            Key::ArrowRight,
-            Key::Space,
-            Key::ArrowLeft,
-            Key::Backspace,
-            Key::ArrowUp,
-            Key::Delete,
-        ];
-        for key in keys {
-            harness.key_press(key);
-            harness.run();
-        }
-        assert_eq!(
-            harness.state().pressed,
-            [ActionId::SETTINGS, ActionId::SETTINGS]
-        );
-        assert_eq!(harness.state().sent, []);
+            assert_eq!(harness.state().sent, []);
 
-        harness.state_mut().pressed.clear();
-        harness
-            .get_by(|node| node.role() == Role::Group && node.value().is_some())
-            .focus();
-        harness.run();
-        for key in keys.into_iter().chain([Key::Escape]) {
-            harness.key_press(key);
+            harness.state_mut().pressed.clear();
+            harness
+                .get_by(|node| node.role() == Role::Group && node.value().is_some())
+                .focus();
             harness.run();
-        }
-        assert_eq!(harness.state().pressed, []);
-        let point = |x: f32, y: f32| PickerCommand::Point {
-            at: [x, y],
-            done: true,
-            keys: Default::default(),
-        };
-        assert_eq!(
-            harness.state().sent,
-            [
-                point(0.5 + 1.0 / 400.0, 0.5),
-                PickerCommand::Switch,
-                point(0.5 - 1.0 / 400.0, 0.5),
-                PickerCommand::Reset,
-                point(0.5, 0.5 - 1.0 / 300.0),
-                PickerCommand::Reset,
-                PickerCommand::Off
+            for key in keys.into_iter().chain([Key::Escape]) {
+                harness.key_press(key);
+                harness.run();
+            }
+            assert_eq!(harness.state().pressed, []);
+            let point = |x: f32, y: f32| PickerCommand::Point {
+                at: [x, y],
+                done: true,
+                keys: Default::default(),
+            };
+            let switched = (kind == PickerKind::PointArea).then_some(PickerCommand::Switch);
+            let sent: Vec<_> = [
+                Some(point(0.5 + 1.0 / 400.0, 0.5)),
+                switched,
+                Some(point(0.5 - 1.0 / 400.0, 0.5)),
+                Some(PickerCommand::Reset),
+                Some(point(0.5, 0.5 - 1.0 / 300.0)),
+                Some(PickerCommand::Reset),
+                Some(PickerCommand::Off),
             ]
-        );
+            .into_iter()
+            .flatten()
+            .collect();
+            assert_eq!(harness.state().sent, sent, "{kind:?}");
+        }
     }
 
     /// The shell as the app's frame runs it, without the engine, which `App` needs a GPU

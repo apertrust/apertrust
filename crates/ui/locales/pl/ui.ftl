@@ -1183,9 +1183,10 @@ picker-tip-area-quad =
 
 picker-bar-name = { $tool } · { $picker }
 picker-area-label = { $tool } · { $picker }
-picker-bar-area = Przeciągnij obszar na zdjęciu. { $command }+kliknięcie przełącza na punkt. Kliknięcie prawym przyciskiem resetuje obszar. Esc kończy.
-picker-bar-point = { $what } { $command }+kliknięcie przełącza na obszar. Esc kończy.
-picker-bar-point-what = Kliknij lub przeciągnij punkt na zdjęciu.
+picker-bar-area = Kliknij, aby wybrać mały obszar, lub przeciągnij go. Przeciągnij róg, aby zmienić rozmiar. Kliknięcie prawym przyciskiem resetuje obszar. Esc kończy.
+picker-bar-point = { $what } Esc kończy.
+picker-bar-both-area = Przeciągnij obszar na zdjęciu. { $command }+kliknięcie przełącza na punkt. Kliknięcie prawym przyciskiem resetuje obszar. Esc kończy.
+picker-bar-both-point = { $what } { $command }+kliknięcie przełącza na obszar. Esc kończy.
 picker-photo-area = Obszar próbnika, { $picker }
 picker-photo-point = Punkt próbnika, { $picker }
 picker-photo-at-point = punkt na { $x }%, { $y }%

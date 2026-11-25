@@ -215,11 +215,12 @@ impl<'a> ViewerBar<'a> {
     }
 
     /// While a colour picker is on: its name ("Colour calibration · Illuminant") and how to
-    /// use it ("Drag an area on the photo. Ctrl-click switches to a point. Esc ends."),
-    /// each translated (`docs/pickers.md`, On the photo). They follow the layer's buttons
-    /// and the status, as Rendering… while a zoomed view renders, the name in the text
-    /// colour and how a step quieter, in place of the values under the cursor; how is left
-    /// out where it does not fit, and both where the name does not.
+    /// use it ("Click for a small area, or drag one. Drag a corner to resize. Right-click
+    /// resets the area. Esc ends."), each translated (`docs/pickers.md`, On the photo).
+    /// They follow the layer's buttons and the status, as Rendering… while a zoomed view
+    /// renders, the name in the text colour and how a step quieter, in place of the values
+    /// under the cursor; how is left out where it does not fit, and both where the name
+    /// does not.
     pub fn picker(mut self, name: &'a str, how: &'a str) -> Self {
         self.picker = Some((name, how));
         self

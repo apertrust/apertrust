@@ -6354,6 +6354,7 @@ mod tests {
                 let name = picker_name(&words, Sample.definition(), "brightness");
                 let on = OnPhoto {
                     picker: BRIGHTNESS,
+                    kind: PickerKind::Area,
                     area: photo,
                     photo,
                     pixels: [720, 440],
