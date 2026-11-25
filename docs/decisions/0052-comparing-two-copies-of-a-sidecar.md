@@ -12,7 +12,7 @@ People edit on more than one computer, through a share, a sync service or a driv
 - one at or below the other for every machine: that copy is only older, and the newer replaces it;
 - neither, and both changed the edit: the copy whose latest clock is later, its clock vector included, not only its last step's, stays, and the other becomes a new virtual copy with its own history, named "From another computer" and the time ("From another computer, 5 Nov 14:02"), the activity saying so. A copy whose only change was an Undo, a Truncate or a Compress ([0078](0078-undo-redo-and-the-edits-history.md)) counts as later by that move's clock.
 
-**Ratings, the reject, labels, keywords and metadata combine:** the two logs join step by step in clock order, the later change winning each field, label and keyword, so culling on one computer and editing on another never splits a photo. A virtual copy only one side has is kept; a deletion wins only over steps older than it. A tool-by-tool merge of edits comes later, as a setting.
+**Ratings, the reject, labels, keywords and metadata combine,** the later change winning each field, label and keyword, so culling on one computer and editing on another never splits a photo: each by the clock it keeps beside the history, a keyword's presence or absence by its own ([0110](0110-the-metadata-tool-groups-after-exif-and-iptc-metadata-as-values-beside-the-edit.md)). A virtual copy only one side has is kept; a deletion wins only over steps older than it. A tool-by-tool merge of edits comes later, as a setting.
 
 **When copies are compared:**
 

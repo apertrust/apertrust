@@ -787,7 +787,7 @@ The selection's items, a menu of their own named after darktable's select tool, 
 | Rotate Left, Rotate Right | `rotate-left`, `rotate-right` | — | New, Phase 3, through Crop's orientation |
 | Flip Horizontal, Flip Vertical | `flip-horizontal`, `flip-vertical` | — | New, Phase 3, through Crop's flip |
 | — | | | |
-| Rating → None, 1 to 5 stars, the rating checked; —; Reject, checked while set | `rating-0` to `rating-5`, `reject` | 0 to 5; X ([the caption](#the-caption-under-the-photo)) | New, Phase 3 |
+| Rating → None, 1 to 5 stars, the rating checked; —; Reject, checked while set | `rating-0` to `rating-5`, `reject` | 0 to 5; R ([the caption](#the-caption-under-the-photo)) | New, Phase 3 |
 | Colour Label → Red, Yellow, Green, Blue, Purple, each checked while on | `label-red` to `label-purple` | F1 to F5 | New, Phase 3 |
 | — | | | |
 | Match a Photo… | `match-photo` | — | New, with Match's interface (Phase 6) |
@@ -2672,20 +2672,23 @@ With several photos selected, the rating, reject and label keys, Apply Edit and 
 | Copy Edit, and the copying half of Copy or Apply Parts | The active photo's edit | — |
 | Apply Edit, Apply Parts | Every selected photo | "Apply Edit to 12 Photos" in the menu and the button's tooltip; then "Edit applied to 12 photos · Undo" |
 | Rating, reject and labels, from the keys, the caption or the Photo menu | Every selected photo | "3 stars on 12 photos · Undo" |
+| A metadata field, from the Metadata tool (planned, decision 110) | Every selected photo | "Title of 12 photos" in the field's tooltip; then "Title on 12 photos · Undo" |
 | Export… | Every selected photo, else the active one; the selection stays as it was | "Export 12 Photos…"; the Export tool's button and summary say it too |
 | The slideshow | The selected photos when several are; else the folder or album, from the active photo | — |
 | Print… | Every selected photo | The sheet's title |
 | Show in Folder | The active photo | — |
 
 - **The count shows before anything acts:** the browser bar shows how many are selected of the photos shown, "12/212" ([The browser bar](#the-browser-bar)), and the batch items name the count in their words and tooltips, so nothing acts on more photos than the person can see they chose.
-- **One Undo** takes a batch back: applying a style or an edit to 12 photos, or rating them, is one batch, its steps listed in each photo's History ("Style Warm film", "Applied from IMG_2041", "Rating: 3 stars, 12 photos"), and Edit › Undo names the count ("Undo Warm film on 12 Photos"). Once another photo is active:
+- **One Undo** takes a batch back: applying a style or an edit to 12 photos is one batch, its steps listed in each photo's History ("Style Warm film", "Applied from IMG_2041"), and Edit › Undo names the count ("Undo Warm film on 12 Photos").
+- **Rating them, putting a keyword on or off, or writing a metadata field,** is one batch too, but no step: History never lists it, and one Undo puts each photo's value back, except where the value changed since, which the photo keeps and the notice names (decision 110; [history.md](history.md#behaviour)).
+- **A batch of steps, once another photo is active:**
   - Undo acts on the active photo's history, as History shows it. When the step it reaches is a batch's, it takes the batch back on every photo of it where that step is still the last, whichever of them is active, so right after a batch one Undo takes it all back.
-  - A photo edited since keeps the batch under its own steps, and the notice says so: "Rating taken back on 11 of 12 photos; IMG_2045 has changed since". Undo on that photo takes back its own steps first, then the batch on it alone.
+  - A photo edited since keeps the batch under its own steps, and the notice says so: "Warm film taken back on 11 of 12 photos; IMG_2045 has changed since". Undo on that photo takes back its own steps first, then the batch on it alone.
   - With a photo outside the batch active, Undo acts on that photo's own steps. The batch is taken back from any of its photos, or from the notice's Undo while it shows, which does what Ctrl+Z would on the batch's photos (`UndoBatch`, decision 109).
   - Across photos only while the app runs: after a restart, Undo takes a batch back on the active photo alone (decision 109).
 - **A photo that cannot take a style is skipped and named,** the rest changed, the active photo among them where it can take it (decision 109): one open for viewing only, one whose raw is not on this computer or cannot be read, one refusing a value of the style: "Warm film applied to 11 of 12 photos; IMG_2045 is view-only · Undo".
 - **The active photo changes at once;** the others' pencils as their edits are written, each a job's step; the jobs window never opens itself for it, the spinner showing it runs, and opened, it shows the job's progress and Cancel. A cancel leaves the photos done in the batch.
-- **A toggle across several photos follows the active one:** X rejects every selected photo unless the active photo is rejected, when it clears the reject on all; a label's key does the same; a click on the active photo's current star clears the rating on all.
+- **A toggle across several photos follows the active one:** R rejects every selected photo unless the active photo is rejected, when it clears the reject on all; a label's key does the same; a click on the active photo's current star clears the rating on all.
 
 **The pointer:**
 
@@ -2775,7 +2778,7 @@ Import and Print are full-window sheets and the slideshow an action (decisions 3
 - **Export** ([The Export tool](#the-export-tool), decision 90) is no sheet: a utility, last in the Photos tab, acting on the selection, which Export… and Ctrl+E reveal with its button focused. It runs in the background, in the Toolbar's jobs.
 - **The slideshow** (View › Slideshow, no default key, since S is kept free for a tool; no phase yet): the selected photos when several are, else the folder or album from the active photo. The window goes full screen and comes back after.
   - Each photo is rendered by the engine at the screen's size, the next while one shows (principle 2); a photo not ready yet leaves the one shown longer.
-  - Its keys: → and Space, ← and Backspace; P pauses and resumes; Home and End; Esc ends; the rating, reject and label keys act on the photo shown, one step each, so a cull can happen full screen.
+  - Its keys: → and Space, ← and Backspace; P pauses and resumes; Home and End; Esc ends; the rating, reject and label keys act on the photo shown, one change each, so a cull can happen full screen.
   - A move of the pointer or a key shows a strip for two seconds: "12 of 212", the file name, the stars, the timer (5 seconds by default, kept in settings), Loop and Close. A 300 ms fade between photos, none with reduced motion. Screen readers hear each photo's name and rating.
 - **Keys under them:** while a dialog or a sheet is open, the view's keys rest and F6 stays inside it. A dialog's window has the keyboard focus, so its keys are its own; while the slideshow plays, its keys are its own.
 
@@ -2975,7 +2978,7 @@ The Tools panel is resizable in width, and its scroll bar is quiet. Both are bui
   - **Smart albums** (a folder's in Phase 3, a Library's in Phase 5): darktable's collect rules, filters and sort, saved. At a folder's or a Library's top they search its whole tree or all its folders, inside an album that album's photos, and their rules gain **in album**, an album's photos with or without the albums inside it.
   - **Filters** (Phase 3, decision 73; the wireframe's "Filters tool" frame): collapsible groups with counts, a file name search, Rating, Colour label, History, Date taken, Camera, Lens, File type and more, the groups shown chosen by ＋ and kept app-wide; ↺ clears them, and ⋯ has its presets and Save as Smart Album. In folder mode it runs over the open folder's index, following what the Browser shows, with "37 more photos in subfolders", the tree's walk's count, and Include subfolders beside it while it is off; Save as Smart Album saves into the folder's `.apertrust/`. A filter that hides selected photos leaves only the shown ones selected.
   - **Keywords** (Phase 3, decision 73; the "Keywords module" frame), darktable's tagging in one tool: the Add field (the bindable Add Keyword focuses it; Enter adds the suggestion chosen and keeps the field for the next), the chips of the keywords on the selected photos, one on some of them dimmed with its count, a click putting it on all; Recent, the last nine keywords used as buttons; the keyword list, a tree with counts, closed by default, 10 rows tall when open and dragged from 5 to 30, its right-click holding Edit Keyword… (name, synonyms, private, category), New Keyword Inside…, Move To…, Show Photos and Delete…. Saved keyword sets are later.
-  - **Metadata** (Phase 3, decision 73; the "Metadata module" frame), darktable's image information and metadata editor in one list: the file's facts read-only and darktable's metadata fields edited in place, in the groups Photo, Shot, Description, Location and More; with several selected, a value they differ in says Different, and a field typed in is written to all of them.
+  - **Metadata** (Phase 3, decisions 73 and 110; the "Metadata tool · clean · proposal" board), darktable's image information and metadata editor in one, following the selection: what the file and the camera recorded, read-only, and the fields the person writes, edited in place, in eleven groups after EXIF's directories and IPTC Core's panels, Basic, Camera, Exposure, Lens, GPS, Content, Creator, Rights, Location, Status and Maker notes; with several selected, a value they differ in says Different, or a range, and a field typed in is written to all of them ([The Metadata tool](#the-metadata-tool)).
   - **Styles** (decision 106): the styles applied to the active photo, then the person's styles as a tree, a click applying one, a right-click offering Clear ([The Styles tool](#the-styles-tool)). Creating a style is built with it ([Creating a style](#creating-a-style)).
   - **Export** (decision 90), last: darktable's export module, built for the selection, else the active photo, its sections as groups, Storage and Format options always open ([The Export tool](#the-export-tool)). In every workspace, so Export… and Ctrl+E always reveal it.
   - Later, full-text search.
@@ -3292,6 +3295,183 @@ Built (decision 106, its phase 1; issues #371 and #625): a utility of the Photos
 - **On every selected photo** (planned, #373; decision 109): with several selected, a click on a style, Return in Find style and the menu's Apply apply it to all of them in the chosen mode, as one batch with one Undo, the rows' tooltips saying so ("Apply to 12 photos"); the active photo changes at once and the others as a job; then the notice "Warm film applied to 12 photos · Undo" ([Selection and the active photo](#selection-and-the-active-photo)). The list of styles applied and Clear stay the active photo's.
 - **Not yet:** the preview in the Viewer while the pointer rests on a style (phase 2); favourites, editing and duplicating a style; importing and exporting styles.
 
+### The Metadata tool
+
+Planned (decision 110; the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn344AQstUgeiK#artboard-MetadataTool)'s "Metadata tool · clean · proposal" board): a utility of the Photos tab, id `metadata`, title Metadata, between Keywords and Styles, closed at first. It is darktable's image information (`src/libs/metadata_view.c`) and metadata editor (`src/libs/metadata.c`) in one: it shows what the file and the camera recorded and edits what the person writes. It has no on switch and no kept markers, and it edits nothing of the edit.
+
+**It follows the selection, never the pointer.** It describes every selected photo, which is the active photo where one alone is selected; hovering a thumbnail changes nothing. With no photo, every value is "—" and every field is disabled, its tooltip "Select a photo".
+
+**The header:** the presets button, ＋ (Rows Shown) and ⋯; no ↺, since a wipe of many photos' fields must name its count, which an icon cannot. Its tooltip says what it holds: "What the camera recorded about the selected photos, and the title, description, creator, rights and place you write about them."
+
+**⋯, in order:**
+
+1. Copy Information: every row shown as "Label: value" a line, the groups in order.
+2. Copy Coordinates, "38.710000, -9.130000", while every selected photo has the same location.
+3. A separator, then Clear Metadata Fields on 12 Photos…, darktable's metadata editor reset: every field of the IPTC groups, Notes and the copy's name kept, asking first with the count, one batch and one Undo; disabled where no selected photo has a field set.
+4. The section's layout items.
+
+```text
+▾ Metadata                               ▤  ＋  ⋯
+  Basic ───────────────────────────────────── ⌄
+      File name  R0001225.DNG
+         Folder  ~/Pictures/2026-07 Lisbon      ⇱
+           Type  DNG
+   Size on disk  32.4 MB
+     Dimensions  6000 × 4000 · 24.0 MP
+         Rating  ★★★☆☆
+  Colour labels  ○ ○ ● ○ ○
+         Edited  8 Nov 2026, 10:42 · 14 steps
+           Copy  ░Black and white░░░░░░░░░  2 of 3
+  Camera ──────────────────────────────────── ›
+  Exposure ────────────────────────────────── ⌄
+     Date taken  Sat 4 Jul 2026, 08:10:01 (+01:00)
+  Exposure time  1/500 s
+       Aperture  f/5.6
+            ISO  ISO 200
+  Exposure bias  −0.3 EV
+  Exposure prog  Aperture priority
+  Metering mode  Multi-segment
+          Flash  Off, did not fire
+  Lens ────────────────────────────────────── ›
+  GPS ─────────────────────────────────────── ›
+  Content ─────────────────────────────────── ⌄
+          Title  ░Morning market, Alfama░░░░░░░░░
+    Description  ░Fish stalls before the crowd,░░
+                 ░the light low over the river.░░
+          Notes  ░Try a warmer crop░░░░░░░░░░░░░░
+  Creator ─────────────────────────────────── ›
+  Rights ──────────────────────────────────── ›
+  Location ────────────────────────────────── ›
+  Maker notes · Ricoh ─────────────────────── ›
+```
+
+`░` is a field's `sunken` fill, drawn with no border; `▤` the presets button; `⇱` Open This Folder. Status is not drawn: none of its rows shows at first.
+
+#### Its groups and rows
+
+Eleven collapsible groups, after EXIF's directories and IPTC Core's panels, each a `CollapsibleGroup` (decision 100) whose title is its plain name and whose tooltip names the standard it follows; each row's tooltip names its tag or property ("`ExposureTime`, EXIF 0x829A"). Basic, Exposure and Content are open at first, the rest closed, each group's state kept.
+
+| Group (its tooltip) | Rows shown at first | Rows hidden at first |
+| --- | --- | --- |
+| Basic (The file and the library) | File name; Folder, with Open This Folder; Type; Size on disk; Dimensions; Rating; Colour labels; Edited; Copy, where the photo has several virtual copies | Preserved file name (`xmpMM:PreservedFileName`); Export size |
+| Camera (EXIF · IFD0) | Make (0x010F); Model (0x0110) | Serial number (`BodySerialNumber`); Owner name (`CameraOwnerName`); Software; Date and time of the file (`DateTime`); Orientation; Resolution; the camera's Artist, Copyright and Image description |
+| Exposure (EXIF · Exif IFD) | Date taken (`DateTimeOriginal`, with its sub-seconds and offset); Exposure time; Aperture (`FNumber`); ISO (`PhotographicSensitivity`); Exposure bias; Exposure program; Metering mode; Flash | Date digitised; Exposure mode; White balance; Scene type; Subject distance; Digital zoom; Contrast, Saturation, Sharpness; Brightness; Colour space; Unique image id |
+| Lens (EXIF · Exif IFD, the lens tags) | Lens (`LensModel`, else the maker notes'); Focal length; 35 mm equivalent (`FocalLengthIn35mmFilm`, else the focal length times the crop factor) | Lens make; Lens serial number; Lens specification; Crop factor; Maximum aperture |
+| GPS (EXIF · GPS IFD) | Latitude; Longitude; Altitude; then Show on Map, disabled until the Map layout | Direction; GPS time; Speed; Accuracy; Satellites and map datum |
+| Content (IPTC Core · Content) | Title (`dc:title`); Description (`dc:description`); Notes (`apertrust:notes`), last | Headline (`photoshop:Headline`); Description writer (`photoshop:CaptionWriter`) |
+| Creator (IPTC Core · Contact) | Creator (`dc:creator`) | Job title (`photoshop:AuthorsPosition`); Email, Website, Phone, Address, City, Region, Postal code and Country (`Iptc4xmpCore:CreatorContactInfo`'s members) |
+| Rights (IPTC Core · Status, the rights) | Copyright notice (`dc:rights`); Publisher (`dc:publisher`) | Rights usage terms (`xmpRights:UsageTerms`); Copyright status (`xmpRights:Marked`, a pull-down of Copyrighted, Public domain and Unknown); Web statement (`xmpRights:WebStatement`); Credit line (`photoshop:Credit`); Source (`photoshop:Source`) |
+| Location (IPTC Core · Image, the location) | Sublocation (`Iptc4xmpCore:Location`); City (`photoshop:City`); Country (`photoshop:Country`) | State or province (`photoshop:State`); Country code (`Iptc4xmpCore:CountryCode`) |
+| Status (IPTC Core · Status) | None | Instructions (`photoshop:Instructions`); Job id (`photoshop:TransmissionReference`); Date created (`photoshop:DateCreated`), set only where it differs from Date taken; Intellectual genre; Scene code; Subject code |
+| Maker notes · <maker> (The camera maker's MakerNote) | The rows Apertrust decodes: drive mode, focus mode and point, stabilisation, shutter count, picture style or film simulation, the lens where EXIF lacks it; then "38 fields · Show all", listing the rest in place, Show Fewer folding them | Internal temperature; firmware details |
+
+- **Basic's rows:**
+  - File name is cut in its middle, keeping the extension; its tooltip is the full path.
+  - Folder shows `~` for home and ends with Open This Folder, which makes the folder Collections' active one, disabled where it already is.
+  - Dimensions reads "6000 × 4000 · 24.0 MP", its tooltip "Sensor 6064 × 4040" where the raw's full size differs, darktable's "6000 (6048)".
+  - Edited is the last step's time and the history's length, "Never" for an unedited photo.
+  - Copy is the virtual copy's name in a well, "2 of 3" after it in `text_secondary`; editing it renames the copy.
+  - Export size is what Export would write now, "—" until known.
+  - A rejected photo's Rating reads "Rejected".
+- **Rating and Colour labels** are one more way to the app's global rating and label actions, never their owner ([The caption under the photo](#the-caption-under-the-photo)): five star buttons and darktable's five label dots, a click calling the same actions the keys, the caption, the Photo menu, a thumbnail's right-click menu and the Toolbar call.
+- **Exposure's values:**
+  - Date taken is in the language's long date with its weekday, and the offset where recorded ("Sat 4 Jul 2026, 08:10:01 (+01:00)"); its tooltip adds milliseconds, or "The camera's clock; no time zone recorded".
+  - Exposure time is written as the caption's `exposure.rs` writes darktable's rule; Aperture "f/5.6"; Exposure bias in EV with its sign.
+  - EXIF's codes are in words, as Fluent messages.
+- **GPS** reads "38° 42.6′ N", darktable's pretty form, with the decimal degrees in the tooltip and in Copy Coordinates; darktable's `pretty_location` preference is not offered. Editing coordinates comes with a Geotagging tool and the map.
+- **The camera's own text:** an empty Description, Creator or Copyright notice shows the camera's ImageDescription or IPTC Caption, Artist or IPTC By-line, Copyright or IPTC Copyright, as darktable's import takes them (`src/common/exif.cc:807-830`, `:1977-2007`), in `text`, its tooltip "From the camera's Artist tag". It is written only once the person changes it.
+- **Not shown:**
+  - darktable's image id, group id, flags code and full path, which are its own database's;
+  - its local copy and its import, export and print times, which wait for their features;
+  - keywords, the Keywords tool's, right above.
+
+#### Facts and fields
+
+- **A fact** is read-only, one line of 22 points.
+  - Its label is right-aligned in a column as wide as the longest label shown, at most 40% of the row and cut with … beyond that, in `text_secondary`.
+  - Its value follows 8 points after, in `text` and the small text, cut in its middle (paths, file names) or at its end (make, model, lens); its tooltip holds the whole value.
+  - Under the pointer: the `hover` band and the arrow pointer.
+  - With no value it shows "—" in `text_disabled`, its tooltip saying why; screen readers hear "None".
+- **A field** is editable.
+  - The same label column, then a well to the row's end, filled `sunken` with the small radius and no border, one line in a 24-point row.
+  - It grows a line at a time as its text wraps: up to three lines at rest, the rest cut and in its tooltip; up to six while edited, then it scrolls.
+  - An empty field is an empty well, with no hint text. A field with fixed values is a pull-down in the same well.
+- **A field's states:**
+  - under the pointer, the well a step lighter (`sunken_hover`) and the I-beam;
+  - editing, the editing outline inside the well's edge, the one line a field draws;
+  - Different, the word in `text_secondary`, with a ⌄ at the well's end;
+  - disabled, with its reason in the tooltip;
+  - a write failed, the value kept as typed and a warning button at the well's end.
+- **A closed group** holding a field set on any selected photo shows the set dot, its tooltip "Content: 3 set".
+
+#### Editing
+
+| Gesture | What happens |
+| --- | --- |
+| Return | Commits the field and gives the focus back to what had it, else the Viewer, so the photo's keys act again |
+| Tab, Shift+Tab | Commits and moves to the next or previous stop in the panel, never kept inside the tool |
+| The focus leaving: a click elsewhere, the window, another tab, quitting | Commits |
+| The selection changing mid-edit | Commits to the photos the field opened on, then shows the new selection |
+| Esc | Puts this field back as editing found it and gives the focus back; the other fields are untouched |
+| Shift+Return, Ctrl+Return | A line break in Description and Notes; elsewhere, as Return |
+| Ctrl+Z inside a field | Undoes typing; outside one, the app's Undo |
+
+- **A value written** is trimmed of spaces at both ends. An empty one clears the field, writing an explicit empty where it showed the camera's text. An unchanged value commits nothing.
+- **Storage:** each committed field is the photo's current value, kept beside the edit with its clock, never a step. The History tab never lists it, and Undo takes it back ([library.md](library.md#metadata-beside-the-edit), [history.md](history.md#behaviour)).
+- **No right-click:** a fact takes the focus on a click, its value selected. Ctrl+C or Edit › Copy copies it, a focused fact counting as a focused field for decision 39's editing items. A double-click selects a word.
+
+#### Several photos
+
+- **Facts** show a shared value, else Different, or a range or a total where it helps:
+  - Date taken, Exposure time, Aperture and ISO as ranges ("08:10 – 09:42", "1/2000 – 1/60 s");
+  - Size on disk as a total ("384 MB in all");
+  - File name as "12 photos", its tooltip naming the first five.
+
+  A Different row's tooltip lists up to five values with their counts, "and 3 more", the photos with none, and the active photo's value.
+- **Fields:**
+  - A shared value edits as one photo's, on all of them.
+  - Over Different the word stays until the first character replaces it; Return or Tab writes the text to every photo, one batch. Return with nothing typed writes nothing.
+  - The ⌄, or Alt+↓, lists each value with its count, most common first, at most ten, then "and 24 more values" disabled, a separator and Clear on 12 Photos. A value chosen is written to all at once.
+  - Then the notice "Title on 12 photos · Undo" ([Selection and the active photo](#selection-and-the-active-photo)).
+- **Rating** reads Different with its ⌄ list of ratings and counts, a star rating them all. A label's dot is filled where every photo has it and ringed where some do; a click does what the label's key does, following the active photo: on all of them unless the active photo has it, when it comes off all.
+- **Off the interface thread:** the library builds the summary from the open folder's index, or, for photos opened together, which have no index, by a job reading each photo's own raw metadata and sidecar with no decode (decision 109's read); the app draws only the latest selection's. Until it comes, values are blank, then "…" after 150 ms with "Reading 2,140 of 3,000 photos" in the tooltip. A write to many photos is a cancellable job in the jobs window ("Writing Title to 3,000 photos"), the fields showing the new value at once.
+
+#### Problems
+
+| Case | What shows |
+| --- | --- |
+| The sidecar write fails | The value stays; a warning button on the field, its menu the reason and Try Again; the Viewer's failed-edit message until a write succeeds |
+| Every selected photo view-only, the active one alone among them | Every field disabled, the copy's name among them, its tooltip saying why; the facts as usual |
+| Some selected photos view-only | A warning button on Content's title row, "3 of 12 photos are view-only and keep their fields", its menu Select Only Editable Photos; writes skip them, the notice counting what was written |
+| A card opened as a folder | Fields disabled: "A card is read-only. Import it to edit." |
+
+#### Presets and Rows Shown
+
+- **The presets button,** as every tool's ([A tool's presets](#a-tools-presets)), holds views: which groups and rows are shown and which groups are open. These are the tool's settings `tools_panel.metadata.shown`, `.hidden` (against the defaults) and `.open`, kept app-wide and never in an edit; field values are never a preset's.
+  - **Default settings** first: the rows shown at first, Basic, Exposure and Content open.
+  - **The built-ins,** files in `data/presets/metadata/`: Essentials (File name, Rating, Colour labels and Copy; Date taken, Exposure time, Aperture and ISO; Lens and Focal length; Title), Everything (every row) and IPTC for agencies (Default settings' facts and every row of the five IPTC groups).
+  - Then the person's own.
+- **＋, Rows Shown,** lists the eleven groups, each opening a list of its rows with a check on each shown; it shows or hides one row at a time. A hidden row keeps its value and stays in exported files; Notes alone stay out unless Export's Metadata group includes them. No row is reordered.
+
+#### Keyboard and screen readers
+
+- **Tab order:**
+  1. the header and its buttons;
+  2. each group's title row;
+  3. in an open read-only group, one stop for its list of facts, ↑ and ↓ moving between them and Enter on Folder running Open This Folder; then Basic's Rating, Colour labels and Copy, each a stop, ← and → moving between the stars and between the dots;
+  4. in an open editable group, each field, then its ⌄ while Different and its warning button.
+
+  A closed group's rows are skipped.
+- **Actions** (decision 98), with no default key: `tool-metadata-control-<field>`, focusing that field and revealing the tool, as darktable's entry actions; `tool-metadata-open-this-folder`; `tool-metadata-copy-information`.
+- **Screen readers:**
+  - the tool is a section named Metadata, each group a Group named by its title and described by its standard;
+  - a list of facts is a List, each item named "Date taken: Sat 4 Jul 2026, 08:10:01";
+  - a field is a text input, multi-line for Description and Notes, named by its label and described with the count ("12 photos");
+  - Different is read as the value "Different", described "12 photos, 3 different titles. Typing replaces them all.";
+  - a write to several photos is said once in a polite live region, a failed one assertively.
+
+**The order of work** is decision 110's five slices, in [the roadmap](roadmap.md#culling-metadata-and-several-computers-in-folder-mode): read-only for one photo, needing none of the library's steps; several photos read-only, with the presets; storage and editing for one photo, with the library's steps 14 and 15; editing several; Export's Notes and the copy's name as `$(VERSION.NAME)`. It needs a fact list shared with Export's Summary and a wrapping text field in `apertrust-ui`, and row kinds for a fact and a field in `apertrust-tools`.
+
 ### The photo frame
 
 The Viewer's photo is for looking: nothing is drawn on it, and its marks and controls sit in a caption under it. Built for the one photo the app shows; several photos are Phase 3's.
@@ -3557,7 +3737,7 @@ The row under the photo has three zones: the file name at its start, the photo's
 
   | Control | Off | On | Under the pointer |
   | --- | --- | --- | --- |
-  | Reject | ⊗ outlined in `text_secondary` | A disc filled in `error`, its × cut out: set by its fill, not by colour alone | The tooltip "Reject (X)", or "Clear reject (X)"; the outline in `error` while it is off |
+  | Reject | ⊗ outlined in `text_secondary` | A disc filled in `error`, its × cut out: set by its fill, not by colour alone | The tooltip "Reject (R)", or "Clear reject (R)"; the outline in `error` while it is off |
   | Stars | Outlined in `text_secondary` | Filled in `text`, from the first to the rating | Over the nth star, the first n show filled in `text_secondary` as a preview and the tooltip says "Rate 3 stars (3)"; over the current rating's star, the stars preview empty and the tooltip says "Clear the rating (0)". Nothing changes until the click |
   | Colour labels | A ring in the label's colour, so each always shows its colour | Filled with its colour | Off, the fill at half strength as a preview of on; on, the fill at half strength as a preview of off; the tooltip "Red label (F1)" |
 
@@ -3565,9 +3745,9 @@ The row under the photo has three zones: the file name at its start, the photo's
   - The five colours are tokens of each theme (`label_red` to `label_purple`), checked at 3:1 against the photo surround, the outer ring counting where there is one. They are told apart by their fixed order and their names as well as their colours, for colour-blind users.
   - The light theme's surround is mid grey (#777777), where `text_secondary` (1.85:1) and `error` (1.43:1) fail 3:1. So the stars' and Reject's outlines and the set Reject take surround tokens of their own there (a `surround_text_secondary` beside `surround_text`), which the theme check holds to 3:1. The dark and high-contrast themes pass with the tokens above.
   - While the photo is rejected its stars stay set and are drawn dimmed: a reject keeps the rating under it, as darktable's does, and clearing the reject brings it back.
-- **What a click does:** the nth star sets the rating to n and clears a reject; the current rating's star sets 0; Reject toggles; a label toggles itself only. Each takes effect at once, is saved with the photo and is one step of its history, listed in History ("Rating: 3 stars", "Red label on") and taken back by one undo in order with the edit's steps.
-- **With several photos selected,** the keys act on every one of them (decision 37), and so do the caption's controls, since a key and its control never disagree. The controls show the active photo's values; their tooltips then say how many they act on ("Rate 12 photos 3 stars (3)", "Reject 12 photos (X)"). The active photo's state decides which way a toggle goes. The change is one step, which one Undo takes back on all of them, and a notice says so: "3 stars on 12 photos · Undo" ([Selection and the active photo](#selection-and-the-active-photo)).
-- **Keys,** darktable's, wherever a photo is active, in every layout ([the default keyboard map](#the-default-keyboard-map)): 0 to 5 set the rating, 0 clearing it, each clearing a reject as a star's click does; X toggles Reject; F1 to F5 toggle red, yellow, green, blue and purple. They act on every selected photo, as Export and Apply edit do.
+- **What a click does:** the nth star sets the rating to n and clears a reject; the current rating's star sets 0; Reject toggles; a label toggles itself only. Each takes effect at once and is saved with the photo as its current value, never a step of its history: History never lists it, and Undo takes it back in the order made with the edit's changes (decision 110).
+- **With several photos selected,** the keys act on every one of them (decision 37), and so do the caption's controls, since a key and its control never disagree. The controls show the active photo's values; their tooltips then say how many they act on ("Rate 12 photos 3 stars (3)", "Reject 12 photos (R)"). The active photo's state decides which way a toggle goes. The change is one batch, which one Undo takes back on all of them, and a notice says so: "3 stars on 12 photos · Undo" ([Selection and the active photo](#selection-and-the-active-photo)).
+- **Keys,** darktable's, wherever a photo is active, in every layout ([the default keyboard map](#the-default-keyboard-map)): 0 to 5 set the rating, 0 clearing it, each clearing a reject as a star's click does; R toggles Reject, as darktable's (`src/libs/tools/ratings.c:117`); F1 to F5 toggle red, yellow, green, blue and purple. They act on every selected photo, as Export and Apply edit do.
   - Plain digits are free for this, since only Ctrl takes them (the Tools panel's tabs, the zoom's Ctrl+0) and modifiers must match exactly.
   - A focused slider takes a digit, a minus sign or the decimal separator as the start of a typed value, as if a click on the value had opened its field with it typed (decision 42). So the digits rate the photo only when no slider or text field has focus, and typing "50" on a slider never rates the photo 5 and then clears it.
 - **Focus and screen readers.** The controls follow the viewer bar's in the focus order, in the same F6 region.
@@ -3586,8 +3766,8 @@ The row under the photo has three zones: the file name at its start, the photo's
   7. the file name goes.
 
   The compact rating and the labels' dots never go: they are what culling looks at. Reject and the five stars are never folded before the exposure has gone.
-- **Where they are kept:** a rating, a reject and the colour labels are the photo's metadata, written to its `.apxmp` with the edit (decision 48's file; [library.md](library.md#where-edits-live), which places rating, label and keywords there), never in settings. They are written as darktable writes them, its labels and reject beside the standard XMP rating, so darktable and Apertrust read each other's; the details are settled as they are built (the library's ratings and labels step).
-- **What a script sees:** session commands of their own, which the caption, the keys and the menus send alike, on a photo by its id: a rating from 0 to 5, a reject on or off, a label on or off. History and undo record them as they record a tool's change.
+- **Where they are kept:** a rating, a reject and the colour labels are the photo's metadata, written to its `.apxmp` beside the edit as its current values, each with the clock of its last change, the stars kept apart from the reject so a reject keeps them (decisions 48 and 110; [library.md](library.md#metadata-beside-the-edit)), never in settings. Their values are darktable's, its labels and reject beside the standard XMP rating, so Apertrust reads darktable's `.xmp` as it is. The `.apxmp` holds them per virtual copy in its own layout; darktable and other programs read them only from a standard XMP file, which the planned sync of ratings, labels and keywords would write ([library.md](library.md#where-edits-live)). The details are settled as they are built (the library's ratings and labels step).
+- **What a script sees:** session commands of their own, global actions owned by no tool, which the caption, the keys, the menus, the Toolbar and the Metadata tool's Basic rows send alike, on a photo by its id: a rating from 0 to 5, a reject on or off, a label on or off. Undo takes them back as it takes a tool's change; History never lists them (decision 110).
 - **When:** Phase 3, so photos can be culled in folder mode: the caption's controls, their keys and the Photo menu's Rating and Colour Label items arrive together, written to the `.apxmp` as darktable writes them, with the selection of several photos (decision 37). The Library's filters use them from Phase 5. Until Phase 3 the caption keeps its two ends, the name and the exposure, with the centre empty.
 
 ### The Browser
@@ -4610,14 +4790,14 @@ Ctrl means Cmd on macOS.
 | View | Select the photos with no edit | None, as darktable's select untouched has none | Built: Select's Select Unedited |
 | View | Previous Selection | Ctrl+Shift+D (decision 90) | Built: Select's Previous Selection. darktable gives this key to "duplicate virgin", New Virtual Copy from Original here, which gets another key when virtual copies are designed |
 | View | Rate the selected photos: no stars, or 1 to 5 | 0 to 5, on the number row and the keypad, as darktable's | Not built: Phase 3, with ratings ([the caption](#the-caption-under-the-photo)); on every selected photo (decision 37) |
-| View | Reject, or clear it | X | Not built, as above |
+| View | Reject, or clear it | R | Not built, as above |
 | View | Colour labels red, yellow, green, blue and purple, each on or off | F1 to F5 | Not built, as above |
 | View | Print… | Ctrl+P | Not declared yet: with the Print sheet, after Phase 5 |
 | View | Slideshow | None: S stays free for a tool | Not declared yet: no phase |
 
 - **The photo's zoom** has the keys macOS and commercial raw editors give a document's zoom, since it is used every minute; the interface's size is set once, so it keeps View › Interface Size and Settings with no default keys.
 - **Repeat:** Undo, Redo, zooming the photo in and out, moving a zoomed photo, F6 and the next and previous photo repeat while their keys are held, and so does the interface's scale on keys a user gives it; the rest run once a press.
-- **The rating's keys clash with nothing in the map:** no default takes a plain digit, X or F1 to F5.
+- **The rating's keys clash with nothing in the map:** no default takes a plain digit, R or F1 to F5.
   - Ctrl+0 to Ctrl+5 (the zoom's Fit, the Tools panel's tabs) and Ctrl+X (Cut) are other presses, since modifiers must match exactly; F6, F10 and F11 are their neighbours.
   - The number row is matched by its physical key, as Ctrl's digits are, so AZERTY's unshifted & é " ' ( still rate.
   - Three things stay with the focused widget or the platform. A focused text field keeps the digits and X, so typing a value never rates the photo, but not F1 to F5, which reach the registry from a field as F6 does. A focused curve keeps +, which Czech and Slovak keyboards type on the 1 key. On a Mac, F1 to F5 are the system's brightness and other keys unless Fn is held or the standard function keys are turned on, as in darktable.
