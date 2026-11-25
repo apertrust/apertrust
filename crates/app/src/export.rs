@@ -227,13 +227,16 @@ impl Values {
         }
     }
 
-    /// How many of the settings the size line holds are off their defaults, which Global
-    /// options counts in its "N set" with its setting rows.
+    /// How many of the size's settings off their defaults the print and scale lines count,
+    /// which Global options counts in its "N set" with its setting rows: the width, the
+    /// height, the resolution and the scale in every mode, but for the width and the height
+    /// in pixels mode, which its line of fields counts.
     pub fn set_in_size(&self) -> usize {
         let d = Values::default();
+        let fields = self.size_mode == SizeMode::Pixels;
         [
-            self.width != d.width,
-            self.height != d.height,
+            !fields && self.width != d.width,
+            !fields && self.height != d.height,
             self.dpi != d.dpi,
             self.scale != d.scale,
         ]
@@ -687,10 +690,10 @@ pub fn definition() -> &'static UtilityDefinition {
     apertrust_tools::utility::utility(ID).expect("Export is built in")
 }
 
-/// Export as a utility tool (decision 93): its settings, its page's setting rows, bound to
-/// [`Values`] by their keys, those not built yet drawn disabled; its custom rows, Target
-/// storage, the path line, the size line, the groups to come and the Summary with the
-/// tool's end; what the session says, as the tooltips and problems of the path and the
+/// Export as a utility tool (decision 93): its settings, its page's setting rows and its
+/// line of fields in pixels, bound to [`Values`] by their keys, those not built yet drawn
+/// disabled; its custom rows, Target storage, the path line, the print and scale lines,
+/// the groups to come and the Summary with the tool's end; what the session says, as the tooltips and problems of the path and the
 /// size; and its ↺, Default settings.
 impl UtilityTool for Export {
     type Action = Page;
@@ -832,7 +835,7 @@ impl UtilityTool for Export {
     }
 
     /// What stops the path or its folder, with its fix, under the path line; what stops
-    /// the size under the size line. A path `--conf` gives keeps its note with no fix,
+    /// the size under the size line, in pixels or not. A path `--conf` gives keeps its note with no fix,
     /// since nothing here may change it.
     fn note(&self, row: &Row, words: &Translator) -> Option<Note> {
         match row {
@@ -852,17 +855,13 @@ impl UtilityTool for Export {
                     fix,
                 })
             }
+            // Under the line shown: the line of fields in pixels, the print or scale line
+            // otherwise.
+            Row::Fields(_) if self.values.size_mode == SizeMode::Pixels => self.size_note(words),
             Row::Custom {
                 widget: Widget::ExportSize,
                 ..
-            } => {
-                let (_, preview) = self.preview.as_ref()?;
-                let problem = preview.size.as_ref()?.size.as_ref().err()?;
-                Some(Note {
-                    text: size_problem(words, problem),
-                    fix: None,
-                })
-            }
+            } if self.values.size_mode != SizeMode::Pixels => self.size_note(words),
             _ => None,
         }
     }
@@ -1400,9 +1399,11 @@ impl Export {
         )
     }
 
-    /// The size line for Set size's mode: its fields on one line, or the scale's. Set size
-    /// itself is a setting row, its tooltip what the photo will be ([`Self::size_tip`]),
-    /// and a problem with the size the note under this line ([`UtilityTool::note`]).
+    /// The print line or the scale's for Set size's mode: the fields on one line, or the
+    /// scale's; nothing in pixels mode, whose line is a line of fields (decision 107). Set
+    /// size itself is a setting row, its tooltip what the photo will be
+    /// ([`Self::size_tip`]), and a problem with the size the note under this line or the
+    /// line in pixels ([`UtilityTool::note`]).
     fn size_line(&mut self, ui: &mut Ui, t: &Theme) {
         let ctx = ui.ctx().clone();
         let overridden = crate::utility::overridden(&translator(&ctx));
@@ -1411,26 +1412,8 @@ impl Export {
         let scale_given = self.given.contains("export.size.scale");
         let v = &mut self.values;
         match v.size_mode {
-            SizeMode::Pixels => {
-                let unit = tr(&ctx, "unit-pixels");
-                let name = tr(&ctx, "export-size-pixels");
-                let shown = [v.width, v.height].map(f64::from);
-                let (typed, _) = size_line(
-                    ui,
-                    t,
-                    &name,
-                    shown,
-                    0,
-                    100_000.0,
-                    &unit,
-                    None,
-                    given,
-                    &overridden,
-                );
-                let [w, h] = typed;
-                v.width = w.map_or(v.width, |typed| typed.round() as u32);
-                v.height = h.map_or(v.height, |typed| typed.round() as u32);
-            }
+            // The line in pixels is the page's line of fields, drawn above.
+            SizeMode::Pixels => {}
             SizeMode::Cm | SizeMode::Inch => {
                 let cm = v.size_mode == SizeMode::Cm;
                 let (name, unit) = if cm {
@@ -1519,6 +1502,16 @@ impl Export {
                 }
             }
         }
+    }
+
+    /// What stops the size, from the session's answer, as the note under the size line.
+    fn size_note(&self, words: &Translator) -> Option<Note> {
+        let (_, preview) = self.preview.as_ref()?;
+        let problem = preview.size.as_ref()?.size.as_ref().err()?;
+        Some(Note {
+            text: size_problem(words, problem),
+            fix: None,
+        })
     }
 
     /// What the Set size row's tooltip says: what the active photo will be, its size and

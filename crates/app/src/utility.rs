@@ -238,7 +238,8 @@ struct Page<'t, 'c, T: UtilityTool> {
 
 impl<T: UtilityTool> Page<'_, '_, T> {
     /// How many settings `rows` show now off their defaults, those inside them included:
-    /// its setting rows', and its custom rows' as the utility counts them.
+    /// its setting rows' and its lines of fields', and its custom rows' as the utility counts
+    /// them.
     fn count(&self, rows: &[Row]) -> usize {
         let mut set = 0;
         for row in rows {
@@ -248,9 +249,12 @@ impl<T: UtilityTool> Page<'_, '_, T> {
                         set += self.count(rows);
                     }
                 }
-                Row::Setting(setting) => {
-                    let shown = self.setting(setting).map(|(value, _)| value);
-                    set += usize::from(shown.is_some_and(|value| value != setting.default()));
+                // A setting row's, or each field's of a line of fields.
+                Row::Setting(_) | Row::Fields(_) => {
+                    for setting in row.setting_rows() {
+                        let shown = self.setting(setting).map(|(value, _)| value);
+                        set += usize::from(shown.is_some_and(|value| value != setting.default()));
+                    }
                 }
                 Row::Custom { widget, .. } => set += self.drawn.borrow().0.set_in(*widget),
                 row => set += self.count(row.rows()),
@@ -805,5 +809,158 @@ mod tests {
         assert_eq!(why.as_deref(), Some("Set by --conf for this run"));
         let conflict = harness.get_by_role_and_label(Role::ComboBox, "On conflict");
         assert!(!conflict.accesskit_node().is_disabled());
+    }
+
+    /// A width whose words declare a promise, and a height with none, which the page's
+    /// tooltip names: a line of fields of `sizer.width` and `sizer.height`.
+    const WIDE: apertrust_tools::SettingWords = apertrust_tools::SettingWords {
+        label: "export-width",
+        full: None,
+        promise: Some("export-high-quality-tip"),
+        options: &[],
+    };
+    const HIGH: apertrust_tools::SettingWords = apertrust_tools::SettingWords {
+        label: "export-height",
+        full: None,
+        promise: None,
+        options: &[],
+    };
+    const SIDE: SettingRow = SettingRow {
+        id: "width",
+        kind: ControlKind::Number {
+            min: 0.0,
+            max: 100_000.0,
+            step: 1.0,
+            default: 0.0,
+        },
+        decimals: 0,
+        track: Track::Plain,
+        key: Some("sizer.width"),
+        words: Some(&WIDE),
+        end: &[],
+    };
+    static SIZER: UtilityDefinition = UtilityDefinition {
+        tool: ToolDefinition {
+            id: "sizer",
+            tabs: &[Tab {
+                id: None,
+                rows: &[Row::Fields(apertrust_tools::Fields {
+                    id: "size",
+                    words: "export-size-pixels",
+                    fields: &[
+                        apertrust_tools::Field {
+                            setting: SIDE,
+                            before: None,
+                            unit: Some(apertrust_tools::Unit::Pixels),
+                        },
+                        apertrust_tools::Field {
+                            setting: SettingRow {
+                                id: "height",
+                                key: Some("sizer.height"),
+                                words: Some(&HIGH),
+                                ..SIDE
+                            },
+                            before: Some(apertrust_tools::Separator::Times),
+                            unit: Some(apertrust_tools::Unit::Pixels),
+                        },
+                    ],
+                })],
+            }],
+            before: &[],
+            after: &[],
+            reset: Reset::None,
+            presets: false,
+            open_at_first: false,
+            menus: &[],
+            toolbar: &[],
+            cursors: &[],
+        },
+        measures: None,
+        titles: &[],
+        open: &[],
+    };
+
+    /// Keeps its width and height, gives the height a tooltip of the page's, and says
+    /// which `--conf` gives.
+    #[derive(Default)]
+    struct Sizer {
+        given: Option<&'static str>,
+    }
+
+    impl UtilityTool for Sizer {
+        type Action = ();
+
+        fn definition(&self) -> &'static UtilityDefinition {
+            &SIZER
+        }
+
+        fn body(&mut self, _: Widget, _: &mut egui::Ui, _: &mut Context<'_>) -> Vec<()> {
+            Vec::new()
+        }
+
+        fn setting(&self, row: &SettingRow) -> Option<ControlValue> {
+            row.key.map(|_| ControlValue::Number(2048.0))
+        }
+
+        fn tip(&self, row: &Row, _: &Translator) -> Option<String> {
+            matches!(row, Row::Setting(SettingRow { id: "height", .. }))
+                .then(|| "What the photo will be".to_owned())
+        }
+
+        fn given(&self, key: &str) -> bool {
+            self.given == Some(key)
+        }
+    }
+
+    /// A line of fields' tooltips are its settings' rows': the page's for a field where it
+    /// gives one, else the setting's promise; a field `--conf` gives says so instead.
+    #[test]
+    fn a_line_of_fields_says_what_its_settings_rows_would() {
+        use egui::accesskit::Role;
+        use egui_kittest::kittest::NodeT as _;
+        let sizer = |given: Option<&'static str>| {
+            let mut harness = Harness::builder()
+                .with_size(egui::vec2(320.0, 200.0))
+                .with_context_setup(|ctx| {
+                    apertrust_ui::install(ctx, apertrust_ui::Theme::default());
+                })
+                .build_ui_state(
+                    |ui, sizer: &mut Sizer| {
+                        let mirror = crate::mirror::tests::mirror();
+                        let (words, mut commands) = (translator(ui.ctx()), Vec::new());
+                        let settings = Settings::default();
+                        let mut cx = Context {
+                            mirror: &mirror,
+                            settings: &settings,
+                            words: &words,
+                            commands: &mut commands,
+                        };
+                        drop(rows(ui, sizer, &mut cx));
+                    },
+                    Sizer { given },
+                );
+            harness.run();
+            harness
+        };
+        let says = |harness: &mut Harness<'_, Sizer>, field: &str, tip: &str| {
+            let at = harness.get_by_role_and_label(Role::TextInput, field).rect();
+            harness.hover_at(at.center());
+            harness.run_steps(40);
+            assert!(harness.query_by_label(tip).is_some(), "{field}: {tip}");
+            harness.hover_at(egui::pos2(300.0, 190.0));
+            harness.run_steps(40);
+        };
+        let promise = "Do high quality resampling during export: every operation at full \
+                       size, then scaled down.";
+        let mut harness = sizer(None);
+        says(&mut harness, "Width, in px", promise);
+        says(&mut harness, "Height, in px", "What the photo will be");
+        // Given for the run, it says so in place of either.
+        let mut harness = sizer(Some("sizer.width"));
+        let width = harness.get_by_role_and_label(Role::TextInput, "Width, in px");
+        assert!(width.accesskit_node().is_disabled());
+        let why = width.accesskit_node().description();
+        assert_eq!(why.as_deref(), Some("Set by --conf for this run"));
+        says(&mut harness, "Width, in px", "Set by --conf for this run");
     }
 }
