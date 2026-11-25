@@ -30,9 +30,9 @@
 //! shows anything or not, so neither ever moves anything. Each tooltip carries its
 //! action's keys, which the app's actions registry gives. As it narrows it gives way one
 //! step at a time ([`Fold`]), the same with labels or without, its buttons going under »
-//! (`toolbar-more`), words and all, and its parts never, always keeping empty panel to
-//! move the window by; it records how wide that leaves it at least, for the app to keep
-//! the window so wide ([`Toolbar::least_width`]).
+//! (`toolbar-more`) from its end, words and all, » drawn last, and its parts never,
+//! always keeping empty panel to move the window by; it records how wide that leaves it
+//! at least, for the app to keep the window so wide ([`Toolbar::least_width`]).
 //!
 //! **Guards** (decision 92): with no menu button in the list, the menus hang from the
 //! Toolbar's start ([`Toolbar::menu_anchor`]); with no save state, a failed write still
@@ -258,7 +258,8 @@ impl ToolbarButton {
         self.label.as_deref().unwrap_or(&self.name)
     }
 
-    /// Goes under » before the buttons that do not, as a tool's items do (decision 92).
+    /// Goes under » before the buttons of its group, between the same flexible spaces, that
+    /// do not, as a tool's items do (decision 92).
     pub fn folds_first(mut self, first: bool) -> Self {
         self.first = first;
         self
@@ -673,16 +674,28 @@ impl<'a> Toolbar<'a> {
     }
 
     /// The buttons that go under » before the status words fold, by their place in the
-    /// list, in the order they go: in reverse reading order, those that fold first, a
-    /// tool's items, before the rest.
+    /// list, in the order they go: in reverse reading order across the whole panel, the
+    /// end's group first, and within each group between flexible spaces those that fold
+    /// first, a tool's items, before the rest.
     fn fold_order(&self) -> Vec<usize> {
-        let buttons = |first: bool| {
-            (self.entries.iter().enumerate().rev()).filter_map(move |(at, entry)| match entry {
-                ToolbarEntry::Button(button) if !button.last && button.first == first => Some(at),
-                _ => None,
-            })
-        };
-        buttons(true).chain(buttons(false)).collect()
+        let mut order = Vec::new();
+        let mut end = self.entries.len();
+        while end > 0 {
+            let start = (self.entries[..end].iter())
+                .rposition(|entry| *entry == ToolbarEntry::FlexibleSpace)
+                .map_or(0, |at| at + 1);
+            for first in [true, false] {
+                let group = (self.entries[start..end].iter().enumerate().rev()).filter_map(
+                    |(at, entry)| match entry {
+                        ToolbarEntry::Button(b) if !b.last && b.first == first => Some(start + at),
+                        _ => None,
+                    },
+                );
+                order.extend(group);
+            }
+            end = start.saturating_sub(1);
+        }
+        order
     }
 
     /// Whether each entry has gone at `fold`, by its place in the list: a button under »,
@@ -715,8 +728,7 @@ impl<'a> Toolbar<'a> {
 
     /// What the panel draws at `fold`, `well` the cursors' well given, in order: the
     /// entries that show, a fixed space only between two of them with no flexible space
-    /// between, and », where any button is under it, just before the first flexible
-    /// space, or last with none.
+    /// between, and », where any button is under it, last, after whatever is drawn.
     fn arrange(&self, fold: Fold, well: bool) -> Vec<Drawn<'_>> {
         let folded = self.folded(fold);
         let shown = (self.entries.iter().zip(&folded)).filter_map(|(entry, folded)| match entry {
@@ -750,8 +762,7 @@ impl<'a> Toolbar<'a> {
         let hidden = (self.entries.iter().zip(&folded))
             .any(|(entry, folded)| *folded && matches!(entry, ToolbarEntry::Button(_)));
         if hidden {
-            let at = drawn.iter().position(|d| *d == Drawn::Flexible);
-            drawn.insert(at.unwrap_or(drawn.len()), Drawn::More);
+            drawn.push(Drawn::More);
         }
         drawn
     }
@@ -892,13 +903,23 @@ impl<'a> Toolbar<'a> {
         let outside = (inner.min.x - bar.min.x) + (bar.max.x - inner.max.x) + guards(save, jobs);
         let least = needs(&self.arrange(all, well.is_some()), all) + outside;
         ctx.data_mut(|d| d.insert_temp(least_width_id(), least.ceil()));
-        let drawn = self.arrange(fold, well.is_some());
+        let mut drawn = self.arrange(fold, well.is_some());
+        // » stands at the panel's end, with or without a flexible space, after the guards
+        // where they show.
+        let mut guards_end = inner.max.x;
+        let mut more_last = None;
+        if drawn.last() == Some(&Drawn::More) {
+            drawn.pop();
+            let more_gap = drawn.last().map_or(0.0, |d| between(*d, Drawn::More));
+            guards_end -= BUTTON + more_gap;
+            more_last = Some((Drawn::More, inner.max.x - BUTTON, BUTTON));
+        }
 
         // Where each entry goes: those before the first flexible space from the start,
         // those after the last to the end, and each run between two flexible spaces after
         // its share of the room left, its centre on a whole point, so the cursors' well
         // between two stands in the middle of the room between its neighbours.
-        let end = list_end(fold);
+        let end = list_end(fold) - (inner.max.x - guards_end);
         let runs: Vec<&[Drawn]> = drawn.split(|d| *d == Drawn::Flexible).collect();
         let flexible = runs.len() - 1;
         let share = ((end - inner.min.x - taken(&drawn, fold)) / flexible.max(1) as f32).max(0.0);
@@ -920,6 +941,7 @@ impl<'a> Toolbar<'a> {
                 x += w;
             }
         }
+        placed.extend(more_last);
         let room =
             |x: f32, w: f32| Rect::from_min_max(pos2(x, inner.top()), pos2(x + w, inner.bottom()));
 
@@ -942,6 +964,7 @@ impl<'a> Toolbar<'a> {
         let mut menu_drawn = false;
         let mut well_rect = None;
         let mut more_rect = None;
+        let mut more_at = None;
         for (d, x, w) in placed {
             let rect = room(x, w);
             if let Drawn::Menu | Drawn::Button(_) = d {
@@ -1002,57 +1025,8 @@ impl<'a> Toolbar<'a> {
                         action = Some(done);
                     }
                 }
-                Drawn::More => {
-                    let hidden = self.under_more(fold);
-                    let chosen = ui
-                        .scope_builder(left("more"), |ui| {
-                            let more =
-                                IconButton::new(Icon::ToolbarMore, &tr(&ctx, "toolbar-more"))
-                                    .size(BUTTON)
-                                    .show(ui);
-                            pressed(more.clone());
-                            more_rect = Some(more.rect);
-                            // Each with its keys, and disabled where it can't run. Screen
-                            // readers hear its name, and the keys as its shortcut, as on
-                            // every control.
-                            let name = tr(&ctx, "toolbar-more");
-                            pull_down(ui, &more, &name, || {
-                                (hidden.iter())
-                                    .map(|button| {
-                                        // An item with a menu of its own is a submenu.
-                                        if let Some(menu) = &button.menu {
-                                            let name = button.name.as_str();
-                                            let entries = menu.entries.clone();
-                                            return popup::Submenu::new(button.id, name, entries)
-                                                .into();
-                                        }
-                                        let mut item =
-                                            popup::Item::new(button.id, button.name.as_str())
-                                                .enabled(button.enabled);
-                                        if let Some(on) = button.toggled {
-                                            item = item.checked(on);
-                                        }
-                                        match keys(ToolbarAction::Button(button.id)) {
-                                            Some(keys) => item.shortcut(keys),
-                                            None => item,
-                                        }
-                                        .into()
-                                    })
-                                    .collect()
-                            })
-                        })
-                        .inner;
-                    // A button, or an item of one's own menu, by its id.
-                    let chosen = chosen.and_then(|chosen| {
-                        hidden.iter().find_map(|b| {
-                            let ids = b.menu.iter().flat_map(|menu| menu.ids.iter().copied());
-                            std::iter::once(b.id).chain(ids).find(|id| *id == chosen)
-                        })
-                    });
-                    if let Some(id) = chosen {
-                        action = Some(ToolbarAction::Button(id));
-                    }
-                }
+                // » is drawn after the guards, last as it stands.
+                Drawn::More => more_at = Some(rect),
                 Drawn::Cursors => {
                     let Some(well) = well.take() else {
                         continue;
@@ -1134,10 +1108,10 @@ impl<'a> Toolbar<'a> {
         }
 
         // The guards, after the list in the focus order as they stand: the spinner's, then
-        // the save state's at the very end, its live region kept whether it shows or not.
+        // the save state's at the end before », its live region kept, shown or not.
         if let Some(jobs) = self.jobs.filter(|_| jobs_guard) {
             let save = guard_save(fold);
-            let at = inner.max.x - save - if save > 0.0 { t.spacing.m } else { 0.0 };
+            let at = guards_end - save - if save > 0.0 { t.spacing.m } else { 0.0 };
             ui.scope_builder(
                 UiBuilder::new()
                     .id_salt("jobs")
@@ -1157,7 +1131,7 @@ impl<'a> Toolbar<'a> {
             let save = ui.scope_builder(
                 UiBuilder::new()
                     .id_salt("save state")
-                    .max_rect(room(inner.max.x - width, width))
+                    .max_rect(room(guards_end - width, width))
                     .layout(Layout::right_to_left(Align::Center)),
                 |ui| saving.show(ui, self.saved, fold.status, false),
             );
@@ -1165,6 +1139,59 @@ impl<'a> Toolbar<'a> {
                 && pressed(button)
             {
                 action = Some(ToolbarAction::NotSaved);
+            }
+        }
+        // » last, after the guards, in the focus order as it stands.
+        if let Some(rect) = more_at {
+            let left = UiBuilder::new()
+                .id_salt("more")
+                .max_rect(rect)
+                .layout(Layout::left_to_right(Align::Center));
+            let hidden = self.under_more(fold);
+            let chosen = ui
+                .scope_builder(left, |ui| {
+                    let more = IconButton::new(Icon::ToolbarMore, &tr(&ctx, "toolbar-more"))
+                        .size(BUTTON)
+                        .show(ui);
+                    pressed(more.clone());
+                    more_rect = Some(more.rect);
+                    // Each with its keys, and disabled where it can't run. Screen
+                    // readers hear its name, and the keys as its shortcut, as on
+                    // every control.
+                    let name = tr(&ctx, "toolbar-more");
+                    pull_down(ui, &more, &name, || {
+                        (hidden.iter())
+                            .map(|button| {
+                                // An item with a menu of its own is a submenu.
+                                if let Some(menu) = &button.menu {
+                                    let name = button.name.as_str();
+                                    let entries = menu.entries.clone();
+                                    return popup::Submenu::new(button.id, name, entries).into();
+                                }
+                                let mut item = popup::Item::new(button.id, button.name.as_str())
+                                    .enabled(button.enabled);
+                                if let Some(on) = button.toggled {
+                                    item = item.checked(on);
+                                }
+                                match keys(ToolbarAction::Button(button.id)) {
+                                    Some(keys) => item.shortcut(keys),
+                                    None => item,
+                                }
+                                .into()
+                            })
+                            .collect()
+                    })
+                })
+                .inner;
+            // A button, or an item of one's own menu, by its id.
+            let chosen = chosen.and_then(|chosen| {
+                hidden.iter().find_map(|b| {
+                    let ids = b.menu.iter().flat_map(|menu| menu.ids.iter().copied());
+                    std::iter::once(b.id).chain(ids).find(|id| *id == chosen)
+                })
+            });
+            if let Some(id) = chosen {
+                action = Some(ToolbarAction::Button(id));
             }
         }
         // With the menus drawn here and no menu button listed, they hang from where it
