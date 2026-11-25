@@ -615,10 +615,10 @@ pub fn delete_settings(folder: &Path, tool: &str, name: &str) -> Result<(), Pres
     files::delete(&path_of(read_settings(folder, tool), name)?)
 }
 
-/// The first name of `title` and a number, 1, 2 and on, that is not `taken`, in `words`
-/// ("Exposure 1").
-pub fn free_name(title: &str, taken: &[String], words: &Translator) -> String {
-    (1..)
+/// The first name of `title` and a number, `first` and on, that is not `taken`, in `words`
+/// ("Exposure 1" from 1).
+pub fn free_name(title: &str, first: usize, taken: &[String], words: &Translator) -> String {
+    (first..)
         .map(|number: usize| {
             let mut args = Args::new();
             args.set("tool", title);

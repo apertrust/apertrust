@@ -274,6 +274,9 @@ styles-custom = Custom Styles
 styles-copy = Copy to Custom Styles…
 styles-copy-title = Copy to Custom Styles
 styles-copy-button = Copy
+# The copy's name at first, $name the built-in style's as shown; where a style has it, a
+# number, 2 and on, follows it (presets-new-name).
+styles-copy-name = { $name } copy
 # Said over the photo where a built-in style could not be copied.
 style-not-copied = Style “{ $name }” not copied: { $error }
 # The styles built in, each `style-builtin-<id>`. A `|` puts the style in a folder: keep

@@ -835,7 +835,7 @@ fn a_built_in_style_applies_clears_and_copies_but_is_never_renamed_or_deleted() 
 
 /// Copy to Custom Styles… writes the built-in's entries into the styles folder under the
 /// name given, refusing one a style there holds; a person's style takes no built-in
-/// style's name as shown, and the copy's dialog opens on the built-in's, refused.
+/// style's name as shown.
 #[test]
 fn a_copy_lands_in_custom_styles_and_no_style_takes_a_built_in_s_name() {
     use crate::presets::SheetContent as _;
@@ -855,11 +855,37 @@ fn a_copy_lands_in_custom_styles_and_no_style_takes_a_built_in_s_name() {
     for name in ["My lomo", "Lomo", "Black and white|HP5+", "Natural colour"] {
         assert!(refused.iter().any(|r| r == name), "{name}");
     }
-    let copy = super::super::RenameDialog::copy("Lomo".to_owned(), refused.clone());
-    assert_eq!(copy.button(&words), ("Copy".to_owned(), false));
     let rename = super::super::RenameDialog::new("My lomo".to_owned(), refused);
     assert_eq!(rename.button(&words), ("Rename".to_owned(), true));
     let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// Copy to Custom Styles… opens on the built-in's name and "copy", numbered from 2 where a
+/// style has that, and Copy takes it at once.
+#[test]
+fn a_copy_s_dialog_opens_on_a_free_name_copy_takes() {
+    use crate::presets::SheetContent as _;
+    let words = Translator::new(Locale::EnGb);
+    let builtins = || vec!["Lomo".to_owned(), "Natural colour".to_owned()];
+    for (mine, name) in [
+        (vec![], "Lomo copy"),
+        (vec!["Lomo copy"], "Lomo copy 2"),
+        (vec!["Lomo copy", "Lomo copy 2"], "Lomo copy 3"),
+    ] {
+        let mine = mine.into_iter().map(str::to_owned);
+        let refused: Vec<String> = mine.chain(builtins()).collect();
+        assert_eq!(super::super::copy_name("Lomo", &refused, &words), name);
+        let copy = super::super::RenameDialog::copy("Lomo".to_owned(), refused, &words);
+        assert_eq!(copy.button(&words), ("Copy".to_owned(), true));
+        assert_eq!(
+            copy.output(),
+            crate::dialog_host::Output::StyleRename {
+                from: "Lomo".to_owned(),
+                to: name.to_owned(),
+                copy: true,
+            }
+        );
+    }
 }
 
 /// A person's style named as a built-in is, an older file's, applies itself, by its file,

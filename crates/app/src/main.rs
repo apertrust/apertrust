@@ -5632,7 +5632,7 @@ impl App {
         let dialog = match item {
             presets::Item::Rename(name) => presets::NameDialog::rename(tool, title, taken, name),
             _ => {
-                let name = presets::free_name(&title, &taken, &apertrust_ui::translator(ctx));
+                let name = presets::free_name(&title, 1, &taken, &apertrust_ui::translator(ctx));
                 presets::NameDialog::save(tool, title, taken, name)
             }
         };
@@ -5829,9 +5829,12 @@ impl App {
                     let Some(folder) = self.shell.presets.styles() else {
                         continue;
                     };
-                    let refused = styles::refused(&folder, &translator(ctx));
+                    let words = translator(ctx);
+                    let refused = styles::refused(&folder, &words);
                     let dialog = match action {
-                        Action::Copy(_) => styles::RenameDialog::copy(name.clone(), refused),
+                        Action::Copy(_) => {
+                            styles::RenameDialog::copy(name.clone(), refused, &words)
+                        }
                         _ => styles::RenameDialog::new(name.clone(), refused),
                     };
                     self.dialogs.open(presets::Sheet(dialog), None, ctx);
