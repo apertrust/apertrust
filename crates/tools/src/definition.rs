@@ -1543,6 +1543,8 @@ pub enum DefinitionError {
     /// action end item may take it.
     #[error("{0} is reserved for the tool's tabs")]
     ReservedAction(&'static str),
+    #[error("the action {0} is called as a control is; one availability rule takes either's id")]
+    ActionIsControl(&'static str),
     #[error("two computed values are called {0}")]
     DuplicateComputed(&'static str),
     #[error(
@@ -1820,8 +1822,8 @@ impl ProcessingDefinition {
     /// tool if any, and is in exactly one place: a row's end item, a reference row, or a
     /// drawn preset row's option that turns it on, an option of the row named once. A
     /// line holds at least one end item, each action at a row's end has a snake_case id
-    /// unique among the tool's actions, a slider's end item is a picker, and a choice and
-    /// a setting have none yet. Rows following a setting follow a choice setting of the tool,
+    /// unique among the tool's actions and no control's, a slider's end item is a picker,
+    /// and a choice and a setting have none yet. Rows following a setting follow a choice setting of the tool,
     /// shown wherever they are, for options it has, and hold no control and not it. A
     /// reference row's picker writes no control, and its two settings are the tool's,
     /// each once. A last
@@ -1923,7 +1925,8 @@ impl ProcessingDefinition {
             {
                 return Err(DefinitionError::Widget(*widget));
             }
-            // Each action at a row's end has an id of its own among the tool's actions.
+            // Each action at a row's end has an id of its own among the tool's actions,
+            // never a control's: availability asks one rule with either.
             for ActionEnd { id, .. } in row.end().iter().filter_map(End::action) {
                 if !is_id(id) {
                     return Err(DefinitionError::Id(id));
@@ -1933,6 +1936,9 @@ impl ProcessingDefinition {
                 }
                 if !actions.insert(*id) {
                     return Err(DefinitionError::DuplicateAction(id));
+                }
+                if self.control(id).is_some() {
+                    return Err(DefinitionError::ActionIsControl(id));
                 }
             }
             match row {
@@ -2313,6 +2319,12 @@ impl ProcessingDefinition {
             return Err(DefinitionError::WordsBy(picker.id));
         }
         Ok(())
+    }
+
+    /// Every action at its rows' ends, in the page's order (decision 107).
+    pub fn action_ends(&self) -> impl Iterator<Item = &ActionEnd> {
+        self.rows()
+            .flat_map(|row| row.end().iter().filter_map(End::action))
     }
 
     /// The options of the tool's choice setting `id` ([`Row::Setting`]), if it has one.
@@ -4356,6 +4368,24 @@ mod tests {
         assert_eq!(
             picking(&[], &twice),
             Err(DefinitionError::DuplicateAction("rotate"))
+        );
+    }
+
+    /// An action is never called as a control is: one availability rule takes either's id
+    /// (decision 107).
+    #[test]
+    fn an_action_is_never_called_as_a_control() {
+        let rows = [
+            line(
+                LineStart::None,
+                None,
+                &[action("detail", Face::Text, false)],
+            ),
+            Row::Slider(Slider::new("contrast")),
+        ];
+        assert_eq!(
+            picking(&[], &rows),
+            Err(DefinitionError::ActionIsControl("detail"))
         );
     }
 

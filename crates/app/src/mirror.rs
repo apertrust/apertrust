@@ -51,9 +51,9 @@ use std::time::{Duration, Instant};
 
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
-    ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History, OpenPreview,
-    Photo, PresetState, PreviewSource, ReadoutState, Selection, SelectionCommand, SessionError,
-    ToolState, Values, ViewState,
+    ActionState, ControlState, ControlValue, CoordinateState, Event, ExportPreview, Frame, History,
+    OpenPreview, Photo, PresetState, PreviewSource, ReadoutState, Selection, SelectionCommand,
+    SessionError, ToolState, Values, ViewState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -988,6 +988,13 @@ fn untouched(tools: &[&dyn ProcessingTool]) -> Values {
             views,
             computed: Vec::new(),
             readouts,
+            // None runs while the photo opens, as no control is live.
+            actions: (definition.action_ends())
+                .map(|end| ActionState {
+                    id: end.id,
+                    available: false,
+                })
+                .collect(),
         }
     });
     Values {
@@ -1578,6 +1585,7 @@ pub(crate) mod tests {
             views: Vec::new(),
             computed: Vec::new(),
             readouts: Vec::new(),
+            actions: Vec::new(),
         };
         let report = |black, value, through| Values {
             tools: vec![exposure(black, None, value, Some(Mark::Kept))],
@@ -1677,6 +1685,7 @@ pub(crate) mod tests {
                 views: Vec::new(),
                 computed: Vec::new(),
                 readouts: Vec::new(),
+                actions: Vec::new(),
             }],
             settings: Vec::new(),
             edited: exposure != 0.0,

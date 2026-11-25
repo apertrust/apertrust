@@ -577,6 +577,10 @@ pub struct State {
     /// Whether the photo open takes edits: live and not open for viewing only, as a tool's
     /// buttons need (decisions 77 and 91).
     pub editable: bool,
+    /// The tools' own actions ([`tool_actions`]) their tools' rules allow now, as the
+    /// mirror reports them with the pending changes shown, bit `i` for the `i`th, so a
+    /// shortcut and its button never disagree (decision 107; [`tool_action_bits`]).
+    pub tool_actions: u64,
     /// Whether the photo open is open for viewing only (decision 43): a newer Apertrust
     /// wrote its edit, or part of its history cannot be read. Reset rests, as every change
     /// of its edit does.
@@ -827,9 +831,14 @@ pub struct Action {
 }
 
 impl Action {
-    /// Whether it can run now. An action not built yet never can.
+    /// Whether it can run now. An action not built yet never can, nor a tool's own action
+    /// its tool's rule does not allow now ([`State::tool_actions`]).
     pub fn can_run(&self, state: &State) -> bool {
-        !matches!(self.emits, Emit::Later) && (self.available)(state)
+        let allowed = match self.emits {
+            Emit::Intent(Intent::ToolAction { .. }) => tool_action_allowed(self.id, state),
+            _ => true,
+        };
+        !matches!(self.emits, Emit::Later) && allowed && (self.available)(state)
     }
 
     /// Whether it can run where it is: it can run now, and its scope is active, so a view's
@@ -2487,6 +2496,30 @@ fn tool_action_available(state: &State) -> bool {
     state.editable && on_main_window(state) && no_modal_dialog(state)
 }
 
+/// Whether the tool's own action `id` is one its tool's rule allows now
+/// ([`State::tool_actions`]).
+fn tool_action_allowed(id: ActionId, state: &State) -> bool {
+    let at = tool_actions().iter().position(|action| action.id == id);
+    at.is_some_and(|at| state.tool_actions & (1 << at) != 0)
+}
+
+/// [`State::tool_actions`] for the tools' states `tools`: each tool's own action whose
+/// tool reports it available, with its pending changes shown (decision 107).
+pub fn tool_action_bits(tools: &[apertrust_engine::session::ToolState]) -> u64 {
+    let mut bits = 0;
+    for (at, action) in tool_actions().iter().enumerate() {
+        let Emit::Intent(Intent::ToolAction { tool, action }) = action.emits else {
+            continue;
+        };
+        let state = tools.iter().find(|state| state.tool == tool);
+        let reported = state.and_then(|state| state.actions.iter().find(|a| a.id == action));
+        if reported.is_some_and(|reported| reported.available) {
+            bits |= 1 << at;
+        }
+    }
+    bits
+}
+
 /// The tools' picker cursors' actions (decision 104; `docs/cursors.md`, Actions and words),
 /// made once as the app starts from their declarations: `tool-<tool>-cursor-<cursor>`, its
 /// words the cursor's name, its key the cursor's own where it declares one, as White
@@ -3502,6 +3535,7 @@ pub(crate) mod tests {
             photo: true,
             waiting: false,
             editable: true,
+            tool_actions: u64::MAX,
             view_only: false,
             edited: true,
             styles: true,
@@ -5046,6 +5080,20 @@ pub(crate) mod tests {
         let read = named("tool-agx-read_exposure").expect("Read exposure");
         assert_eq!(read.emits, Emit::Later);
         assert!(!read.enabled(&everything()));
+        // Only while its tool's rule allows it, as the mirror reports it.
+        let at = tool_actions()
+            .iter()
+            .position(|a| a.id == rotate.id)
+            .unwrap();
+        let ruled_out = State {
+            tool_actions: !(1 << at),
+            ..everything()
+        };
+        assert!(!rotate.enabled(&ruled_out));
+        assert!(
+            tool_actions().len() <= 64,
+            "one bit each in State::tool_actions"
+        );
     }
 
     #[test]

@@ -1042,6 +1042,19 @@ pub struct ToolState {
     /// Every readout of its lines of pickers, in the definition's order: Colour
     /// calibration's CCT and the light's colour.
     pub readouts: Vec<ReadoutState>,
+    /// Every action at its rows' ends, in the page's order, with whether it can run
+    /// (decision 107).
+    pub actions: Vec<ActionState>,
+}
+
+/// An action at a row's end ([`apertrust_tools::ActionEnd`]): whether it can run on the
+/// values reported, by the tool's `available` rule asked with its id on the photo's image
+/// context, as a control's availability is (decision 107). Never while the photo is open
+/// for viewing only, nor for an action not ported; available where the tool's rule panics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActionState {
+    pub id: &'static str,
+    pub available: bool,
 }
 
 /// A readout at a line of pickers' start ([`apertrust_tools::ReadoutDef`]): what the tool
@@ -2833,6 +2846,9 @@ struct Open {
     /// The tools whose readouts panicked as the values were reported, each warned of
     /// once for the photo.
     readouts_failed: BTreeSet<&'static str>,
+    /// The tools whose actions' availability panicked as the values were reported, each
+    /// warned of once for the photo (decision 107).
+    actions_failed: BTreeSet<&'static str>,
     /// The tools whose availability panicked as the values were reported, each warned
     /// of once for the photo (decision 30).
     available_failed: BTreeSet<&'static str>,
@@ -4847,6 +4863,7 @@ impl Engine {
             failing: BTreeSet::new(),
             presets_failed: BTreeSet::new(),
             readouts_failed: BTreeSet::new(),
+            actions_failed: BTreeSet::new(),
             available_failed: BTreeSet::new(),
             ranges_failed: BTreeSet::new(),
             options,
@@ -6401,6 +6418,7 @@ impl Open {
                 edited |= tool_edited;
                 let presets = self.presets(*tool, &controls);
                 let readouts = self.readouts(*tool, &values);
+                let actions = self.actions(*tool, &values);
                 let views = self.views(*tool, &controls, &values);
                 let computed = definition.computed(&values);
                 for (row, (value, shown)) in computed.iter().enumerate() {
@@ -6424,6 +6442,7 @@ impl Open {
                         })
                         .collect(),
                     readouts,
+                    actions,
                 }
             })
             .collect();
@@ -6565,6 +6584,41 @@ impl Open {
                     id: readout.id,
                     readout: None,
                 })
+                .collect()
+        })
+    }
+
+    /// Each action at the tool's rows' ends while its controls hold `values`, every
+    /// control, the edit's over the defaults, on the photo's image context: available
+    /// where the tool's `available` rule holds for its id, the photo takes edits and it is
+    /// ported (decision 107). Should the tool's code panic, each ported one reads available
+    /// while the photo takes edits, as a control's does, and a warning says so once for
+    /// the photo.
+    fn actions(&mut self, tool: &dyn ProcessingTool, values: &Controls) -> Vec<ActionState> {
+        let definition = tool.definition();
+        let editable = self.view_only.is_none();
+        let ends = || {
+            definition
+                .action_ends()
+                .map(|end| (end.id, editable && !end.unported))
+        };
+        let answered = catch_unwind(AssertUnwindSafe(|| {
+            ends()
+                .map(|(id, can)| ActionState {
+                    id,
+                    available: can && tool.available(id, values, &self.image),
+                })
+                .collect()
+        }));
+        answered.unwrap_or_else(|panic| {
+            let id = definition.tool.id;
+            // The values are reported after every change: once is enough.
+            if self.actions_failed.insert(id) {
+                let message = panic_message(panic.as_ref());
+                tracing::warn!(target: "pipe", "tool {id}'s actions all available: {message}");
+            }
+            ends()
+                .map(|(id, available)| ActionState { id, available })
                 .collect()
         })
     }
@@ -9653,6 +9707,74 @@ mod tests {
         assert_eq!(pair(values(&events))[1].2, None);
         // The last change saved before the folder goes.
         driven.writes();
+        remove(&path);
+    }
+
+    /// A tool whose availability rule panics, as a tool's bug may make it, with an action
+    /// at a line's end (decision 107).
+    struct Unruly;
+
+    static UNRULY: ProcessingDefinition = ProcessingDefinition {
+        tool: ToolDefinition {
+            id: "unruly",
+            tabs: &[Tab {
+                id: None,
+                rows: &[
+                    Row::Slider(Slider::new("amount")),
+                    Row::Line {
+                        start: apertrust_tools::LineStart::None,
+                        readout: None,
+                        end: &[apertrust_tools::End::Action(apertrust_tools::ActionEnd {
+                            id: "act",
+                            face: apertrust_tools::Face::Text,
+                            unported: false,
+                        })],
+                    },
+                ],
+            }],
+            ..BRITTLE.tool
+        },
+        preset_rows: &[],
+        views: &[],
+        ..BRITTLE
+    };
+
+    impl ProcessingTool for Unruly {
+        fn definition(&self) -> &'static ProcessingDefinition {
+            &UNRULY
+        }
+
+        fn owns(&self) -> &'static [Owned] {
+            &[]
+        }
+
+        fn bind(&self, _: &ToolValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
+            Vec::new()
+        }
+
+        fn available(&self, _: &str, _: &Controls, _: &ImageContext) -> bool {
+            panic!("a bug in the rule");
+        }
+    }
+
+    /// A tool's actions are reported with its state, each available by its rule; where the
+    /// rule panics, each ported one reads available while the photo takes edits, and a
+    /// warning says so once for the photo, though the values are reported again.
+    #[test]
+    fn an_action_whose_tool_s_rule_panics_reads_available_and_is_warned_of_once() {
+        let path = scratch("unruly");
+        let mut driven = Driven::new(&[&Sample, &Unruly]);
+        let events = driven.open(&path);
+        let unruly = &values(&events).tools[1];
+        let act = ActionState {
+            id: "act",
+            available: true,
+        };
+        assert_eq!(unruly.actions, std::slice::from_ref(&act));
+        let events = driven.run([set("grain", ControlValue::Number(20.0), true)]);
+        assert_eq!(values(&events).tools[1].actions, [act]);
+        let open = driven.engine.open.as_ref().expect("the photo is open");
+        assert_eq!(open.actions_failed, BTreeSet::from(["unruly"]));
         remove(&path);
     }
 
