@@ -53,7 +53,8 @@ The registry stays flat by id. Each action gains an **owner**, which places it i
 | A tool | `tool-<tool>` | `iop/<module>`, `lib/<lib>` |
 | A tool's tabs | `tool-<tool>-tabs` | `iop/<module>/page` |
 | A control or a view coordinate | `tool-<tool>-control-<control>` | `iop/<module>/<section>/<label>` |
-| A button or a `Row::Action` | `tool-<tool>-<action>` (built, 91) | the button's |
+| A button or a `Row::Action`; an `Action` or `Compute` end item and each modifier variant, an action of its own ([0107](0107-packed-lines-one-line-row-with-end-items.md)) | `tool-<tool>-<action>` (built, 91), a variant `tool-<tool>-<variant>` | the button's |
+| A `View` end item ([0107](0107-packed-lines-one-line-row-with-end-items.md)) | `tool-<tool>-view-<view>` | the showmask toggle |
 | A picker | `tool-<tool>-picker-<picker>` | the picker's toggle |
 | A cursor ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | `tool-<tool>-cursor-<cursor>` for a tool's, `cursor-<id>` for the app's, layers', retouch's and annotations' | none: darktable has no cursors |
 | A tool's setting row | `tool-<tool>-setting-<setting>` | a widget on a conf key |
@@ -74,9 +75,9 @@ Every action is generated from `ToolDefinition` as the app starts, as decision 9
 | More than one `Tab` | `tabs`, its elements the tabs |
 | `Row::Slider`, a control's or a view coordinate's | `slider` |
 | `Row::Choice`, `Row::Preset` | `dropdown`, each option an `item:` |
-| `Row::Toggle`, `Row::Pickers`' buttons | `toggle` |
-| `Row::Buttons`' buttons, `Row::Action` | `button` |
-| A slider's quad | the slider's `button` element |
+| `Row::Toggle`, `Row::Pickers`' buttons, a `Picker` or `View` end item | `toggle` |
+| `Row::Buttons`' buttons, `Row::Action`, an `Action` or `Compute` end item and each variant | `button` |
+| A slider's quad, its end item | the slider's `button` element |
 | A cursor of `ToolDefinition::cursors` | `hold` |
 | `Row::Setting` | `slider`, `dropdown`, `toggle` or `entry`, by its kind |
 | `Row::Custom` (the curve, the equalizer, the wheels) | what darktable defines for that module's widget, listed in its port spec |

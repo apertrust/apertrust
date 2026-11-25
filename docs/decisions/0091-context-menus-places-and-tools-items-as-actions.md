@@ -40,12 +40,12 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **Every item is an action** of the registry (36). So it can be given keys, it is in the menu bar or its tool too, it is enabled and checked from the state, and the native menu only reports which was chosen.
 
-- A tool's own actions are registry actions, generated as the app starts from every tool's definition, one for each `Row::Action` and each button of `Row::Buttons` (`actions::tool_actions`):
+- A tool's own actions are registry actions, generated as the app starts from every tool's definition, one for each `Row::Action` and each button of `Row::Buttons` (`actions::tool_actions`), and, once a line row replaces them, for each `Action` end item and each of its variants ([0107](0107-packed-lines-one-line-row-with-end-items.md), planned):
   - they are made once, into a `OnceLock` beside the static `ACTIONS`, and every lookup by id finds them (`actions::action`, `named`, `all`): the keymap, the keys settings keep, the context menus and the Mac's menus;
   - its id is `tool-<tool>-<action>`, under which settings keep its keys;
   - its words are the action's full name, `tool-<tool>-action-<action>-full`;
   - it has no default keys and works in the view's scope;
-  - it is available while the photo takes edits, live and not open for viewing only, on the main window, with no modal dialog over it;
+  - it is available while the photo takes edits, live and not open for viewing only, on the main window, with no modal dialog over it; an `Action` end item and its variants also follow the tool's own availability rule ([0107](0107-packed-lines-one-line-row-with-end-items.md), planned);
   - a button's runs as pressing the button does: `Intent::ToolAction`, then `Change::Action` on the tool's values the mirror holds, `ProcessingTool::action`, and a `SetControl` for each control it writes, one change and one history step;
   - a `Row::Action`'s, whose row is drawn disabled until what it runs is built, is listed and never runs.
 - A utility's items are the registry actions it already has, as History's Reset is `reset`.
@@ -154,4 +154,4 @@ Discard History… is in no context menu: it stays in Edit and History's ⋯ ([0
 - Decisions 83 and 86 no longer open anything on a right-click on a section's header.
 - No item picks at the pointer: a picker cursor turns its tool's picker on at the area it holds, and a click or drag there is the live picker's ([0079](0079-colour-pickers-one-api-for-tools-and-the-colour-picker.md), [0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)), so a tool's menu entries stay its own actions and submenus, and the photo's menu holds no "Set … from Here" item.
 - Open:
-  - A processing tool's generated action is available while the photo takes edits (a utility's items name registry actions, each with its own availability, [0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); it does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. It is settled when a tool's action first cannot run on a photo that takes edits, by an availability the tool declares or the app derives from its definition.
+  - A processing tool's generated action is available while the photo takes edits (a utility's items name registry actions, each with its own availability, [0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); it does not ask whether its own control can take a change on that photo, as its row in the panel may. Every built tool's buttons apply to every photo, so nothing differs yet. It is settled when a tool's action first cannot run on a photo that takes edits: [0107](0107-packed-lines-one-line-row-with-end-items.md) plans that availability as the tool's own pure rule, extended to its end items, AgX's Set from above the first, unavailable while Reverse all is on.

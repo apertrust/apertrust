@@ -74,7 +74,7 @@ Their methods are not ported, so these controls are not either (`Control::unport
 
 **On a photo that is not a colour raw** every control is unavailable, drawn disabled: an image that is not a raw runs no raw stage, and on a monochrome raw darktable shows a "not applicable" page in place of the controls (`reload_defaults`, `gui_init`), the operation refusing it.
 
-**Not shown:** darktable's showmask buttons beside Clipping threshold, Combine, Candidating and Strength. They show the clipped highlights or the segments in false colours and store nothing, and wait for the renderer's quad ([Gaps](#gaps)).
+**Not shown:** darktable's showmask buttons beside Clipping threshold, Combine, Candidating and Strength. They show the clipped highlights or the segments in false colours and store nothing, and wait for the renderer's quad, a `View` end item of decision 107 ([Gaps](#gaps)).
 
 **Presets:** darktable's `highlights.c` has none.
 
@@ -153,7 +153,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/highlight_reconstruction
 
 What darktable's page has or does that the panel does not yet:
 
-1. **The showmask buttons** beside Clipping threshold, Combine, Candidating and Strength: the renderer draws no quad of that kind yet, and the false-colour views they toggle need the engine to render a mask. They store nothing, so no edit waits on them.
+1. **The showmask buttons** beside Clipping threshold, Combine, Candidating and Strength: the renderer draws no quad of that kind yet, planned as `View` end items (decision 107), and the false-colour views they toggle need the engine to render a mask. They store nothing, so no edit waits on them.
 2. **The method's list per sensor,** planned through `ProcessingTool::options` (decision 30). darktable leaves guided laplacians out of an X-Trans raw's list, lists two methods for a linear raw and clip highlights alone for an image that is not a raw or a four-colour sensor's raw. Until the tool gives each photo its own list, it lists the Bayer list there too, every method but inpaint opposed disabled, as every method not ported is. What changes then is under [Controls](#controls): each photo's list, clip highlights as the default where darktable's is, `gui_changed`'s rewrites for a stored method the photo does not list, and Method unavailable where one option is listed. The image context has to tell a linear raw from a monochrome one first.
 3. **The other methods,** and their controls with them, wait for their ports (decision 51): reconstruct in LCh, clip highlights, segmentation based and guided laplacians.
 4. **The tool's tooltip,** darktable's "avoid magenta highlights and try to recover highlights colors": a definition implies no message for the tool's own tooltip, as for Grain.
