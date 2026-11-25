@@ -18,3 +18,7 @@ Read by `tests/xmp_fixtures.rs` and the unit tests of `src/xmp`; the `.apxmp` by
 - `version-2-history.apxmp`: an `.apxmp` of version 2 as the text layer writes it, one
   virtual copy with a history of five steps, the end on the fourth. The text layer writes
   it back byte for byte, and ExifTool and exiv2 read it without error or warning.
+- `version-2-styles.apxmp`: an `.apxmp` of version 2 with styles applied (decision 106): a
+  style of two tools applied as a batch, its last step holding the list, each tool changed
+  since, a Clear holding the list alone, emptied, and another style applied. Written back
+  byte for byte, and read by ExifTool and exiv2 alike.

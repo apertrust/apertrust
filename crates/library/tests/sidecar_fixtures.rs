@@ -16,13 +16,13 @@
 
 //! Every committed `.apxmp` fixture reads and writes back byte for byte: a file the format
 //! wrote is the same bytes after the text layer has read and written it. Version 1's are
-//! in `tests/fixtures`, version 2's with a history in `tests/fixtures/xmp`, which ExifTool
-//! and exiv2 read too.
+//! in `tests/fixtures`, version 2's with a history, and with styles applied, in
+//! `tests/fixtures/xmp`, which ExifTool and exiv2 read too.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use apertrust_library::sidecar::{COPIES_VERSION, Document, Edits, Note, VirtualCopy};
+use apertrust_library::sidecar::{COPIES_VERSION, Document, Edits, Entry, Note, VirtualCopy};
 
 fn fixtures() -> Vec<(String, String)> {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
@@ -177,6 +177,93 @@ fn exiftool_and_exiv2_read_the_version_2_fixture() {
             "apertrust:history[4]/apertrust:noteArgs/arg:id",
             "apertrust:history[1]/apertrust:entries[2]/param:clip",
             "2026-03-14T14:02:11.120Z",
+        ] {
+            assert!(read.contains(field), "{field} in {read}");
+        }
+    }
+}
+
+/// The version 2 fixture with styles applied (decision 106): a style of two tools applied
+/// as a batch, its last step holding the list; each tool changed since; a Clear holding the
+/// list alone, emptied, with its entries empty; then another style applied, its one step
+/// holding the list.
+fn styles_fixture() -> (PathBuf, String) {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/xmp/version-2-styles.apxmp");
+    let text = std::fs::read_to_string(&path).unwrap();
+    (path, text)
+}
+
+#[test]
+fn the_styles_fixture_writes_back_byte_for_byte() {
+    let (_, text) = styles_fixture();
+    let edits = Edits::parse(&text, 0).unwrap();
+    assert!(edits.problems.is_empty(), "{:?}", edits.problems);
+    assert_eq!(edits.to_xml(), text);
+    let history = &edits.copies[0].history;
+    let lists: Vec<Option<Vec<&str>>> = (history.iter())
+        .map(|step| {
+            (step.styles.as_ref())
+                .map(|list| list.iter().map(|style| style.name.as_str()).collect())
+        })
+        .collect();
+    assert_eq!(
+        lists,
+        [
+            None,
+            Some(vec!["Warm film"]),
+            None,
+            None,
+            Some(Vec::new()),
+            Some(vec!["Faded"]),
+        ]
+    );
+    // The Clear holding the list alone: no entry, its note not Reset's.
+    assert!(history[4].entries.is_empty());
+    assert_eq!(
+        history[4].note,
+        Some(Note::Message {
+            id: "history-clear-style".to_owned(),
+            args: vec![("style".to_owned(), "Warm film".to_owned())],
+        })
+    );
+    let warm = &history[1].styles.as_ref().unwrap()[0];
+    assert_eq!(warm.file, "Warm film.apstyle");
+    assert_eq!((warm.before.len(), warm.after.len()), (2, 2));
+    assert!(warm.before.iter().all(Entry::is_empty));
+}
+
+/// ExifTool and exiv2 read the styles fixture whole, without error or warning, where they
+/// are installed: each style's name and file, its tools' entries before and after it, and
+/// the emptied list.
+#[test]
+fn exiftool_and_exiv2_read_the_styles_fixture() {
+    let (path, _) = styles_fixture();
+    if let Some(read) = read_with("exiftool", &["-a", "-G1", "-struct"], &path) {
+        assert!(
+            !read.contains("Warning") && !read.contains("Error"),
+            "{read}"
+        );
+        for field in [
+            "Styles=[{After=[{Enabled=true,Strength=40,Tool=grain,ToolVersion=2},\
+             {Brightness=-0.3,Enabled=true,Scale=50,Tool=vignette,ToolVersion=2}],\
+             Before=[{Tool=grain,ToolVersion=2},{Tool=vignette,ToolVersion=2}],\
+             File=Warm film.apstyle,Name=Warm film}]",
+            "Entries=,Id=e5f60718293a4b5c",
+            "NoteMessage=history-clear-style,Source=style,Styles=,",
+            "File=Faded.apstyle,Name=Faded",
+        ] {
+            assert!(read.contains(field), "{field} in {read}");
+        }
+    }
+    if let Some(read) = read_with("exiv2", &["-px"], &path) {
+        for field in [
+            "apertrust:history[2]/apertrust:styles[1]/apertrust:name",
+            "apertrust:history[2]/apertrust:styles[1]/apertrust:file",
+            "apertrust:history[2]/apertrust:styles[1]/apertrust:before[2]/apertrust:tool",
+            "apertrust:history[2]/apertrust:styles[1]/apertrust:after[1]/control:strength",
+            "apertrust:history[5]/apertrust:styles",
+            "apertrust:history[6]/apertrust:styles[1]/apertrust:after[1]/control:amount",
         ] {
             assert!(read.contains(field), "{field} in {read}");
         }
