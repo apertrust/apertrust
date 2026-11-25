@@ -1680,53 +1680,98 @@ fn the_tab_strip_is_a_row_high_and_its_first_name_is_on_the_content_edge() {
     assert!((left - edge).abs() < 0.01, "{left} against the edge {edge}");
 }
 
-/// A section holding a [`section_list`] of `lines` lines, then a line after it, recording
-/// the section body's rectangle.
-fn listed(lines: usize) -> Harness<'static, egui::Rect> {
+/// The section body's rectangle, the panel's height and where the section starts.
+type Listed = (egui::Rect, f32, f32);
+
+/// A section of `lines` lines, in a [`section_list`] where `list`, then a line after it,
+/// in the Tools panel's body where `panel`, recording the section body's rectangle, the
+/// panel's height and where the section starts.
+fn listed(lines: usize, list: bool, panel: bool) -> Harness<'static, Listed> {
     Harness::builder()
         .with_size(egui::vec2(320.0, 700.0))
         .with_step_dt(1.0 / 60.0)
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
         .build_ui_state(
-            move |ui, body: &mut egui::Rect| {
-                PanelBody::new().show(ui, |ui| {
+            move |ui, (body, height, top): &mut Listed| {
+                *height = ui.available_height();
+                *top = ui.cursor().top();
+                let mut sections = |ui: &mut egui::Ui| {
                     Section::new("Listed", true).show(ui, |ui| {
                         *body = ui.max_rect();
-                        section_list(ui, "lines", |ui| {
+                        let rows = |ui: &mut egui::Ui| {
                             for i in 0..lines {
                                 ui.label(format!("Line {i}"));
                             }
-                        });
+                        };
+                        if list {
+                            section_list(ui, "lines", rows);
+                        } else {
+                            rows(ui);
+                        }
                     });
                     ui.label("After the section");
-                });
+                };
+                if panel {
+                    PanelBody::new().show(ui, sections);
+                } else {
+                    sections(ui);
+                }
             },
-            egui::Rect::NOTHING,
+            (egui::Rect::NOTHING, 0.0, 0.0),
         )
 }
 
-/// A list inside a section keeps the section's height whatever it holds and scrolls; its
-/// scroll bar shows only with the pointer over the list, and then in the body's end margin.
+/// Where the line after the section starts.
+fn end(harness: &Harness<'_, Listed>) -> f32 {
+    harness.get_by_label("After the section").rect().top()
+}
+
+/// A short list ends right after its last row, the section as high as with its rows
+/// drawn straight into its body.
 #[test]
-fn a_section_list_keeps_its_height_scrolls_and_floats_its_bar_in_the_end_margin() {
-    let mut short = listed(3);
+fn a_short_section_list_leaves_no_space_under_its_last_row() {
+    for panel in [true, false] {
+        let mut listed_rows = listed(3, true, panel);
+        listed_rows.run();
+        let mut plain = listed(3, false, panel);
+        plain.run();
+        assert_eq!(end(&listed_rows), end(&plain), "panel {panel}");
+    }
+}
+
+/// A list inside a section grows until the section is two thirds of the Tools panel's
+/// body, its header included, or the list `sizes.section_list` outside one, and scrolls
+/// beyond; its scroll bar shows only with the pointer over the list, and then in the body's
+/// end margin.
+#[test]
+fn a_long_section_list_stops_at_its_cap_scrolls_and_floats_its_bar_in_the_end_margin() {
+    let mut short = listed(3, true, true);
     short.run();
-    let mut long = listed(60);
+    let mut long = listed(60, true, true);
     long.run();
-    let end =
-        |harness: &Harness<'_, egui::Rect>| harness.get_by_label("After the section").rect().top();
-    assert_eq!(end(&short), end(&long));
-    // The list is `section_list` high, the body's bottom margin and the hairline after it.
+    assert!(end(&short) < end(&long));
+    // The section, from its header to its hairline, is two thirds of the panel high; the
+    // line after it follows by the item spacing.
     let t = apertrust_ui::theme(&long.ctx);
+    let (_, height, top) = *long.state();
+    let two_thirds = height * 2.0 / 3.0;
+    let tall = end(&long) - top;
+    assert!(
+        tall >= two_thirds - 0.5 && tall < two_thirds + t.spacing.l,
+        "{tall} against {two_thirds}"
+    );
     let first = long.get_by_label("Line 0").rect();
-    let tall = end(&long) - first.top();
+    // Outside the panel, `sizes.section_list`.
+    let mut alone = listed(60, true, false);
+    alone.run();
+    let tall = end(&alone) - alone.get_by_label("Line 0").rect().top();
     assert!(tall >= t.sizes.section_list, "{tall}");
     assert!(tall < t.sizes.section_list + 2.0 * t.spacing.l, "{tall}");
 
     // Painted in the body's end margin, with some colour: the bar.
-    let body = *long.state();
+    let body = long.state().0;
     let margin = egui::Rangef::new(body.right(), body.right() + Section::body_margin(&t));
-    let bar = |harness: &Harness<'_, egui::Rect>| {
+    let bar = |harness: &Harness<'_, Listed>| {
         harness
             .output()
             .shapes
@@ -1751,7 +1796,8 @@ fn a_section_list_keeps_its_height_scrolls_and_floats_its_bar_in_the_end_margin(
     assert!(!bar(&short));
 
     // The lines scroll under the wheel, the section staying as it was.
-    assert!(long.get_by_label("Line 59").rect().top() > end(&long));
+    let before = end(&long);
+    assert!(long.get_by_label("Line 59").rect().top() > before);
     long.event(egui::Event::MouseWheel {
         unit: egui::MouseWheelUnit::Point,
         delta: egui::vec2(0.0, -4000.0),
@@ -1761,7 +1807,7 @@ fn a_section_list_keeps_its_height_scrolls_and_floats_its_bar_in_the_end_margin(
     });
     long.run_steps(60);
     assert!(long.get_by_label("Line 59").rect().bottom() < end(&long));
-    assert_eq!(end(&long), end(&short));
+    assert_eq!(end(&long), before);
 }
 
 /// A section of `lines` labels in the Tools panel's body, its header drawn apart and kept

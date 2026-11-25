@@ -1402,7 +1402,7 @@ pub enum Widget {
     /// 93).
     CollectionsTopLine,
     /// Collections' Folders: its group, holding the open folder's tree in a list that
-    /// scrolls under the top line, so Collections keeps its height (decision 93).
+    /// grows with it up to a cap, then scrolls under the top line (decision 93).
     CollectionsGroups,
     /// The Styles tool's page (decision 106): the styles applied to the active photo, Find
     /// style, and the tree of the person's styles.

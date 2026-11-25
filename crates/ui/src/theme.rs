@@ -514,8 +514,9 @@ pub struct Sizes {
     /// ([`OLD_SIZES`]).
     #[serde(alias = "side_panel")]
     pub tools_panel: f32,
-    /// The height a list scrolls in inside a section, so the section keeps its height
-    /// whatever the list holds: ten one-line rows (`panel_line`). Collections' groups.
+    /// The most a list inside a section grows to outside the Tools panel's body, where its
+    /// section stops at two thirds of the body's height instead: ten one-line rows
+    /// (`panel_line`).
     pub section_list: f32,
 }
 
