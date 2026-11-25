@@ -230,7 +230,7 @@ fn save_as_preset_writes_the_tool_s_values() {
     let words = Translator::new(Locale::EnGb);
     let taken = taken(&folder, &Exposure, &words);
     assert_eq!(taken, ["Default settings"]);
-    let name = free_name("Exposure", &taken, &words);
+    let name = free_name("Exposure", 1, &taken, &words);
     assert_eq!(name, "Exposure 1");
     let dialog = NameDialog::save("exposure", "Exposure".to_owned(), taken, name);
     let builder = Harness::builder()

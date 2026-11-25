@@ -313,11 +313,12 @@ impl RenameDialog {
         }
     }
 
-    /// Copy to Custom Styles… for the built-in style `from`, as shown, its name at first,
-    /// `taken` every name refused ([`refused`]), the built-in's own among them.
-    pub fn copy(from: String, taken: Vec<String>) -> Self {
+    /// Copy to Custom Styles… for the built-in style `from`, as shown, `taken` every name
+    /// refused ([`refused`]), the built-in's own among them; its name at first is the
+    /// copy's ([`copy_name`]), which Copy takes at once.
+    pub fn copy(from: String, taken: Vec<String>, words: &Translator) -> Self {
         RenameDialog {
-            name: from.clone(),
+            name: copy_name(&from, &taken, words),
             from,
             copy: true,
             taken,
@@ -366,6 +367,20 @@ impl SheetContent for RenameDialog {
             to: self.name.trim().to_owned(),
             copy: self.copy,
         }
+    }
+}
+
+/// The name a copy of the built-in style `from`, as shown, starts with: "Lomo copy", or
+/// where that is `taken`, the first of it and a number, 2 and on, that is not ("Lomo copy
+/// 2"), numbered as a new preset's name is ([`free_name`](crate::presets::free_name)).
+pub fn copy_name(from: &str, taken: &[String], words: &Translator) -> String {
+    let mut args = Args::new();
+    args.set("name", from);
+    let name = words.text_with("styles-copy-name", Some(&args));
+    if taken.contains(&name) {
+        crate::presets::free_name(&name, 2, taken, words)
+    } else {
+        name
     }
 }
 
