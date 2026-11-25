@@ -46,8 +46,8 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 - A tool offers actions with `ToolDefinition::toolbar: &'static [ToolbarItem]`, in the parent every tool's definition embeds, a processing tool's and a utility's alike ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)), where `ToolbarItem { action, icon }`:
   - `action`, for a processing tool, names one of its own actions as its menu items do, `rotate_ccw`, which the registry holds as `tool-<tool>-<action>`; for a utility, the registry action it names, as History's `reset` in its menus;
-  - `icon` names one of `apertrust-ui`'s icons, `export`, or is none for a `Row::Buttons` action, which takes its button's icon, as an `Action` end item with an icon will ([0107](0107-packed-lines-one-line-row-with-end-items.md), planned).
-- The definition's check refuses an empty action, an action a processing tool does not have, the same action twice, no icon on an action that is no `Row::Buttons` button's, a utility's always, and more than two items on a processing tool; a utility has no limit. App tests fail on a declared action the registry does not hold and on an icon name `apertrust-ui` does not have.
+  - `icon` names one of `apertrust-ui`'s icons, `export`, or is none for an icon `Action` end item's action, which takes its button's icon ([0107](0107-packed-lines-one-line-row-with-end-items.md)).
+- The definition's check refuses an empty action, an action a processing tool does not have, the same action twice, no icon on an action that is no icon end item's, a utility's always, and more than two items on a processing tool; a utility has no limit. App tests fail on a declared action the registry does not hold and on an icon name `apertrust-ui` does not have.
 - Offering an action only makes it a candidate: it is on the toolbar only where a person places it.
 - The app lists every candidate in one stable order, the parts, the app's own actions, every tool's items in the tools' order, then `space` and `flexible-space`, each with its id, its kind, its icon and its words' id: the Toolbar draws from that list and the Customise Toolbar window lists it.
 

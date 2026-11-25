@@ -53,7 +53,7 @@ The registry stays flat by id. Each action gains an **owner**, which places it i
 | A tool | `tool-<tool>` | `iop/<module>`, `lib/<lib>` |
 | A tool's tabs | `tool-<tool>-tabs` | `iop/<module>/page` |
 | A control or a view coordinate | `tool-<tool>-control-<control>` | `iop/<module>/<section>/<label>` |
-| A button or a `Row::Action`; an `Action` or `Compute` end item and each modifier variant, an action of its own ([0107](0107-packed-lines-one-line-row-with-end-items.md)) | `tool-<tool>-<action>` (built, 91), a variant `tool-<tool>-<variant>` | the button's |
+| An `Action` end item ([0107](0107-packed-lines-one-line-row-with-end-items.md)); a `Compute` end item and each modifier variant, an action of its own | `tool-<tool>-<action>` (built, 91), a variant `tool-<tool>-<variant>` | the button's |
 | A `View` end item ([0107](0107-packed-lines-one-line-row-with-end-items.md)) | `tool-<tool>-view-<view>` | the showmask toggle |
 | A picker | `tool-<tool>-picker-<picker>` | the picker's toggle |
 | A cursor ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | `tool-<tool>-cursor-<cursor>` for a tool's, `cursor-<id>` for the app's, layers', retouch's and annotations' | none: darktable has no cursors |
@@ -62,7 +62,7 @@ The registry stays flat by id. Each action gains an **owner**, which places it i
 | A preset | `tool-<tool>-preset-<name>`, with the presets API | `iop/<module>/preset/<name>` |
 | A fallback node | `fallbacks-<kind>` | `fallbacks/<kind>` |
 
-A preset's id is `tool-<tool>-preset-` and its name, encoded to stay ASCII and reversible: `a`–`z`, `0`–`9` and `_` as they are, and every other byte of the name's UTF-8, upper-case letters among them, as `~` and two lower-case hex digits (`été` is `~c3~a9t~c3~a9`, `C3A9` is `~433~419`), `~` taken by nothing else; every escape is three characters, so no two names meet. So the preset row's family is `preset_row`, with an underscore: no other family starts with `preset-`, and no preset's name can make another family's id. `tabs` is reserved: no button or `Row::Action` of a tool may take it as its id, since `tool-<tool>-tabs` is the tool's tabs, and the tools' check refuses it with the other id rules. The other families cannot collide with a button's id, which has no hyphen, as each adds a further part after its word. Renaming a preset moves its shortcuts, as darktable's `dt_action_rename_preset` does; it is the one rename the registry handles. A test fails on two actions with one id, on a tool action named `tabs`, and on a family's words missing in any language.
+A preset's id is `tool-<tool>-preset-` and its name, encoded to stay ASCII and reversible: `a`–`z`, `0`–`9` and `_` as they are, and every other byte of the name's UTF-8, upper-case letters among them, as `~` and two lower-case hex digits (`été` is `~c3~a9t~c3~a9`, `C3A9` is `~433~419`), `~` taken by nothing else; every escape is three characters, so no two names meet. So the preset row's family is `preset_row`, with an underscore: no other family starts with `preset-`, and no preset's name can make another family's id. `tabs` is reserved: no `Action` end item of a tool may take it as its id, since `tool-<tool>-tabs` is the tool's tabs, and the tools' check refuses it with the other id rules. The other families cannot collide with a button's id, which has no hyphen, as each adds a further part after its word. Renaming a preset moves its shortcuts, as darktable's `dt_action_rename_preset` does; it is the one rename the registry handles. A test fails on two actions with one id, on a tool action named `tabs`, and on a family's words missing in any language.
 
 ### What becomes an action
 
@@ -75,8 +75,8 @@ Every action is generated from `ToolDefinition` as the app starts, as decision 9
 | More than one `Tab` | `tabs`, its elements the tabs |
 | `Row::Slider`, a control's or a view coordinate's | `slider` |
 | `Row::Choice`, `Row::Preset` | `dropdown`, each option an `item:` |
-| `Row::Toggle`, `Row::Pickers`' buttons, a `Picker` or `View` end item | `toggle` |
-| `Row::Buttons`' buttons, `Row::Action`, an `Action` or `Compute` end item and each variant | `button` |
+| `Row::Toggle`, a `Picker` or `View` end item | `toggle` |
+| An `Action` or `Compute` end item and each variant | `button` |
 | A slider's quad, its end item | the slider's `button` element |
 | A cursor of `ToolDefinition::cursors` | `hold` |
 | `Row::Setting` | `slider`, `dropdown`, `toggle` or `entry`, by its kind |

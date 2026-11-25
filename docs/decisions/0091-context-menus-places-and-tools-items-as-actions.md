@@ -40,14 +40,14 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 
 **Every item is an action** of the registry (36). So it can be given keys, it is in the menu bar or its tool too, it is enabled and checked from the state, and the native menu only reports which was chosen.
 
-- A tool's own actions are registry actions, generated as the app starts from every tool's definition, one for each `Row::Action` and each button of `Row::Buttons` (`actions::tool_actions`), and, once a line row replaces them, for each `Action` end item and each of its variants ([0107](0107-packed-lines-one-line-row-with-end-items.md), planned):
+- A tool's own actions are registry actions, generated as the app starts from every tool's definition, one for each `Action` end item of a line row (`actions::tool_actions`, [0107](0107-packed-lines-one-line-row-with-end-items.md)), and, planned, for each of its variants:
   - they are made once, into a `OnceLock` beside the static `ACTIONS`, and every lookup by id finds them (`actions::action`, `named`, `all`): the keymap, the keys settings keep, the context menus and the Mac's menus;
   - its id is `tool-<tool>-<action>`, under which settings keep its keys;
   - its words are the action's full name, `tool-<tool>-action-<action>-full`;
   - it has no default keys and works in the view's scope;
   - it is available while the photo takes edits, live and not open for viewing only, on the main window, with no modal dialog over it; an `Action` end item and its variants also follow the tool's own availability rule ([0107](0107-packed-lines-one-line-row-with-end-items.md), planned);
-  - a button's runs as pressing the button does: `Intent::ToolAction`, then `Change::Action` on the tool's values the mirror holds, `ProcessingTool::action`, and a `SetControl` for each control it writes, one change and one history step;
-  - a `Row::Action`'s, whose row is drawn disabled until what it runs is built, is listed and never runs.
+  - one that runs, a button's, runs as pressing the button does: `Intent::ToolAction`, then `Change::Action` on the tool's values the mirror holds, `ProcessingTool::action`, and a `SetControl` for each control it writes, one change and one history step;
+  - an unported one (`ActionEnd::unported`), drawn disabled until what it runs is built, is listed and never runs.
 - A utility's items are the registry actions it already has, as History's Reset is `reset`.
 
 **Tools declare their items as data.** Every item, a tool's, a utility's or the app's, is a `MenuItem { place: Place, section: Section, order: u32, entry: MenuEntry }`, so the app's items and the tools' are placed by one rule.

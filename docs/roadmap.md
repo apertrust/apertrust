@@ -201,7 +201,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 darktable's colour pickers and its Colour picker, one API (decision 79; [pickers.md](pickers.md#the-plan)), one pull request each, each reviewed before the next that needs it:
 
 - [x] 79.1 The reduction kernel on the frame and the Colour picker's picker through the session, regions mapped through the geometry.
-- [x] 79.2 Tool pickers in `apertrust-tools`: `Picker`, `Quad::Picker(id)`, `Row::Pickers`, `ProcessingTool::pick` and its checks.
+- [x] 79.2 Tool pickers in `apertrust-tools`: `Picker`, a slider's picker and a line of pickers (`End::Picker(id)` since 107.1), `ProcessingTool::pick` and its checks.
 - [x] 79.3 Tool pickers in the engine: the reduction at an operation's input and output, the mosaic and denoise, sample-only renders, a pick applied as one change, the moved area's budgets measured.
 - [x] 79.4 The design system's on-photo overlay primitives, one language for every mark on the photo, before any mark is drawn.
 - [x] 79.5 The picker button and the picker's marks in the design system.
@@ -241,7 +241,7 @@ One cursor chosen at a time decides what a press on the photo does (decision 104
 
 darktable's packed lines as one line row, and the buttons at a row's end as a closed list of end items (decision 107; [gui.md](gui.md#line-rows-and-end-items)), one pull request each, each reviewed before the next:
 
-- [ ] 107.1 `Row::Line` and `end` replace `Row::Pickers`, `Row::Buttons`, `Row::Action` and the slider's quad, with no change of behaviour: every page as it is.
+- [x] 107.1 `Row::Line` and `end` replace `Row::Pickers`, `Row::Buttons`, `Row::Action` and the slider's quad, with no change of behaviour: every page as it is.
 - [ ] 107.2 AgX's buttons: a press runs the tool's action; end items with their availability; Reset primaries with its menu, Set from above at Reverse all's end, unavailable while it is on; Read exposure through Exposure's published effective exposure; the toe and shoulder warnings; Auto tune levels and Read exposure back on one line, as darktable has them.
 - [ ] 107.3 `Row::Fields`, two or three compact controls on one line, folding into labelled rows when narrow, with Export's pixels line moved to it; the centimetre and inch lines and the scale stay `Widget::ExportSize`.
 - [ ] 107.4 The rest with each tool's port: computes (the tone equalizer's wands, demosaic's capture sharpen radius, Rotate and perspective's detect lines and fit), mode cursors and the Geometry group with Straighten, mask views, a tab strip's end items, and the colour kind of setting.

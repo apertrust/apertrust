@@ -20,7 +20,7 @@ A definition has five shapes for these today: `Row::Pickers`, `Row::Buttons`, `R
 
 ## Decision
 
-**One line row replaces `Row::Pickers`, `Row::Buttons` and `Row::Action`, and an `end` list of a closed set of end items replaces the slider's quad.** The line row is `Row::Line { start, readout, end }`. Slider, Choice, Toggle and Setting rows carry an `end` list too. Every part is planned; nothing is built by this decision. [gui.md](../gui.md#line-rows-and-end-items) holds the details.
+**One line row replaces `Row::Pickers`, `Row::Buttons` and `Row::Action`, and an `end` list of a closed set of end items replaces the slider's quad.** The line row is `Row::Line { start, readout, end }`. Slider, Choice, Toggle and Setting rows carry an `end` list too. Built: the first step of the order below, the line row and `end` in place of the three rows and the quad, drawn as they were; the rest is planned. [gui.md](../gui.md#line-rows-and-end-items) holds the details.
 
 1. **The line row.** `Row::Line { start, readout, end }`:
    - `start` is nothing, a label (a plain group's words, as `Row::Pickers`' label is), or a control (its label being darktable's reset label, double-clicked to reset it, as `Row::Buttons`' is).
