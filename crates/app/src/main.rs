@@ -90,6 +90,7 @@ mod testing;
 mod thumbnails;
 mod toolbar;
 mod tools;
+mod tree_row;
 mod utility;
 mod viewport;
 mod zoom;
@@ -110,7 +111,7 @@ use apertrust_engine::session::library::{EditState, RawThumbnails, Source};
 use apertrust_engine::session::{
     CacheCommand, CacheOptions, Command, ControlValue, Event, Frame, Graphs, History,
     LibraryCommand, PickKeys, PickerCommand, PickerRef, Places, Session, SessionError, StepSource,
-    Values, ViewOnly,
+    StyleMode, Values, ViewOnly,
 };
 use apertrust_engine::sidecar::Reason;
 use apertrust_engine::view::{FramePlace, Placement};
@@ -2099,6 +2100,10 @@ struct Shell {
     overwrite: alerts::Question,
     /// Whether Discard History asks first (`history.ask_before_discard`).
     discard: alerts::Question,
+    /// How a click on a style applies it (`styles.mode`, decision 106).
+    style_mode: StyleMode,
+    /// The Styles tool's own state: the styles read, Find style's text, the folders open.
+    styles: styles::tool::Kept,
     /// Whether Discard History… ran, for the app to ask first, or send it.
     discard_history: bool,
     /// Whether Create a Style… or Save Edit as Style… ran, for the app to open its dialog.
@@ -2258,6 +2263,8 @@ impl Shell {
             tool_settings: settings.tool_settings.clone(),
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
             discard: alerts::Question::discard(settings.ask_before_discard, false),
+            style_mode: settings.style_mode,
+            styles: styles::tool::Kept::default(),
             discard_history: false,
             create_style: false,
             tool_action: None,
@@ -2889,6 +2896,7 @@ impl Shell {
             tool_settings: self.tool_settings.clone(),
             ask_before_overwrite: self.overwrite.asks(),
             ask_before_discard: self.discard.asks(),
+            style_mode: self.style_mode,
         }
     }
 
@@ -3156,6 +3164,25 @@ impl Shell {
                     self.presets.menu(definition.id, alerts)
                 })
                 .flatten(),
+        };
+        head.with_layout(self.layout_head(ctx, definition.id, state))
+    }
+
+    /// The Styles tool's header (decision 106): its declared ⋯ item, Create a Style…, then its
+    /// own, Mode ▸ and the later ones (`styles::tool::options`), then the layout's.
+    fn styles_head(&self, ctx: &egui::Context, state: &State) -> tools::Head {
+        let definition = &styles::tool::declared().tool;
+        let mut options = menus::options(ctx, definition.id, &self.keymap, state);
+        options.extend(styles::tool::options(&translator(ctx), self.style_mode));
+        let head = tools::Head {
+            open: self.section_open(definition),
+            peek: false,
+            options,
+            enabled: true,
+            photo: None,
+            layout: None,
+            found: self.found(ctx, definition.id),
+            presets: None,
         };
         head.with_layout(self.layout_head(ctx, definition.id, state))
     }
@@ -4325,6 +4352,7 @@ impl Shell {
         self.overwrite =
             alerts::Question::overwrite(settings.ask_before_overwrite, self.overwrite.held());
         self.discard = alerts::Question::discard(settings.ask_before_discard, self.discard.held());
+        self.style_mode = settings.style_mode;
         ctx.request_repaint();
     }
 }
@@ -4997,8 +5025,8 @@ impl App {
                 self.discard_step(step, ctx);
             }
             alerts::Then::Leave => self.quit_again = true,
-            alerts::Then::UpdatePreset => self.preset_confirmed(true),
-            alerts::Then::DeletePreset => self.preset_confirmed(false),
+            alerts::Then::UpdatePreset => self.preset_confirmed(true, ctx),
+            alerts::Then::DeletePreset => self.preset_confirmed(false, ctx),
             alerts::Then::Told => {}
         }
     }
@@ -5716,10 +5744,23 @@ impl App {
     /// The alert asked for `tool`'s preset `name` answered yes: Update writes the tool's
     /// values now, or Export's settings, over it, Delete removes it, so it is gone from the
     /// list at once.
-    fn preset_confirmed(&mut self, update: bool) {
+    fn preset_confirmed(&mut self, update: bool, ctx: &egui::Context) {
         let Some((tool, name)) = self.preset_asked.take() else {
             return;
         };
+        // A style's Delete Style…, from the styles folder.
+        if tool == styles::tool::ID {
+            let Some(folder) = self.shell.presets.styles() else {
+                return;
+            };
+            if let Err(error) = styles::delete(&folder, &name) {
+                tracing::warn!(target: "settings", "style {name}: {error}");
+                let said = styles::not_changed(&translator(ctx), &name, &error, false);
+                self.status = Some((said, ctx.input(|i| i.time)));
+            }
+            self.shell.styles.listed = None;
+            return;
+        }
         let Some(folder) = self.shell.presets.folder(tool) else {
             return;
         };
@@ -5754,6 +5795,73 @@ impl App {
         }
     }
 
+    /// What the Styles tool asked for (decision 106; `styles::tool`): a style applied to the
+    /// active photo as `styles.mode` says, the Viewer saying what of it was left out; a
+    /// style applied cleared; Rename Style…'s dialog; Delete Style…'s alert; a folder of
+    /// the tree opened or closed; Find style's text; and the mode.
+    fn styles_asked(&mut self, actions: Vec<styles::tool::Action>, ctx: &egui::Context) {
+        use styles::tool::Action;
+        for action in actions {
+            match action {
+                // Not while the photo takes no edit yet, opening, or none at all.
+                Action::Apply(_) | Action::Clear(_) if !self.mirror.takes_edits() => {}
+                Action::Apply(name) => {
+                    let listed = self.shell.styles.listed.iter().flatten();
+                    let Some(style) = listed.into_iter().find(|s| s.name == name).cloned() else {
+                        continue;
+                    };
+                    if let Some(command) = styles::tool::apply(&style, self.shell.style_mode) {
+                        self.send_edit(command);
+                        if let Some(said) = styles::tool::left_out(&style, &translator(ctx)) {
+                            self.status = Some((said, ctx.input(|i| i.time)));
+                        }
+                    }
+                }
+                Action::Clear(name) => {
+                    self.send_edit(styles::tool::clear(&name));
+                }
+                Action::Rename(name) => {
+                    let Some(folder) = self.shell.presets.styles() else {
+                        continue;
+                    };
+                    let dialog = styles::RenameDialog::new(name, styles::taken(&folder));
+                    self.dialogs.open(presets::Sheet(dialog), None, ctx);
+                }
+                Action::Delete(name) => {
+                    let request = alerts::delete_request(ctx, &name, "style");
+                    let purpose = alerts::Purpose::DeletePreset;
+                    let asked = self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
+                    if asked == dialog_host::Ask::Shown {
+                        self.preset_asked = Some((styles::tool::ID, name));
+                    }
+                }
+                Action::Toggle(path) => {
+                    let open = &mut self.shell.styles.open;
+                    if !open.remove(&path) {
+                        open.insert(path);
+                    }
+                }
+                Action::Find(text) => self.shell.styles.find = text,
+                Action::Mode(mode) => self.shell.style_mode = mode,
+            }
+            ctx.request_repaint();
+        }
+    }
+
+    /// What Rename Style… asked: the style `from` named `to`, the tree read again, or the
+    /// Viewer saying why it could not be.
+    fn rename_style(&mut self, from: &str, to: &str, ctx: &egui::Context) {
+        let Some(folder) = self.shell.presets.styles() else {
+            return;
+        };
+        if let Err(error) = styles::rename(&folder, from, to) {
+            tracing::warn!(target: "settings", "style {from}: {error}");
+            let said = styles::not_changed(&translator(ctx), from, &error, true);
+            self.status = Some((said, ctx.input(|i| i.time)));
+        }
+        self.shell.styles.listed = None;
+    }
+
     /// Create a Style… and Save Edit as Style… (decision 106; `styles`): their dialog,
     /// over the tools the active photo's edit touches, refusing the styles' names.
     fn style_dialog(&mut self, ctx: &egui::Context) {
@@ -5776,6 +5884,7 @@ impl App {
         let build = apertrust_base::program!().version;
         let (tools, states) = (self.mirror.tools(), &self.mirror.values.tools);
         let done = styles::create(&folder, tools, states, &asked, build);
+        self.shell.styles.listed = None;
         if let Err(error) = &done {
             tracing::warn!(target: "settings", "style {}: {error}", asked.name);
         }
@@ -6169,6 +6278,15 @@ impl App {
         self.shell.announce(ui);
         let holds = |tool: &str| self.shell.shown_tab().is_some_and(|tab| tab.holds(tool));
         let (collections, exporting) = (holds(library::ID), holds(export::ID));
+        let styling = holds(styles::tool::ID);
+        // The styles are read as the tool first shows, and again after one is created,
+        // renamed or deleted.
+        if styling
+            && self.shell.styles.listed.is_none()
+            && let Some(folder) = self.shell.presets.styles()
+        {
+            self.shell.styles.listed = Some(styles::tool::read(&folder, self.mirror.tools()));
+        }
         if collections && !self.shell.collections_shown {
             self.shell.recents.check();
         }
@@ -6193,6 +6311,10 @@ impl App {
         let declared = &export::definition().tool;
         let head = self.shell.head(ui.ctx(), declared, &state, false);
         let mut photos_shown = PhotosShown {
+            styles: styling.then(|| tools::Head {
+                photo: self.mirror.photo.open(),
+                ..self.shell.styles_head(ui.ctx(), &state)
+            }),
             collections: (self.shell).layout_head(ui.ctx(), library::ID, &state),
             export: exporting.then(|| ExportShown {
                 head: tools::Head {
@@ -6226,10 +6348,34 @@ impl App {
             found: self.shell.found(ui.ctx(), library::ID),
             ..PhotosDrawn::default()
         };
+        let words = translator(ui.ctx());
+        let titles = |id: &str| styles::tool::title(&words, id);
+        let (photo_open, view_only) = match &self.mirror.photo {
+            PhotoState::Open(photo) => (true, photo.view_only.is_some()),
+            _ => (false, false),
+        };
+        let mut styles_tool = styles::tool::StylesTool {
+            listed: self.shell.styles.listed.as_deref().unwrap_or_default(),
+            applied: photo_open.then_some(self.mirror.values.styles.as_slice()),
+            kept: &self.shell.styles,
+            unavailable: styles::tool::unavailable(
+                photo_open,
+                view_only,
+                self.mirror.takes_edits(),
+                &words,
+            ),
+            titles: &titles,
+            alerts: dialog_host::platform::shows_alerts(ui.ctx().os()),
+        };
         let export = &mut self.export;
         let mut others = |ui: &mut egui::Ui, id: &'static str, cx: &mut utility::Context<'_>| {
             let shown = &mut photos_shown;
-            photos_tool(ui, id, cx, &mut library, export, shown, &mut photos);
+            let tools = PhotosTools {
+                collections: &mut library,
+                styles: &mut styles_tool,
+                export,
+            };
+            photos_tool(ui, id, cx, tools, shown, &mut photos);
         };
         let (mirror, panels) = (&self.mirror, &self.panels);
         let tab = edit_tab(
@@ -6279,6 +6425,10 @@ impl App {
                 .set_group_open(export::ID, export::SUMMARY, !open);
         }
         self.carry_out(photos.actions, ui.ctx());
+        if photos.styles_toggle {
+            self.shell.toggle_section(&styles::tool::declared().tool);
+        }
+        self.styles_asked(photos.styles, ui.ctx());
         self.export(export.asked, ui.ctx());
         if export.show_jobs {
             self.run_actions([ActionId::SHOW_JOBS], ui.ctx(), &[]);
@@ -8434,6 +8584,9 @@ impl eframe::App for App {
         for asked in taken.presets {
             self.preset_named(asked);
         }
+        for (from, to) in taken.renamed {
+            self.rename_style(&from, &to, ctx);
+        }
         for asked in taken.styles {
             self.create_style(asked, ctx);
         }
@@ -9142,6 +9295,7 @@ fn take_dialogs(
     let mut storage = Vec::new();
     let mut presets = Vec::new();
     let mut styles = Vec::new();
+    let mut renamed = Vec::new();
     for output in dialogs.outputs() {
         match output {
             dialog_host::Output::Keys(keys) => actions.extend(actions::read_from_dialog(
@@ -9166,6 +9320,7 @@ fn take_dialogs(
             dialog_host::Output::Log(asked) => log.push(asked),
             dialog_host::Output::Preset(asked) => presets.push(asked),
             dialog_host::Output::Style(asked) => styles.push(asked),
+            dialog_host::Output::StyleRename { from, to } => renamed.push((from, to)),
         }
     }
     let held = hold_close(ctx, dialogs);
@@ -9178,6 +9333,7 @@ fn take_dialogs(
         log,
         presets,
         styles,
+        renamed,
         actions,
     }
 }
@@ -9212,6 +9368,8 @@ struct Taken {
     presets: Vec<presets::Asked>,
     /// What Create a Style… asked, in order.
     styles: Vec<styles::Asked>,
+    /// What Rename Style… asked, each style's name and its new one, in order.
+    renamed: Vec<(String, String)>,
     /// The actions the app's keys asked for in a dialog's own window, in order.
     actions: Vec<ActionId>,
 }
@@ -9625,7 +9783,16 @@ struct PhotosShown {
     /// What the layout gives Collections' header, where it is and ⋯'s layout items
     /// (`Shell::layout_head`), the rest of its header its own.
     collections: tools::Head,
+    /// The Styles tool's header, where the tab shown holds it.
+    styles: Option<tools::Head>,
     export: Option<ExportShown>,
+}
+
+/// The Photos tab's utilities [`photos_tool`] draws, as the frame gives them.
+struct PhotosTools<'t, 'a> {
+    collections: &'t mut library::Collections<'a>,
+    styles: &'t mut styles::tool::StylesTool<'a>,
+    export: &'t mut export::Export,
 }
 
 /// What Collections and Export asked for, drawn in the tab shown ([`photos_tool`]).
@@ -9643,6 +9810,10 @@ struct PhotosDrawn {
     exported: bool,
     /// Where Collections lives while Find Tool… lists it, which its header says.
     found: Option<tools::Found>,
+    /// What the Styles tool asked for, its page's and its header's own.
+    styles: Vec<styles::tool::Action>,
+    /// Whether the Styles tool's header was toggled.
+    styles_toggle: bool,
 }
 
 /// Routes the change of a utility's setting row, `key` in full set to `value` (decision
@@ -9680,12 +9851,29 @@ fn photos_tool(
     ui: &mut egui::Ui,
     id: &str,
     cx: &mut utility::Context<'_>,
-    collections: &mut library::Collections<'_>,
-    export: &mut export::Export,
+    tools: PhotosTools<'_, '_>,
     shown: &mut PhotosShown,
     out: &mut PhotosDrawn,
 ) {
-    if id == library::ID {
+    let PhotosTools {
+        collections,
+        styles,
+        export,
+    } = tools;
+    if id == styles::tool::ID
+        && let Some(head) = shown.styles.take()
+    {
+        let section = utility::section(ui, styles, cx, head, false);
+        for pressed in &section.pressed {
+            match pressed {
+                tools::Pressed::Run(id) => out.run.push(*id),
+                tools::Pressed::Toggle => out.styles_toggle = true,
+                pressed => out.styles.extend(styles::tool::pressed(pressed)),
+            }
+        }
+        out.styles.extend(section.actions);
+        out.changes.extend(section.changes);
+    } else if id == library::ID {
         // The active photo's open, so a ⋯ choice made before another photo opened is
         // dropped, never run on the new photo's folder.
         let layout = std::mem::take(&mut shown.collections);
@@ -9801,7 +9989,7 @@ fn panel_body(
                 changes.extend(drawn.changes);
                 history_asked.extend(drawn.actions);
             }
-            library::ID | export::ID => {
+            library::ID | export::ID | styles::tool::ID => {
                 let top = ui.cursor().top();
                 others(ui, id, cx);
                 // Collections revealed in the Hidden tab, its header at the top; Export
@@ -22345,14 +22533,29 @@ mod tests {
                             let export = &mut bench.export;
                             let mut shown = PhotosShown {
                                 collections: tools::Head::default(),
+                                styles: None,
                                 export: Some(shown),
+                            };
+                            let no_titles = |id: &str| id.to_owned();
+                            let kept = styles::tool::Kept::default();
+                            let mut styles = styles::tool::StylesTool {
+                                listed: &[],
+                                applied: None,
+                                kept: &kept,
+                                unavailable: None,
+                                titles: &no_titles,
+                                alerts: true,
                             };
                             let mut drawn = PhotosDrawn::default();
                             PanelBody::new().show(ui, |ui| {
                                 for id in [library::ID, export::ID] {
                                     let out = &mut drawn;
-                                    let library = &mut collections;
-                                    photos_tool(ui, id, &mut cx, library, export, &mut shown, out);
+                                    let tools = PhotosTools {
+                                        collections: &mut collections,
+                                        styles: &mut styles,
+                                        export: &mut *export,
+                                    };
+                                    photos_tool(ui, id, &mut cx, tools, &mut shown, out);
                                 }
                             });
                             let drawn = drawn.export;

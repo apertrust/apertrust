@@ -1192,6 +1192,8 @@ mod tests {
                 args.set("how", "Click a neutral area, or drag one");
                 // The toolbar menu's Hide, naming its item.
                 args.set("item", "Undo");
+                // A style's history steps (decision 106).
+                args.set("style", "Warm film");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

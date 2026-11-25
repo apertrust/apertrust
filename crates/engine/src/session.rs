@@ -554,6 +554,15 @@ pub enum StyleMode {
     Replace,
 }
 
+/// The mode is kept as the Styles tool's setting `styles.mode`, by its id, darktable's
+/// append and overwrite.
+impl apertrust_base::settings::Choice for StyleMode {
+    const OPTIONS: &'static [(StyleMode, &'static str)] = &[
+        (StyleMode::Append, "append"),
+        (StyleMode::Replace, "replace"),
+    ];
+}
+
 /// Whether `command` acts on the open photo's edit, as every command does but these: the
 /// values are reported after every command on the edit, and such a command ends a
 /// gesture under way, but a `Step` refused as `DefaultSource` or `EmptyStep`, and is

@@ -15,8 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The utilities (`docs/gui.md`, The Tools panel, One tool model): the Tools
-//! panel's tools that edit nothing, Scopes, History, Collections and Export, with no
-//! [`ProcessingDefinition`](crate::ProcessingDefinition). Each is listed in [`UTILITIES`]
+//! panel's tools that edit nothing, Scopes, History, Collections, Styles and Export, with
+//! no [`ProcessingDefinition`](crate::ProcessingDefinition). Each is listed in [`UTILITIES`]
 //! with its words, its sentence `tool-<id>-description` as a tool's, what it measures,
 //! which its header's tooltip says ([`crate::about`]), what its header's ↺ does, its page
 //! and the items it adds to context menus and its ⋯ (decision 91). The app draws each
@@ -242,12 +242,13 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// The utilities built: Scopes, which measures the finished picture; History, whose ↺ is
 /// Reset Edit, which it adds to the photo's and a thumbnail's menus, and whose ⋯ holds
 /// Compress History, Truncate History and Create a Style…, then Discard History… apart, as
-/// the destructive one; Collections, the Photos tab's first; and Export, its last
-/// ([`export::EXPORT`]). The pages of the first three are their own widgets as custom rows,
-/// which keep what each drew before (decision 93): Scopes' the graph with its buttons,
-/// History's its steps, Collections' its recents line and its Folders; Export's are setting
-/// rows in groups, with custom rows of its own. The first three are open at first, Export
-/// closed, as every processing tool is ([`ToolDefinition::open_at_first`]).
+/// the destructive one; Collections, the Photos tab's first; Styles, whose ⋯ holds Create
+/// a Style… (decision 106); and Export, its last ([`export::EXPORT`]). The pages of the
+/// first four are their own widgets as custom rows, which keep what each drew before
+/// (decision 93): Scopes' the graph with its buttons, History's its steps, Collections' its
+/// recents line and its Folders, Styles' its lists; Export's are setting rows in groups,
+/// with custom rows of its own. Scopes, History and Collections are open at first, Styles
+/// and Export closed, as every processing tool is ([`ToolDefinition::open_at_first`]).
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -346,6 +347,31 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             menus: &[],
             // View › Collections, its tab chosen (decision 92).
             toolbar: &[item("show-collections", "library")],
+            cursors: &[],
+        },
+        measures: None,
+        titles: &[],
+        open: &[],
+    },
+    UtilityDefinition {
+        tool: ToolDefinition {
+            id: "styles",
+            tabs: &[Tab {
+                id: None,
+                rows: &[Row::Custom {
+                    widget: Widget::Styles,
+                    controls: &[],
+                }],
+            }],
+            before: &[],
+            after: &[],
+            reset: Reset::None,
+            presets: false,
+            open_at_first: false,
+            // Its ⋯ begins with Create a Style…; Mode ▸, Import Style… and Export Style…
+            // are the app's own items after it (decision 106).
+            menus: &[option(Section::HISTORY, 100, "create-style")],
+            toolbar: &[],
             cursors: &[],
         },
         measures: None,
@@ -469,6 +495,7 @@ mod tests {
             ("scopes", true),
             ("history", true),
             ("collections", true),
+            ("styles", false),
             ("export", false),
         ];
         assert_eq!(open, expected);

@@ -29,6 +29,9 @@
 //! - **Create** writes one entry per tool checked, its values now as a preset saves them
 //!   ([`create`]), and the Viewer says "Style "…" created" ([`CREATED`]). No history step:
 //!   no photo changes.
+//!
+//! The Styles tool, which lists, applies and clears styles, is [`tool`]; its Rename Style…
+//! is [`RenameDialog`], over [`rename`].
 
 use std::path::{Path, PathBuf};
 
@@ -43,6 +46,8 @@ use eframe::egui::{self, Label, RichText};
 use crate::dialog_host::Output;
 use crate::mirror::Mirror;
 use crate::presets::{SheetContent, current, description_rows, name_rows, refusal};
+
+pub mod tool;
 
 /// The message id of the status message a style created gives, its name as `name`.
 pub const CREATED: &str = "style-created";
@@ -101,14 +106,20 @@ pub fn lines(tools: &[&dyn ProcessingTool], states: &[ToolState], words: &Transl
 /// The styles' names in `folder`, trimmed, which a new style cannot take; a file that
 /// cannot be read is left out with a warning under `-d settings`.
 pub fn taken(folder: &Path) -> Vec<String> {
+    (stored(folder).into_iter())
+        .map(|stored| stored.name.trim().to_owned())
+        .collect()
+}
+
+/// The style files in `folder`, each read; a file that cannot be read is left out with a
+/// warning under `-d settings`.
+pub fn stored(folder: &Path) -> Vec<Stored> {
     let listed = files::list(folder, Kind::Style);
     for (path, error) in &listed.failed {
         let path = path.display();
         tracing::warn!(target: "settings", "style {path} not read: {error}");
     }
-    (listed.files.into_iter())
-        .map(|stored| stored.name.trim().to_owned())
-        .collect()
+    listed.files
 }
 
 /// What the dialog asked of the app as Create was pressed.
@@ -261,6 +272,100 @@ impl SheetContent for StyleDialog {
     fn output(&self) -> Output {
         Output::Style(self.asked())
     }
+}
+
+/// Rename Style…, a [`Sheet`](crate::presets::Sheet)'s content: Name, its first focus,
+/// holding the style's name, above Rename, which an empty name or another style's disables,
+/// saying why under the field.
+#[derive(Debug)]
+pub struct RenameDialog {
+    from: String,
+    /// The other styles' names, trimmed.
+    taken: Vec<String>,
+    name: String,
+    focused: bool,
+}
+
+impl RenameDialog {
+    /// Rename Style… for the style `from`, `taken` every style's name, its own among them,
+    /// which it may keep.
+    pub fn new(from: String, taken: Vec<String>) -> Self {
+        let taken = taken.into_iter().filter(|name| *name != from).collect();
+        RenameDialog {
+            name: from.clone(),
+            from,
+            taken,
+            focused: false,
+        }
+    }
+}
+
+impl SheetContent for RenameDialog {
+    fn id(&self) -> &'static str {
+        "style-rename"
+    }
+
+    fn title(&self, ctx: &egui::Context) -> String {
+        tr(ctx, "styles-rename-title")
+    }
+
+    fn rows(&mut self, ui: &mut egui::Ui, words: &Translator) -> bool {
+        let taken = &self.taken;
+        let refused = |name: &str| refusal(name, taken, REFUSED, &Args::new(), words);
+        name_rows(ui, &mut self.name, &mut self.focused, refused)
+    }
+
+    fn button(&self, words: &Translator) -> (String, bool) {
+        let refused = refusal(&self.name, &self.taken, REFUSED, &Args::new(), words);
+        (words.text("styles-rename-button"), refused.is_none())
+    }
+
+    fn output(&self) -> Output {
+        Output::StyleRename {
+            from: self.from.clone(),
+            to: self.name.trim().to_owned(),
+        }
+    }
+}
+
+/// Renames the style `from` in `folder` to `to`, its file named from its new name, refusing
+/// a name another style holds. Returns its new path.
+pub fn rename(folder: &Path, from: &str, to: &str) -> Result<PathBuf, PresetError> {
+    let to = to.trim();
+    if taken(folder)
+        .iter()
+        .any(|taken| taken == to && taken != from)
+    {
+        return Err(PresetError::NameTaken(to.to_owned()));
+    }
+    files::rename(&path_of(folder, from)?, to)
+}
+
+/// Deletes the style `name` in `folder`.
+pub fn delete(folder: &Path, name: &str) -> Result<(), PresetError> {
+    files::delete(&path_of(folder, name)?)
+}
+
+/// The file of the style `name` in `folder`.
+fn path_of(folder: &Path, name: &str) -> Result<PathBuf, PresetError> {
+    (stored(folder).into_iter())
+        .find(|stored| stored.name.trim() == name)
+        .map(|stored| stored.path)
+        .ok_or(PresetError::NotAPreset)
+}
+
+/// What the Viewer says where the style `name` could not be renamed, or deleted, in
+/// `words`, `error` why.
+pub fn not_changed(words: &Translator, name: &str, error: &PresetError, renamed: bool) -> String {
+    let mut args = Args::new();
+    args.set("name", name);
+    args.set("error", error.to_string());
+    let id = if renamed {
+        "style-not-renamed"
+    } else {
+        "style-not-deleted"
+    };
+    words.text_with(id, Some(&args))
 }
 
 #[cfg(test)]

@@ -27,10 +27,11 @@ use crate::settings::testing::Folder;
 /// bottom, by tool id, those still to build included: Adjust in editing order, with the
 /// edit's tone mapper, one of AgX, Sigmoid and Filmic RGB, at its place, and the Tone curve
 /// at RGB curve's until RGB curve replaces it; Raw in processing order. The Photos tab
-/// holds Collections, then the Export tool, its last (decisions 73 and 90); History its
+/// holds Collections, then Styles, then the Export tool, its last (decisions 73, 90 and
+/// 106); History its
 /// section alone.
 const DECISION_38: [(&str, &[&str]); 7] = [
-    ("photos", &["collections", "export"]),
+    ("photos", &["collections", "styles", "export"]),
     (
         "adjust",
         &[
@@ -320,6 +321,7 @@ fn the_hidden_tab_lists_the_hidden_tools_in_processing_order() {
         "soften",
         "vignette",
         "colorout",
+        "styles",
     ]
     .into_iter()
     .filter(|tool| known().contains(tool))
@@ -483,7 +485,10 @@ fn hidden_wins_over_the_lists_but_for_export() {
     );
     assert_eq!(tab(&shown, "effects").order, ["grain", "soften"]);
     assert!(shown.hidden.contains(&"vignette"));
-    assert_eq!(tab(&shown, "photos").order, ["collections", "export"]);
+    assert_eq!(
+        tab(&shown, "photos").order,
+        ["collections", "styles", "export"]
+    );
     assert!(!shown.hidden.contains(&EXPORT));
 }
 
@@ -576,7 +581,10 @@ fn export_goes_to_the_photos_tab_else_the_first_holding_tools() {
         "[[tabs]]\nid = \"skin\"\n[[tabs]]\nid = \"photos\"\n\
          [order]\nskin = [\"exposure\"]\nphotos = [\"collections\"]\n",
     );
-    assert_eq!(tab(&shown, "photos").order, ["collections", EXPORT]);
+    assert_eq!(
+        tab(&shown, "photos").order,
+        ["collections", "styles", EXPORT]
+    );
     let (shown, _) = shown_with_seen_but(&[], "skin", &[]);
     assert_eq!(tab(&shown, "skin").order, [EXPORT]);
     let (shown, _) = layout_of(
@@ -712,14 +720,14 @@ fn a_file_listing_no_tab_is_refused() {
 fn a_newer_version_s_file_is_read_and_never_written() {
     let folder = Folder::new("workspace-newer");
     let text = "version = 2\nmood = \"calm\"\n[[tabs]]\nid = \"photos\"\nshape = \"round\"\n\
-                [order]\nphotos = [\"collections\", \"export\", \"styles\"]\n";
+                [order]\nphotos = [\"collections\", \"export\", \"keywords\"]\n";
     std::fs::write(folder.0.join("default.toml"), text).unwrap();
     let (workspace, warnings) = Workspace::open(Some(&folder.0), DEFAULT);
     assert!(workspace.newer);
     assert!(warnings.iter().any(|w| w.contains("newer")), "{warnings:?}");
     assert_eq!(
         tab(&workspace.shown, "photos").order,
-        ["collections", EXPORT]
+        ["collections", "styles", EXPORT]
     );
     holds_the_invariants(&workspace.shown, &known());
 }
@@ -742,7 +750,10 @@ fn a_person_s_own_workspace_opens_from_its_file() {
     assert_eq!(workspace.layout.name.as_deref(), Some("Portraits"));
     let shown = &workspace.shown;
     holds_the_invariants(shown, &known());
-    assert_eq!(tab(shown, "photos").order, ["collections", EXPORT]);
+    assert_eq!(
+        tab(shown, "photos").order,
+        ["collections", "styles", EXPORT]
+    );
     assert_eq!(tab(shown, "skin").order, ["exposure"]);
     // Every other tool of Adjust's defaults joins it, in their order around AgX.
     let adjust = tab(shown, "adjust");
@@ -1235,7 +1246,7 @@ fn a_write_keeps_a_hand_edit() {
     let text = std::fs::read_to_string(folder.0.join("default.toml")).unwrap();
     let layout = parsed(&text);
     assert_eq!(layout.tabs.len(), 2, "the hand edit's tabs");
-    assert_eq!(layout.order["photos"], ["export", "collections"]);
+    assert_eq!(layout.order["photos"], ["export", "collections", "styles"]);
     // Scopes, which the file names nowhere, is new to it, and pinned as Default pins it.
     assert_eq!(layout.pinned["adjust"], ["scopes", "exposure"]);
     assert_eq!(layout.order["adjust"][0], "future-tool");
@@ -1948,7 +1959,7 @@ fn a_toolbar_change_keeps_a_hand_edit_and_unknown_ids() {
         Some(&owned(&["import", "cull", "redo"])[..])
     );
     assert_eq!(layout.tabs.len(), 2, "the hand edit's tabs");
-    assert_eq!(layout.order["photos"], ["export", "collections"]);
+    assert_eq!(layout.order["photos"], ["export", "collections", "styles"]);
     assert_eq!(layout.order["skin"], ["exposure"]);
     let table: Table = text.parse().unwrap();
     assert_eq!(table["colour"].as_str(), Some("amber"));
@@ -2013,7 +2024,10 @@ fn reset_toolbar_takes_the_file_s_list_out_and_keeps_the_rest() {
     let table: Table = text.parse().unwrap();
     assert!(table.get("toolbar").is_none(), "{text}");
     assert_eq!(table["colour"].as_str(), Some("amber"));
-    assert_eq!(parsed(&text).order["photos"], ["export", "collections"]);
+    assert_eq!(
+        parsed(&text).order["photos"],
+        ["export", "collections", "styles"]
+    );
     let (read, warnings) = Workspace::open(Some(&folder.0), DEFAULT);
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(!read.keeps_toolbar());

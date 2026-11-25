@@ -147,7 +147,7 @@ use apertrust_base::folders::Folders;
 use apertrust_base::settings::{
     CONF_FLAG, Declared, FileStorage, OverrideError, Overrides, Setting, Storage, Store, Stored,
 };
-use apertrust_engine::session::ControlValue;
+use apertrust_engine::session::{ControlValue, StyleMode};
 use apertrust_engine::settings as engine;
 use apertrust_tools::{ControlKind, Row, SettingRow, TOOLS};
 use apertrust_ui::components::{
@@ -253,6 +253,8 @@ pub struct Settings {
     pub ask_before_overwrite: bool,
     /// Whether Discard History asks first, `history.ask_before_discard`.
     pub ask_before_discard: bool,
+    /// How a click on a style applies it, `styles.mode` (decision 106).
+    pub style_mode: StyleMode,
 }
 
 impl Default for Settings {
@@ -298,6 +300,7 @@ impl Default for Settings {
             tool_settings: ToolSettings::default(),
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
             ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
+            style_mode: STYLES_MODE.default(),
         }
     }
 }
@@ -392,6 +395,7 @@ impl Settings {
             tool_settings: ToolSettings::read(store),
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
             ask_before_discard: store.get(&HISTORY_ASK_BEFORE_DISCARD),
+            style_mode: store.get(&STYLES_MODE),
         }
     }
 
@@ -558,6 +562,9 @@ impl Settings {
         }
         if s.ask_before_discard != was.ask_before_discard {
             store.set(&HISTORY_ASK_BEFORE_DISCARD, s.ask_before_discard);
+        }
+        if s.style_mode != was.style_mode {
+            store.set(&STYLES_MODE, s.style_mode);
         }
     }
 }
@@ -1514,6 +1521,7 @@ mod tests {
             },
             ask_before_overwrite: false,
             ask_before_discard: false,
+            style_mode: StyleMode::Replace,
         }
     }
 
@@ -1669,6 +1677,7 @@ mod tests {
                 },
                 ask_before_overwrite: true,
                 ask_before_discard: true,
+                style_mode: StyleMode::Append,
             }
         );
         // What the app takes where nothing is kept.
@@ -1836,6 +1845,9 @@ scale_factor = 2.0
 
 [sliders]
 marker = \"triangle\"
+
+[styles]
+mode = \"replace\"
 
 [toolbar]
 labels = false

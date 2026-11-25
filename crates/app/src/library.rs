@@ -216,11 +216,7 @@ pub struct Collections<'a> {
     pub home: Option<&'a Path>,
 }
 
-/// How far each level of the tree is set in (`docs/gui.md`, Names).
-const LEVEL_INDENT: f32 = 12.0;
-
-/// The side of a tree row's folder icon.
-const ROW_ICON: f32 = 16.0;
+use crate::tree_row::{LEVEL_INDENT, ROW_ICON};
 
 /// The active folder: open, or being opened.
 fn shown(folder: &Folder) -> Option<&Path> {
@@ -612,74 +608,27 @@ struct TreeRow<'a> {
 }
 
 impl TreeRow<'_> {
-    /// Draws it; returns its response and whether its chevron was clicked.
+    /// Draws it, as every tree row is drawn ([`crate::tree_row::TreeRow`]); returns its
+    /// response and whether its chevron was clicked.
     fn show(self, ui: &mut egui::Ui) -> (egui::Response, bool) {
         let t = theme(ui.ctx());
-        let size = vec2(ui.available_width(), t.sizes.panel_line);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        // The list is short: a row the keys reach is scrolled into sight.
-        if response.gained_focus() {
-            response.scroll_to_me(None);
+        let (response, chevron) = crate::tree_row::TreeRow {
+            id: None,
+            level: self.level,
+            name: self.name,
+            expanded: self.expanded,
+            mark: None,
+            icon: Some(Icon::Folder),
+            count: self
+                .count
+                .map(|count| crate::tree_row::count(ui.ctx(), count)),
+            chosen: self.chosen,
+            enabled: true,
+            role: egui::Role::TreeItem,
+            label: None,
         }
-        let indent = (self.level.saturating_sub(1)) as f32 * LEVEL_INDENT;
-        let chevron_side = Icon::ChevronEnd.size();
-        let chevron = Rect::from_min_size(
-            pos2(rect.left() + indent, rect.center().y - chevron_side / 2.0),
-            vec2(chevron_side, chevron_side),
-        );
-        if ui.is_rect_visible(rect) {
-            let painter = ui.painter();
-            let band = rect.expand2(vec2(t.spacing.xs, 0.0));
-            if self.chosen {
-                painter.rect_filled(band, t.shape.radius, t.colors.list_chosen);
-            } else if response.hovered() {
-                painter.rect_filled(band, t.shape.radius, t.colors.hover);
-            }
-            let ink = if self.chosen {
-                t.colors.text_strong
-            } else {
-                t.colors.text
-            };
-            if let Some(expanded) = self.expanded {
-                let icon = if expanded {
-                    Icon::ChevronDown
-                } else {
-                    Icon::ChevronEnd
-                };
-                icon.paint(painter, chevron, t.colors.text_secondary);
-            }
-            let mut x = chevron.right() + t.spacing.xs;
-            let icon = Rect::from_min_size(
-                pos2(x, rect.center().y - ROW_ICON / 2.0),
-                vec2(ROW_ICON, ROW_ICON),
-            );
-            Icon::Folder.paint(painter, icon, t.colors.text_secondary);
-            x = icon.right() + t.spacing.s;
-            let font = egui::FontId::proportional(t.text.body);
-            let mut end = rect.right();
-            if let Some(count) = self.count {
-                let small = egui::FontId::proportional(t.text.caption);
-                let count = translator(ui.ctx()).format_number(count as f64, 0, false);
-                let galley = painter.layout_no_wrap(count, small, t.colors.text_secondary);
-                end -= galley.size().x;
-                let at = pos2(end, rect.center().y - galley.size().y / 2.0);
-                painter.galley(at, galley, t.colors.text_secondary);
-                end -= t.spacing.s;
-            }
-            let shown = middle_cut(painter, self.name, "", &font, (end - x).max(0.0));
-            let galley = painter.layout_no_wrap(shown, font, ink);
-            painter.galley(
-                pos2(x, rect.center().y - galley.size().y / 2.0),
-                galley,
-                ink,
-            );
-            if response.has_focus() {
-                focus_ring_centred(painter, band, &t);
-            }
-        }
-        let name = self.name;
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TreeItem, true, name));
-        let (level, expanded, chosen, count) = (self.level, self.expanded, self.chosen, self.count);
+        .show(ui);
+        let (chosen, count) = (self.chosen, self.count);
         let words = translator(ui.ctx());
         let description = match count {
             Some(count) => {
@@ -691,11 +640,7 @@ impl TreeRow<'_> {
             None => self.shown.to_owned(),
         };
         ui.ctx().accesskit_node_builder(response.id, |node| {
-            node.set_level(level.saturating_sub(1));
             node.set_selected(chosen);
-            if let Some(expanded) = expanded {
-                node.set_expanded(expanded);
-            }
             node.set_description(description);
         });
         let on_chevron = self.expanded.is_some()

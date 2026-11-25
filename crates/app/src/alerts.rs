@@ -306,10 +306,17 @@ pub fn update_preset_request(ctx: &egui::Context, name: &str) -> Request {
 /// darktable's "delete preset?": "Delete the preset "…"?", with Delete, which
 /// destroys and has no key, and Cancel, the default.
 pub fn delete_preset_request(ctx: &egui::Context, name: &str) -> Request {
+    delete_request(ctx, name, "preset")
+}
+
+/// "Delete the `kind` "…"?", a preset's or a style's (`alert-<kind>-delete-title` and its
+/// message), named `name`: Delete, destructive, and Cancel, the default.
+pub fn delete_request(ctx: &egui::Context, name: &str, kind: &str) -> Request {
     let mut args = Args::new();
     args.set("name", name);
-    let title = translator(ctx).text_with("alert-preset-delete-title", Some(&args));
-    Request::new(title, tr(ctx, "alert-preset-delete-message"))
+    let title = format!("alert-{kind}-delete-title");
+    let title = translator(ctx).text_with(&title, Some(&args));
+    Request::new(title, tr(ctx, &format!("alert-{kind}-delete-message")))
         .button(tr(ctx, "alert-preset-delete-button"), Role::Destructive)
         .button(tr(ctx, "alert-cancel"), Role::Cancel)
         .default_button(1)
