@@ -322,7 +322,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
     - [x] creating a style, from History's ⋯ and Edit › Save Edit as Style… ([gui.md](gui.md#creating-a-style));
     - [x] the Styles tool applying one to the active photo, with the styles applied to it kept in its history and Clear ([gui.md](gui.md#the-styles-tool));
     - [x] the built-in styles, eight of darktable's presets, read-only, in the Styles tool's Built-in Styles beside Custom Styles, with Copy to Custom Styles… (#625);
-    - [ ] styles on every selected photo, as one batch (#373);
+    - [ ] styles on every selected photo, as one batch with one Undo, the photos not open changed with no decode or GPU (#373, decision 109; [history.md](history.md#a-batch-on-several-photos));
   - [ ] phase 2 (#364): the hover preview; darktable's built-in presets for each ported tool; Copy or Apply Parts…; a tool's Copy Settings and Paste Settings; Favourites, editing and duplicating a style; a preset's and a style's actions, with their ids; styles on export and import; `.appreset` and `.apstyle` files opened from outside; importing darktable's `.dtstyle` and `.dtpreset`; presets applied automatically; `--preset` and `--style` for processing tools on the CLI.
 - [ ] Copy Edit and Apply Edit, on the active photo and on every selected photo (#372): designed separately, apart from presets and styles' phases; Copy Edit's `copy_safe` is decided and built (decision 106).
 - [ ] Before and after, and warnings.
