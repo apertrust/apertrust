@@ -23,18 +23,19 @@
 //! - **Find style,** a sunken field that narrows the tree to the styles whose names hold
 //!   its text, their folders open; ↓ moves into the tree, Return applies the first style
 //!   it shows, × or Escape clears it.
-//! - **The tree** ([`read`]) of two root folders, always drawn and open at first: Built-in
-//!   Styles, the styles Apertrust ships (`apertrust_library::presets::builtin_styles`),
-//!   named by their Fluent messages, then Custom Styles, `<user data>/styles/*.apstyle`,
-//!   "No styles yet." while it holds none. A `|` in a name makes folders inside its root,
-//!   as darktable's do, each level its folders first, then its styles, by name in the file
-//!   browser's order. Every style row keeps a chevron's width before its name for an accent
-//!   ✓ while the style is applied. A click applies the style (`Command::ApplyStyle`) as
-//!   `styles.mode` says; a right-click, Shift+F10 or the menu key opens Apply or Clear,
-//!   then, for a person's style, Rename Style… and Delete Style…, F2 renaming and Delete
-//!   asking, and for a built-in, which is read-only, Copy to Custom Styles…. A row that
-//!   cannot apply, a newer Apertrust's file or with no photo taking edits, is drawn
-//!   disabled, its tooltip saying why, and keeps its menu, F2 and Delete.
+//! - **The tree** ([`read`]) of two root folders, always drawn and open at first: Custom
+//!   Styles, the person's own, `<user data>/styles/*.apstyle`, "No styles yet." while it
+//!   holds none, then Built-in Styles, the styles Apertrust ships
+//!   (`apertrust_library::presets::builtin_styles`), named by their Fluent messages. A `|`
+//!   in a name makes folders inside its root, as darktable's do, each level its folders
+//!   first, then its styles, by name in the file browser's order. Every style row keeps a
+//!   chevron's width before its name for an accent ✓ while the style is applied. A click
+//!   applies the style (`Command::ApplyStyle`) as `styles.mode` says; a right-click,
+//!   Shift+F10 or the menu key opens Apply or Clear, then, for a person's style, Rename
+//!   Style… and Delete Style…, F2 renaming and Delete asking, and for a built-in, which is
+//!   read-only, Copy to Custom Styles…. A row that cannot apply, a newer Apertrust's file
+//!   or with no photo taking edits, is drawn disabled, its tooltip saying why, and keeps
+//!   its menu, F2 and Delete.
 //! - **Nothing is chosen:** the tool has no current style or selection.
 
 use std::collections::BTreeSet;
@@ -60,10 +61,10 @@ use crate::utility::{Context, UtilityTool};
 /// The tool's id, and its declaration's.
 pub const ID: &str = "styles";
 
-/// The two root folders' paths, in the tree's order: Built-in Styles, then Custom Styles.
+/// The two root folders' paths, in the tree's order: Custom Styles, then Built-in Styles.
 /// Every other folder's path is its root's, then its names, each after a `|`.
-pub const BUILT_IN: &str = "built-in";
 pub const CUSTOM: &str = "custom";
+pub const BUILT_IN: &str = "built-in";
 
 /// What the styles applied record as a built-in style's file, before its id: no file name
 /// ([`apertrust_library::presets::file_name`]) holds a `:`, so it is never a person's.
@@ -249,7 +250,7 @@ impl Default for Kept {
         Kept {
             listed: None,
             find: String::new(),
-            open: [BUILT_IN, CUSTOM].map(str::to_owned).into(),
+            open: [CUSTOM, BUILT_IN].map(str::to_owned).into(),
         }
     }
 }
@@ -444,8 +445,8 @@ impl StylesTool<'_> {
             .into_iter()
             .partition(|style| style.builtin.is_some());
         let roots = [
-            (BUILT_IN, "styles-built-in", builtins),
             (CUSTOM, "styles-custom", own),
+            (BUILT_IN, "styles-built-in", builtins),
         ];
         let nodes = (roots.into_iter())
             .filter(|(_, _, styles)| !finding || !styles.is_empty())
