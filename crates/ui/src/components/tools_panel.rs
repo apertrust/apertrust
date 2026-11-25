@@ -48,7 +48,7 @@ use egui::{
     UiBuilder, WidgetInfo, pos2, scroll_area::ScrollBarVisibility, vec2,
 };
 
-use super::{IconButton, focus_ring, pull_down, report_shortcut};
+use super::{IconButton, context_click, focus_ring, menu_asked, pull_down, report_shortcut};
 use crate::i18n::Args;
 use crate::popup::{Entry, Item};
 use crate::{Icon, theme, tr, translator};
@@ -76,6 +76,23 @@ pub enum TabBarAction {
     Customise,
     /// One of the app's items in ⋮ ([`TabBar::items`]) was chosen: its id.
     Chosen(String),
+    /// The tab bar's menu was asked for: the app builds it (decision 96).
+    Menu(TabMenu),
+}
+
+/// The tab bar's menu asked for (decision 96): by a right-click or the Mac's Control-click
+/// on a tab's icon or the bar's empty end, at the pointer; by the menu key, Shift+F10 or
+/// AccessKit's ShowContextMenu on a tab, under it. The caller builds the menu and opens it
+/// through the popup service.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TabMenu {
+    /// The tab it was asked on, by its place among the tabs; none on the bar's empty end.
+    pub tab: Option<usize>,
+    /// Where it hangs from, in points.
+    pub at: egui::Pos2,
+    /// The tab whose keys asked for it, the focus going back to it as it closes; none from
+    /// the pointer.
+    pub opener: Option<Id>,
 }
 
 pub struct TabBar<'a> {
@@ -174,7 +191,12 @@ impl<'a> TabBar<'a> {
         let names = self
             .names
             .then(|| NameStyle::fitting(ui, self.tabs, name_room, &t));
+        // Under the tabs, for a right-click on the bar's empty end or on a tab drawn disabled,
+        // which takes no click of its own.
+        let under = ui.interact(bar, list.id.with("menu"), Sense::CLICK);
         let mut action = None;
+        let mut menu = None;
+        let mut tiles = Vec::new();
         let mut x = bar.left() + pad;
         for &i in &shown {
             let tab = &self.tabs[i];
@@ -186,6 +208,17 @@ impl<'a> TabBar<'a> {
                 Sense::hover()
             };
             let response = ui.interact(rect, list.id.with(i), sense);
+            tiles.push((i, rect));
+            let keys = menu_asked(ui.ctx(), &response);
+            let asked = keys || context_click(ui.ctx(), &response);
+            if asked {
+                let pointer = response.interact_pointer_pos().filter(|_| !keys);
+                menu = Some(TabMenu {
+                    tab: Some(i),
+                    at: pointer.unwrap_or(rect.left_bottom()),
+                    opener: keys.then_some(response.id),
+                });
+            }
             if self.focus == Some(i) {
                 response.request_focus();
             }
@@ -248,9 +281,22 @@ impl<'a> TabBar<'a> {
             } else {
                 tab.name.to_owned()
             };
-            if response.on_hover_text(tip).clicked() && tab.enabled && !on {
+            let clicked = response.on_hover_text(tip).clicked() && !asked;
+            if clicked && tab.enabled && !on {
                 action = Some(TabBarAction::Select(i));
             }
+        }
+        if menu.is_none()
+            && context_click(ui.ctx(), &under)
+            && let Some(at) = under.interact_pointer_pos()
+        {
+            let tab = tiles.iter().find(|(_, rect)| rect.contains(at));
+            let tab = tab.map(|(i, _)| *i);
+            menu = Some(TabMenu {
+                tab,
+                at,
+                opener: None,
+            });
         }
 
         // » with the tabs that don't fit, then ⋮ with the tab options.
@@ -351,7 +397,7 @@ impl<'a> TabBar<'a> {
             Some(id) => action = Some(TabBarAction::Chosen(id)),
             None => {}
         }
-        action
+        menu.map(TabBarAction::Menu).or(action)
     }
 }
 
@@ -1140,6 +1186,23 @@ pub(super) fn restore<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
         ui.set_style(style);
     }
     add(ui)
+}
+
+/// Where the room left in `ui` under what it holds, down to the foot of what shows of it,
+/// was right-clicked this frame, or Control-clicked on the Mac, if it was, `id` its own:
+/// the Tools panel's empty space under a tab's last tool, whose right-click opens the tab
+/// bar's menu (decision 96). The sections above it keep their own clicks.
+pub fn space_below(ui: &Ui, id: Id) -> Option<egui::Pos2> {
+    let (top, bottom) = (ui.cursor().top(), ui.clip_rect().bottom());
+    if bottom <= top {
+        return None;
+    }
+    let x = ui.max_rect().x_range();
+    let rect = Rect::from_x_y_ranges(x, top..=bottom);
+    let response = ui.interact(rect, id, Sense::CLICK);
+    context_click(ui.ctx(), &response)
+        .then(|| response.interact_pointer_pos())
+        .flatten()
 }
 
 /// Shows `area` with the Tools panel's quiet scroll bar, `add` drawing its content in the

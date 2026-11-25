@@ -1345,6 +1345,10 @@ menu-panels = Panels
 # A tool's ⋯, its layout items (decisions 83 and 96): its tabs by name under each.
 menu-section-move-to-tab = Move Tool to Tab
 menu-section-show-in-tab = Show Tool in Tab
+# The tab bar's menu and the Tools panel's ⋮ (decision 96): Add Tool's submenu lists the
+# tools not in the tab; with none, it is drawn disabled with the second as its tooltip.
+tab-add-tool = Add Tool
+tab-add-tool-none = Every tool is in this tab already
 # Remove Tool's tooltip; $tool is the tool's name. Export's is drawn disabled, saying why.
 section-hide-tip = Takes { $tool } out of this workspace's tabs. Its edit stays; Show Hidden Tools shows it.
 section-hide-export = Export stays in every workspace

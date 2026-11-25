@@ -1353,6 +1353,34 @@ impl Workspace {
             .or_else(|| (0..tabs.len()).find(|at| receiving[*at]))
     }
 
+    /// The tools Add Tool ▸ lists for the tab shown at `tab` (decision 96): every tool of the
+    /// Tools panel it does not hold, each with the tab its move takes it from: `shown`, the
+    /// tab shown, where it holds it, else the first tab holding it; those in another tab
+    /// first, by that tab, then the hidden ones, with none; within each, in Find Tool…'s
+    /// order, processing tools in pipeline order, then utilities ([`hidden_order`]). None
+    /// for a tab that takes no tool ([`Workspace::receiving`]), as one still to come.
+    pub fn addable(
+        &self,
+        tab: usize,
+        shown: Option<usize>,
+    ) -> Option<Vec<(&'static str, Option<usize>)>> {
+        let adding = self.tab(tab).filter(|_| self.receiving()[tab])?;
+        let mut tools = known();
+        tools.sort_by_key(|id| hidden_order(id));
+        let mut listed: Vec<(&'static str, Option<usize>)> = (tools.into_iter())
+            .filter(|tool| !adding.holds(tool))
+            .filter_map(|tool| {
+                let here = shown.filter(|at| self.tab(*at).is_some_and(|t| t.holds(tool)));
+                match here.or_else(|| self.holding(tool)) {
+                    Some(at) => Some((tool, Some(at))),
+                    None => self.hides(tool).then_some((tool, None)),
+                }
+            })
+            .collect();
+        listed.sort_by_key(|(_, at)| at.unwrap_or(usize::MAX));
+        Some(listed)
+    }
+
     /// Applies `change` to the layout, as its file will be written ([`Layout::settled`],
     /// [`Layout::apply`]), and works out the layout shown again: whether anything moved.
     pub fn apply(&mut self, change: &Move) -> bool {

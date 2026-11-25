@@ -3297,9 +3297,9 @@ pub(crate) mod tests {
                         open: true,
                         ..crate::tools::Head::default()
                     };
-                    let (_, (_, asked)) = crate::history::tab(ui, head, false, |ui| {
-                        crate::utility::rows(ui, &mut tool, &mut cx)
-                    });
+                    let rows =
+                        |ui: &mut eframe::egui::Ui| crate::utility::rows(ui, &mut tool, &mut cx);
+                    let (_, (_, asked)) = crate::history::tab(ui, head, false, rows, |_| {});
                     scene.actions.extend(asked);
                 },
                 Scene {

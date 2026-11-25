@@ -817,6 +817,10 @@ pub enum Place {
     /// The Toolbar, anywhere on it (decision 92): the toolbar menu, the app's alone
     /// ([`toolbar_items`]).
     Toolbar,
+    /// The Tools panel's tab bar, on a tab's icon or its empty end, and the Tools panel's
+    /// empty space under a tab's last tool (decision 96): Add Tool ▸ for now, the app's
+    /// alone, listing the workspace's tools, which [`tab_bar`] builds it from.
+    TabBar,
 }
 
 /// What a context menu's items act on (decision 91).
@@ -870,7 +874,12 @@ pub fn context(
         .collect();
     let added = match place {
         Place::Open(open) => added(open, target, &tools, apertrust_tools::utility::UTILITIES),
-        Place::Surround | Place::Step | Place::Browser | Place::Job | Place::Toolbar => Vec::new(),
+        Place::Surround
+        | Place::Step
+        | Place::Browser
+        | Place::Job
+        | Place::Toolbar
+        | Place::TabBar => Vec::new(),
     };
     let (os, tr) = (ctx.os(), translator(ctx));
     built(place, target, &added, keymap, state, os, &tr, anchor)
@@ -1002,15 +1011,17 @@ pub fn layout_items(
 /// item ([`shown`]), Show Hidden Tools' tip `tip` where the dot on ⋮ or `--conf` says why
 /// ("Hidden tools change this photo: Exposure"); then Workspace ▸, View › Workspace's
 /// submenu with `workspaces`, the one shown checked, each item its `workspace-<id>`, so a
-/// choice runs as the menu's does ([`chosen`]); then Position ▸, View › Tools Panel
-/// Position's items, the one in use checked. The tab bar's menu's other items join them
-/// with that menu.
+/// choice runs as the menu's does ([`chosen`]); then `add`, the tab bar's menu's Add Tool ▸
+/// for the tab shown where it takes a tool ([`add_tool`]); then Position ▸, View › Tools
+/// Panel Position's items, the one in use checked. The tab bar's menu's other items join
+/// them with that menu.
 pub fn tools_panel(
     ctx: &egui::Context,
     keymap: &Keymap,
     state: &State,
     tip: Option<&str>,
     workspaces: &[WorkspaceItem],
+    add: Option<popup::Entry>,
 ) -> Vec<popup::Entry> {
     let (os, tr) = (ctx.os(), translator(ctx));
     let steps = Steps::default();
@@ -1032,7 +1043,67 @@ pub fn tools_panel(
         position.entries,
     );
     let entries = find.into_iter().chain(item).map(Into::into);
-    entries.chain([workspace.into(), position.into()]).collect()
+    let entries = entries.chain([workspace.into()]).chain(add);
+    entries.chain([position.into()]).collect()
+}
+
+/// One tool Add Tool ▸ lists (decision 96): its id, its name in the interface's language,
+/// and where it is, the name of the tab holding it, or Hidden.
+pub struct AddTool {
+    pub tool: &'static str,
+    pub name: String,
+    pub place: String,
+}
+
+/// What joins an Add Tool ▸ item's action and its tool in its id ([`add_tool`],
+/// [`tool_added`]).
+const ADDED: char = '/';
+
+/// Add Tool ▸, the tab bar's menu's, in the Tools panel's ⋮ too (decision 96), adding to
+/// the tab shown at `tab`: `tools` as `layout::Workspace::addable` lists them, under a
+/// heading, drawn in `text_secondary`, wherever their place changes, the tab holding them
+/// or Hidden. Each item runs `section-move-to-tab-<tab + 1>` on its tool, as its ⋯'s Move
+/// Tool to Tab ▸ or Show Tool in Tab ▸ does, its id saying both ([`tool_added`]). With
+/// nothing to list, an item drawn disabled, saying why.
+pub fn add_tool(ctx: &egui::Context, tab: usize, tools: &[AddTool]) -> popup::Entry {
+    let tr = translator(ctx);
+    let title = "tab-add-tool";
+    let action = ActionId::SECTION_MOVE_TO_TAB.get(tab).map(|id| id.0);
+    let (Some(action), false) = (action, tools.is_empty()) else {
+        let item = popup::Item::new(title, tr.text(title)).enabled(false);
+        return item.tip(tr.text("tab-add-tool-none")).into();
+    };
+    let mut entries = Vec::new();
+    let mut place = None;
+    for tool in tools {
+        if place != Some(&tool.place) {
+            entries.push(popup::Entry::Heading(tool.place.clone()));
+            place = Some(&tool.place);
+        }
+        let id = format!("{action}{ADDED}{}", tool.tool);
+        entries.push(popup::Item::new(id, tool.name.as_str()).into());
+    }
+    popup::Submenu::new(title, tr.text(title), entries).into()
+}
+
+/// The tab, by its place among the tabs shown, and the tool of the Add Tool ▸ item `id`
+/// ([`add_tool`]); none for any other item.
+pub fn tool_added(id: &str) -> Option<(usize, &'static str)> {
+    let (action, tool) = id.split_once(ADDED)?;
+    let tab = (ActionId::SECTION_MOVE_TO_TAB.iter()).position(|id| id.0 == action)?;
+    let tool = crate::layout::known()
+        .into_iter()
+        .find(|known| *known == tool)?;
+    Some((tab, tool))
+}
+
+/// The tab bar's menu (decision 96; [`Place::TabBar`]), hung from `anchor`: `add`, its Add
+/// Tool ▸ ([`add_tool`]). Find Tool…, Show Hidden Tools, Workspace ▸, Reset Tab and
+/// Processing Order join it later, as ⋮ holds the first three already.
+pub fn tab_bar(ctx: &egui::Context, add: popup::Entry, anchor: Rect) -> popup::Request {
+    let tr = translator(ctx);
+    let name = name(Place::TabBar, &Target::App, &tr);
+    popup::Request::pull_down(anchor, name, vec![add])
 }
 
 /// The app's items in the places open to tools' (decision 91), declared as the tools'
@@ -1247,6 +1318,8 @@ fn built(
                     false,
                 )
             }
+            // Its items list the workspace's tools, which [`tab_bar`] is handed.
+            Place::TabBar => Vec::new(),
             _ => {
                 let menu = match place {
                     Place::Step => &STEP,
@@ -1429,7 +1502,8 @@ pub(crate) fn chosen_on_thumbnail(chosen: ActionId, selected: usize) -> Option<A
 /// What screen readers call the menu at `place`: the surround's is Background, as View ›
 /// Background's submenu is; the Browser's empty space's Browser, as its list is; ⋯'s its
 /// tool's or utility's options, as its button is; a History step's the step by its number,
-/// "Step 3"; a job's row's Job; the Toolbar's Toolbar, as the panel is.
+/// "Step 3"; a job's row's Job; the Toolbar's Toolbar, as the panel is; the tab bar's the
+/// Tools panel's tabs, as their list is.
 fn name(place: Place, target: &Target, tr: &Translator) -> String {
     match (place, target) {
         (Place::Surround, _) => tr.text(BACKGROUND.title),
@@ -1447,6 +1521,7 @@ fn name(place: Place, target: &Target, tr: &Translator) -> String {
             tr.text_with(STEP.title, Some(&args))
         }
         (Place::Job, _) => tr.text(JOB.title),
+        (Place::TabBar, _) => tr.text("tools-panel-tabs"),
         (Place::Open(apertrust_tools::Place::Photo), _) => tr.text("context-menu-photo"),
         (Place::Open(apertrust_tools::Place::Thumbnail), _) => tr.text("context-menu-thumbnail"),
         (Place::Open(apertrust_tools::Place::Options), target) => {
@@ -2757,11 +2832,22 @@ mod tests {
             chosen("tools-panel-position-right"),
             Some(ActionId::TOOLS_PANEL_POSITION[1])
         );
-        // The Tools panel's ⋮: Find Tool…, Show Hidden Tools, Workspace ▸, Position ▸.
+        // The Tools panel's ⋮: Find Tool…, Show Hidden Tools, Workspace ▸, Add Tool ▸,
+        // drawn disabled with nothing to list, saying why, then Position ▸.
         let ctx = egui::Context::default();
         apertrust_ui::set_locale(&ctx, Locale::EnGb);
         let keymap = Keymap::defaults(OperatingSystem::Nix);
-        let options = tools_panel(&ctx, &keymap, &state, None, &builtin_workspaces());
+        let add = Some(add_tool(&ctx, 0, &[]));
+        let options = tools_panel(&ctx, &keymap, &state, None, &builtin_workspaces(), add);
+        let Some(popup::Entry::Item(add)) = options.iter().rev().nth(1) else {
+            panic!("no Add Tool: {options:?}");
+        };
+        assert_eq!(add.text, "Add Tool");
+        assert!(!add.enabled);
+        assert_eq!(
+            add.tip.as_deref(),
+            Some("Every tool is in this tab already")
+        );
         let last = options.last().expect("items");
         let popup::Entry::Submenu(position) = last else {
             panic!("not a submenu: {last:?}");

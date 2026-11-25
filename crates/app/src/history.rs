@@ -961,13 +961,14 @@ impl UtilityTool for HistoryTool {
 /// has it, staying at the top of the tab while `page`, the page drawer's rows of its page,
 /// its list, scrolls under it, drawn while the section is open. ↺ runs Reset Edit, drawn
 /// disabled unless `resettable`, and ⋯ holds its declared items, opening while `head`
-/// says, while there is a history. Returns what the header and the page asked for, the
-/// page nothing while closed.
+/// says, while there is a history. `below` takes the room left under the page, open or
+/// closed. Returns what the header and the page asked for, the page nothing while closed.
 pub fn tab<R: Default>(
     ui: &mut egui::Ui,
     head: Head,
     resettable: bool,
     page: impl FnOnce(&mut egui::Ui) -> R,
+    below: impl FnOnce(&mut egui::Ui),
 ) -> (Vec<Pressed>, R) {
     let open = head.open;
     let definition = &declared().tool;
@@ -978,6 +979,7 @@ pub fn tab<R: Default>(
             if open {
                 asked = section_body(ui, page);
             }
+            below(ui);
         });
     (pressed, asked)
 }
@@ -3125,9 +3127,10 @@ pub(crate) mod tests {
                     ui.scope_builder(UiBuilder::new().max_rect(side), |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         let (hidden, editable) = (&scene.hidden, scene.editable);
-                        (pressed, actions) = tab(ui, head, scene.resettable, |ui| {
+                        let page = |ui: &mut egui::Ui| {
                             list(ui, history, tools, hidden, editable, today(), scene.alone)
-                        });
+                        };
+                        (pressed, actions) = tab(ui, head, scene.resettable, page, |_| {});
                     });
                     scene.actions.extend(actions);
                     scene.pressed.extend(pressed);

@@ -132,7 +132,7 @@ pub use toolbar::{
 };
 pub use tools_panel::{
     FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,
-    ToolsPanelPosition, quiet_scroll, quiet_scroll_rows,
+    TabMenu, ToolsPanelPosition, quiet_scroll, quiet_scroll_rows, space_below,
 };
 pub use value_field::ValueField;
 pub use view_marks::ViewMarks;
