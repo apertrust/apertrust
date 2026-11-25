@@ -487,12 +487,15 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
             .map(|t| tab(tool, t)),
     );
     for row in definition.rows() {
+        for found in row.end().iter().filter_map(End::action) {
+            ids.extend(action(tool, found.id));
+        }
         match row {
             Row::Group(found) => ids.push(group_title(tool, found.id, found.kind)),
             Row::Line {
                 start,
                 readout: found,
-                end,
+                ..
             } => {
                 if let LineStart::Label(id) = start {
                     ids.push(group(tool, id));
@@ -504,9 +507,6 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
                     if found.swatch {
                         ids.push(readout_swatch(tool, found.id));
                     }
-                }
-                for found in end.iter().filter_map(End::action) {
-                    ids.extend(action(tool, found.id));
                 }
             }
             Row::Slider(Slider {

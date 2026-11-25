@@ -28,16 +28,16 @@ use crate::components::{
     About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CaptionStyle, CellPicture,
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
-    Equalizer, EqualizerAction, FieldsRow, FileManager, FindBar, FindBarAction, GridCell,
-    Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, Margin,
-    Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab,
-    Patch, Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place,
-    PlainGroup, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, RowField,
-    SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow,
-    Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow,
-    ToolButton, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins,
-    ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup,
-    WellSetting, Zoom,
+    EndItem, Equalizer, EqualizerAction, FieldsRow, FileManager, FindBar, FindBarAction, GridCell,
+    Histogram, HistogramBins, IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, LineRow,
+    LineStart, Margin, Mark, Marker, MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge,
+    PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks,
+    PickerPlace, Place, PlainGroup, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
+    ReferenceRow, RowField, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
+    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Thumb,
+    Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track,
+    VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor,
+    WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -116,6 +116,12 @@ impl Gallery {
     pub fn show_pickers(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
         pickers(ui, &t);
+    }
+
+    /// Draws the Line rows section alone, as the snapshot tests photograph it.
+    pub fn show_line_rows(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        line_rows(ui, &t, &mut self.demo.reverse_all);
     }
 
     /// Draws the Cursor well section alone, as the snapshot tests photograph it.
@@ -225,6 +231,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Pickers");
         pickers(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Line rows");
+        line_rows(ui, &t, &mut self.demo.reverse_all);
         ui.add_space(t.spacing.l);
         heading(ui, "Cursor well");
         cursor_wells(ui, &t, &mut self.demo.cursors);
@@ -839,6 +848,112 @@ fn cursor_wells(ui: &mut Ui, t: &Theme, demo: &mut CursorsDemo) {
 /// The picker button's states (`docs/pickers.md`, The picker button), pinned as the
 /// buttons' strip pins them, then the active picker's marks over a light, a dark and a busy
 /// photo: an area with its handles, a point with its sampled colour, and each focused.
+/// Decision 107's line rows, each one line, a tool panel's width, with a toggle's end
+/// items: a label with a picker and an icon button, as AgX's Auto tune levels and Read
+/// exposure; a control's reset label with icon buttons, as Orientation's; a readout with
+/// its swatch and a picker, as Colour calibration's CCT; a label with a text button; a
+/// label with a menu button, as AgX's Reset primaries; and a toggle with a text button
+/// before its switch, as AgX's Reverse all and Set from above.
+fn line_rows(ui: &mut Ui, t: &Theme, reverse_all: &mut bool) {
+    ui.push_id("line rows", |ui| {
+        ui.set_width(296.0);
+        LineRow::new(
+            LineStart::Label("Auto tune levels"),
+            vec![
+                EndItem::Picker(PickerButton::new(
+                    "Auto tune levels: pick from the photo",
+                    false,
+                )),
+                EndItem::Icon {
+                    icon: Icon::Reset,
+                    name: "Reset levels",
+                    promise: None,
+                    enabled: true,
+                },
+            ],
+        )
+        .show(ui);
+        LineRow::new(
+            LineStart::Control {
+                label: "Orientation",
+                name: "Orientation",
+                promise: Some("Double-click to reset."),
+                enabled: true,
+            },
+            vec![
+                EndItem::Icon {
+                    icon: Icon::RotateLeft,
+                    name: "Rotate 90° anticlockwise",
+                    promise: None,
+                    enabled: true,
+                },
+                EndItem::Icon {
+                    icon: Icon::RotateRight,
+                    name: "Rotate 90° clockwise",
+                    promise: None,
+                    enabled: true,
+                },
+            ],
+        )
+        .show(ui);
+        LineRow::new(
+            LineStart::Readout {
+                text: "CCT: 5003 K (daylight)",
+                promise: "The illuminant's correlated colour temperature.",
+                swatch: Some((Color32::from_rgb(255, 244, 229), "The illuminant's colour")),
+            },
+            vec![EndItem::Picker(PickerButton::new(
+                "Illuminant: pick from the photo",
+                true,
+            ))],
+        )
+        .show(ui);
+        LineRow::new(
+            LineStart::Label("Exposure range"),
+            vec![EndItem::Text {
+                label: "Read exposure",
+                name: "Read exposure",
+                promise: Some("Read exposure from the metadata and the Exposure tool."),
+                enabled: true,
+            }],
+        )
+        .show(ui);
+        LineRow::new(
+            LineStart::Label("Reset primaries"),
+            vec![EndItem::Menu {
+                icon: Icon::Presets,
+                name: "Reset primaries",
+                promise: Some("Reset primaries to a predefined configuration."),
+                enabled: true,
+                entries: ["Blender-like", "Smooth", "Unmodified"]
+                    .into_iter()
+                    .map(|text| Entry::Item(Item::new(text, text)))
+                    .collect(),
+            }],
+        )
+        .show(ui);
+        let (toggled, _) = ToggleRow::new("Reverse all", *reverse_all)
+            .end(vec![EndItem::Text {
+                label: "Set from above",
+                name: "Set from above",
+                promise: Some("Set parameters to completely reverse primaries modifications."),
+                enabled: !*reverse_all,
+            }])
+            .show_with_end(ui);
+        if let Some(on) = toggled {
+            *reverse_all = on;
+        }
+    });
+    ui.label(
+        RichText::new(
+            "One 24-point line: a label, a control's reset label or a readout, then the end \
+             items, pickers, 18-point icon buttons, text buttons and menu buttons, 4 points \
+             apart; a toggle draws them before its switch.",
+        )
+        .color(t.colors.text_secondary),
+    );
+}
+
 fn pickers(ui: &mut Ui, t: &Theme) {
     const COLUMN: f32 = 84.0;
     let opening = {
@@ -1533,6 +1648,8 @@ impl DemoSlider {
 #[derive(Clone, Debug)]
 struct Demo {
     sliders: Vec<DemoSlider>,
+    /// The line rows' Reverse all, which dims Set from above while on.
+    reverse_all: bool,
     picking: bool,
     scale: usize,
     adaptation: usize,
@@ -1612,6 +1729,7 @@ struct CursorsDemo {
 impl Default for Demo {
     fn default() -> Self {
         Demo {
+            reverse_all: false,
             sliders: vec![
                 DemoSlider::new(0.42, 0.0, Mark::Auto),
                 DemoSlider::new(12.0, 0.0, Mark::Kept),

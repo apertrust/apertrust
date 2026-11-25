@@ -134,6 +134,20 @@ impl<'a> Button<'a> {
         response.clicked() && !held_off
     }
 
+    /// How wide it is drawn at least: its words and its keys, a spacing step at each end.
+    pub fn natural_width(&self, ui: &Ui) -> f32 {
+        let t = theme(ui.ctx());
+        let font = FontId::proportional(t.text.body);
+        let measure = |text: &str| {
+            let galley =
+                ui.painter()
+                    .layout_no_wrap(text.to_owned(), font.clone(), Color32::PLACEHOLDER);
+            galley.size().x
+        };
+        let keys = self.keys.map_or(0.0, |keys| t.spacing.l + measure(keys));
+        (measure(self.text) + keys + 2.0 * t.spacing.m).max(self.width)
+    }
+
     pub fn show(self, ui: &mut Ui) -> Response {
         let t = theme(ui.ctx());
         let enabled = self.enabled

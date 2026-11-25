@@ -33,26 +33,34 @@ use egui_kittest::{Harness, SnapshotResults, try_image_snapshot};
 const WIDTH: f32 = 600.0;
 
 /// The tallest part of the page one image holds: GPUs make textures of at most 8192 pixels
-/// a side, so a taller gallery is photographed in two parts, the second from a little above
-/// where the first ends to the page's end.
+/// a side, so a taller gallery is photographed in parts, each from a little above where the
+/// one before ends, the last to the page's end.
 const PART: f32 = 8000.0;
 const OVERLAP: f32 = 40.0;
 
 /// Photographs the whole gallery on the panel's colour: `name`, its top, with the menu
-/// button's menu open, and where the page is taller than [`PART`], `name-end`, the rest
-/// down to Spacing.
+/// button's menu open, and where the page is taller than [`PART`], `name-end`, the next
+/// part, and `name-end-2` and so on while more is left, down to Spacing.
 fn photograph(which: Builtin, locale: Locale, name: &str) {
     let height = page_height(which, locale);
-    // Both parts' results in one, as kittest asks of several harnesses in a test.
+    // Every part's results in one, as kittest asks of several harnesses in a test.
     let mut results = SnapshotResults::new();
     let mut top = part(which, locale, 0.0, height.min(PART), true);
     top.snapshot(name);
     results.extend_harness(&mut top);
-    if height > PART {
-        let from = PART - OVERLAP;
-        let mut end = part(which, locale, from, height - from, false);
-        end.snapshot(format!("{name}-end"));
+    let mut from = PART - OVERLAP;
+    let mut index = 1;
+    while from + OVERLAP < height {
+        let mut end = part(which, locale, from, (height - from).min(PART), false);
+        let suffix = if index == 1 {
+            "end".to_owned()
+        } else {
+            format!("end-{index}")
+        };
+        end.snapshot(format!("{name}-{suffix}"));
         results.extend_harness(&mut end);
+        from += PART - OVERLAP;
+        index += 1;
     }
     results.unwrap();
 }
