@@ -92,6 +92,18 @@ pub(super) fn group_scope<R>(
     title: &str,
     add: impl FnOnce(&mut Ui) -> R,
 ) -> R {
+    described_group(ui, salt, title, None, add)
+}
+
+/// [`group_scope`], the group described as `description` says to screen readers, where it
+/// says anything.
+pub(super) fn described_group<R>(
+    ui: &mut Ui,
+    salt: impl std::hash::Hash + std::fmt::Debug,
+    title: &str,
+    description: Option<&str>,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> R {
     let inner = ui.scope_builder(
         UiBuilder::new()
             .id_salt(salt)
@@ -107,6 +119,9 @@ pub(super) fn group_scope<R>(
             x1: rect.max.x.into(),
             y1: rect.max.y.into(),
         });
+        if let Some(description) = description {
+            node.set_description(description);
+        }
     });
     inner.inner
 }

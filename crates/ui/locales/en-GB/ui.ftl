@@ -123,6 +123,8 @@ section-tab-later = Coming in a later version
 # The description screen readers hear on the section of a tool darktable leaves off on a
 # new photo while it is off (decision 32): it renders nothing until a control changes.
 section-not-applied = Not applied
+# What screen readers hear of a fact with no value, which reads "—".
+fact-none = None
 # What screen readers hear as a tool moves in the workspace's layout (decisions 83 and 96):
 # $tool is its name, $tab the tab's, $at its place among the tab's tools and $of how many
 # the tab holds.

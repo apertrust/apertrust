@@ -89,6 +89,7 @@ section-toggle = Otwórz lub zamknij: { $section }. Przytrzymaj H nad sekcją, a
 section-tabs = Karty: { $section }
 section-tab-later = Pojawi się w jednej z kolejnych wersji
 section-not-applied = Nie zastosowano
+fact-none = Brak
 section-moved = { $tool }: miejsce { $at } z { $of } na karcie { $tab }
 section-pinned = { $tool }: przypięto na karcie { $tab }
 section-unpinned = { $tool }: odpięto na karcie { $tab }

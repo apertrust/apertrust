@@ -874,7 +874,7 @@ fn first_line(
 
 /// The colour labels as one circle in `rect`: an empty ring for none, filled by one, split
 /// into equal segments for several, in darktable's order clockwise from the top.
-fn paint_labels(painter: &egui::Painter, t: &Theme, rect: Rect, labels: ColourLabels) {
+pub(super) fn paint_labels(painter: &egui::Painter, t: &Theme, rect: Rect, labels: ColourLabels) {
     let centre = rect.center();
     let radius = rect.width() / 2.0;
     let set: Vec<ColourLabel> = labels.iter().collect();

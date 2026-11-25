@@ -89,6 +89,7 @@ section-toggle = Відкрити або закрити: { $section }. Утри�
 section-tabs = Вкладки: { $section }
 section-tab-later = З'явиться в одній із наступних версій
 section-not-applied = Не застосовано
+fact-none = Немає
 section-moved = { $tool }: { $at }-е місце з { $of } на вкладці «{ $tab }»
 section-pinned = { $tool }: закріплено на вкладці «{ $tab }»
 section-unpinned = { $tool }: відкріплено на вкладці «{ $tab }»
