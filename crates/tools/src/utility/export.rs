@@ -51,6 +51,7 @@ const fn setting(
         track: Track::Plain,
         key,
         words: Some(words),
+        end: &[],
     })
 }
 

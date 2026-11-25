@@ -116,6 +116,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             rows: &[Row::Choice {
                 control: TYPE,
                 style: ChoiceStyle::List,
+                end: &[],
             }],
         }],
         before: &[],

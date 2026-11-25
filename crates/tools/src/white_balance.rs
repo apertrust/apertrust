@@ -843,7 +843,7 @@ mod tests {
         assert!(!picker.keep);
         let row = DEFINITION.preset(SETTINGS_ROW).unwrap();
         assert_eq!(row.pickers, [("spot", "spot")]);
-        assert!(DEFINITION.rows().all(|row| row.pickers().is_empty()));
+        assert!(DEFINITION.rows().all(|row| row.pickers().next().is_none()));
     }
 
     // The pick: darktable's `color_picker_apply` (`temperature.c:1948-1969`) restated on

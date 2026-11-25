@@ -190,14 +190,17 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Choice {
                     control: TYPE,
                     style: ChoiceStyle::List,
+                    end: &[],
                 },
                 Row::Choice {
                     control: TYPE_WORK,
                     style: ChoiceStyle::List,
+                    end: &[],
                 },
                 Row::Choice {
                     control: NORMALIZE,
                     style: ChoiceStyle::List,
+                    end: &[],
                 },
             ],
         }],

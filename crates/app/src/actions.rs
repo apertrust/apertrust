@@ -54,7 +54,7 @@
 use std::collections::BTreeMap;
 
 use apertrust_engine::session::{Command, SelectionCommand};
-use apertrust_tools::{ProcessingDefinition, Row};
+use apertrust_tools::{End, ProcessingDefinition, Row};
 use apertrust_ui::components::{
     BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize, ToolsPanelPosition,
 };
@@ -2434,12 +2434,12 @@ pub fn all() -> impl Iterator<Item = &'static Action> {
 }
 
 /// The built-in tools' own actions as registry actions (decision 91), made once as the
-/// app starts from their definitions: one for each [`Row::Action`] and each button of a
-/// [`Row::Buttons`], `tool-<tool>-<action>`, its words the action's full name
-/// (`tool-<tool>-action-<action>-full`), no default keys, in the view's scope. A button's
-/// runs as pressing it does ([`Intent::ToolAction`]), while the photo takes edits and no
-/// modal dialog is open; a [`Row::Action`]'s, which the panel draws disabled until what it
-/// runs is built, is listed and never runs.
+/// app starts from their definitions: one for each [`End::Action`] of a [`Row::Line`],
+/// `tool-<tool>-<action>`, its words the action's full name
+/// (`tool-<tool>-action-<action>-full`), no default keys, in the view's scope. One that
+/// runs, as a button, runs as pressing it does ([`Intent::ToolAction`]), while the photo
+/// takes edits and no modal dialog is open; an unported one, which the panel draws
+/// disabled until what it runs is built, is listed and never runs.
 pub fn tool_actions() -> &'static [Action] {
     static MADE: std::sync::OnceLock<Vec<Action>> = std::sync::OnceLock::new();
     MADE.get_or_init(|| {
@@ -2471,14 +2471,13 @@ pub fn tool_actions() -> &'static [Action] {
     })
 }
 
-/// A tool's own actions, in its panel's order, each with whether it is a button's.
+/// A tool's own actions, in its panel's order, each with whether it runs, not unported.
 fn own_actions(definition: &'static ProcessingDefinition) -> Vec<(&'static str, bool)> {
     let mut actions = Vec::new();
     for row in definition.rows() {
-        match row {
-            Row::Action { id } => actions.push((*id, false)),
-            Row::Buttons { buttons, .. } => actions.extend(buttons.iter().map(|b| (b.id, true))),
-            _ => {}
+        if let Row::Line { end, .. } = row {
+            let ends = end.iter().filter_map(End::action);
+            actions.extend(ends.map(|action| (action.id, !action.unported)));
         }
     }
     actions

@@ -197,6 +197,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Choice {
                     control: "mode",
                     style: ChoiceStyle::List,
+                    end: &[],
                 },
                 // `dt_bauhaus_slider_set_digits(g->clip, 3)`: "1.000".
                 Row::Slider(Slider::new(CLIP).decimals(3)),
@@ -211,6 +212,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                         Row::Choice {
                             control: "recovery",
                             style: ChoiceStyle::List,
+                            end: &[],
                         },
                         Row::When {
                             control: "recovery",
@@ -238,6 +240,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                         Row::Choice {
                             control: "scales",
                             style: ChoiceStyle::List,
+                            end: &[],
                         },
                     ],
                 },

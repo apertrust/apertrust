@@ -113,6 +113,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 rows: &[Row::Choice {
                     control: PRESERVE,
                     style: ChoiceStyle::List,
+                    end: &[],
                 }],
             },
         ],

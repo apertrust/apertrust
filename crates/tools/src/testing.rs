@@ -23,9 +23,9 @@
 use apertrust_plugin::{Camera, ImageContext, Pattern, Value};
 
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, Coordinate, Group, GroupKind, Picker, PickerKind, PresetRow,
-    ProcessingDefinition, Quad, Range, Row, SettingRow, Slider, Space, Tab, ToolDefinition, Unit,
-    View, slider_step,
+    ChoiceStyle, Control, ControlKind, Coordinate, End, Group, GroupKind, LineStart, Picker,
+    PickerKind, PresetRow, ProcessingDefinition, Range, Row, SettingRow, Slider, Space, Tab,
+    ToolDefinition, Unit, View, slider_step,
 };
 use crate::pick::{Patch, PickKeys, Picked, Reading, Shown, Stats};
 use crate::transfer::{Linear, Transfer};
@@ -93,7 +93,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 preset: "look",
                 style: ChoiceStyle::List,
             },
-            Row::Slider(Slider::new("brightness").quad(Quad::Picker("brightness"))),
+            Row::Slider(Slider::new("brightness").end(End::Picker("brightness"))),
         ],
         ..ToolDefinition::processing(
             "sample",
@@ -108,12 +108,13 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                             Row::Choice {
                                 control: "size",
                                 style: ChoiceStyle::Segmented,
+                                end: &[],
                             },
                             Row::Slider(Slider::new("coarseness").decimals(0)),
-                            Row::Pickers {
-                                label: Some("measure"),
-                                pickers: &["spread", "show"],
+                            Row::Line {
+                                start: LineStart::Label("measure"),
                                 readout: None,
+                                end: &[End::Picker("spread"), End::Picker("show")],
                             },
                         ],
                     })],
@@ -127,6 +128,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                             Row::Choice {
                                 control: "method",
                                 style: ChoiceStyle::List,
+                                end: &[],
                             },
                             Row::When {
                                 control: "method",
@@ -558,8 +560,14 @@ static FAULTY: ProcessingDefinition = ProcessingDefinition {
         &[Tab {
             id: None,
             rows: &[
-                Row::Toggle { control: "stray" },
-                Row::Toggle { control: "panic" },
+                Row::Toggle {
+                    control: "stray",
+                    end: &[],
+                },
+                Row::Toggle {
+                    control: "panic",
+                    end: &[],
+                },
             ],
         }],
     ),
@@ -912,7 +920,7 @@ pub struct DarktablePicker {
 }
 
 /// Every picker of `definition` as a [`DarktablePicker`], in the definition's order, with
-/// the slider whose quad names it; `""` for one on a row of pickers.
+/// the slider whose quad names it; `""` for one on a line of pickers.
 pub fn pickers_on_sliders(definition: &ProcessingDefinition) -> Vec<DarktablePicker> {
     definition
         .pickers
@@ -924,7 +932,7 @@ pub fn pickers_on_sliders(definition: &ProcessingDefinition) -> Vec<DarktablePic
                 .find_map(|row| match row {
                     Row::Slider(Slider {
                         control,
-                        quad: Some(Quad::Picker(id)),
+                        end: Some(End::Picker(id)),
                         ..
                     }) if *id == picker.id => Some(*control),
                     _ => None,

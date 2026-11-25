@@ -140,11 +140,13 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                         Row::Slider(Slider::new("shape")),
                         Row::Toggle {
                             control: "autoratio",
+                            end: &[],
                         },
                         Row::Slider(Slider::new("whratio").decimals(3)),
                         Row::Choice {
                             control: "dithering",
                             style: ChoiceStyle::List,
+                            end: &[],
                         },
                     ],
                 }),

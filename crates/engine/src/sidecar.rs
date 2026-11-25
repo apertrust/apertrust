@@ -1049,9 +1049,11 @@ pub(crate) mod tests {
                     Row::Choice {
                         control: "style",
                         style: ChoiceStyle::List,
+                        end: &[],
                     },
                     Row::Toggle {
                         control: "preserve",
+                        end: &[],
                     },
                     Row::Custom {
                         widget: Widget::Curve,

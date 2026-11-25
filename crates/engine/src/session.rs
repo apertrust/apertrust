@@ -975,12 +975,12 @@ pub struct ToolState {
     pub views: Vec<CoordinateState>,
     /// Every computed value, in the definition's order (decision 87).
     pub computed: Vec<ComputedState>,
-    /// Every readout of its rows of pickers, in the definition's order: Colour
+    /// Every readout of its lines of pickers, in the definition's order: Colour
     /// calibration's CCT and the light's colour.
     pub readouts: Vec<ReadoutState>,
 }
 
-/// A readout at a row of pickers' start ([`apertrust_tools::ReadoutDef`]): what the tool
+/// A readout at a line of pickers' start ([`apertrust_tools::ReadoutDef`]): what the tool
 /// gives for the values reported ([`ProcessingTool::readout`]), on the photo's image
 /// context, as its preset rows' matching is; `None` where it gives none, or panics.
 #[derive(Debug, Clone, PartialEq)]
@@ -6451,7 +6451,7 @@ impl Open {
         }
     }
 
-    /// Each readout of the tool's rows of pickers while its controls hold `values`, every
+    /// Each readout of the tool's lines of pickers while its controls hold `values`, every
     /// control, the edit's over the defaults, on the photo's image context. Should the
     /// tool's code panic, each reads none, and a warning says so once for the photo.
     fn readouts(&mut self, tool: &dyn ProcessingTool, values: &Controls) -> Vec<ReadoutState> {
@@ -8134,10 +8134,12 @@ mod tests {
                     Row::Choice {
                         control: "mode",
                         style: ChoiceStyle::List,
+                        end: &[],
                     },
                     Row::Choice {
                         control: "counted",
                         style: ChoiceStyle::List,
+                        end: &[],
                     },
                 ],
             }],
@@ -10592,8 +10594,14 @@ mod tests {
                         style: ChoiceStyle::List,
                     },
                     Row::Slider(Slider::new("level")),
-                    Row::Toggle { control: "trigger" },
-                    Row::Toggle { control: "later" },
+                    Row::Toggle {
+                        control: "trigger",
+                        end: &[],
+                    },
+                    Row::Toggle {
+                        control: "later",
+                        end: &[],
+                    },
                 ],
             }],
             before: &[],

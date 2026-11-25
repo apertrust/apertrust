@@ -49,8 +49,8 @@ use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
-    ChoiceStyle, Control, ControlKind, CursorDef, CursorGroup, Group, GroupKind, Picker,
-    PickerKind, ProcessingDefinition, Quad, Reset, Row, Slider, Space, Surface, Tab, ToolCursor,
+    ChoiceStyle, Control, ControlKind, CursorDef, CursorGroup, End, Group, GroupKind, Picker,
+    PickerKind, ProcessingDefinition, Reset, Row, Slider, Space, Surface, Tab, ToolCursor,
     ToolDefinition, Track, Unit,
 };
 use crate::pick::{PickKeys, Picked, Reading, Shown};
@@ -246,7 +246,7 @@ const fn hue_row(control: &'static str, picker: &'static str) -> Row {
         Slider::new(control)
             .track(Track::Hue)
             .no_fill()
-            .quad(Quad::Picker(picker)),
+            .end(End::Picker(picker)),
     )
 }
 
@@ -254,7 +254,7 @@ const fn hue_row(control: &'static str, picker: &'static str) -> Row {
 const fn fulcrum_row(control: &'static str, (min, max): (f32, f32)) -> Row {
     Row::Slider(
         Slider::new(control)
-            .quad(Quad::Picker(control))
+            .end(End::Picker(control))
             .soft(min, max),
     )
 }
@@ -438,6 +438,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     Row::Choice {
                         control: FORMULA,
                         style: ChoiceStyle::List,
+                        end: &[],
                     },
                     // darktable's graph of the three ranges comes first, once a widget
                     // draws it.

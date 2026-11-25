@@ -189,7 +189,7 @@ impl Patch {
     }
 }
 
-/// What a readout at a row of pickers' start shows ([`crate::ProcessingTool::readout`],
+/// What a readout at a line of pickers' start shows ([`crate::ProcessingTool::readout`],
 /// [`crate::ReadoutDef`]): one of its texts, with its number, and its swatch's colour, as
 /// Colour calibration's "CCT: 5003 K (daylight)" and the illuminant's colour beside it.
 #[derive(Debug, Clone, Copy, PartialEq)]

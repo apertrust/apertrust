@@ -52,7 +52,7 @@
 //!   what uses them is built.
 //! - A tab with no rows is drawn disabled: nothing is behind it yet.
 //! - A colour picker (decision 79; `docs/pickers.md`, The picker button) is the design
-//!   system's `PickerButton`: on a slider's quad in its quad mode, and in a row of pickers
+//!   system's `PickerButton`: on a slider's quad in its quad mode, and in a line of pickers
 //!   as toggle buttons at the row's end, each on while its picker is the active one, and
 //!   disabled with the reason on a photo not yet live or open for viewing only. A press
 //!   comes back as [`Change::Picker`]. Only the tools whose pick is built draw theirs
@@ -76,9 +76,10 @@ use apertrust_plugin::ImageContext;
 use apertrust_tools::about::{self, Facts};
 use apertrust_tools::utility;
 use apertrust_tools::{
-    Button, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, Group, GroupKind, MAX_POINTS,
-    PickerKind, ProcessingDefinition, ProcessingTool, Quad, ReadoutDef, Reset, Row, SettingRow,
-    Slider, ToolDefinition, Track, Unit, View, Widget, Word, check, messages,
+    ActionEnd, ButtonIcon, ChoiceStyle, Computed, ControlKind, Controls, End, Face, Group,
+    GroupKind, LineStart, MAX_POINTS, PickerKind, ProcessingDefinition, ProcessingTool, ReadoutDef,
+    Reset, Row, SettingRow, Slider, ToolDefinition, Track, Unit, View, Widget, Word, check,
+    messages,
 };
 use apertrust_ui::components::{
     self as parts, ActionRow, ButtonState, ButtonsAction, ButtonsRow, Choice, ChoiceAction,
@@ -1428,10 +1429,12 @@ impl Rows for Page<'_> {
         let definition = tool.definition();
         match row {
             Row::Slider(slider) => slider_row(ui, self, slider, changes),
-            Row::Choice { control, style } => {
+            Row::Choice { control, style, .. } => {
                 choice_row(ui, words, definition, control, *style, state, changes);
             }
-            Row::Toggle { control } => toggle_row(ui, words, definition, control, state, changes),
+            Row::Toggle { control, .. } => {
+                toggle_row(ui, words, definition, control, state, changes);
+            }
             Row::Custom {
                 widget: Widget::Curve,
                 controls: [points, ..],
@@ -1456,21 +1459,44 @@ impl Rows for Page<'_> {
                 photo,
             } => reference_row(ui, self, picker, lightness, photo, changes),
             Row::LastPick { picker } => last_pick_row(ui, self, picker),
-            Row::Pickers {
-                label,
-                pickers,
+            // The three shapes `ProcessingDefinition::check` takes until decision 107's next
+            // step: icon actions after a control, one text action, or pickers.
+            Row::Line {
+                start: LineStart::Control(control),
+                end,
+                ..
+            } => {
+                let buttons: Vec<(&'static str, ButtonIcon)> = (end.iter())
+                    .filter_map(|item| match item {
+                        End::Action(ActionEnd {
+                            id,
+                            face: Face::Icon(icon),
+                            ..
+                        }) => Some((*id, *icon)),
+                        _ => None,
+                    })
+                    .collect();
+                buttons_row(ui, words, definition, control, &buttons, state, changes);
+            }
+            Row::Line {
+                end: [End::Action(action)],
+                ..
+            } => action_row(ui, words, definition.tool.id, action.id),
+            Row::Line {
+                start,
                 readout,
-            } => pickers_row(ui, self, *label, readout.as_ref(), pickers, changes),
-            Row::Buttons { control, buttons } => {
-                buttons_row(ui, words, definition, control, buttons, state, changes);
+                end,
+            } => {
+                let label = match start {
+                    LineStart::Label(id) => Some(*id),
+                    LineStart::None | LineStart::Control(_) => None,
+                };
+                let pickers: Vec<&'static str> = end.iter().filter_map(End::picker).collect();
+                pickers_row(ui, self, label, readout.as_ref(), &pickers, changes);
             }
             Row::Guides => guides_row(ui, words),
             // The page drawer's own.
-            Row::Group(_)
-            | Row::When { .. }
-            | Row::WhenSetting { .. }
-            | Row::Setting(_)
-            | Row::Action { .. } => {}
+            Row::Group(_) | Row::When { .. } | Row::WhenSetting { .. } | Row::Setting(_) => {}
         }
     }
 }
@@ -1504,15 +1530,18 @@ fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &m
     if rows.hidden(row) {
         return;
     }
-    // Where a row of controls on the edit is drawn, for a photo opening's tip.
+    // Where a row of controls on the edit is drawn, for a photo opening's tip: a line only
+    // with a control at its start.
     let on_edit = !matches!(
         row,
         Row::Group(_)
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
-            | Row::Action { .. }
-            | Row::Pickers { .. }
+            | Row::Line {
+                start: LineStart::None | LineStart::Label(_),
+                ..
+            }
             | Row::Patches { .. }
             | Row::Computed(_)
             | Row::Reference { .. }
@@ -1551,8 +1580,6 @@ fn note_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, note: &Note) {
 /// Draws `row` of the container whose rows start at `top`: the rows any tool may hold
 /// here, the others by `rows`' kind. A mode's rows are its container's.
 fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &mut Vec<Change>) {
-    let words = rows.words();
-    let tool = rows.definition().id;
     match row {
         Row::Group(group) => {
             // Nothing drawn in its container yet: its first row.
@@ -1582,19 +1609,19 @@ fn draw_kind(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &
             }
         }
         Row::Setting(setting) => setting_row(ui, rows, setting, changes),
-        Row::Action { id } => action_row(ui, words, tool, id),
         _ => rows.own(ui, row, changes),
     }
 }
 
-/// A control's row of darktable's buttons, orientation's transform: the control's label,
-/// a double-click resetting it, and the buttons, each run on the values shown.
+/// A control's line of darktable's buttons, orientation's transform: the control's label,
+/// a double-click resetting it, and its icon actions, by id and icon, each run on the
+/// values shown.
 fn buttons_row(
     ui: &mut egui::Ui,
     words: &Translator,
     definition: &ProcessingDefinition,
     id: &'static str,
-    buttons: &[Button],
+    buttons: &[(&'static str, ButtonIcon)],
     state: &ToolState,
     changes: &mut Vec<Change>,
 ) {
@@ -1610,12 +1637,12 @@ fn buttons_row(
     .map(|id| words.text(&id));
     let names: Vec<String> = buttons
         .iter()
-        .map(|button| words.text(&messages::action(tool, button.id)[1]))
+        .map(|(action, _)| words.text(&messages::action(tool, action)[1]))
         .collect();
     let icons: Vec<(apertrust_ui::Icon, &str)> = buttons
         .iter()
         .zip(&names)
-        .map(|(button, name)| (icon(button.icon), name.as_str()))
+        .map(|((_, button), name)| (icon(*button), name.as_str()))
         .collect();
     let action = ButtonsRow::new(&label, &icons)
         .name(&full)
@@ -1631,7 +1658,7 @@ fn buttons_row(
             }
             changes.push(Change::Action {
                 tool,
-                action: buttons[index].id,
+                action: buttons[index].0,
                 values,
             });
         }
@@ -1707,9 +1734,9 @@ fn guides_row(ui: &mut egui::Ui, words: &Translator) {
     });
 }
 
-/// One of darktable's buttons, an action that writes the tool's controls, AgX's Auto
-/// tune levels: an `ActionRow`, drawn disabled until what it runs is built, its promise the
-/// tooltip. It reports nothing.
+/// A line of one of darktable's buttons, a text action not ported that writes the tool's
+/// controls, AgX's Read exposure: an `ActionRow`, drawn disabled until what it runs is
+/// built, its promise the tooltip. It reports nothing.
 fn action_row(ui: &mut egui::Ui, words: &Translator, tool: &str, id: &str) {
     let [label, full, promise] = messages::action(tool, id).map(|id| words.text(&id));
     ActionRow::new(&label)
@@ -2421,11 +2448,11 @@ fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec
     if let Some(unit) = &unit {
         row = row.unit(unit);
     }
-    // A picker's quad, where its tool's pick is built; a line's comes with the first
-    // tool whose quad runs, until then no row draws one, rather than one with nothing
-    // behind it.
-    let picker = match slider.quad {
-        Some(Quad::Picker(picker)) => page.button(ui.ctx(), picker),
+    // A picker at the row's end, where its tool's pick is built; the other end items
+    // come with decision 107's next steps, `ProcessingDefinition::check` refusing them
+    // until then, rather than one with nothing behind it.
+    let picker = match slider.end {
+        Some(End::Picker(picker)) => page.button(ui.ctx(), picker),
         _ => None,
     };
     if let Some((_, button)) = &picker {
@@ -2549,7 +2576,7 @@ impl<'a> Page<'a> {
     }
 }
 
-/// A row of pickers, darktable's toggle buttons packed in a box: its label at the start,
+/// A line of pickers, darktable's toggle buttons packed in a box: its label at the start,
 /// where it has one, or its readout's text, with its tooltip, and swatch, filling the row
 /// up to the buttons, as the session reports them (`ToolState::readouts`), and the buttons
 /// at the row's end, in order, where its tool draws its pickers.
@@ -2617,7 +2644,7 @@ fn pickers_row(
     });
 }
 
-/// What a readout at a row of pickers' start shows, in words.
+/// What a readout at a line of pickers' start shows, in words.
 struct ReadoutWords {
     text: String,
     promise: String,
@@ -3173,7 +3200,7 @@ mod tests {
         state
     }
 
-    /// Each readout of the tool's rows of pickers as the session reports it for the values
+    /// Each readout of the tool's lines of pickers as the session reports it for the values
     /// `state` shows on the sample photo.
     fn report_readouts(tool: &dyn ProcessingTool, state: &mut ToolState) {
         let (image, values) = (testing::image(), values(state));
@@ -5357,6 +5384,7 @@ mod tests {
                         Row::Choice {
                             control: "mode",
                             style: ChoiceStyle::List,
+                            end: &[],
                         },
                         Row::When {
                             control: "mode",
@@ -5376,7 +5404,10 @@ mod tests {
                 },
             ],
             before: &[],
-            after: &[Row::Toggle { control: "mask" }],
+            after: &[Row::Toggle {
+                control: "mask",
+                end: &[],
+            }],
             reset: Reset::Tool,
             presets: true,
             open_at_first: false,
@@ -6335,7 +6366,7 @@ mod tests {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     let rows = Sample.definition().rows();
                     let top = ui.cursor().top();
-                    for row in rows.filter(|row| !row.pickers().is_empty()) {
+                    for row in rows.filter(|row| row.pickers().next().is_some()) {
                         draw_row(ui, &page, row, top, &mut Vec::new());
                     }
                 });

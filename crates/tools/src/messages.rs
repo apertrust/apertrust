@@ -24,7 +24,8 @@
 use std::collections::BTreeSet;
 
 use crate::definition::{
-    ControlKind, GroupKind, ProcessingDefinition, Reset, Row, SettingRow, Slider, Unit, Word,
+    ControlKind, End, GroupKind, LineStart, ProcessingDefinition, Reset, Row, SettingRow, Slider,
+    Unit, Word,
 };
 use crate::utility::UtilityDefinition;
 
@@ -71,7 +72,7 @@ pub fn tab(tool: &str, tab: &str) -> String {
     format!("tool-{tool}-tab-{tab}")
 }
 
-/// A plain group's title, or a row of pickers' label: `tool-<tool>-group-<group>`.
+/// A plain group's title, or a line of pickers' label: `tool-<tool>-group-<group>`.
 pub fn group(tool: &str, group: &str) -> String {
     format!("tool-{tool}-group-{group}")
 }
@@ -319,7 +320,7 @@ pub fn picker_unavailable(tool: &str, picker: &str) -> String {
     format!("tool-{tool}-picker-{picker}-unavailable")
 }
 
-/// An action's short label, full name and promise ([`crate::Row::Action`]):
+/// An action's short label, full name and promise ([`crate::End::Action`]):
 /// `tool-<tool>-action-<action>-label`, `-full` and `-promise`.
 pub fn action(tool: &str, action: &str) -> [String; 3] {
     ["label", "full", "promise"].map(|part| format!("tool-{tool}-action-{action}-{part}"))
@@ -375,7 +376,7 @@ pub fn picker_words(definition: &ProcessingDefinition, picker: &crate::Picker) -
     let [label, full, promise, what] = self::picker(tool, picker.id);
     let on_quad = definition
         .rows()
-        .any(|row| matches!(row, Row::Slider(_)) && row.pickers() == [picker.id]);
+        .any(|row| matches!(row, Row::Slider(_)) && row.pickers().eq([picker.id]));
     let mut words = Vec::new();
     if !on_quad {
         words.push(label);
@@ -488,18 +489,24 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
     for row in definition.rows() {
         match row {
             Row::Group(found) => ids.push(group_title(tool, found.id, found.kind)),
-            Row::Pickers {
-                label: Some(id), ..
-            } => ids.push(group(tool, id)),
-            Row::Pickers {
-                readout: Some(found),
-                ..
+            Row::Line {
+                start,
+                readout: found,
+                end,
             } => {
-                for text in found.texts {
-                    ids.extend(readout(tool, found.id, text));
+                if let LineStart::Label(id) = start {
+                    ids.push(group(tool, id));
                 }
-                if found.swatch {
-                    ids.push(readout_swatch(tool, found.id));
+                if let Some(found) = found {
+                    for text in found.texts {
+                        ids.extend(readout(tool, found.id, text));
+                    }
+                    if found.swatch {
+                        ids.push(readout_swatch(tool, found.id));
+                    }
+                }
+                for found in end.iter().filter_map(End::action) {
+                    ids.extend(action(tool, found.id));
                 }
             }
             Row::Slider(Slider {
@@ -518,13 +525,7 @@ pub fn of(definition: &ProcessingDefinition) -> Vec<String> {
                     }
                 }
             }
-            Row::Action { id } => ids.extend(action(tool, id)),
             Row::Computed(computed) => ids.extend(self::computed(tool, computed.id)),
-            Row::Buttons { buttons, .. } => {
-                for button in *buttons {
-                    ids.extend(action(tool, button.id));
-                }
-            }
             Row::Guides => ids.extend(GUIDES.map(str::to_owned)),
             Row::Patches { .. } => ids.extend(PATCHES.map(str::to_owned)),
             Row::Reference { .. } => ids.extend(REFERENCE.map(str::to_owned)),
@@ -647,7 +648,9 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::ProcessingTool;
-    use crate::definition::{ChoiceStyle, Control, Reset, Tab, ToolDefinition, Track};
+    use crate::definition::{
+        ActionEnd, ChoiceStyle, Control, Face, Reset, Tab, ToolDefinition, Track,
+    };
     use crate::testing::Sample;
 
     #[test]
@@ -747,6 +750,7 @@ mod tests {
             Row::Choice {
                 control: "mode",
                 style: ChoiceStyle::List,
+                end: &[],
             },
             Row::When {
                 control: "mode",
@@ -841,6 +845,7 @@ mod tests {
                     track: Track::Plain,
                     key: None,
                     words: None,
+                    end: &[],
                 })],
                 reset: Reset::Tool,
                 presets: true,
@@ -895,7 +900,7 @@ mod tests {
         static QUAD: &[Tab] = &[Tab {
             id: None,
             rows: &[Row::Slider(
-                Slider::new("amount").quad(crate::Quad::Picker("amount")),
+                Slider::new("amount").end(crate::End::Picker("amount")),
             )],
         }];
         let following = ProcessingDefinition {
@@ -950,7 +955,15 @@ mod tests {
                     id: None,
                     rows: &[
                         Row::Slider(Slider::new("white")),
-                        Row::Action { id: "auto_tune" },
+                        Row::Line {
+                            start: LineStart::None,
+                            readout: None,
+                            end: &[End::Action(ActionEnd {
+                                id: "auto_tune",
+                                face: Face::Text,
+                                unported: true,
+                            })],
+                        },
                     ],
                 }],
                 before: &[],

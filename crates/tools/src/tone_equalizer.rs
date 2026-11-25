@@ -256,10 +256,12 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                     Row::Choice {
                         control: METHOD,
                         style: ChoiceStyle::List,
+                        end: &[],
                     },
                     Row::Choice {
                         control: DETAILS,
                         style: ChoiceStyle::List,
+                        end: &[],
                     },
                     Row::When {
                         control: DETAILS,
@@ -284,6 +286,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             track: Track::Plain,
             key: None,
             words: None,
+            end: &[],
         })],
         reset: Reset::Tool,
         presets: true,

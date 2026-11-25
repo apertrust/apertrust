@@ -605,7 +605,7 @@ mod tests {
 
     use super::*;
     use crate::definition::{
-        Picker, PickerKind, ProcessingDefinition, Quad, Reset, Row, Slider, Tab, ToolDefinition,
+        End, Picker, PickerKind, ProcessingDefinition, Reset, Row, Slider, Tab, ToolDefinition,
     };
     use crate::testing::{self, Sample};
 
@@ -769,7 +769,7 @@ mod tests {
                     tabs: Box::leak(Box::new([Tab {
                         id: None,
                         rows: Box::leak(Box::new([Row::Slider(
-                            Slider::new("amount").quad(Quad::Picker(picker.id)),
+                            Slider::new("amount").end(End::Picker(picker.id)),
                         )])),
                     }])),
                     ..tool.definition.tool

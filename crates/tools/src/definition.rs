@@ -24,7 +24,7 @@
 //! the rows it shows only in some modes as [`Row::When`], the rows it draws outside its notebook in [`ToolDefinition::before`] and
 //! [`ToolDefinition::after`], every option of a choice, those not ported marked, its own
 //! settings, which no edit stores, as [`Row::Setting`], and its buttons,
-//! actions no edit stores either, as [`Row::Action`]. Which rows show
+//! actions no edit stores either, as a [`Row::Line`]'s [`End::Action`]s. Which rows show
 //! and which options can be chosen is the panel's, from the values, so the edit and the
 //! render never depend on it.
 //!
@@ -33,9 +33,9 @@
 //! some stored controls ([`View`]), shown by a [`Row::Slider`] that names it.
 //!
 //! A tool's colour pickers (decision 79) are declared apart from the rows too
-//! ([`Picker`]), and each shown in one place: a slider's quad ([`Quad::Picker`]), a row of
-//! picker buttons ([`Row::Pickers`]), a reference row ([`Row::Reference`]), or an option
-//! of a preset row that turns it on ([`PresetRow::pickers`]).
+//! ([`Picker`]), and each shown in one place: a slider's end item ([`End::Picker`]), a
+//! line's ([`Row::Line`]), a reference row ([`Row::Reference`]), or an option of a preset
+//! row that turns it on ([`PresetRow::pickers`]).
 
 use std::collections::BTreeSet;
 
@@ -206,8 +206,8 @@ pub struct ProcessingDefinition {
     /// stored under them.
     pub views: &'static [View],
     /// Its colour pickers (decision 79), each darktable's `dt_color_picker_new` call, shown
-    /// by a slider's quad ([`Quad::Picker`]), a row of picker buttons ([`Row::Pickers`]), a
-    /// reference row ([`Row::Reference`]) or a preset row's option that turns it on
+    /// by a slider's end item ([`End::Picker`]), a line's ([`Row::Line`]), a reference row
+    /// ([`Row::Reference`]) or a preset row's option that turns it on
     /// ([`PresetRow::pickers`]), as White balance's Settings' from image area.
     /// Nothing is stored under them: the session measures the photo and the tool's
     /// [`crate::ProcessingTool::pick`] writes its controls.
@@ -229,8 +229,8 @@ pub struct ProcessingDefinition {
 
 /// One of the tool's colour pickers (decision 79; `docs/pickers.md`, Declaring
 /// pickers): darktable's `dt_color_picker_new` call, its flags and colour space, and what
-/// its pick may write and read. It is in exactly one place: a slider's quad, a row of
-/// pickers, a reference row, or a preset row's option that turns it on
+/// its pick may write and read. It is in exactly one place: a slider's end item, a line's,
+/// a reference row, or a preset row's option that turns it on
 /// ([`PresetRow::pickers`]).
 ///
 /// Its words come with its button and the viewer bar (`docs/pickers.md`, The picker
@@ -243,8 +243,8 @@ pub struct ProcessingDefinition {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Picker {
     /// snake_case ASCII and permanent, unique among the tool's pickers: clients name it
-    /// with the tool's id. Pickers are a namespace of their own, as a picker on a
-    /// slider's quad takes its control's id (Exposure's `exposure`).
+    /// with the tool's id. Pickers are a namespace of their own, as a picker at a
+    /// slider's end takes its control's id (Exposure's `exposure`).
     pub id: &'static str,
     /// The operation whose input, and with `output` output, it reads: one the tool owns
     /// a parameter of ([`crate::check::accept`]).
@@ -343,7 +343,7 @@ pub struct MenuItem {
 
 /// What a context menu item holds: an action, or a submenu of actions, one level deep.
 ///
-/// An action is a tool's own, a [`Row::Action`]'s or a [`Row::Buttons`] button's id, which
+/// An action is a tool's own, an [`End::Action`]'s id, which
 /// the app's registry holds as `tool-<tool>-<action>`; a utility's or the app's, the
 /// registry action's id, as History's Reset is `reset`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -429,13 +429,13 @@ pub fn check_section(item: &MenuItem) -> Result<(), DefinitionError> {
 /// app runs it as it runs the action from a menu; the tool runs no code there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolbarItem {
-    /// A processing tool's own action as its menu items name it, a [`Row::Action`]'s or a
-    /// [`Row::Buttons`] button's id, as Orientation's `rotate_ccw`, which the app's registry
+    /// A processing tool's own action as its menu items name it, an [`End::Action`]'s id,
+    /// as Orientation's `rotate_ccw`, which the app's registry
     /// holds as `tool-<tool>-<action>`; a utility's, the registry action it names, as
     /// History's `undo`.
     pub action: &'static str,
-    /// One of `apertrust-ui`'s icons by its name, as `export`; none for a [`Row::Buttons`]
-    /// button's action, which takes its button's icon.
+    /// One of `apertrust-ui`'s icons by its name, as `export`; none for an icon-faced
+    /// [`End::Action`]'s action, which takes its button's icon.
     pub icon: Option<&'static str>,
 }
 
@@ -444,7 +444,7 @@ pub struct ToolbarItem {
 pub const MOST_ON_TOOLBAR: usize = 2;
 
 /// Whether `items`, one tool's toolbar items, hold together: no action empty or offered
-/// twice, none with no icon but the actions of `buttons`, its [`Row::Buttons`] buttons',
+/// twice, none with no icon but the actions of `buttons`, its icon-faced [`End::Action`]s',
 /// which take their buttons' (none for a utility), and no more items than `most`, a
 /// processing tool's [`MOST_ON_TOOLBAR`], where there is a limit.
 pub fn check_toolbar(
@@ -676,7 +676,7 @@ pub struct Tab {
 
 /// How a tab shows one control, a group of rows, plain or collapsible, rows darktable shows
 /// only in some modes, a preset row, a lossless view's coordinate, one of darktable's settings
-/// for the tool, or a row of picker buttons. Each control is in exactly one row, or in one
+/// for the tool, or a line of pickers or actions. Each control is in exactly one row, or in one
 /// row per mode where darktable labels it differently by mode ([`Slider::label`]) or shows
 /// it under conditions one [`Row::When`] cannot join, as highlight reconstruction's Noise
 /// level, or only in the rows of the views covering it; each coordinate is in one row at
@@ -690,10 +690,16 @@ pub enum Row {
     Choice {
         control: &'static str,
         style: ChoiceStyle,
+        /// Its end items, before the option (decision 107); none until a choice's are
+        /// drawn ([`DefinitionError::EndNotDrawn`]).
+        end: &'static [End],
     },
     /// A boolean control.
     Toggle {
         control: &'static str,
+        /// Its end items, before the switch (decision 107); none until a toggle's are
+        /// drawn ([`DefinitionError::EndNotDrawn`]).
+        end: &'static [End],
     },
     /// A titled set of rows, darktable's section label or its collapsible section
     /// (decision 100): a [`Group`] of either kind, holding its rows.
@@ -743,28 +749,32 @@ pub enum Row {
     /// panel draws it disabled at darktable's default, so the page reads as darktable's and
     /// shows what is missing.
     Setting(SettingRow),
-    /// One of darktable's buttons, by its id: an action that writes the tool's controls
-    /// and is never stored (`docs/tools/README.md`, rule 10), as AgX's Read exposure sets
-    /// both exposures from the Exposure tool's effective exposure, its compensation of the
-    /// metadata's exposure bias included, and its Set from above copies one set of controls
-    /// to another. It is no control. Until what it runs is built the panel draws it
-    /// disabled, so the page reads as darktable's and shows what is missing.
-    Action {
-        id: &'static str,
-    },
-    /// darktable's picker buttons packed in a box, one line: a label at its start, if any,
-    /// by its id, or a readout in its place, and the buttons of pickers of
-    /// [`ProcessingDefinition::pickers`] at its end, as AgX's Auto tune levels, RGB levels'
-    /// black, grey and white, and Colour calibration's CCT, the illuminant's colour and its
-    /// picker. It is no control. The label is a plain group's title: its words are
-    /// [`crate::messages::group`]'s, and its id is unique among the tool's groups.
-    Pickers {
-        label: Option<&'static str>,
-        pickers: &'static [&'static str],
+    /// One line, darktable's widgets packed in a box (decision 107): a start, a readout in
+    /// the label's place, and end items. Until decision 107's next step draws lines of any
+    /// shape, [`ProcessingDefinition::check`] takes three ([`DefinitionError::LineShape`]):
+    ///
+    /// - pickers: no start or a label, or a readout, and the buttons of pickers of
+    ///   [`ProcessingDefinition::pickers`] at its end, as AgX's Auto tune levels, RGB
+    ///   levels' black, grey and white, and Colour calibration's CCT, the illuminant's
+    ///   colour and its picker;
+    /// - buttons: a control's label, double-clicked to reset it, as darktable's reset
+    ///   label, with icon actions after it that write the control from its value
+    ///   ([`crate::ProcessingTool::action`]), as orientation's rotate and flip. A click is
+    ///   one change, a `SetControl` of each control the action writes; the control shows
+    ///   only here;
+    /// - an action: no start, no readout, and one text action not ported, which the panel
+    ///   draws disabled at the line's start, so the page reads as darktable's and shows
+    ///   what is missing, as AgX's Read exposure.
+    ///
+    /// It is no control, but for a control at its start. An action writes the tool's
+    /// controls and is never stored (`docs/tools/README.md`, rule 10).
+    Line {
+        start: LineStart,
         /// A text and a swatch the tool computes from its values
         /// ([`crate::ProcessingTool::readout`]), at the row's start in place of a label,
-        /// the swatch filling the row up to the buttons.
+        /// the swatch filling the row up to the end items.
         readout: Option<ReadoutDef>,
+        end: &'static [End],
     },
     /// darktable's input and target patches of a picker's area mapping, side by side
     /// under their headings, as darktable's area mappings show them: the input,
@@ -777,15 +787,6 @@ pub enum Row {
     Patches {
         picker: &'static str,
         target: &'static [&'static str],
-    },
-    /// One control's row of darktable's buttons, its label the control's, double-clicked
-    /// to reset it, as darktable's reset label, with the buttons inline after it: actions
-    /// that write the control from its value ([`crate::ProcessingTool::action`]), never
-    /// stored themselves, as orientation's rotate and flip. A click is one change, a
-    /// `SetControl` of each control the action writes; the control shows only here.
-    Buttons {
-        control: &'static str,
-        buttons: &'static [Button],
     },
     /// A computed value: a number the tool's operation computes from the photo for the
     /// panel, darktable's label beside a value it fills in as the image renders, as
@@ -824,7 +825,7 @@ pub enum Row {
     Guides,
 }
 
-/// A readout at a row of pickers' start ([`Row::Pickers::readout`]): a text the tool
+/// A readout at a line's start ([`Row::Line::readout`]): a text the tool
 /// computes from its values, one of several by what they describe, with a number, and a
 /// swatch of a colour they give, as darktable's "CCT: 5003 K (daylight)" beside the
 /// illuminant's colour (`channelmixerrgb.c:4472-4491`). Its id is unique among the tool's
@@ -848,7 +849,7 @@ pub struct ReadoutDef {
 /// a group's kind is a one-word change to its `kind`. A plain group may sit inside a
 /// collapsible one; a collapsible group never sits inside another group, and a plain group
 /// never inside a plain one. Its id is unique among the tool's groups of both kinds and
-/// its rows of pickers' labels; its title is a message its id and kind imply
+/// its lines of pickers' labels; its title is a message its id and kind imply
 /// ([`crate::messages::group_title`]).
 #[derive(Debug, Clone, Copy)]
 pub struct Group {
@@ -883,16 +884,73 @@ pub struct Computed {
     pub decimals: u8,
 }
 
-/// One button of a [`Row::Buttons`]: its action's id, whose words are an action's
-/// (`tool-<tool>-action-<id>-label`, `-full` and `-promise`), and its icon.
+/// What starts a [`Row::Line`] (decision 107).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Button {
-    pub id: &'static str,
-    pub icon: ButtonIcon,
+pub enum LineStart {
+    None,
+    /// A plain group's words, by its id, unique among the tool's groups: its words are
+    /// [`crate::messages::group`]'s.
+    Label(&'static str),
+    /// A control, its label darktable's reset label, double-clicked to reset it.
+    Control(&'static str),
 }
 
-/// The design system's icons a button row can name, a closed registry as [`Widget`] is:
-/// darktable's own shapes.
+/// What sits at a row's end (decision 107), a closed list; the next steps add the other
+/// kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum End {
+    /// A picker of [`ProcessingDefinition::pickers`], its button turning it on and off.
+    Picker(&'static str),
+    /// One of the tool's actions, [`crate::ProcessingTool::action`].
+    Action(ActionEnd),
+}
+
+impl End {
+    /// The picker's id, or the action's.
+    pub fn id(&self) -> &'static str {
+        match self {
+            End::Picker(id) | End::Action(ActionEnd { id, .. }) => id,
+        }
+    }
+
+    /// The picker it turns on and off, if it is a picker's.
+    pub fn picker(&self) -> Option<&'static str> {
+        match self {
+            End::Picker(id) => Some(id),
+            End::Action(_) => None,
+        }
+    }
+
+    /// The action it runs, if it is an action's.
+    pub fn action(&self) -> Option<&ActionEnd> {
+        match self {
+            End::Action(action) => Some(action),
+            End::Picker(_) => None,
+        }
+    }
+}
+
+/// An [`End::Action`]: one of the tool's actions, whose words are an action's
+/// (`tool-<tool>-action-<id>-label`, `-full` and `-promise`), and its face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActionEnd {
+    /// snake_case, unique among the tool's actions; `tool-<tool>-<id>` in the registry.
+    pub id: &'static str,
+    pub face: Face,
+    /// Drawn disabled and never run until what it runs is built, as [`Control::unported`]
+    /// is for a control (decision 29).
+    pub unported: bool,
+}
+
+/// An action's face: an icon, or its label as a text button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Face {
+    Icon(ButtonIcon),
+    Text,
+}
+
+/// The design system's icons an action's face can name, a closed registry as [`Widget`]
+/// is: darktable's own shapes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ButtonIcon {
     /// darktable's circular arrow turning anticlockwise (`dtgtk_cairo_paint_refresh`).
@@ -907,21 +965,23 @@ pub enum ButtonIcon {
 
 impl Row {
     /// The controls the row shows itself, or the coordinate a view's row shows, ids being
-    /// unique together; a group's and a mode's are their rows', and a preset row and an
-    /// action show none.
+    /// unique together; a group's and a mode's are their rows', a line's the control at
+    /// its start, and a preset row shows none.
     pub fn controls(&self) -> &[&'static str] {
         match self {
             Row::Slider(slider) => std::slice::from_ref(&slider.control),
             Row::Choice { control, .. }
-            | Row::Toggle { control }
-            | Row::Buttons { control, .. } => std::slice::from_ref(control),
+            | Row::Toggle { control, .. }
+            | Row::Line {
+                start: LineStart::Control(control),
+                ..
+            } => std::slice::from_ref(control),
             Row::Group(_)
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
             | Row::Preset { .. }
-            | Row::Action { .. }
-            | Row::Pickers { .. }
+            | Row::Line { .. }
             | Row::Patches { .. }
             | Row::Computed(_)
             | Row::Reference { .. }
@@ -931,18 +991,19 @@ impl Row {
         }
     }
 
-    /// The pickers the row shows: a slider's quad's, a row of picker buttons', or a
+    /// The pickers the row shows: a slider's end item's, a line's end items', or a
     /// reference's.
-    pub fn pickers(&self) -> &[&'static str] {
-        match self {
+    pub fn pickers(&self) -> impl Iterator<Item = &'static str> + use<> {
+        let (one, end): (Option<&'static str>, &'static [End]) = match self {
             Row::Slider(Slider {
-                quad: Some(Quad::Picker(picker)),
+                end: Some(End::Picker(picker)),
                 ..
             })
-            | Row::Reference { picker, .. } => std::slice::from_ref(picker),
-            Row::Pickers { pickers, .. } => pickers,
-            _ => &[],
-        }
+            | Row::Reference { picker, .. } => (Some(picker), &[]),
+            Row::Line { end, .. } => (None, end),
+            _ => (None, &[]),
+        };
+        one.into_iter().chain(end.iter().filter_map(End::picker))
     }
 
     /// The rows inside a group or a mode's rows, a control's or a setting's; none for any
@@ -974,15 +1035,17 @@ pub struct Slider {
     pub track: Track,
     /// Whether the track fills from the default to the value.
     pub fill: bool,
-    /// The action at the end of the row, if any.
-    pub quad: Option<Quad>,
+    /// The item at the row's end, if any, darktable's quad (decision 107): one, as
+    /// darktable's is, and a picker until the other kinds are drawn
+    /// ([`DefinitionError::LineShape`]).
+    pub end: Option<End>,
     /// The row's own words, by an id, where darktable labels the control otherwise in
     /// the mode the row shows for; `None` for the control's own.
     pub label: Option<&'static str>,
 }
 
 impl Slider {
-    /// Two decimals, the track over the whole range, plain, with its fill, no quad, the
+    /// Two decimals, the track over the whole range, plain, with its fill, no end item, the
     /// control's own words.
     pub const fn new(control: &'static str) -> Self {
         Self {
@@ -991,7 +1054,7 @@ impl Slider {
             soft: None,
             track: Track::Plain,
             fill: true,
-            quad: None,
+            end: None,
             label: None,
         }
     }
@@ -1026,8 +1089,9 @@ impl Slider {
         self
     }
 
-    pub const fn quad(mut self, quad: Quad) -> Self {
-        self.quad = Some(quad);
+    /// The item at the row's end ([`Self::end`]).
+    pub const fn end(mut self, end: End) -> Self {
+        self.end = Some(end);
         self
     }
 }
@@ -1119,6 +1183,9 @@ pub struct SettingRow {
     /// Its words, where it declares its own rather than those its id implies, as Export's
     /// `export-*` (decision 93): a utility's, whose key in full implies no message.
     pub words: Option<&'static SettingWords>,
+    /// Its end items, before its value (decision 107); none until a setting's are drawn
+    /// ([`DefinitionError::EndNotDrawn`]).
+    pub end: &'static [End],
 }
 
 /// The words a setting row declares ([`SettingRow::words`]): message ids, but for an
@@ -1170,12 +1237,15 @@ impl SettingRow {
     }
 
     /// Whether the setting holds together: its id, and its kind as a control's; curve
-    /// points are no setting darktable has; a key in full dotted snake_case parts; and
+    /// points are no setting darktable has; a key in full dotted snake_case parts;
     /// declared words naming each of a choice's options, a boolean's two or none, and none
-    /// for a number.
+    /// for a number; and no end items, until a setting's are drawn.
     pub(crate) fn check(&self) -> Result<(), DefinitionError> {
         if !is_id(self.id) {
             return Err(DefinitionError::Id(self.id));
+        }
+        if !self.end.is_empty() {
+            return Err(DefinitionError::EndNotDrawn(self.id));
         }
         if matches!(self.kind, ControlKind::Points { .. }) {
             return Err(DefinitionError::Row(self.id));
@@ -1212,16 +1282,6 @@ pub enum Track {
     /// darktable's ramp of the greys of each CIE L along the track, as it paints a target
     /// lightness's slider (`_paint_hue`, `exposure.c:1123-1151`), for a number in L.
     Lightness,
-}
-
-/// What a slider row's quad does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Quad {
-    /// darktable's picker on a slider (`dt_color_picker_new` on a bauhaus widget): turns
-    /// the picker of [`ProcessingDefinition::pickers`] it names on and off.
-    Picker(&'static str),
-    /// Draws a line on the photo, as a horizon is levelled.
-    Line,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1367,7 +1427,7 @@ pub enum DefinitionError {
     Row(&'static str),
     #[error("{0} has options not ported, which only a list draws disabled")]
     Segmented(&'static str),
-    #[error("two groups, or a group and a row of pickers' label, are called {0}")]
+    #[error("two groups, or a group and a line of pickers' label, are called {0}")]
     DuplicateGroup(&'static str),
     #[error(
         "the group {0} is inside a group it cannot be in: only a plain group sits inside another group, a collapsible one"
@@ -1383,6 +1443,10 @@ pub enum DefinitionError {
     UnknownSetting(&'static str),
     #[error("two actions are called {0}")]
     DuplicateAction(&'static str),
+    /// `tabs` is the tool's tabs' action, `tool-<tool>-tabs` (decision 98), so no
+    /// action end item may take it.
+    #[error("{0} is reserved for the tool's tabs")]
+    ReservedAction(&'static str),
     #[error("two computed values are called {0}")]
     DuplicateComputed(&'static str),
     #[error(
@@ -1440,10 +1504,16 @@ pub enum DefinitionError {
     WordsBy(&'static str),
     #[error("a row shows the picker {0}, which the tool lacks")]
     UnknownPicker(&'static str),
-    #[error("a row of pickers holds none")]
-    NoPickers,
+    #[error("a line holds no end item")]
+    EmptyLine,
     #[error(
-        "the readout {0}: a row of pickers with a label too, no texts, an id named twice or not snake_case"
+        "the line of {0} is of a shape not drawn yet: pickers after a label or a readout, icon actions after a control, or one text action not ported"
+    )]
+    LineShape(&'static str),
+    #[error("the row {0} has end items, which only a slider and a line draw yet")]
+    EndNotDrawn(&'static str),
+    #[error(
+        "the readout {0}: a line with a label too, no texts, an id named twice or not snake_case"
     )]
     Readout(&'static str),
     #[error(
@@ -1474,9 +1544,7 @@ pub enum DefinitionError {
     UnknownToolbarAction(&'static str),
     #[error("the toolbar item {0} is offered twice")]
     DuplicateToolbarItem(&'static str),
-    #[error(
-        "the toolbar item {0} names no icon, which only a button's action leaves to its button"
-    )]
+    #[error("the toolbar item {0} names no icon, which only an icon action leaves to its button")]
     ToolbarIcon(&'static str),
     #[error("more than {MOST_ON_TOOLBAR} toolbar items on a processing tool")]
     ToolbarItems,
@@ -1554,10 +1622,10 @@ impl ProcessingDefinition {
         self.pickers.iter().find(|picker| picker.id == id)
     }
 
-    /// The readouts of its rows of pickers ([`Row::Pickers`]), in the rows' order.
+    /// The readouts of its lines ([`Row::Line`]), in the rows' order.
     pub fn readouts(&self) -> impl Iterator<Item = &ReadoutDef> {
         self.rows().filter_map(|row| match row {
-            Row::Pickers {
+            Row::Line {
                 readout: Some(readout),
                 ..
             } => Some(readout),
@@ -1651,16 +1719,18 @@ impl ProcessingDefinition {
     /// kind as a control's, and each action once. Control, preset row and coordinate ids
     /// are unique together. Each picker has an id of its own, writes controls of the
     /// tool and reads its settings, each once, its words following a choice setting of the
-    /// tool if any, and is in exactly one place: a slider's quad, a row of pickers, which
-    /// holds at least one, a reference row, or a drawn preset row's option that turns it
-    /// on, an option of the row named once. Rows following a setting follow a choice setting of the tool,
+    /// tool if any, and is in exactly one place: a slider's end item, a line's, a reference
+    /// row, or a drawn preset row's option that turns it on, an option of the row named
+    /// once. A line holds at least one end item and is of a shape the app draws
+    /// ([`Row::Line`]), a slider's end item is a picker, and a choice, a toggle and a
+    /// setting have none yet. Rows following a setting follow a choice setting of the tool,
     /// shown wherever they are, for options it has, and hold no control and not it. A
     /// reference row's picker writes no control, and its two settings are the tool's,
     /// each once. A last
     /// pick row names a picker of the tool that writes controls, once. Each context menu
     /// item names one of its actions, once in its place, and no place holds more of
     /// them than it takes ([`check_menus`]). Each toolbar item names one of its actions,
-    /// once, with an icon unless it is a button's, two at most ([`check_toolbar`]). Each cursor has an id of its own and turns
+    /// once, with an icon unless it is an icon action's, two at most ([`check_toolbar`]). Each cursor has an id of its own and turns
     /// on a picker of the tool, in Pick, no picker with two, on the Viewer alone, with no
     /// gestures and no amounts ([`ToolCursor`]).
     pub fn check(&self) -> Result<(), DefinitionError> {
@@ -1756,16 +1826,47 @@ impl ProcessingDefinition {
                 return Err(DefinitionError::Widget(*widget));
             }
             match row {
-                // A row of pickers' label shares a plain group's words, so its id is one.
-                Row::Pickers {
-                    label: Some(id), ..
+                Row::Line {
+                    start,
+                    readout,
+                    end,
                 } => {
-                    if !is_id(id) {
-                        return Err(DefinitionError::Id(id));
+                    let Some(first) = end.first() else {
+                        return Err(DefinitionError::EmptyLine);
+                    };
+                    if !line_drawn(start, readout.as_ref(), end) {
+                        return Err(DefinitionError::LineShape(first.id()));
                     }
-                    if !groups.insert(*id) {
-                        return Err(DefinitionError::DuplicateGroup(id));
+                    // A line's label shares a plain group's words, so its id is one.
+                    if let LineStart::Label(id) = start {
+                        if !is_id(id) {
+                            return Err(DefinitionError::Id(id));
+                        }
+                        if !groups.insert(*id) {
+                            return Err(DefinitionError::DuplicateGroup(id));
+                        }
                     }
+                    for ActionEnd { id, .. } in end.iter().filter_map(End::action) {
+                        if !is_id(id) {
+                            return Err(DefinitionError::Id(id));
+                        }
+                        if *id == "tabs" {
+                            return Err(DefinitionError::ReservedAction(id));
+                        }
+                        if !actions.insert(*id) {
+                            return Err(DefinitionError::DuplicateAction(id));
+                        }
+                    }
+                }
+                // A slider's one end item is a picker until the other kinds are drawn.
+                Row::Slider(Slider {
+                    end: Some(end @ End::Action(_)),
+                    ..
+                }) => return Err(DefinitionError::LineShape(end.id())),
+                Row::Choice { control, end, .. } | Row::Toggle { control, end }
+                    if !end.is_empty() =>
+                {
+                    return Err(DefinitionError::EndNotDrawn(control));
                 }
                 Row::Group(group) => {
                     if !is_id(group.id) {
@@ -1866,14 +1967,6 @@ impl ProcessingDefinition {
                         return Err(DefinitionError::LastPick(picker));
                     }
                 }
-                Row::Action { id } => {
-                    if !is_id(id) {
-                        return Err(DefinitionError::Id(id));
-                    }
-                    if !actions.insert(*id) {
-                        return Err(DefinitionError::DuplicateAction(id));
-                    }
-                }
                 Row::Computed(Computed { id, .. }) => {
                     if !is_id(id) {
                         return Err(DefinitionError::Id(id));
@@ -1882,24 +1975,11 @@ impl ProcessingDefinition {
                         return Err(DefinitionError::DuplicateComputed(id));
                     }
                 }
-                Row::Buttons { buttons, .. } => {
-                    for Button { id, .. } in *buttons {
-                        if !is_id(id) {
-                            return Err(DefinitionError::Id(id));
-                        }
-                        if !actions.insert(*id) {
-                            return Err(DefinitionError::DuplicateAction(id));
-                        }
-                    }
-                }
                 _ => {}
             }
-            if let Row::Pickers { pickers: [], .. } = row {
-                return Err(DefinitionError::NoPickers);
-            }
             // A readout stands in the label's place, its id and its texts' ids its words'.
-            if let Row::Pickers {
-                label,
+            if let Row::Line {
+                start,
                 readout: Some(readout),
                 ..
             } = row
@@ -1907,7 +1987,7 @@ impl ProcessingDefinition {
                 let ReadoutDef { id, texts, .. } = *readout;
                 let named =
                     |text: &&str| is_id(text) && texts.iter().filter(|t| *t == text).count() == 1;
-                if label.is_some()
+                if matches!(start, LineStart::Label(_))
                     || !is_id(id)
                     || texts.is_empty()
                     || !texts.iter().all(named)
@@ -1932,7 +2012,7 @@ impl ProcessingDefinition {
                     return Err(DefinitionError::UnknownSetting(picker));
                 }
             }
-            if let Some(picker) = row.pickers().iter().find(|id| self.picker(id).is_none()) {
+            if let Some(picker) = row.pickers().find(|id| self.picker(id).is_none()) {
                 return Err(DefinitionError::UnknownPicker(picker));
             }
             for &id in row.controls() {
@@ -1962,8 +2042,8 @@ impl ProcessingDefinition {
                         _,
                     ) => false,
                     (Row::Custom { .. }, _) => true,
-                    // Its buttons write it, whatever its kind.
-                    (Row::Buttons { .. }, _) => true,
+                    // Its actions write it, whatever its kind.
+                    (Row::Line { .. }, _) => true,
                     (Row::Choice { style, .. }, ControlKind::Choice { unported, .. }) => {
                         if *style == ChoiceStyle::Segmented && !unported.is_empty() {
                             return Err(DefinitionError::Segmented(id));
@@ -2073,7 +2153,7 @@ impl ProcessingDefinition {
             let in_rows = placed
                 .iter()
                 .flat_map(|placed| placed.row.pickers())
-                .filter(|&&id| id == picker.id)
+                .filter(|&id| id == picker.id)
                 .count();
             let by_options = self
                 .preset_rows
@@ -2108,10 +2188,12 @@ impl ProcessingDefinition {
         }
         let buttons: Vec<&str> = (self.rows())
             .filter_map(|row| match row {
-                Row::Buttons { buttons, .. } => Some(buttons.iter().map(|button| button.id)),
+                Row::Line { end, .. } => Some(end.iter().filter_map(End::action)),
                 _ => None,
             })
             .flatten()
+            .filter(|action| matches!(action.face, Face::Icon(_)))
+            .map(|action| action.id)
             .collect();
         check_toolbar(self.tool.toolbar, Some(MOST_ON_TOOLBAR), &buttons)?;
         self.check_cursors()
@@ -2380,6 +2462,40 @@ fn range_holds(min: f32, max: f32, step: f32) -> bool {
     min.is_finite() && max.is_finite() && min < max && step > 0.0 && step <= max - min
 }
 
+/// Whether a line with end items `end` is of a shape the app draws until decision 107's
+/// next step draws any ([`Row::Line`]): pickers alone, after no start or a label, or a
+/// readout; icon actions that run, after a control, with no readout; or one text action
+/// not ported, alone.
+fn line_drawn(start: &LineStart, readout: Option<&ReadoutDef>, end: &[End]) -> bool {
+    let pickers = end.iter().all(|item| matches!(item, End::Picker(_)));
+    let buttons = end.iter().all(|item| {
+        matches!(
+            item,
+            End::Action(ActionEnd {
+                face: Face::Icon(_),
+                unported: false,
+                ..
+            })
+        )
+    });
+    match (start, readout, end) {
+        (LineStart::None | LineStart::Label(_), _, _) if pickers => true,
+        (LineStart::Control(_), None, _) => buttons,
+        (
+            LineStart::None,
+            None,
+            [
+                End::Action(ActionEnd {
+                    face: Face::Text,
+                    unported: true,
+                    ..
+                }),
+            ],
+        ) => true,
+        _ => false,
+    }
+}
+
 /// Whether a slider's soft range holds together: finite ends in order, inside the range,
 /// as darktable's `dt_bauhaus_slider_set_soft_range` keeps it.
 fn soft_holds((low, high): (f32, f32), (min, max): (f32, f32)) -> bool {
@@ -2609,6 +2725,30 @@ impl Control {
 mod tests {
     use super::*;
 
+    /// A line of one text action not ported, `id`, as AgX's Read exposure.
+    macro_rules! action_line {
+        ($id:expr) => {
+            Row::Line {
+                start: LineStart::None,
+                readout: None,
+                end: &[End::Action(ActionEnd {
+                    id: $id,
+                    face: Face::Text,
+                    unported: true,
+                })],
+            }
+        };
+    }
+
+    /// An icon action that runs, `id`, as Orientation's buttons.
+    const fn button(id: &'static str) -> End {
+        End::Action(ActionEnd {
+            id,
+            face: Face::Icon(ButtonIcon::RotateLeft),
+            unported: false,
+        })
+    }
+
     static CONTROLS: &[Control] = &[
         Control {
             id: "exposure",
@@ -2654,9 +2794,11 @@ mod tests {
                 Row::Choice {
                     control: "mode",
                     style: ChoiceStyle::Segmented,
+                    end: &[],
                 },
                 Row::Toggle {
                     control: "preserve",
+                    end: &[],
                 },
                 Row::Custom {
                     widget: Widget::Curve,
@@ -2750,6 +2892,7 @@ mod tests {
     const MODE: Row = Row::Choice {
         control: "mode",
         style: ChoiceStyle::List,
+        end: &[],
     };
 
     /// `contrast`'s row, and its row under its other label.
@@ -2773,7 +2916,10 @@ mod tests {
         id: "fine_tuning",
         kind: GroupKind::Collapsible,
         rows: &[
-            Row::Toggle { control: "smooth" },
+            Row::Toggle {
+                control: "smooth",
+                end: &[],
+            },
             Row::When {
                 control: "smooth",
                 is: &["true"],
@@ -2811,7 +2957,10 @@ mod tests {
             id: "page",
             tabs: PAGE_TABS,
             before: &[Row::Slider(Slider::new("amount"))],
-            after: &[Row::Toggle { control: "mask" }],
+            after: &[Row::Toggle {
+                control: "mask",
+                end: &[],
+            }],
             reset: Reset::Tool,
             presets: true,
             open_at_first: false,
@@ -2941,7 +3090,10 @@ mod tests {
         assert_eq!(twice(&[PER_MODE[0].clone(), mask]), rows(2));
         // Under every tab and in one.
         const UNDER: &[Row] = &[
-            Row::Toggle { control: "mask" },
+            Row::Toggle {
+                control: "mask",
+                end: &[],
+            },
             Row::Slider(Slider::new("detail")),
         ];
         let under = ProcessingDefinition {
@@ -3032,7 +3184,10 @@ mod tests {
                 rows: CONTRAST,
             },
         ];
-        const MASK: &[Row] = &[Row::Toggle { control: "mask" }];
+        const MASK: &[Row] = &[Row::Toggle {
+            control: "mask",
+            end: &[],
+        }];
         assert_eq!(two_tabs(with_mode(&[]), FOLLOWING_MODE, MASK), Ok(()));
         // The mask's toggle in a mode of the Main tab: rows on the Fine tab cannot follow
         // it, as it may be hidden there.
@@ -3053,7 +3208,7 @@ mod tests {
             Row::When {
                 control: "mask",
                 is: &["true"],
-                rows: &[Row::Action { id: "masked" }],
+                rows: &[action_line!("masked")],
             },
         ];
         assert_eq!(
@@ -3102,7 +3257,10 @@ mod tests {
         assert_eq!(outside.check(), Err(DefinitionError::Hidden("smooth")));
         // The mask's toggle shown only with the local Laplacian filter: rows that follow
         // it must be in that mode too, for those values or fewer.
-        const IN_MODE: &[Row] = &[Row::Toggle { control: "mask" }];
+        const IN_MODE: &[Row] = &[Row::Toggle {
+            control: "mask",
+            end: &[],
+        }];
         let follow_mask = |is: &'static [&'static str]| {
             let following: &'static [Row] = Box::leak(Box::new([Row::When {
                 control: "mask",
@@ -3258,7 +3416,7 @@ mod tests {
         }
         let twice = [
             group("look", GroupKind::Plain, CONTRAST),
-            group("look", GroupKind::Plain, &[Row::Action { id: "auto" }]),
+            group("look", GroupKind::Plain, &[action_line!("auto")]),
         ];
         assert_eq!(
             page(with_mode(&twice)).check(),
@@ -3323,6 +3481,7 @@ mod tests {
         track: Track::Plain,
         key: None,
         words: None,
+        end: &[],
     };
 
     #[test]
@@ -3346,6 +3505,7 @@ mod tests {
                     track: Track::Plain,
                     key: None,
                     words: None,
+                    end: &[],
                 }),
             ])),
         });
@@ -3398,36 +3558,37 @@ mod tests {
         // In a mode, as AgX's Set from above shows only while adjustments are on.
         let rows = [
             Row::Slider(Slider::new("contrast")),
-            Row::Action { id: "auto_tune" },
+            action_line!("auto_tune"),
             Row::When {
                 control: "mode",
                 is: &["laplacian"],
-                rows: &[Row::Action {
-                    id: "set_from_above",
-                }],
+                rows: &[action_line!("set_from_above")],
             },
         ];
         assert_eq!(page(with_mode(&rows)).check(), Ok(()));
-        assert!(Row::Action { id: "auto_tune" }.controls().is_empty());
-        // A row of buttons shows its control, and its buttons' ids are actions'.
-        let button = |id| Button {
-            id,
-            icon: ButtonIcon::RotateLeft,
-        };
-        let buttons = Row::Buttons {
-            control: "contrast",
-            buttons: Box::leak(Box::new([button("auto_tune")])),
+        assert!(action_line!("auto_tune").controls().is_empty());
+        // A line of buttons shows its control, and its buttons' ids are actions'.
+        let buttons = Row::Line {
+            start: LineStart::Control("contrast"),
+            readout: None,
+            end: Box::leak(Box::new([button("auto_tune")])),
         };
         assert_eq!(buttons.controls(), ["contrast"]);
-        let clash = [buttons, Row::Action { id: "auto_tune" }];
+        // `tabs` is the tool's tabs' action, never an end item's.
+        let reserved = [action_line!("tabs")];
+        assert_eq!(
+            page(with_mode(&reserved)).check(),
+            Err(DefinitionError::ReservedAction("tabs"))
+        );
+        let clash = [buttons, action_line!("auto_tune")];
         assert_eq!(
             page(with_mode(&clash)).check(),
             Err(DefinitionError::DuplicateAction("auto_tune"))
         );
         let twice = [
             Row::Slider(Slider::new("contrast")),
-            Row::Action { id: "auto_tune" },
-            Row::Action { id: "auto_tune" },
+            action_line!("auto_tune"),
+            action_line!("auto_tune"),
         ];
         assert_eq!(
             page(with_mode(&twice)).check(),
@@ -3435,7 +3596,7 @@ mod tests {
         );
         let named = [
             Row::Slider(Slider::new("contrast")),
-            Row::Action { id: "Auto tune" },
+            action_line!("Auto tune"),
         ];
         assert_eq!(
             page(with_mode(&named)).check(),
@@ -3443,23 +3604,19 @@ mod tests {
         );
     }
 
-    /// [`page`] with a row of buttons and action rows, five actions in all, adding `menus`
-    /// to context menus.
+    /// [`page`] with a line of buttons and action lines, five actions in all, adding
+    /// `menus` to context menus.
     fn with_menus(menus: &[MenuItem]) -> ProcessingDefinition {
         let rows = [
-            Row::Buttons {
-                control: "contrast",
-                buttons: &[Button {
-                    id: "rotate",
-                    icon: ButtonIcon::RotateLeft,
-                }],
+            Row::Line {
+                start: LineStart::Control("contrast"),
+                readout: None,
+                end: Box::leak(Box::new([button("rotate")])),
             },
-            Row::Action { id: "auto_tune" },
-            Row::Action {
-                id: "set_from_above",
-            },
-            Row::Action { id: "pick" },
-            Row::Action { id: "clear" },
+            action_line!("auto_tune"),
+            action_line!("set_from_above"),
+            action_line!("pick"),
+            action_line!("clear"),
         ];
         ProcessingDefinition {
             tool: ToolDefinition {
@@ -3754,7 +3911,7 @@ mod tests {
     };
 
     /// [`PAGE`] with `cursors`, [`LEVEL`] on contrast's quad, and a point picker, `dot`,
-    /// and one that only shows, `shown`, in a row of pickers.
+    /// and one that only shows, `shown`, in a line of pickers.
     fn with_cursors(cursors: &[ToolCursor]) -> Result<(), DefinitionError> {
         const DOT: Picker = Picker {
             id: "dot",
@@ -3768,11 +3925,11 @@ mod tests {
         };
         let rows = [
             Row::Setting(CHART),
-            Row::Slider(Slider::new("contrast").quad(Quad::Picker("level"))),
-            Row::Pickers {
-                label: None,
-                pickers: &["dot", "shown"],
+            Row::Slider(Slider::new("contrast").end(End::Picker("level"))),
+            Row::Line {
+                start: LineStart::None,
                 readout: None,
+                end: &[End::Picker("dot"), End::Picker("shown")],
             },
         ];
         let page = page(with_mode(&rows));
@@ -3880,11 +4037,11 @@ mod tests {
         }
     }
 
-    /// A readout stands in a row of pickers' label's place: none with a label, one with
+    /// A readout stands in a line of pickers' label's place: none with a label, one with
     /// texts, each named once, its id unique among the tool's readouts; and its words follow
     /// from its ids.
     #[test]
-    fn a_readout_takes_a_row_of_pickers_label_s_place() {
+    fn a_readout_takes_a_line_s_label_s_place() {
         const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
         const CCT: ReadoutDef = ReadoutDef {
             id: "cct",
@@ -3892,15 +4049,16 @@ mod tests {
             decimals: 0,
             swatch: true,
         };
-        let row = |label, readout| Row::Pickers {
-            label,
-            pickers: &["level"],
+        let row = |start, readout| Row::Line {
+            start,
             readout: Some(readout),
+            end: &[End::Picker("level")],
         };
-        assert_eq!(picking(&[LEVEL], &[CONTRAST, row(None, CCT)]), Ok(()));
+        let none = LineStart::None;
+        assert_eq!(picking(&[LEVEL], &[CONTRAST, row(none, CCT)]), Ok(()));
         let refused = |rows: &[Row]| picking(&[LEVEL], rows);
         assert_eq!(
-            refused(&[CONTRAST, row(Some("auto_tune"), CCT)]),
+            refused(&[CONTRAST, row(LineStart::Label("auto_tune"), CCT)]),
             Err(DefinitionError::Readout("cct"))
         );
         for readout in [
@@ -3916,26 +4074,26 @@ mod tests {
             ReadoutDef { id: "CCT", ..CCT },
         ] {
             assert_eq!(
-                refused(&[CONTRAST, row(None, readout)]),
+                refused(&[CONTRAST, row(none, readout)]),
                 Err(DefinitionError::Readout(readout.id))
             );
         }
-        // Two rows of pickers, two readouts by one id.
+        // Two lines of pickers, two readouts by one id.
         let spot = Picker {
             id: "spot",
             ..LEVEL
         };
-        let other = Row::Pickers {
-            label: None,
-            pickers: &["spot"],
+        let other = Row::Line {
+            start: LineStart::None,
             readout: Some(CCT),
+            end: &[End::Picker("spot")],
         };
         assert_eq!(
-            picking(&[LEVEL, spot], &[CONTRAST, row(None, CCT), other]),
+            picking(&[LEVEL, spot], &[CONTRAST, row(none, CCT), other]),
             Err(DefinitionError::Readout("cct"))
         );
         // Its words: each text's and its tooltip, and the swatch's.
-        let rows: &'static [Row] = Box::leak(Box::new([CONTRAST, row(None, CCT)]));
+        let rows: &'static [Row] = Box::leak(Box::new([CONTRAST, row(none, CCT)]));
         let definition = ProcessingDefinition {
             pickers: &[LEVEL],
             ..page(with_mode(rows))
@@ -3953,33 +4111,34 @@ mod tests {
     }
 
     #[test]
-    fn a_picker_is_in_exactly_one_row_a_quad_or_a_row_of_pickers() {
+    fn a_picker_is_in_exactly_one_row_a_slider_s_end_or_a_line() {
         const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
-        const QUAD: Row = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
-        assert_eq!(QUAD.pickers(), ["level"]);
+        const QUAD: Row = Row::Slider(Slider::new("contrast").end(End::Picker("level")));
+        assert!(QUAD.pickers().eq(["level"]));
         assert_eq!(picking(&[LEVEL], &[QUAD]), Ok(()));
-        let buttons = |label, pickers: &[&'static str]| Row::Pickers {
-            label,
-            pickers: Box::leak(pickers.into()),
+        let buttons = |start, pickers: &[&'static str]| Row::Line {
+            start,
             readout: None,
+            end: Box::leak(pickers.iter().map(|&id| End::Picker(id)).collect()),
         };
-        // A row of pickers shows no control, with a label or none.
-        let row = buttons(Some("auto_tune"), &["level"]);
+        // A line of pickers shows no control, with a label or none.
+        let row = buttons(LineStart::Label("auto_tune"), &["level"]);
         assert!(row.controls().is_empty());
-        assert_eq!(row.pickers(), ["level"]);
+        assert!(row.pickers().eq(["level"]));
         assert_eq!(picking(&[LEVEL], &[CONTRAST, row.clone()]), Ok(()));
-        let unlabelled = buttons(None, &["level", "spot"]);
+        let unlabelled = buttons(LineStart::None, &["level", "spot"]);
+        assert!(unlabelled.pickers().eq(["level", "spot"]));
         let spot = Picker {
             id: "spot",
             ..LEVEL
         };
         assert_eq!(picking(&[LEVEL, spot], &[CONTRAST, unlabelled]), Ok(()));
-        // Pickers are a namespace of their own: one takes its quad's control's id.
+        // Pickers are a namespace of their own: one takes its slider's control's id.
         let contrast = Picker {
             id: "contrast",
             ..LEVEL
         };
-        let own = Row::Slider(Slider::new("contrast").quad(Quad::Picker("contrast")));
+        let own = Row::Slider(Slider::new("contrast").end(End::Picker("contrast")));
         assert_eq!(picking(&[contrast], &[own]), Ok(()));
         let rows = |rows| {
             Err(DefinitionError::PickerRows {
@@ -3989,18 +4148,19 @@ mod tests {
         };
         assert_eq!(picking(&[LEVEL], &[CONTRAST]), rows(0));
         assert_eq!(picking(&[LEVEL], &[QUAD, row.clone()]), rows(2));
-        let twice = buttons(None, &["level", "level"]);
+        let twice = buttons(LineStart::None, &["level", "level"]);
         assert_eq!(picking(&[LEVEL], &[CONTRAST, twice]), rows(2));
         assert_eq!(
             picking(&[], &[QUAD]),
             Err(DefinitionError::UnknownPicker("level"))
         );
         assert_eq!(
-            picking(&[LEVEL], &[QUAD, buttons(None, &[])]),
-            Err(DefinitionError::NoPickers)
+            picking(&[LEVEL], &[QUAD, buttons(LineStart::None, &[])]),
+            Err(DefinitionError::EmptyLine)
         );
+        let label = LineStart::Label("Auto");
         assert_eq!(
-            picking(&[LEVEL], &[CONTRAST, buttons(Some("Auto"), &["level"])]),
+            picking(&[LEVEL], &[CONTRAST, buttons(label, &["level"])]),
             Err(DefinitionError::Id("Auto"))
         );
         // Its label is a plain group's title, sharing its words, so never a group's id.
@@ -4015,6 +4175,165 @@ mod tests {
         );
     }
 
+    /// An action at a line's end: `id`, its face and whether it is ported.
+    fn action(id: &'static str, face: Face, unported: bool) -> End {
+        End::Action(ActionEnd { id, face, unported })
+    }
+
+    /// A line of `end` after `start`, with `readout`.
+    fn line(start: LineStart, readout: Option<ReadoutDef>, end: &[End]) -> Row {
+        Row::Line {
+            start,
+            readout,
+            end: Box::leak(end.into()),
+        }
+    }
+
+    /// Decision 107's first step draws three shapes of line, today's rows: pickers after
+    /// no start, a label or a readout; icon actions that run after a control; and one text
+    /// action not ported, alone. Every other line is refused, by its first end item.
+    #[test]
+    fn a_line_is_of_a_shape_the_app_draws() {
+        const CCT: ReadoutDef = ReadoutDef {
+            id: "cct",
+            texts: &["daylight"],
+            decimals: 0,
+            swatch: true,
+        };
+        let icon = Face::Icon(ButtonIcon::RotateLeft);
+        let spot = Picker {
+            id: "spot",
+            ..LEVEL
+        };
+        let control = LineStart::Control("contrast");
+        let label = LineStart::Label("auto_tune");
+        let drawn = [
+            line(label, None, &[End::Picker("level")]),
+            line(LineStart::None, Some(CCT), &[End::Picker("level")]),
+            line(LineStart::None, None, &[End::Picker("level")]),
+            line(control, None, &[action("rotate", icon, false)]),
+            line(LineStart::None, None, &[action("auto", Face::Text, true)]),
+        ];
+        for row in drawn {
+            // Contrast shown, and the picker in one place.
+            let mut rows = vec![row.clone()];
+            if row.controls().is_empty() {
+                rows.push(Row::Slider(Slider::new("contrast")));
+            }
+            if row.pickers().next().is_none() {
+                rows.push(line(LineStart::None, None, &[End::Picker("level")]));
+            }
+            assert_eq!(picking(&[LEVEL], &rows), Ok(()), "{rows:?}");
+        }
+        let shape = |id| Err(DefinitionError::LineShape(id));
+        let refused = [
+            // A mixed line, pickers and actions.
+            line(
+                LineStart::None,
+                None,
+                &[End::Picker("spot"), action("auto", Face::Text, true)],
+            ),
+            line(
+                label,
+                None,
+                &[action("auto", Face::Text, true), End::Picker("spot")],
+            ),
+            // Actions after a label, or icon actions after no start.
+            line(label, None, &[action("rotate", icon, false)]),
+            line(LineStart::None, None, &[action("rotate", icon, false)]),
+            // A control's line of pickers, of text actions, of unported icons, or with a
+            // readout.
+            line(control, None, &[End::Picker("spot")]),
+            line(control, None, &[action("auto", Face::Text, false)]),
+            line(control, None, &[action("rotate", icon, true)]),
+            line(control, Some(CCT), &[action("rotate", icon, false)]),
+            // A text action that runs, two text actions, or one with a readout.
+            line(LineStart::None, None, &[action("auto", Face::Text, false)]),
+            line(
+                LineStart::None,
+                None,
+                &[
+                    action("auto", Face::Text, true),
+                    action("again", Face::Text, true),
+                ],
+            ),
+            line(
+                LineStart::None,
+                Some(CCT),
+                &[action("auto", Face::Text, true)],
+            ),
+        ];
+        for row in refused {
+            let id = match &row {
+                Row::Line { end, .. } => end[0].id(),
+                _ => unreachable!(),
+            };
+            let rows = [
+                Row::Slider(Slider::new("contrast").end(End::Picker("level"))),
+                row,
+            ];
+            assert_eq!(picking(&[LEVEL, spot], &rows), shape(id), "{rows:?}");
+        }
+        // A slider's one end item is a picker.
+        let ends = Row::Slider(Slider::new("contrast").end(action("rotate", icon, false)));
+        assert_eq!(picking(&[], &[ends]), shape("rotate"));
+        // A line holds at least one end item.
+        assert_eq!(
+            picking(&[], &[line(control, None, &[])]),
+            Err(DefinitionError::EmptyLine)
+        );
+    }
+
+    /// A choice's, a toggle's and a setting's end items wait for decision 107's next step.
+    #[test]
+    fn a_choice_a_toggle_and_a_setting_take_no_end_item_yet() {
+        let end: &'static [End] = &[End::Picker("level")];
+        let choice = Row::Choice {
+            control: "mode",
+            style: ChoiceStyle::List,
+            end,
+        };
+        let toggle = Row::Toggle {
+            control: "smooth",
+            end,
+        };
+        let setting = Row::Setting(SettingRow { end, ..CHART });
+        for (row, id) in [(choice, "mode"), (toggle, "smooth"), (setting, "chart")] {
+            assert_eq!(
+                page(with_mode(&[row])).check(),
+                Err(DefinitionError::EndNotDrawn(id))
+            );
+        }
+    }
+
+    /// What each shape of row shows: a line its control at its start and its pickers, a
+    /// slider its control and its end's picker.
+    #[test]
+    fn a_line_shows_its_start_s_control_and_its_pickers() {
+        let icon = Face::Icon(ButtonIcon::RotateLeft);
+        let buttons = line(
+            LineStart::Control("orientation"),
+            None,
+            &[action("rotate", icon, false), action("flip", icon, false)],
+        );
+        assert_eq!(buttons.controls(), ["orientation"]);
+        assert!(buttons.pickers().next().is_none());
+        let pickers = line(
+            LineStart::Label("auto_tune"),
+            None,
+            &[End::Picker("black"), End::Picker("white")],
+        );
+        assert!(pickers.controls().is_empty());
+        assert!(pickers.pickers().eq(["black", "white"]));
+        let text = line(LineStart::None, None, &[action("auto", Face::Text, true)]);
+        assert!(text.controls().is_empty() && text.pickers().next().is_none());
+        let slider = Row::Slider(Slider::new("contrast").end(End::Picker("level")));
+        assert_eq!(slider.controls(), ["contrast"]);
+        assert!(slider.pickers().eq(["level"]));
+        let plain = Row::Slider(Slider::new("contrast"));
+        assert!(plain.pickers().next().is_none());
+    }
+
     /// A preset row's option that turns a picker on, as White balance's Settings' from
     /// image area turns `spot` on, is that picker's one place while the row is drawn: an
     /// option of the row, named once, and a picker of the tool.
@@ -4025,7 +4344,7 @@ mod tests {
             style: ChoiceStyle::List,
         };
         const CONTRAST: Row = Row::Slider(Slider::new("contrast"));
-        const QUAD: Row = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        const QUAD: Row = Row::Slider(Slider::new("contrast").end(End::Picker("level")));
         let with = |turning: &[(&'static str, &'static str)], rows: &[Row]| {
             let mut all = vec![Row::Setting(CHART)];
             all.extend(rows.iter().cloned());
@@ -4067,7 +4386,7 @@ mod tests {
 
     #[test]
     fn a_picker_writes_the_tool_s_controls_and_reads_its_settings_each_once() {
-        let quad = |picker| Row::Slider(Slider::new("contrast").quad(Quad::Picker(picker)));
+        let quad = |picker| Row::Slider(Slider::new("contrast").end(End::Picker(picker)));
         let one = |picker: Picker| picking(&[picker], &[quad(picker.id)]);
         // One that only shows writes nothing and reads nothing.
         let shows = Picker {
@@ -4109,6 +4428,7 @@ mod tests {
         track: Track::Lightness,
         key: None,
         words: None,
+        end: &[],
     };
 
     /// `rows` after Contrast's row and the chart's setting, on [`PAGE`]'s first tab.
@@ -4161,7 +4481,7 @@ mod tests {
         let scaled = Row::WhenSetting {
             setting: "scale",
             is: &["passport"],
-            rows: Box::leak(Box::new([Row::Action { id: "reset" }])),
+            rows: Box::leak(Box::new([action_line!("reset")])),
         };
         assert_eq!(
             following(&[Row::Setting(SCALE), scaled]),
@@ -4214,7 +4534,7 @@ mod tests {
 
     #[test]
     fn a_picker_s_words_follow_a_choice_setting_of_the_tool() {
-        let quad = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        let quad = Row::Slider(Slider::new("contrast").end(End::Picker("level")));
         let by = |words_by, more: &[Row]| {
             let mut rows = vec![quad.clone()];
             rows.extend(more.iter().cloned());
@@ -4247,14 +4567,14 @@ mod tests {
         };
         let row = reference("measure", "reference_l", "reference_photo");
         assert!(row.controls().is_empty());
-        assert_eq!(row.pickers(), ["measure"]);
+        assert!(row.pickers().eq(["measure"]));
         let contrast = Row::Slider(Slider::new("contrast"));
         assert_eq!(
             picking(&[MEASURE], &[contrast.clone(), row.clone()]),
             Ok(())
         );
         // Another picker may read its L, as Exposure's does.
-        let quad = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        let quad = Row::Slider(Slider::new("contrast").end(End::Picker("level")));
         let reads = Picker {
             settings: &["chart", "reference_l"],
             ..LEVEL
@@ -4273,7 +4593,7 @@ mod tests {
             picking(&[], &[contrast.clone(), row.clone()]),
             Err(DefinitionError::UnknownPicker("measure"))
         );
-        let twice = Row::Slider(Slider::new("contrast").quad(Quad::Picker("measure")));
+        let twice = Row::Slider(Slider::new("contrast").end(End::Picker("measure")));
         assert_eq!(
             picking(&[MEASURE], &[twice, row]),
             Err(DefinitionError::PickerRows {
@@ -4298,9 +4618,9 @@ mod tests {
     /// it shows no control and no picker of its own.
     #[test]
     fn a_last_pick_row_names_a_picker_that_writes_once() {
-        let quad = Row::Slider(Slider::new("contrast").quad(Quad::Picker("level")));
+        let quad = Row::Slider(Slider::new("contrast").end(End::Picker("level")));
         let last = Row::LastPick { picker: "level" };
-        assert!(last.controls().is_empty() && last.pickers().is_empty());
+        assert!(last.controls().is_empty() && last.pickers().next().is_none());
         assert_eq!(picking(&[LEVEL], &[quad.clone(), last.clone()]), Ok(()));
         let wrong = Err(DefinitionError::LastPick("level"));
         assert_eq!(
@@ -4559,7 +4879,10 @@ mod tests {
                 rows: 2
             })
         );
-        let toggle = Row::Toggle { control: "total" };
+        let toggle = Row::Toggle {
+            control: "total",
+            end: &[],
+        };
         assert_eq!(
             viewed(tone(), &[AMOUNT, toggle]),
             Err(DefinitionError::Row("total"))
@@ -4703,6 +5026,7 @@ mod tests {
         let segments = [Row::Choice {
             control: "mode",
             style: ChoiceStyle::Segmented,
+            end: &[],
         }];
         let rows: Vec<Row> = segments
             .into_iter()
@@ -4779,6 +5103,7 @@ mod tests {
         ];
         static WRONG: &[Row] = &[Row::Toggle {
             control: "exposure",
+            end: &[],
         }];
         let with = |rows: &'static [Row]| ProcessingDefinition {
             tool: ToolDefinition {
@@ -4853,6 +5178,7 @@ mod tests {
             Row::Choice {
                 control: "mode",
                 style: ChoiceStyle::List,
+                end: &[],
             },
             Row::Custom {
                 widget: Widget::Equalizer,

@@ -980,7 +980,7 @@ fn shown(values: &Controls) -> Vec<&'static str> {
                 }
                 Row::Group(_) => {}
                 // The readout row, darktable's CCT, the light's colour and the picker.
-                Row::Pickers { .. } => out.push("readout"),
+                Row::Line { .. } => out.push("readout"),
                 row => out.extend(row.controls()),
             }
         }
