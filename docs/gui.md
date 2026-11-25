@@ -3265,6 +3265,12 @@ Built (decision 106, its phase 1; issues #371 and #625): a utility of the Photos
   ✓ Bright
                                      (one empty row)
   [🔍 Find style                            ]
+  ⌄ Custom Styles
+    ⌄ Film
+        Cool film
+      ✓ Warm film
+    ✓ Bright
+      Future                     (disabled: made by a newer Apertrust)
   ⌄ Built-in Styles
     › Black and white
       Lomo
@@ -3272,17 +3278,11 @@ Built (decision 106, its phase 1; issues #371 and #625): a utility of the Photos
       Open shadows and highlights
       Punchy
       Vibrant colour
-  ⌄ Custom Styles
-    ⌄ Film
-        Cool film
-      ✓ Warm film
-    ✓ Bright
-      Future                     (disabled: made by a newer Apertrust)
 ```
 
 - **The styles applied** to the active photo come first, newest first, from `Values::styles`: a 26-point row each, a grey ✓ (`text_secondary`) before its own name, then one empty row, room for the next. Shown while a photo is open; with none applied, the empty row alone; with no photo, nothing. To screen readers a list, each item "<name>, applied". A click or a right-click on one opens one command, **Clear** (`Command::ClearStyle`, noted `history-clear-style`), disabled on a photo open for viewing only.
 - **Find style,** the sunken search field with its icon and the placeholder "Find style", narrows the tree to the styles whose names hold its text, ignoring case, in both root folders, their folders open; a root folder with no match is hidden while it searches. ↓ moves into the tree, to its first row, Return applies the first style it shows, the field keeping the focus, and × at its end while it holds text, or Escape, clears it.
-- **The tree** (`styles::tool::read`) has two root folders, always drawn, each with its chevron, open at first and kept open or closed as other folders are: **Built-in Styles** first, the eight styles Apertrust ships (decision 106, Built-in styles), each named by its Fluent message `style-builtin-<id>`, then **Custom Styles**, the person's, `<user data>/styles/*.apstyle`, which shows "No styles yet." (`styles-empty`) in one quiet line while it holds none. Inside each, each level its folders first, then its styles, by name in the file browser's order (`browser_order`). A `|` in a name makes folders, as darktable's do (`Film|Warm film` is Warm film in Film), the three black-and-white built-ins in Black and white: a folder's row is its chevron and its name, no icon, its chevron, a click, ← and → opening and closing it. Every style row keeps a chevron's width before its name, holding an accent ✓ (`accent_text`) while the style is applied, so the names line up. A style's tooltip, and its description to screen readers, names its tools. A row that cannot apply, a file a newer Apertrust wrote or with no photo taking edits, is drawn disabled, its tooltip saying why, and keeps its menu, F2 and Delete; a file a newer Apertrust wrote is never rewritten, so its Rename Style… is disabled and F2 renames nothing. To screen readers a tree, folders expandable, each style a tree item described by "applied" while it is, then its tools; nothing is selected.
+- **The tree** (`styles::tool::read`) has two root folders, always drawn, each with its chevron, open at first and kept open or closed as other folders are: **Custom Styles** first, the person's, `<user data>/styles/*.apstyle`, which shows "No styles yet." (`styles-empty`) in one quiet line while it holds none, then **Built-in Styles**, the eight styles Apertrust ships (decision 106, Built-in styles), each named by its Fluent message `style-builtin-<id>`. Inside each, each level its folders first, then its styles, by name in the file browser's order (`browser_order`). A `|` in a name makes folders, as darktable's do (`Film|Warm film` is Warm film in Film), the three black-and-white built-ins in Black and white: a folder's row is its chevron and its name, no icon, its chevron, a click, ← and → opening and closing it. Every style row keeps a chevron's width before its name, holding an accent ✓ (`accent_text`) while the style is applied, so the names line up. A style's tooltip, and its description to screen readers, names its tools. A row that cannot apply, a file a newer Apertrust wrote or with no photo taking edits, is drawn disabled, its tooltip saying why, and keeps its menu, F2 and Delete; a file a newer Apertrust wrote is never rewritten, so its Rename Style… is disabled and F2 renames nothing. To screen readers a tree, folders expandable, each style a tree item described by "applied" while it is, then its tools; nothing is selected.
 - **No current style:** nothing is chosen; every action is a click or a right-click.
 - **A click on a style** applies it (`Command::ApplyStyle`, noted `history-style`, one Undo) as `styles.mode` says: **Append** sets the style's tools this build has; **Replace** resets the edit first. An entry this build cannot apply is skipped, and the Viewer says so and why: "1 tool of "Warm film" was left out: made by a newer Apertrust", or "a tool Apertrust has retired" (`styles-left-out`).
 - **A right-click on a style** in the tree, Shift+F10 or the menu key opens its menu: **Apply** for one not applied or **Clear** for one that is, never both; a line; then, for the person's style, **Rename Style…** and **Delete Style…**, and for a built-in, which is read-only, **Copy to Custom Styles…** alone. F2 renames and Delete asks, on the person's styles alone. Rename Style… and Copy to Custom Styles… are sheets of the dialog host (`styles::RenameDialog`), the second opening on the built-in's name and writing an `.apstyle` with its entries into Custom Styles; either refuses a name that is empty, another style's or a built-in style's as shown, as Create a Style… does; Delete Style… asks first ("Delete the style "…"?"), the file going on a yes, or the Viewer saying why it could not; where the platform cannot show that alert, as on Windows for now, Delete Style… is disabled and Delete does nothing, as a preset's Delete… is.

@@ -403,8 +403,8 @@ fn find_style_opens_the_folders_of_the_styles_it_finds() {
     );
 }
 
-/// The two root folders are always drawn, open at first, Built-in Styles first; an
-/// empty Custom Styles says so.
+/// The two root folders are always drawn, open at first, Custom Styles first; an empty
+/// Custom Styles says so.
 #[test]
 fn the_two_root_folders_are_always_drawn_and_an_empty_one_says_so() {
     let state = Drawn {
@@ -417,7 +417,7 @@ fn the_two_root_folders_are_always_drawn_and_an_empty_one_says_so() {
         .filter(|node| node.accesskit_node().data().level() == Some(0))
         .filter_map(|node| node.accesskit_node().label())
         .collect();
-    assert_eq!(roots, ["Built-in Styles", "Custom Styles"]);
+    assert_eq!(roots, ["Custom Styles", "Built-in Styles"]);
     for root in &roots {
         let node = harness.get_by_role_and_label(Role::TreeItem, root);
         assert_eq!(node.accesskit_node().data().is_expanded(), Some(true));
@@ -464,8 +464,8 @@ fn find_style_searches_both_roots_and_hides_one_with_no_match() {
         let (nodes, _) = tool.nodes(&words);
         nodes.iter().map(|node| node.name().to_owned()).collect()
     };
-    assert_eq!(tool("", &styles), ["Built-in Styles", "Custom Styles"]);
-    assert_eq!(tool("o", &styles), ["Built-in Styles", "Custom Styles"]);
+    assert_eq!(tool("", &styles), ["Custom Styles", "Built-in Styles"]);
+    assert_eq!(tool("o", &styles), ["Custom Styles", "Built-in Styles"]);
     assert_eq!(tool("lomo", &styles), ["Built-in Styles"]);
     assert_eq!(tool("warm", &styles), ["Custom Styles"]);
     assert!(tool("nothing like it", &styles).is_empty());
@@ -500,11 +500,12 @@ fn the_styles_tool_in_the_light_theme() {
     photograph(Builtin::Light, "styles-tool-light");
 }
 
-/// Return in Find style applies the first style the tree shows, a closed folder's hidden,
-/// a finding's folders open.
+/// Return in Find style applies the first style the tree shows, a person's before a
+/// built-in, a closed folder's hidden, a finding's folders open.
 #[test]
 fn return_applies_the_first_style_the_tree_shows() {
-    let listed = listed();
+    let mut listed = builtins();
+    listed.extend(self::listed());
     let first = |kept: &Kept| {
         let titles = |id: &str| id.to_owned();
         let tool = StylesTool {
@@ -557,7 +558,7 @@ fn return_applies_the_first_style_shown_and_down_moves_into_the_tree() {
             .get_by_role_and_label(Role::TextInput, "Find style")
             .is_focused()
     );
-    // The first row the tree draws is its first root, Built-in Styles.
+    // The first row the tree draws is its first root, Custom Styles.
     let mut harness = drawn(Builtin::Dark, with_photo());
     harness.run();
     harness
@@ -568,7 +569,7 @@ fn return_applies_the_first_style_shown_and_down_moves_into_the_tree() {
     harness.run();
     assert!(
         harness
-            .get_by_role_and_label(Role::TreeItem, "Built-in Styles")
+            .get_by_role_and_label(Role::TreeItem, "Custom Styles")
             .is_focused()
     );
 }
@@ -868,7 +869,7 @@ fn a_copy_lands_in_custom_styles_and_no_style_takes_a_built_in_s_name() {
 fn a_person_s_style_named_as_a_built_in_is_never_taken_for_it() {
     let mut styles = builtins();
     styles.push(style("Lomo"));
-    // Which "Lomo" row is which: the person's sets Grain, the built-in Vignetting.
+    // Which "Lomo" row is which: the person's, first, sets Grain, the built-in Vignetting.
     let rows = |harness: &Harness<'static, Drawn>| -> Vec<String> {
         (harness.query_all_by_role_and_label(Role::TreeItem, "Lomo"))
             .filter_map(|node| {
@@ -890,8 +891,8 @@ fn a_person_s_style_named_as_a_built_in_is_never_taken_for_it() {
         ..person_s.clone()
     };
     for (applied, said) in [
-        (person_s, ["Vignetting", "applied, Grain"]),
-        (built_in, ["applied, Vignetting", "Grain"]),
+        (person_s, ["applied, Grain", "Vignetting"]),
+        (built_in, ["Grain", "applied, Vignetting"]),
     ] {
         let state = Drawn {
             listed: styles.clone(),
