@@ -331,6 +331,7 @@ fn step(id: &str, clock: Clock, note: Option<Note>, entries: Vec<Entry>) -> Step
         note,
         batch: None,
         entries,
+        styles: None,
     }
 }
 
@@ -435,6 +436,170 @@ fn version_2_reads_back_as_written() {
     assert_eq!(read, edits);
     assert!(read.problems.is_empty());
     assert_eq!(read.to_xml(), xml);
+}
+
+/// A tool's entry with no values, its reset state, or with one control's.
+fn state(id: &str, control: Option<(&str, &str)>) -> Entry {
+    Entry::Tool {
+        tool: id.to_owned(),
+        version: Some("1".to_owned()),
+        kept: Vec::new(),
+        auto: Vec::new(),
+        enabled: control.map(|_| "true".to_owned()),
+        controls: (control.into_iter())
+            .map(|(id, text)| (id.to_owned(), text.to_owned()))
+            .collect(),
+    }
+}
+
+/// [`edits`] with a list of styles applied on its first step, two styles, the newer first,
+/// and its last step holding the list emptied, alone, as a Clear whose tools had all
+/// changed since.
+fn styled() -> Edits {
+    let mut edits = edits();
+    let history = &mut edits.copies[0].history;
+    history[0].styles = Some(vec![
+        AppliedStyle {
+            name: "Warm film".to_owned(),
+            file: "Warm film.apstyle".to_owned(),
+            before: vec![state("grain", None), state("look", Some(("a", "0.1")))],
+            after: vec![
+                state("grain", Some(("strength", "40"))),
+                state("look", Some(("a", "0.3"))),
+            ],
+        },
+        AppliedStyle {
+            name: "R&D \"x\" <y>".to_owned(),
+            file: "R&D _x_ _y_.apstyle".to_owned(),
+            before: vec![state("vignette", None)],
+            after: vec![state("vignette", Some(("scale", "50")))],
+        },
+    ]);
+    history[2].entries.clear();
+    history[2].styles = Some(Vec::new());
+    edits
+}
+
+/// A step's list of styles applied is written after its entries, each item's name and file
+/// and its tools' entries before and after it, an emptied list and a list-only step's
+/// entries closed at once, and read back as written, byte for byte.
+#[test]
+fn the_styles_applied_read_back_as_written() {
+    let edits = styled();
+    let xml = edits.to_xml();
+    for written in [
+        r#"apertrust:name="Warm film""#,
+        r#"apertrust:file="Warm film.apstyle""#,
+        r#"apertrust:name="R&amp;D &quot;x&quot; &lt;y&gt;""#,
+        "<apertrust:before>",
+        "<apertrust:after>",
+        r#"control:strength="40""#,
+        "<apertrust:styles>",
+        "<apertrust:entries>\n            <rdf:Seq/>",
+        "<apertrust:styles>\n            <rdf:Seq/>",
+    ] {
+        assert!(xml.contains(written), "{written} in {xml}");
+    }
+    let at = |text: &str| xml.find(text).unwrap_or_else(|| panic!("{text} in {xml}"));
+    assert!(at("</apertrust:entries>") < at("<apertrust:styles>"));
+    assert!(at(r#"apertrust:name="Warm film""#) < at(r#"apertrust:name="R&amp;D"#));
+    assert!(at("<apertrust:before>") < at("<apertrust:after>"));
+    assert_eq!(xml.matches("<apertrust:styles>").count(), 2, "{xml}");
+    let read = Edits::parse(&xml, 0).unwrap();
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    assert_eq!(read, edits);
+    assert_eq!(read.to_xml(), xml);
+    // A step that left the list as it was holds none.
+    assert_eq!(read.copies[0].history[1].styles, None);
+}
+
+/// `xml` with the last style's `apertrust:after` left out, an empty list as a missing one.
+fn without_after(xml: &str) -> String {
+    let start = xml.rfind("<apertrust:after>").unwrap();
+    let close = "</apertrust:after>";
+    let end = start + xml[start..].find(close).unwrap() + close.len();
+    format!("{}{}", &xml[..start], &xml[end..])
+}
+
+/// What of a step's list of styles applied cannot be read is a problem, so the photo opens
+/// for viewing only rather than lose it: an item that is no struct, one lacking its name or
+/// file, a before and an after that are not the same tools' entries, a name twice, a list
+/// that is no `rdf:Seq`, and a field of an item or of an entry a save would drop.
+#[test]
+fn a_style_applied_that_cannot_be_read_is_a_problem() {
+    let xml = styled().to_xml();
+    let (copy, step) = ("7c0e9a14", "00000000000000a1");
+    let style = |what| Problem::AppliedStyle {
+        copy: copy.to_owned(),
+        step: step.to_owned(),
+        what,
+    };
+    let unknown = |field: &str| Problem::UnknownField {
+        place: format!("the styles of step {step} of copy {copy}"),
+        field: field.to_owned(),
+    };
+    let warm = r#"apertrust:name="Warm film""#;
+    let grain = r#"apertrust:tool="grain""#;
+    let first = "<apertrust:styles>\n            <rdf:Seq>";
+    let cases = [
+        (
+            xml.replacen(first, &format!("{first}<rdf:li>Warm</rdf:li>"), 1),
+            vec![style("an item that is no struct")],
+        ),
+        (
+            xml.replacen(r#" apertrust:file="Warm film.apstyle""#, "", 1),
+            vec![style("a style with no name or file")],
+        ),
+        (
+            without_after(&xml),
+            vec![
+                style("a style with no before or after"),
+                style("a before and an after that are not the same tools"),
+            ],
+        ),
+        (
+            xml.replacen(grain, r#"apertrust:tool="soften""#, 1),
+            vec![style("a before and an after that are not the same tools")],
+        ),
+        (
+            // An operation's entry, its tool's version a field it does not hold.
+            xml.replacen(grain, r#"apertrust:operation="grain""#, 1),
+            vec![
+                unknown("apertrust:toolVersion"),
+                style("a before and an after that are not the same tools"),
+            ],
+        ),
+        (
+            xml.replacen(
+                r#"apertrust:name="R&amp;D &quot;x&quot; &lt;y&gt;""#,
+                warm,
+                1,
+            ),
+            vec![style("a style's name twice")],
+        ),
+        (
+            xml.replacen(warm, &format!(r#"{warm} apertrust:rating="2""#), 1),
+            vec![unknown("apertrust:rating")],
+        ),
+        (
+            xml.replacen(grain, &format!(r#"{grain} apertrust:layer="1""#), 1),
+            vec![unknown("apertrust:layer")],
+        ),
+        (
+            xml.replacen(first, "<apertrust:styles>\n            <rdf:Bag>", 1)
+                .replacen(
+                    "</rdf:Seq>\n           </apertrust:styles>",
+                    "</rdf:Bag>\n           </apertrust:styles>",
+                    1,
+                ),
+            vec![unknown("apertrust:styles")],
+        ),
+    ];
+    for (damaged, expected) in cases {
+        assert_ne!(damaged, xml, "{expected:?}");
+        let read = Edits::parse(&damaged, 0).unwrap();
+        assert_eq!(read.problems, expected);
+    }
 }
 
 /// The clock vector is written in the order of its machines, so two machines writing the

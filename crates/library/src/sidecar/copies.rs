@@ -62,6 +62,13 @@
 //! clock vector is written in the order of its machine ids, so two machines writing the
 //! same copy write the same bytes (decision 52).
 //!
+//! A step that changed the styles applied to the photo holds the whole list after it in
+//! `apertrust:styles`, after its entries, newest first, closed at once where it emptied it
+//! (decision 106): each item a struct of `apertrust:name`, `apertrust:file`, and
+//! `apertrust:before` and `apertrust:after`, each an `rdf:Seq` of tool entries as version 1
+//! writes them, the same tools in the same order. A step holding the list alone writes its
+//! `apertrust:entries` empty.
+//!
 //! A version 1 or 0 file reads as one virtual copy ([`Edits::parse`]): its history a step
 //! of each of the file's entries, or none, end empty, for a file holding nothing.
 
@@ -186,6 +193,16 @@ pub enum Problem {
     /// of its steps is past, and a save could be taken for holding all the file does.
     #[error("the clock of step {step} of copy {copy} is past its copy's clock vector")]
     ClockPastVector { copy: String, step: String },
+    /// A step's `apertrust:styles` holding what cannot be read as a style applied
+    /// (decision 106), as `what` says: an item that is no struct, one lacking its name or
+    /// file, or its before or after, a before and an after that are not the same tools'
+    /// entries, or a name twice in the list.
+    #[error("step {step} of copy {copy} holds {what} among its styles applied")]
+    AppliedStyle {
+        copy: String,
+        step: String,
+        what: &'static str,
+    },
 }
 
 /// Whether `text` is an id or a batch as Apertrust writes one: 16 lowercase hex digits.
@@ -226,8 +243,30 @@ pub struct Step {
     /// `apertrust:batch`, 16 hex digits.
     pub batch: Option<String>,
     /// `apertrust:entries`: each tool and operation it touched, with its whole state
-    /// after it, in the step's order.
+    /// after it, in the step's order; none for a step holding the styles applied alone.
     pub entries: Vec<Entry>,
+    /// `apertrust:styles`: the whole list of styles applied after it, newest first, where it
+    /// changed the list, empty where it emptied it; `None` where it left the list as it was
+    /// (decision 106).
+    pub styles: Option<Vec<AppliedStyle>>,
+}
+
+/// A style applied to the photo, an item of a step's list (decision 106): its name as
+/// applied, its file name in the styles folder then, and each tool it set, with that
+/// tool's whole state before it and after it, as version 1 writes a tool's entry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppliedStyle {
+    /// `apertrust:name`.
+    pub name: String,
+    /// `apertrust:file`, a file name, never a path, since the folder differs from one
+    /// computer to another.
+    pub file: String,
+    /// `apertrust:before`: each tool's state before the style, an entry with no values its
+    /// reset state.
+    pub before: Vec<Entry>,
+    /// `apertrust:after`: each tool's state the style left, the same tools in the same
+    /// order as `before`.
+    pub after: Vec<Entry>,
 }
 
 /// What a step says of itself.
@@ -410,6 +449,7 @@ impl Edits {
                     note: None,
                     batch: batch.clone(),
                     entries: vec![entry],
+                    styles: None,
                 });
             }
             copy.end = copy
@@ -704,6 +744,7 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
         "batch",
         "noteArgs",
         "entries",
+        "styles",
     ];
     let place = format!("step {step} of copy {copy}");
     unknown_fields(fields, &known, || place.clone(), problems);
@@ -793,6 +834,8 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
         }
     };
     let (message, words) = (note_text("noteMessage"), note_text("note"));
+    let styles = (own_node(fields, "styles"))
+        .map(|node| read_styles(node, (copy.as_str(), step.as_str()), &place, problems));
     let note = match (message, words) {
         (Some(message), words) => {
             if words.is_some() {
@@ -831,7 +874,80 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
                 read_entries(node)
             })
             .unwrap_or_default(),
+        styles,
     }
+}
+
+/// The styles applied a step's `apertrust:styles` holds, `copy` and `step` naming the step
+/// and `place` where it is, what cannot be read added to `problems` (decision 106): a list
+/// that is no `rdf:Seq`, a field of an item a save would drop, and what in an entry it
+/// would, as for `apertrust:entries`; and, as [`Problem::AppliedStyle`], an item that is no
+/// struct, which is left out, one lacking its name or file, or its before or after, a
+/// before and an after that are not the same tools' entries in the same order, and a name
+/// twice in the list.
+fn read_styles(
+    node: &Node,
+    (copy, step): (&str, &str),
+    place: &str,
+    problems: &mut Vec<Problem>,
+) -> Vec<AppliedStyle> {
+    let problem = |what| Problem::AppliedStyle {
+        copy: copy.to_owned(),
+        step: step.to_owned(),
+        what,
+    };
+    let place = format!("the styles of {place}");
+    let mut names = std::collections::HashSet::new();
+    let mut list = Vec::new();
+    for item in array_items(Some(node), ArrayKind::Seq, &place, "styles", problems) {
+        let Some(fields) = item.fields().filter(|_| item.qualifiers.is_empty()) else {
+            problems.push(problem("an item that is no struct"));
+            continue;
+        };
+        let known = ["name", "file", "before", "after"];
+        unknown_fields(fields, &known, || place.clone(), problems);
+        plain_fields(fields, &["name", "file"], &place, problems);
+        let mut entries = |local: &str| {
+            let node = own_node(fields, local)?;
+            array_items(Some(node), ArrayKind::Seq, &place, local, problems);
+            entry_problems(node, &place, problems);
+            Some(read_entries(node))
+        };
+        let (before, after) = (entries("before"), entries("after"));
+        // Both written, empty or not: one missing a save would add.
+        let missing = before.is_none() || after.is_none();
+        let text = |local: &str| own_field(fields, local).unwrap_or_default().to_owned();
+        let style = AppliedStyle {
+            name: text("name"),
+            file: text("file"),
+            before: before.unwrap_or_default(),
+            after: after.unwrap_or_default(),
+        };
+        if style.name.is_empty() || style.file.is_empty() {
+            problems.push(problem("a style with no name or file"));
+        }
+        if missing {
+            problems.push(problem("a style with no before or after"));
+        }
+        // Each entry a tool's, the same tools in the same order on both sides.
+        let tools = |entries: &[Entry]| -> Option<Vec<String>> {
+            (entries.iter())
+                .map(|entry| match entry {
+                    Entry::Tool { tool, .. } => Some(tool.clone()),
+                    Entry::Operation { .. } => None,
+                })
+                .collect()
+        };
+        match (tools(&style.before), tools(&style.after)) {
+            (Some(before), Some(after)) if before == after => {}
+            _ => problems.push(problem("a before and an after that are not the same tools")),
+        }
+        if !names.insert(style.name.clone()) {
+            problems.push(problem("a style's name twice"));
+        }
+        list.push(style);
+    }
+    list
 }
 
 /// A problem for what in a step's `apertrust:entries`, at `place`, a save would drop, by the
@@ -934,7 +1050,7 @@ fn copy_node(copy: &VirtualCopy) -> Node {
 }
 
 /// A step as a struct: its id, clock, source, note and batch, then its note's arguments
-/// where it has any, then its entries.
+/// where it has any, then its entries, then the styles applied where it changed them.
 fn step_node(step: &Step) -> Node {
     let mut fields = vec![own("id", &step.id)];
     fields.extend(step.clock.iter().flat_map(clock_fields));
@@ -965,5 +1081,28 @@ fn step_node(step: &Step) -> Node {
         Name::new("apertrust", NAMESPACE, "entries"),
         entry_list(&step.entries),
     ));
+    if let Some(styles) = &step.styles {
+        fields.push(Property::new(
+            Name::new("apertrust", NAMESPACE, "styles"),
+            Node::array(ArrayKind::Seq, styles.iter().map(style_node).collect()),
+        ));
+    }
     Node::structure(fields)
+}
+
+/// A style applied as a struct: its name and file, then its tools' entries before it and
+/// after it.
+fn style_node(style: &AppliedStyle) -> Node {
+    let entries = |local: &str, entries: &[Entry]| {
+        Property::new(
+            Name::new("apertrust", NAMESPACE, local),
+            entry_list(entries),
+        )
+    };
+    Node::structure(vec![
+        own("name", &style.name),
+        own("file", &style.file),
+        entries("before", &style.before),
+        entries("after", &style.after),
+    ])
 }

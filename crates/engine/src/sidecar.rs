@@ -296,6 +296,17 @@ fn from_edits(
     // A warning once, however many steps hold the same entry.
     let mut seen = HashSet::new();
     warnings.retain(|warning| seen.insert(warning.clone()));
+    // The styles applied a step holds (decision 106) are not kept by this reading yet: a
+    // field a save would drop, so the edit opens for viewing only.
+    let mut problems = file.problems.clone();
+    if let Some(copy) = file.copies.first() {
+        for step in copy.history.iter().filter(|step| step.styles.is_some()) {
+            problems.push(Problem::UnknownField {
+                place: format!("step {} of copy {}", step.id, copy.id),
+                field: "apertrust:styles".to_owned(),
+            });
+        }
+    }
     let log = Log::from_steps(steps, end);
     Loaded {
         edit: log.fold(),
@@ -303,7 +314,7 @@ fn from_edits(
         version: file.version,
         build: file.build.clone(),
         newer,
-        problems: file.problems.clone(),
+        problems,
         warnings,
         file,
     }
@@ -484,6 +495,7 @@ fn step_text(
         entries: (step.change.entries().iter())
             .map(|entry| entry_text(entry, operations, tools))
             .collect(),
+        styles: None,
     }
 }
 
@@ -1956,6 +1968,7 @@ pub(crate) mod tests {
             Problem::UnknownField { .. } => "unknown field",
             Problem::DuplicateStep { .. } => "duplicate step",
             Problem::ClockPastVector { .. } => "clock past vector",
+            Problem::AppliedStyle { .. } => "applied style",
         }
     }
 
@@ -2040,6 +2053,14 @@ pub(crate) mod tests {
                     r#"apertrust:when="2026-03-14T14:00:00.000Z""#,
                 ),
             ),
+            (
+                "applied style",
+                replaced(
+                    "</apertrust:entries>",
+                    "</apertrust:entries><apertrust:styles><rdf:Seq><rdf:li>Warm</rdf:li>\
+                     </rdf:Seq></apertrust:styles>",
+                ),
+            ),
         ]
     }
 
@@ -2048,7 +2069,7 @@ pub(crate) mod tests {
     #[test]
     fn every_problem_opens_the_edit_for_viewing_only() {
         let cases = damaged();
-        assert_eq!(cases.len(), 13, "one case of each kind of problem");
+        assert_eq!(cases.len(), 14, "one case of each kind of problem");
         for (name, xml) in cases {
             let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
             assert_eq!(loaded.newer, None, "{name}");
@@ -2067,6 +2088,23 @@ pub(crate) mod tests {
             assert!(view_only.to_string().contains(said), "{name}");
             assert_eq!(loaded.log.steps().len(), 5, "{name}");
         }
+    }
+
+    /// A step holding the styles applied (decision 106) is a field this reading does not keep
+    /// yet: the edit opens for viewing only rather than lose the list at its next save.
+    #[test]
+    fn a_step_holding_the_styles_applied_opens_the_edit_for_viewing_only() {
+        let xml = logged_xml().replacen(
+            "</apertrust:entries>",
+            "</apertrust:entries><apertrust:styles><rdf:Seq/></apertrust:styles>",
+            1,
+        );
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
+        let view_only = loaded.view_only().expect("for viewing only");
+        assert!(
+            matches!(&view_only.reason, Reason::Unreadable(Problem::UnknownField { field, .. }) if field == "apertrust:styles"),
+            "{view_only:?}"
+        );
     }
 
     /// A file that names its tools as nightly builds did before decision 4's rename,
