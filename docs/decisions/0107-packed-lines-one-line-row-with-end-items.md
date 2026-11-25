@@ -20,7 +20,7 @@ A definition has five shapes for these today: `Row::Pickers`, `Row::Buttons`, `R
 
 ## Decision
 
-**One line row replaces `Row::Pickers`, `Row::Buttons` and `Row::Action`, and an `end` list of a closed set of end items replaces the slider's quad.** The line row is `Row::Line { start, readout, end }`. Slider, Choice, Toggle and Setting rows carry an `end` list too. Built: the first step of the order below, the line row and `end` in place of the three rows and the quad, drawn as they were; the rest is planned. [gui.md](../gui.md#line-rows-and-end-items) holds the details.
+**One line row replaces `Row::Pickers`, `Row::Buttons` and `Row::Action`, and an `end` list of a closed set of end items replaces the slider's quad.** The line row is `Row::Line { start, readout, end }`. Slider, Choice, Toggle and Setting rows carry an `end` list too. Built: the first step of the order below, the line row and `end` in place of the three rows and the quad, drawn as they were, and the third, `Row::Fields` for a utility's settings with Export's pixels line moved to it; the rest is planned. [gui.md](../gui.md#line-rows-and-end-items) holds the details.
 
 1. **The line row.** `Row::Line { start, readout, end }`:
    - `start` is nothing, a label (a plain group's words, as `Row::Pickers`' label is), or a control (its label being darktable's reset label, double-clicked to reset it, as `Row::Buttons`' is).
@@ -113,7 +113,8 @@ A definition has five shapes for these today: `Row::Pickers`, `Row::Buttons`, `R
 - **`apertrust-tools`:**
   - `Row::Line`, `LineStart` and `End` replace `Row::Pickers`, `Row::Buttons`, `Row::Action`, `Quad` and `Button`; Slider, Choice, Toggle and Setting gain `end`.
   - The checks carry over: each picker in one place, a label never beside a readout, a line's label id unique among the tool's groups, `tabs` refused as an action id.
-  - Later, in order: end items' availability; `Published` with `ProcessingDefinition::publishes`, `ProcessingTool::publish` and an action's `reads`; `ProcessingTool::warning`; `Row::Fields`; `Compute` with `ProcessingTool::apply`; `View`; mode cursors in `ToolDefinition::cursors` and `CursorGroup::Geometry`; a tab strip's end items; `Picker::once`, with RGB levels.
+  - `Row::Fields`, its `Field`s and `Separator`, a utility's number settings, refused in a processing tool (`DefinitionError::Fields`) until Lens correction's port.
+  - Later, in order: end items' availability; `Published` with `ProcessingDefinition::publishes`, `ProcessingTool::publish` and an action's `reads`; `ProcessingTool::warning`; `Compute` with `ProcessingTool::apply`; `View`; mode cursors in `ToolDefinition::cursors` and `CursorGroup::Geometry`; a tab strip's end items; `Picker::once`, with RGB levels.
 - **The engine:** the published facts given to an action; the compute command and the view command with its fact, each with its first tool.
 - **`apertrust-ui`:** a line row drawing a start and end items; the warning sign in a slider's quad place; the fields row and its folding; buttons at a tab strip's end.
 - **The app:** one drawing path for end items; the generated actions and their kinds (decisions [0091](0091-context-menus-places-and-tools-items-as-actions.md) and [0098](0098-actions-and-shortcuts-after-darktable.md)) read from end items, each variant an action of its own.
