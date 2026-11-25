@@ -37,7 +37,7 @@ flowchart TB
         direction LR
         desktop["<b>Desktop UI</b><br/>egui, native"]
         web["<b>Web UI</b><br/>egui on wasm, later"]
-        mcp["<b>MCP server</b><br/>rmcp, for agents, later"]
+        mcp["<b>apertrust-mcp</b><br/>MCP over stdio, for agents, later"]
         cli["<b>apertrust-cli</b><br/>export, batch, scripts"]
     end
     protocol["<b>Session protocol</b><br/>commands in, events out<br/>in-process today; IPC, WebSocket or WebTransport later"]
@@ -110,12 +110,13 @@ Details: [session-protocol.md](session-protocol.md) (the commands, their numberi
 
 ## Programs
 
-Two binaries, built from the same engine crates (decision 6):
+Three binaries, built from the same engine crates (decisions 6 and 108):
 
-- **`apertrust`:** the desktop GUI (egui), with the engine in-process. It can also expose an MCP endpoint, so agents can drive the open editing session.
-- **`apertrust-cli`:** headless, with subcommands: `export` (render edits to files, like `darktable-cli`), `batch` (apply styles or presets to many images), `info` (metadata and edit summary), `serve` (the server: the engine for web and tablet clients, decision 58, and, later, if asked, sync of the desktop app's photos with a NAS, decision 71) and `mcp` (MCP over stdio for local agents). It runs without a display, on a software GPU where there is no hardware one (decision 7).
+- **`apertrust`:** the desktop GUI (egui), with the engine in-process. Planned for Phase 6: while the person allows assistants, it serves its session to `apertrust-mcp` over a local channel only the user's own account reaches, so agents edit the open photo live, in the same history.
+- **`apertrust-cli`:** headless, with subcommands: `export` (render edits to files, like `darktable-cli`), `batch` (apply styles or presets to many images), `info` (metadata and edit summary) and `serve` (the server: the engine for web and tablet clients, decision 58, and, later, if asked, sync of the desktop app's photos with a NAS, decision 71). It runs without a display, on a software GPU where there is no hardware one (decision 7).
+- **`apertrust-mcp`,** planned for Phase 6: the MCP server an agent's MCP client launches, speaking MCP over stdio and joining the running app's session as a remote client of the session protocol, or with `--headless` running a session of its own. The app never speaks MCP ([session-protocol.md](session-protocol.md#agents)).
 
-The server and MCP parts are library crates used by these two executables, not separate programs.
+The server is a library crate the CLI runs, not a program of its own; `apertrust-mcp` is a library and its binary.
 
 ## Crates
 
@@ -131,7 +132,7 @@ The server and MCP parts are library crates used by these two executables, not s
 | `apertrust-raw` | Raw decoding with rawler, wrapped in Apertrust's own types | Phase 0 |
 | `apertrust-base` | What every program sets up as it starts: logging and the banner, the version, folders, settings, the safe write, jobs and, planned, the disk cache (decision 76), each behind a feature ([settings.md](settings.md#where-it-lives)) | Phase 2 |
 | `apertrust-export` | What an export writes and where, with no GPU: the export settings, darktable's size computation and variables, the file-on-disk rules, the JPEG and PNG writers (decision 56) | Phase 2 |
-| `apertrust-display` | The window's platform code where wgpu and winit stop: display colour ([gui.md](gui.md#display-colour)), the window frame (decision 39), the Mac's native popup menus (decision 40), dialogs and alerts (decision 41), Windows' named pipe and Linux's peer credentials for the single-instance hand-off (decision 89); an FFI crate allowed `unsafe` | Phase 0 |
+| `apertrust-display` | The window's platform code where wgpu and winit stop: display colour ([gui.md](gui.md#display-colour)), the window frame (decision 39), the Mac's native popup menus (decision 40), dialogs and alerts (decision 41), Windows' named pipe and Linux's peer credentials for the single-instance hand-off (decision 89) and, planned, the assistants' channel beside it (decision 108); an FFI crate allowed `unsafe` | Phase 0 |
 | `apertrust-tools` | Tool definitions, bindings, transfer functions, their values and the built-in tools, depending on `apertrust-plugin`, `apertrust-color` and `apertrust-base`'s settings part, for the statics of its tools' settings (decisions 28 and 43), and on no egui, wgpu, engine or operation crate | Phase 2 |
 | `apertrust-library` | One photo, folders and optional Libraries in four layers (decisions 54 and 101): the `.apxmp` text layer and the XMP layer, the library's TOML files, the model, one `Index`, and the operations; no GPU and no engine dependency; reached through the session protocol, never read by a client directly | Phase 2 |
 | `apertrust-ui` | The design system: tokens and themes, fonts, icons, components and their gallery, translation in an egui-free `i18n` module; no engine or tool types ([gui.md](gui.md), decision 36) | Phase 2 |
@@ -139,7 +140,8 @@ The server and MCP parts are library crates used by these two executables, not s
 | `apertrust-golden` | The golden-image harness: per-operation cases and the whole-pipeline test | Phase 0 |
 | `apertrust-fs` | Planned only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover: bulk listing, cloud placeholders' flags, macOS's materialisation turned off, later `NSFileVersion`; an FFI crate allowed `unsafe` (decisions 53 and 65) | Phase 2, if needed |
 | `apertrust-protocol` | The session's commands and events, once a client must compile them without the engine (decision 58) | When needed |
-| `apertrust-server`, `apertrust-mcp` | The server: the engine for remote clients (decision 58) and, later, if asked, sync (decision 71); and agent access | Phases 6 and 7; sync later, if asked |
+| `apertrust-server` | The server: the engine for remote clients (decision 58) and, later, if asked, sync (decision 71) | Phase 7; sync later, if asked |
+| `apertrust-mcp` | Agent access: a library and its binary, MCP over stdio through `rmcp`, joining the app's session over a local channel or running one with `--headless` (decision 108) | Phase 6 |
 
 Each crate's state, what is built and what is planned, is in [crates.md](crates.md).
 
@@ -228,7 +230,7 @@ Details: [layers.md](layers.md), with the scene and display domains.
 
 ### AI, agents and matching
 
-Models run through ONNX Runtime's WebGPU execution provider, vendor providers as optional packs (decision 60). Agents connect through MCP, a thin client of the session protocol, and change the photo only through tools, in the history like a person's edits. The pipeline's derivatives are to fit editable tool values to a reference photo, Phase 3's first engine work (decision 11).
+Models run through ONNX Runtime's WebGPU execution provider, vendor providers as optional packs (decision 60). Agents are to connect, in Phase 6, through `apertrust-mcp`, a thin MCP adapter over the session protocol that joins the app's session while the person allows it, changing the photo only through tools, in the history like a person's edits (decision 108). The pipeline's derivatives are to fit editable tool values to a reference photo, Phase 3's first engine work (decision 11).
 
 Details: [ai.md](ai.md).
 
@@ -253,7 +255,7 @@ Details: [session-protocol.md, Web, tablets and remote access](session-protocol.
 | Desktop app | Apertrust, binary `apertrust` |
 | Command-line tool | `apertrust-cli` |
 | Headless server | `apertrust-server`, a library run by `apertrust-cli serve` |
-| MCP server | `apertrust-mcp`, a library used by the GUI and `apertrust-cli mcp` |
+| MCP server | `apertrust-mcp`, a library and its binary, joining the app's session (decision 108) |
 | Web client | Apertrust Web |
 | Session protocol | `apertrust-protocol`, a module of the engine until a client must compile it without the engine (decision 58) |
 | Edit files | `.apxmp` and `.apdata` sidecars; the `.apxmp` format is `apertrust-library`'s `sidecar` module (decision 54) |

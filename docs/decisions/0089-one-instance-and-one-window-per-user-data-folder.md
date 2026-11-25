@@ -14,6 +14,7 @@ The questions: how many processes and main windows run on one folder; how a seco
 - An open from outside replaces the window's place, as [0046](0046-sidecars-are-the-truth-folder-mode-library-and-project.md) has it.
 - Several main windows are not planned (Options considered).
 - The single-instance hand-off is built, but for the switch test's measurement, which waits for Windows.
+- Planned, a second channel beside the hand-off, for assistants, with its own name and format, bound only while they are allowed; a headless `apertrust-mcp` holds the lock while it runs ([0108](0108-agents-through-apertrust-mcp-joining-the-apps-session.md)).
 
 ### The lock
 

@@ -173,6 +173,8 @@ Every package holds `apertrust-cli` beside the app:
 - **Windows**: `apertrust-cli.exe` in the install folder, `%LOCALAPPDATA%\Programs\Apertrust`, or in the zip's folder; add the folder to the user's `Path` to run it anywhere.
 - **Linux**: `/usr/bin/apertrust-cli` from the `.deb` or the `.rpm`, on the `PATH`; the tarball's `bin/apertrust-cli`. The AppImage starts the app; its CLI is in `usr/bin` once extracted with `--appimage-extract`.
 
+Planned with MCP (Phase 6; decision 108): `apertrust-mcp`, the MCP server an agent's client launches, beside `apertrust-cli` in every package, in the same places. In Flatpak and Snap the assistants' channel is a socket file in a runtime folder the sandbox shares, decided with those packages ([session-protocol.md](session-protocol.md#the-local-channel)).
+
 ## Unsigned packages
 
 The packages are not signed with a developer's certificate yet, so each system warns the first time:

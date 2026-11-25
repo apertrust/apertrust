@@ -315,11 +315,12 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): the spaces other than the operation's own; stored samples and `Event::Samples`; a pick's change of source Auto, with history.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
+- **The protocol for agents** (decision 108; [session-protocol.md](session-protocol.md#agents)). Planned now: `Command`, `Event` and what they carry serializable with serde, every command and event to JSON and back in a test, `Frame`'s GPU buffer excepted (108.1); `Command::access()`, returning `Access`, each command's class through an exhaustive match beside `on_edit`: `View`, `EditOpenPhoto`, `Photos`, `Export` or `Organise`, or `Person` for the commands never granted to an agent (108.2). With MCP (Phase 6): each command's `ClientId`, per-client facts, `Render`, `Step`'s `seen`, `Picker(Once)`'s source and note, and the refusals `GestureUnderway`, `Stale`, `NotOwnChange`, `NoAccess` and `PickerInUse`.
 - **The cache** (decision 76): rendered thumbnails for photos other than the live one; eviction paused by an export; with the library's step 23, `CacheCommand::Remove { index }`, a `cache-clear` job, and each kept index in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
 
-The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `import` (with the library's step 20a, decision 85), `batch`, `serve` and `mcp` are planned. AGENTS.md's Commands list shows how to run each.
+The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `import` (with the library's step 20a, decision 85), `batch` and `serve` are planned; MCP is a program of its own, `apertrust-mcp` (decision 108). AGENTS.md's Commands list shows how to run each.
 
 ### Options for every command
 
@@ -1160,7 +1161,7 @@ The window's platform code, an FFI crate that may use `unsafe`. On macOS:
 
 On every platform, `reduce_motion` reads the system's preference for less motion: on macOS `NSWorkspace.accessibilityDisplayShouldReduceMotion`, on Windows `SPI_GETCLIENTAREAANIMATION`; on Linux it is not read, GNOME's `enable-animations` needing GIO or D-Bus, so it says no.
 
-**Planned** (decision 41): Windows' task dialog and owner disabling; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`.
+**Planned** (decision 41): Windows' task dialog and owner disabling; X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`. With MCP (decision 108, Phase 6): the app's side of the assistants' channel beside the hand-off, `apertrust-mcp`'s checks of the server placed with that crate by decision 65's rule, so it never links the window's code: Windows' pipe `\\.\pipe\apertrust-mcp-<hash>` with `PIPE_REJECT_REMOTE_CLIENTS`, a security descriptor for the current user alone and the client's token checked, and macOS's per-user temporary folder (`confstr(_CS_DARWIN_USER_TEMP_DIR)`) and a socket peer's user (`getpeereid`), where the standard library has none ([session-protocol.md](session-protocol.md#the-local-channel)).
 
 ## Operation crates
 
@@ -1798,4 +1799,5 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
   - later, `NSFileVersion`;
   - Windows' hidden attribute on a folder's `.apertrust/` (decision 101), `SetFileAttributesW`, which no safe call in the standard library or the `windows` crate gives: set only from here, never as the crate's reason to exist, so without it `.apertrust/` stays visible in Explorer, as `.git` does.
   - The safe write, with Windows' retries, is built in `apertrust-base`'s `fs`.
-- **`apertrust-protocol`, `apertrust-server`, `apertrust-mcp`**: the session protocol, the server (the engine for the web client, and sync for the desktop app, later, if asked, decision 71) and MCP, in later phases. The protocol is a module of the engine until a client must compile it without the engine (decision 59).
+- **`apertrust-protocol`, `apertrust-server`**: the session protocol and the server (the engine for the web client, and sync for the desktop app, later, if asked, decision 71), in later phases. The protocol is a module of the engine until a client must compile it without the engine (decision 59).
+- **`apertrust-mcp`**, Phase 6 (decision 108; [session-protocol.md](session-protocol.md#agents)): a library and its binary, `apertrust-mcp`, the MCP server an agent's MCP client launches. It speaks MCP over stdio through `rmcp`, its stdout JSON-RPC alone, and the session protocol to the running app over the local channel, or with `--headless` runs a session of its own in its process, holding the user data folder's `instance.lock`; `--access` names the level of access it asks for and the MCP tools it lists, `view` by default. Its MCP tools are generated from the tools' definitions and `LibraryCommand`'s schema, each with a real JSON Schema, grouped by level of access.
