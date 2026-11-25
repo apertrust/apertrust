@@ -753,10 +753,10 @@ fn values(state: &ToolState) -> Controls {
     values
 }
 
-/// Shows each control's availability as the session will report it now that the values
-/// `state` shows have moved from `before`: where the tool's `available` answers
-/// otherwise for them than for `before`, the control shows the new answer, never
-/// available for a control not ported; every other control shows what the session
+/// Shows each control's availability, and each action's at a row's end, as the session
+/// will report it now that the values `state` shows have moved from `before`: where the
+/// tool's `available` answers otherwise for them than for `before`, the control or the
+/// action shows the new answer, never available for one not ported; every other control shows what the session
 /// reported, on the same image context (`PhotoState::image`, the session's `Photo`'s). A
 /// tool whose `available` panics leaves every control as reported, as `view` and
 /// `unview` panicking leave the values. Either way a choice whose photo lists only the
@@ -784,6 +784,22 @@ fn follow_availability(
     if let Ok(moved) = moved {
         for (id, available) in moved {
             if let Some(shown) = control_mut(state, id) {
+                shown.available = available;
+            }
+        }
+    }
+    // An action at a row's end follows the same rule by its id (decision 107).
+    let ends: Vec<&ActionEnd> = tool.definition().action_ends().collect();
+    let moved = catch_unwind(AssertUnwindSafe(|| {
+        let moved = ends.iter().filter_map(|end| {
+            let now = tool.available(end.id, &after, image);
+            (now != tool.available(end.id, before, image)).then_some((end.id, now && !end.unported))
+        });
+        moved.collect::<Vec<_>>()
+    }));
+    if let Ok(moved) = moved {
+        for (id, available) in moved {
+            if let Some(shown) = state.actions.iter_mut().find(|shown| shown.id == id) {
                 shown.available = available;
             }
         }
@@ -1800,9 +1816,12 @@ enum EndWords<'a> {
 }
 
 impl<'a> Page<'a> {
-    /// Whether the action can run now: the photo takes edits and it is ported.
+    /// Whether the action can run now: the photo takes edits, it is ported, and the tool's
+    /// rule allows it on the values shown, as the session reports it with the tool's state
+    /// and the pending display follows it (decision 107).
     fn runs(&self, action: &ActionEnd) -> bool {
-        self.editable && !action.unported
+        let reported = (self.state.actions.iter()).find(|state| state.id == action.id);
+        self.editable && !action.unported && reported.is_none_or(|state| state.available)
     }
 
     /// What pressing the action `id` asks: the tool's action on the values shown.
@@ -3439,6 +3458,7 @@ mod tests {
     use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
     use super::*;
+    use apertrust_engine::session::ActionState;
 
     /// The point `at` of the way along a slider's `track`, as the marker travels it: short of
     /// each end by the marker's stop (decision 75).
@@ -3475,6 +3495,7 @@ mod tests {
             views: views(tool),
             computed: Vec::new(),
             readouts: Vec::new(),
+            actions: Vec::new(),
         };
         state.presets = presets(tool, &state);
         report_availability(tool, &mut state);
@@ -3501,6 +3522,12 @@ mod tests {
         for (control, shown) in tool.definition().controls.iter().zip(&mut state.controls) {
             shown.available = !control.unported && tool.available(control.id, &values, &image);
         }
+        state.actions = (tool.definition().action_ends())
+            .map(|end| ActionState {
+                id: end.id,
+                available: !end.unported && tool.available(end.id, &values, &image),
+            })
+            .collect();
     }
 
     /// A header's tooltip: a utility edits nothing and says what it measures, whatever

@@ -2260,6 +2260,7 @@ mod tests {
             photo: true,
             waiting: false,
             editable: true,
+            tool_actions: u64::MAX,
             view_only: false,
             edited: true,
             styles: true,

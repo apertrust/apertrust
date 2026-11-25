@@ -81,6 +81,7 @@ pub(crate) fn state_of(tool: &dyn ProcessingTool) -> ToolState {
         views: Vec::new(),
         computed: Vec::new(),
         readouts: Vec::new(),
+        actions: Vec::new(),
     }
 }
 

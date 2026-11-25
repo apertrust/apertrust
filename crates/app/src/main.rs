@@ -3507,6 +3507,7 @@ impl Shell {
             // The app's, from the session's mirror ([`App::shell_state`]).
             waiting: false,
             editable: false,
+            tool_actions: 0,
             view_only: false,
             edited,
             // The app's, from the photo's edit ([`App::shell_state`]).
@@ -6052,6 +6053,7 @@ impl App {
             shown: !self.mirror.folder.order().is_empty(),
             waiting: self.mirror.photo.asked().is_some() && !self.mirror.live(),
             editable: takes && self.mirror.live(),
+            tool_actions: actions::tool_action_bits(&self.mirror.values.tools),
             view_only: self.view_only(),
             styles: styles::can_create(&self.mirror) && self.shell.presets.styles().is_some(),
             opened: opened(&self.mirror),
@@ -10848,6 +10850,7 @@ mod tests {
                     views,
                     computed: Vec::new(),
                     readouts: Vec::new(),
+                    actions: Vec::new(),
                 }],
                 settings: Vec::new(),
                 edited,
@@ -11013,6 +11016,7 @@ mod tests {
                     .collect(),
                 computed: Vec::new(),
                 readouts: Vec::new(),
+                actions: Vec::new(),
             }],
             settings: Vec::new(),
             edited: false,
@@ -14687,6 +14691,7 @@ mod tests {
             views: Vec::new(),
             computed: Vec::new(),
             readouts: Vec::new(),
+            actions: Vec::new(),
         };
         // Its Shape tab, where the Midtones group is.
         let mut panels = tools::Panels::default();
@@ -14798,6 +14803,7 @@ mod tests {
             views: Vec::new(),
             computed: Vec::new(),
             readouts: Vec::new(),
+            actions: Vec::new(),
         };
         let mut mirror = crate::mirror::tests::mirror();
         mirror.apply(Event::Opened(crate::mirror::tests::photo(1)));
@@ -20159,6 +20165,7 @@ mod tests {
                     let (photo, picking) = (surround.photo, surround.picking);
                     let state = State {
                         editable: photo.is_some(),
+                        tool_actions: u64::MAX,
                         ..shell.state(&ctx, photo.is_some(), photo.is_some())
                     };
                     // At Fit the photo area is the whole photo.
@@ -20298,6 +20305,7 @@ mod tests {
         assert_eq!(shell.tool_action, None);
         let state = State {
             editable: true,
+            tool_actions: u64::MAX,
             ..state
         };
         assert_eq!(shell.run(rotate, &state, &ctx, &[]), None);
