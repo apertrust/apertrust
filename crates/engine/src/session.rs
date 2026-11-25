@@ -1852,7 +1852,10 @@ impl Drop for Session {
 /// Before it writes the live photo's sidecar, it compares the file's size and modified
 /// time with those the session last read or it last wrote (`docs/history.md`, Behaviour):
 /// where they differ, another program wrote it, so it writes nothing, keeps the newer file
-/// as it reads it for the engine ([`Writer::take_newer`]) and wakes it.
+/// as it reads it for the engine ([`Writer::take_newer`]) and wakes it. A photo that is not
+/// live is written over its sidecar as read, by size, modified time and hash, as
+/// `apertrust-cli edit` writes ([`Writer::write_over`], decision 109). Each file keeps its own
+/// generation, so a write is dropped only for its own file's sake.
 struct Writer {
     jobs: Option<mpsc::Sender<Order>>,
     state: Arc<(Mutex<Writes>, Condvar)>,
@@ -1865,6 +1868,9 @@ struct Writer {
 /// What the writer is asked, in order.
 enum Order {
     Write(Job),
+    /// Write a photo that is not live over its sidecar as read, once the writes before are
+    /// done.
+    WriteOver(WriteOver),
     /// Read these sidecars, once the writes before are done, and answer with them.
     Read {
         paths: Vec<PathBuf>,
@@ -1889,8 +1895,9 @@ struct Job {
     /// Whether the file holds it already, as the edit a cancelled gesture puts back
     /// (decision 42): reported saved, and written only after a failed write.
     held: bool,
-    /// The [`Files::generation`] it was handed over in: one handed before a newer file was
-    /// taken in, or before another photo, is dropped unwritten.
+    /// Its file's generation as it was handed over ([`Files::generation`]): one handed
+    /// before a newer file of it was taken in, or before its photo was watched or left, is
+    /// dropped unwritten.
     generation: u64,
     /// What the file holds once it is written, which a newer file is then compared with.
     base: Arc<history::Base>,
@@ -1928,13 +1935,52 @@ struct Files {
     known: Option<(PathBuf, Option<Stamp>)>,
     /// What it holds as the session last read it or the writer last wrote it.
     base: Arc<history::Base>,
-    /// Raised as another photo is watched and as a newer file is taken: a write handed over
-    /// before is dropped unwritten.
-    generation: u64,
+    /// Each file's generation, kept by file (decision 109), raised as its photo is watched
+    /// or left and as a newer file of it is taken: a write of that file handed over before
+    /// is dropped unwritten, and no other file's.
+    generations: BTreeMap<PathBuf, u64>,
     /// The file as read where a write found it changed, for the engine.
     newer: Option<(PathBuf, Snapshot)>,
     /// Told when a write finds it changed.
     on_newer: Option<Arc<dyn Fn() + Send + Sync>>,
+}
+
+impl Files {
+    /// The file at `path`'s generation, 0 for one never raised.
+    fn generation(&self, path: &Path) -> u64 {
+        self.generations.get(path).copied().unwrap_or_default()
+    }
+
+    /// Raises the file at `path`'s generation: its writes handed over before are dropped.
+    fn raise(&mut self, path: &Path) {
+        *self.generations.entry(path.to_owned()).or_default() += 1;
+    }
+}
+
+/// A write over a sidecar as it was read (decision 109), of a photo that is not live: made
+/// only where the file still has the stamp `read`, `None` for no file, answered on `answer`.
+struct WriteOver {
+    path: PathBuf,
+    xml: String,
+    read: Option<sidecar::FileStamp>,
+    /// Its file's generation as it was handed over: raised since, as its photo opened, the
+    /// write is dropped.
+    generation: u64,
+    answer: mpsc::Sender<Over>,
+}
+
+/// How a write over a sidecar as it was read ended ([`Writer::write_over`]).
+#[derive(Debug)]
+pub(crate) enum Over {
+    /// Written.
+    Written,
+    /// The file changed since it was read: nothing written, for the caller to read again.
+    Changed,
+    /// Its photo was watched, or a newer file of it taken, since it was handed over: nothing
+    /// written.
+    Dropped,
+    /// The file could not be looked at or written.
+    Failed(io::Error),
 }
 
 impl Writer {
@@ -1986,6 +2032,13 @@ impl Writer {
                                 }
                                 continue;
                             }
+                            Order::WriteOver(over) => {
+                                // After the edits handed over before.
+                                let pending = std::mem::take(&mut writes);
+                                write_edits(pending, &shared, &known, &outbox);
+                                write_over(over, &shared, &known);
+                                continue;
+                            }
                             Order::Read { paths, answer } => (paths, answer),
                             #[cfg(test)]
                             Order::Hold(permit) => {
@@ -2023,7 +2076,7 @@ impl Writer {
         let Some(jobs) = &self.jobs else {
             return;
         };
-        let generation = self.files().generation;
+        let generation = self.files().generation(&path);
         *self.lock().pending.entry(path.clone()).or_default() += 1;
         let _ = jobs.send(Order::Write(Job {
             path,
@@ -2033,6 +2086,40 @@ impl Writer {
             generation,
             base: Arc::new(base),
         }));
+    }
+
+    /// Hands over the edit of a photo that is not live, `xml`, to write to `path` over the
+    /// file as it was read, `read` its stamp, `None` for no file (decision 109): once the
+    /// edits handed over before are written, it is written only where the file still has
+    /// that stamp, its size, modified time and hash, through the safe write. Never coalesced
+    /// with another write of the file, and dropped where the file's generation rises before
+    /// it is written, as its photo opens. What this returns hears how it ended, or that the
+    /// writer has gone.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the apply-style job's, #373's next step")
+    )]
+    fn write_over(
+        &self,
+        path: PathBuf,
+        xml: String,
+        read: Option<sidecar::FileStamp>,
+    ) -> mpsc::Receiver<Over> {
+        let (answer, answered) = mpsc::channel();
+        let Some(jobs) = &self.jobs else {
+            return answered;
+        };
+        let generation = self.files().generation(&path);
+        *self.lock().pending.entry(path.clone()).or_default() += 1;
+        let over = WriteOver {
+            path,
+            xml,
+            read,
+            generation,
+            answer,
+        };
+        let _ = jobs.send(Order::WriteOver(over));
+        answered
     }
 
     /// Reads the sidecars at `paths` for an export's snapshot, once every edit handed over
@@ -2149,12 +2236,17 @@ impl Writer {
 
     /// Keeps the saved hash of `live`'s writes alone from now on, the live photo's sidecar,
     /// or of none as a photo closes; `stamp` is its size and modified time as the session
-    /// read it, which the next write compares, and `base` what it holds.
+    /// read it, which the next write compares, and `base` what it holds. The writes handed
+    /// over before of the sidecar it leaves and of the one it watches are dropped, and no
+    /// other file's (decision 109).
     fn watch(&self, live: Option<(&Path, Option<Stamp>, history::Base)>) {
         let path = live.as_ref().map(|(path, ..)| path.to_path_buf());
         {
             let mut files = self.files();
-            files.generation += 1;
+            let left = files.known.as_ref().map(|(left, _)| left.clone());
+            for raised in left.iter().chain(&path) {
+                files.raise(raised);
+            }
             files.newer = None;
             files.known = None;
             files.base = Arc::default();
@@ -2170,14 +2262,15 @@ impl Writer {
     }
 
     /// The live photo's sidecar, at `path`, as a write that found it changed read it, once.
-    /// Every write handed over before is dropped unwritten; the stamp the writer compares
-    /// stays as it was until the session takes the file in ([`Writer::adopt`]).
+    /// Every write of it handed over before is dropped unwritten, and no other file's; the
+    /// stamp the writer compares stays as it was until the session takes the file in
+    /// ([`Writer::adopt`]).
     fn take_newer(&self, path: &Path) -> Option<Snapshot> {
         let mut files = self.files();
         if files.newer.as_ref().is_none_or(|(at, _)| at != path) {
             return None;
         }
-        files.generation += 1;
+        files.raise(path);
         files.newer.take().map(|(_, snapshot)| snapshot)
     }
 
@@ -2196,12 +2289,64 @@ impl Writer {
     }
 }
 
+/// Counts `count` edits of `path` as done, and tells the engine, which may wait for them.
+fn done(shared: &(Mutex<Writes>, Condvar), path: &Path, count: usize) {
+    let (lock, written) = shared;
+    let mut state = lock.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(left) = state.pending.get_mut(path) {
+        *left = left.saturating_sub(count);
+        if *left == 0 {
+            state.pending.remove(path);
+        }
+    }
+    written.notify_all();
+}
+
+/// Writes a photo that is not live over its sidecar as read (decision 109), and answers how
+/// it ended: dropped where its file's generation rose since it was handed over, as its photo
+/// opened; else written through the safe write only where the file still has the stamp
+/// read, its size, modified time and hash, as `apertrust-cli edit` writes. No file is read,
+/// looked at or written while a lock is held.
+fn write_over(over: WriteOver, shared: &(Mutex<Writes>, Condvar), files: &Mutex<Files>) {
+    let WriteOver {
+        path,
+        xml,
+        read,
+        generation,
+        answer,
+    } = over;
+    let name = sidecar::file_name(&path);
+    let current = (files.lock().unwrap_or_else(PoisonError::into_inner)).generation(&path);
+    let over = if generation < current {
+        tracing::debug!(target: "pipe", "{name}: a write handed over before its photo opened, dropped");
+        Over::Dropped
+    } else {
+        match sidecar::FileStamp::read(&path) {
+            Err(error) => Over::Failed(error),
+            Ok(now) if now != read => {
+                tracing::debug!(target: "pipe", "{name} changed since it was read: not written");
+                Over::Changed
+            }
+            Ok(_) => match apertrust_base::fs::write_metadata(&path, xml.as_bytes()) {
+                Ok(_) => Over::Written,
+                Err(error) => Over::Failed(error),
+            },
+        }
+    };
+    if let Over::Failed(error) = &over {
+        tracing::warn!(target: "pipe", "cannot save {}: {error}", path.display());
+    }
+    // A caller that has gone hears nothing.
+    let _ = answer.send(over);
+    done(shared, &path, 1);
+}
+
 /// Writes the latest edit of each file in `writes`, with how many edits each stands for,
 /// telling the client of each and the engine, which may wait for one, once it is done. A
-/// job handed over before the live photo's sidecar was taken in, or another photo watched,
-/// is dropped; one that finds the file changed since the session read it or this wrote it,
-/// held or not, writes nothing and leaves the file for the engine. No file is read, looked
-/// at or written while a lock is held.
+/// job handed over before the live photo's sidecar was taken in, or before its photo was
+/// watched or left, is dropped, and no other file's; one that finds the file changed since
+/// the session read it or this wrote it, held or not, writes nothing and leaves the file for
+/// the engine. No file is read, looked at or written while a lock is held.
 fn write_edits(
     writes: Vec<(Job, usize)>,
     shared: &(Mutex<Writes>, Condvar),
@@ -2209,18 +2354,7 @@ fn write_edits(
     outbox: &Outbox,
 ) {
     let lock_files = || files.lock().unwrap_or_else(PoisonError::into_inner);
-    // Counts the edits as done, and tells the engine, which may wait for them.
-    let done = |path: &Path, count: usize| {
-        let (lock, written) = shared;
-        let mut state = lock.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(left) = state.pending.get_mut(path) {
-            *left = left.saturating_sub(count);
-            if *left == 0 {
-                state.pending.remove(path);
-            }
-        }
-        written.notify_all();
-    };
+    let done = |path: &Path, count: usize| done(shared, path, count);
     for (
         Job {
             path,
@@ -2239,7 +2373,7 @@ fn write_edits(
             let files = lock_files();
             let known =
                 (files.known.as_ref()).and_then(|(at, stamp)| (*at == path).then_some(*stamp));
-            (files.generation, known)
+            (files.generation(&path), known)
         };
         if generation < current {
             tracing::debug!(target: "pipe", "{name}: a write handed over before the file was taken in, dropped");
@@ -2263,7 +2397,7 @@ fn write_edits(
             let snapshot = Snapshot::read(&path);
             let told = {
                 let mut files = lock_files();
-                (files.generation == generation).then(|| {
+                (files.generation(&path) == generation).then(|| {
                     files.newer = Some((path.clone(), snapshot));
                     files.on_newer.clone()
                 })
@@ -2329,7 +2463,7 @@ fn write_edits(
             // hold it up.
             let stamp = written_stamp(&path, stamp);
             let mut files = lock_files();
-            if files.generation == generation
+            if files.generation(&path) == generation
                 && let Some((at, known)) = &mut files.known
                 && *at == path
             {
@@ -11616,16 +11750,108 @@ mod tests {
             let mut files = writer.files();
             writer.lock().pending.insert(path.clone(), 1);
             let stale = Job {
-                generation: files.generation,
+                generation: files.generation(&path),
                 ..job(&path, 1, false)
             };
             jobs.send(Order::Write(stale)).unwrap();
             // Taken in before the writer reaches the write.
-            files.generation += 1;
+            files.raise(&path);
         }
         writer.flush(Some(&path));
         assert_eq!(std::fs::read(&path).unwrap(), b"another program's");
         assert!(!writer.failed(&path));
+        remove(&photo);
+    }
+
+    /// How a write over a sidecar as read ended, once the writer answers.
+    fn answered(over: mpsc::Receiver<Over>) -> Over {
+        over.recv_timeout(TEST_WAIT).expect("the writer answers")
+    }
+
+    /// A photo that is not live is written over its sidecar as read, by its size, modified
+    /// time and hash, as `apertrust-cli edit` writes (decision 109): never over a file
+    /// another program wrote since, one that kept the size and set the time back among
+    /// them, nor over one that cannot be read.
+    #[test]
+    fn a_write_over_the_file_as_read_is_made_only_over_that_file() {
+        let photo = scratch("write-over");
+        let path = sidecar::path_for(&photo);
+        let (sent, _saved) = outbox::channel(Arc::new(|| {}));
+        let writer = Writer::start(sent);
+        // As the job reads it, through the writer after the writes handed over before.
+        let read = |writer: &Writer| {
+            let mut read = writer.read(vec![path.clone()]).recv_timeout(TEST_WAIT);
+            read.as_mut().unwrap().remove(0).file_stamp()
+        };
+        // No file as read and none since: written.
+        let stamp = read(&writer);
+        assert_eq!(stamp, None);
+        let over = writer.write_over(path.clone(), "<ours/>".to_owned(), stamp);
+        assert!(matches!(answered(over), Over::Written));
+        assert_eq!(std::fs::read(&path).unwrap(), b"<ours/>");
+        // As read: written.
+        let stamp = read(&writer);
+        let over = writer.write_over(path.clone(), XML.to_owned(), stamp);
+        assert!(matches!(answered(over), Over::Written));
+        assert_eq!(std::fs::read(&path).unwrap(), XML.as_bytes());
+        // Another program's bytes of the same size, the modified time set back as it was.
+        std::fs::write(&path, b"<ours/>").unwrap();
+        let stamp = read(&writer);
+        let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        std::fs::write(&path, b"<them/>").unwrap();
+        let file = std::fs::File::options().write(true).open(&path).unwrap();
+        file.set_modified(modified).unwrap();
+        drop(file);
+        let over = writer.write_over(path.clone(), XML.to_owned(), stamp);
+        assert!(matches!(answered(over), Over::Changed));
+        assert_eq!(std::fs::read(&path).unwrap(), b"<them/>");
+        // No file as read, one written since.
+        std::fs::remove_file(&path).unwrap();
+        let stamp = read(&writer);
+        std::fs::write(&path, b"<them/>").unwrap();
+        let over = writer.write_over(path.clone(), XML.to_owned(), stamp);
+        assert!(matches!(answered(over), Over::Changed));
+        assert_eq!(std::fs::read(&path).unwrap(), b"<them/>");
+        // A folder in its place, which cannot be read: nothing written over it.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let over = writer.write_over(path.clone(), XML.to_owned(), None);
+        assert!(matches!(answered(over), Over::Failed(_)));
+        assert!(path.is_dir());
+        remove(&photo);
+    }
+
+    /// The writer's generation is kept by file (decision 109): while a write over the
+    /// sidecar of a photo that is not live waits, the live photo's newer file taken in and
+    /// another photo opened drop none of it, and only its own photo's open drops its write.
+    #[test]
+    fn another_file_s_generation_drops_no_write_over_a_file_as_read() {
+        let photo = scratch("write-over-generations");
+        let live = sidecar::path_for(&photo);
+        let other = photo.with_file_name("other.ARW.apxmp");
+        let opened = photo.with_file_name("opened.ARW.apxmp");
+        let base = crate::session::history::Base::default;
+        std::fs::write(&live, XML).unwrap();
+        let (sent, _saved) = outbox::channel(Arc::new(|| {}));
+        let writer = Writer::start(sent);
+        writer.watch(Some((&live, Stamp::of(&live), base())));
+        // Another program writes the live photo's sidecar, which a write finds.
+        std::fs::write(&live, b"another program's, longer").unwrap();
+        writer.write(live.clone(), XML.to_owned(), 1, false, base());
+        writer.flush(None);
+        let permit = writer.hold();
+        let to_other = writer.write_over(other.clone(), XML.to_owned(), None);
+        let to_opened = writer.write_over(opened.clone(), XML.to_owned(), None);
+        // While they wait: the newer file taken in, then another photo opened.
+        assert!(writer.take_newer(&live).is_some());
+        writer.watch(Some((&opened, None, base())));
+        drop(permit);
+        assert!(matches!(answered(to_other), Over::Written));
+        assert_eq!(std::fs::read(&other).unwrap(), XML.as_bytes());
+        assert!(matches!(answered(to_opened), Over::Dropped));
+        assert!(!opened.exists());
+        writer.flush(None);
+        assert!(writer.lock().pending.is_empty());
         remove(&photo);
     }
 

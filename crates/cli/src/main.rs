@@ -1024,20 +1024,13 @@ fn edit(
 
 /// A file's size, modified time and the BLAKE3 hash of its bytes, `None` where there is none:
 /// what tells `edit` another program wrote it after it was read, one that kept the size and
-/// set the time back among them.
-type Stamp = Option<(u64, Option<std::time::SystemTime>, [u8; 32])>;
+/// set the time back among them ([`sidecar::FileStamp`]).
+type Stamp = Option<sidecar::FileStamp>;
 
 fn stamp(path: &Path) -> Result<Stamp> {
     // No file is a stamp of its own; one that is there but cannot be read stops `edit`,
     // which never writes over what it could not read.
-    let metadata = match std::fs::metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).with_context(|| format!("reading {}", path.display())),
-    };
-    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let hash = apertrust_library::index::hash(&bytes);
-    Ok(Some((metadata.len(), metadata.modified().ok(), hash)))
+    sidecar::FileStamp::read(path).with_context(|| format!("reading {}", path.display()))
 }
 
 /// Runs `write` where the file at `path` still has the stamp `read`, as it was read: whether
