@@ -115,6 +115,115 @@ fn every_built_in_tool_is_accepted() {
     assert_eq!(accepted.len(), TOOLS.len());
 }
 
+/// Each built tool's rows, groups' and modes' included, keep their order and their kinds,
+/// so a change to how rows are declared changes no page: a slider by whether a picker
+/// ends it.
+#[test]
+fn every_built_in_tool_s_rows_keep_their_kinds() {
+    const KINDS: &[(&str, &str)] = &[
+        ("rawprepare", "slider slider slider slider slider choice"),
+        (
+            "highlights",
+            "choice slider when slider slider choice when slider slider when slider \
+             slider slider choice",
+        ),
+        (
+            "demosaic",
+            "choice when slider when slider when choice when choice when choice when \
+             toggle when group slider slider slider slider slider",
+        ),
+        ("colorin", "choice choice choice"),
+        (
+            "agx",
+            "group slider+picker slider+picker slider pickers action group slider+picker \
+             slider+picker slider slider slider group group slider slider slider slider \
+             toggle when slider group slider slider slider slider slider choice toggle \
+             when action group slider slider slider slider slider slider group toggle \
+             action when slider slider slider slider slider slider slider slider",
+        ),
+        ("colorout", "choice"),
+        (
+            "temperature",
+            "preset group slider slider group slider slider slider",
+        ),
+        ("flip", "buttons guides"),
+        (
+            "exposure",
+            "choice when toggle toggle slider+picker setting when_setting setting \
+             when_setting reference last_pick when slider slider computed slider",
+        ),
+        (
+            "channelmixerrgb",
+            "choice when pickers choice when choice when choice when slider when slider \
+             slider slider toggle group setting setting patches setting setting setting \
+             slider slider slider toggle slider slider slider toggle slider slider slider \
+             toggle slider slider slider toggle slider slider slider toggle slider slider \
+             slider toggle group setting setting setting",
+        ),
+        (
+            "toneequal",
+            "slider slider slider slider slider slider slider slider slider custom slider \
+             slider when slider choice choice when slider slider slider slider setting",
+        ),
+        (
+            "colorbalancergb",
+            "slider slider slider group slider slider slider slider group slider slider \
+             slider slider group slider slider slider slider group slider slider+picker \
+             slider group slider slider+picker slider group slider slider+picker slider \
+             group slider slider+picker slider choice group slider slider slider group \
+             slider+picker slider+picker",
+        ),
+        ("tone_curve", "custom choice"),
+        ("hazeremoval", "slider slider"),
+        (
+            "primaries",
+            "slider slider slider slider slider slider slider slider",
+        ),
+        ("grain", "slider slider slider"),
+        ("soften", "slider slider slider slider"),
+        (
+            "vignette",
+            "slider slider slider slider group slider slider slider toggle slider choice",
+        ),
+    ];
+    let kind = |row: &Row| match row {
+        Row::Slider(Slider {
+            quad: Some(Quad::Picker(_)),
+            ..
+        }) => "slider+picker",
+        Row::Slider(_) => "slider",
+        Row::Choice { .. } => "choice",
+        Row::Toggle { .. } => "toggle",
+        Row::Group(_) => "group",
+        Row::When { .. } => "when",
+        Row::WhenSetting { .. } => "when_setting",
+        Row::Custom { .. } => "custom",
+        Row::Preset { .. } => "preset",
+        Row::Setting(_) => "setting",
+        Row::Buttons { .. } => "buttons",
+        Row::Action { .. } => "action",
+        Row::Pickers { .. } => "pickers",
+        Row::Patches { .. } => "patches",
+        Row::Computed(_) => "computed",
+        Row::Reference { .. } => "reference",
+        Row::LastPick { .. } => "last_pick",
+        Row::Guides => "guides",
+    };
+    let built: Vec<(&str, String)> = TOOLS
+        .iter()
+        .map(|tool| tool.definition())
+        .map(|definition| {
+            let kinds: Vec<&str> = definition.rows().map(kind).collect();
+            (definition.tool.id, kinds.join(" "))
+        })
+        .collect();
+    let recorded: Vec<(&str, String)> = KINDS
+        .iter()
+        .map(|(tool, kinds)| (*tool, (*kinds).to_owned()))
+        .collect();
+    assert_eq!(built, recorded);
+}
+
 /// darktable's pickers on the built tools' sliders, each named by its quad (decision
 /// 79; `docs/pickers.md`, The first pass's pickers). Colour calibration's is on its
 /// readout row, AgX's Auto tune levels' on its row of pickers; Exposure's reference
