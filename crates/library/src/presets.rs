@@ -49,9 +49,10 @@
 //! fields of the struct `apertrust:settings` ([`SETTING_NAMESPACE`]).
 //!
 //! The built-in presets, Export's For sharing and Full size JPEG, are the repository's
-//! `data/presets/<tool>/<id>.appreset`, embedded here, the one crate that parses them
-//! (decision 45), so the app and the CLI both have them ([`builtins`]); they are never
-//! copied into the user data folder.
+//! `data/presets/<tool>/<id>.appreset`, and the built-in styles its
+//! `data/styles/<id>.apstyle`, embedded here, the one crate that parses them (decision
+//! 45), so the app and the CLI both have them ([`builtins`], [`builtin_styles`]); they are
+//! never copied into the user data folder.
 //!
 //! A file's name is its name made safe for every system ([`file_name`]), numbered where
 //! another file has it. A file a newer Apertrust wrote, of a newer format version or with
@@ -82,36 +83,76 @@ pub const SETTING_NAMESPACE: &str = "https://apertrust.org/ns/xmp/setting/";
 /// fit in the 255 bytes every system allows.
 const MAX_NAME_BYTES: usize = 200;
 
-/// A preset built in (decision 106): its tool's id, its own id, by which the client names
-/// it (the Fluent message `preset-<tool>-<id>`, `apertrust-cli export --preset <id>`),
-/// and its file, `data/presets/<tool>/<id>.appreset`, whose `apertrust:name` is its
+/// A preset or a style built in (decision 106): its own id, by which the client names it
+/// (the Fluent message `preset-<tool>-<id>` or `style-builtin-<id>`,
+/// `apertrust-cli export --preset <id>`), and its file, whose `apertrust:name` is its
 /// British English name.
 struct Builtin {
-    tool: &'static str,
     id: &'static str,
     text: &'static str,
 }
 
-/// Every preset built in, by tool, each tool's in the order its list shows them.
-const BUILTINS: &[Builtin] = &[
-    Builtin {
-        tool: "export",
-        id: "for-sharing",
-        text: include_str!("../../../data/presets/export/for-sharing.appreset"),
-    },
-    Builtin {
-        tool: "export",
-        id: "full-size-jpeg",
-        text: include_str!("../../../data/presets/export/full-size-jpeg.appreset"),
-    },
+/// Every preset built in, by its tool's id, each tool's in the order its list shows them:
+/// `data/presets/<tool>/<id>.appreset`.
+const PRESETS: &[(&str, Builtin)] = &[
+    (
+        "export",
+        Builtin {
+            id: "for-sharing",
+            text: include_str!("../../../data/presets/export/for-sharing.appreset"),
+        },
+    ),
+    (
+        "export",
+        Builtin {
+            id: "full-size-jpeg",
+            text: include_str!("../../../data/presets/export/full-size-jpeg.appreset"),
+        },
+    ),
+];
+
+/// A style built in, `data/styles/<id>.apstyle`.
+macro_rules! style {
+    ($id:literal) => {
+        Builtin {
+            id: $id,
+            text: include_str!(concat!("../../../data/styles/", $id, ".apstyle")),
+        }
+    };
+}
+
+/// Every style built in, each one tool's preset of darktable's at the reference release,
+/// its values as darktable's `init_presets` sets them (`data/README.md`).
+const STYLES: &[Builtin] = &[
+    style!("bw-luminance"),
+    style!("bw-hp5"),
+    style!("bw-acros-100"),
+    style!("natural-colour"),
+    style!("vibrant-colour"),
+    style!("punchy"),
+    style!("open-shadows-highlights"),
+    style!("lomo"),
 ];
 
 /// The presets built in for `tool`, in the order its list shows them, each by its id with
 /// its file read; none for a tool that has none. Each reads, as a test holds.
 pub fn builtins(tool: &str) -> Vec<(&'static str, Stored)> {
-    (BUILTINS.iter())
-        .filter(|builtin| builtin.tool == tool)
-        .filter_map(|builtin| match parse(builtin.text, Kind::Preset) {
+    let of_tool = PRESETS.iter().filter(|(of, _)| *of == tool);
+    read_builtins(of_tool.map(|(_, builtin)| builtin), Kind::Preset)
+}
+
+/// The styles built in, each by its id with its file read. Each reads, as a test holds.
+pub fn builtin_styles() -> Vec<(&'static str, Stored)> {
+    read_builtins(STYLES.iter(), Kind::Style)
+}
+
+/// `builtins` read as files of `kind`, each by its id.
+fn read_builtins<'a>(
+    builtins: impl Iterator<Item = &'a Builtin>,
+    kind: Kind,
+) -> Vec<(&'static str, Stored)> {
+    builtins
+        .filter_map(|builtin| match parse(builtin.text, kind) {
             Ok(stored) => Some((builtin.id, stored)),
             Err(error) => {
                 debug_assert!(false, "the built-in {}: {error}", builtin.id);

@@ -187,6 +187,20 @@ styles-rename-title = Перейменувати стиль
 styles-rename-button = Перейменувати
 style-not-renamed = Не вдалося перейменувати стиль «{ $name }»: { $error }
 style-not-deleted = Не вдалося видалити стиль «{ $name }»: { $error }
+styles-built-in = Вбудовані стилі
+styles-custom = Власні стилі
+styles-copy = Копіювати до власних стилів…
+styles-copy-title = Копіювати до власних стилів
+styles-copy-button = Копіювати
+style-not-copied = Не вдалося скопіювати стиль «{ $name }»: { $error }
+style-builtin-bw-luminance = Чорно-біле|Чорно-біле
+style-builtin-bw-hp5 = Чорно-біле|HP5+
+style-builtin-bw-acros-100 = Чорно-біле|Acros 100
+style-builtin-natural-colour = Природні кольори
+style-builtin-vibrant-colour = Яскраві кольори
+style-builtin-punchy = Виразний
+style-builtin-open-shadows-highlights = Відкриті тіні й світла
+style-builtin-lomo = Ломо
 
 ## Позначка повзунка
 

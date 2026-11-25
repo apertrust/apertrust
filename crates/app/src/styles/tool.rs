@@ -23,14 +23,18 @@
 //! - **Find style,** a sunken field that narrows the tree to the styles whose names hold
 //!   its text, their folders open; ↓ moves into the tree, Return applies the first style
 //!   it shows, × or Escape clears it.
-//! - **The tree** of `<user data>/styles/*.apstyle` ([`read`]), a `|` in a name making
-//!   folders, as darktable's do, each level its folders first, then its styles, by name in
-//!   the file browser's order. Every style row keeps a chevron's width before its name for
-//!   an accent ✓ while the style is applied. A click applies the style
-//!   (`Command::ApplyStyle`) as `styles.mode` says; a right-click, Shift+F10 or the menu
-//!   key opens Apply or Clear, then Rename Style… and Delete Style…; F2 renames and Delete
-//!   asks. A row that cannot apply, a newer Apertrust's file or with no photo taking edits,
-//!   is drawn disabled, its tooltip saying why, and keeps its menu, F2 and Delete.
+//! - **The tree** ([`read`]) of two root folders, always drawn and open at first: Built-in
+//!   Styles, the styles Apertrust ships (`apertrust_library::presets::builtin_styles`),
+//!   named by their Fluent messages, then Custom Styles, `<user data>/styles/*.apstyle`,
+//!   "No styles yet." while it holds none. A `|` in a name makes folders inside its root,
+//!   as darktable's do, each level its folders first, then its styles, by name in the file
+//!   browser's order. Every style row keeps a chevron's width before its name for an accent
+//!   ✓ while the style is applied. A click applies the style (`Command::ApplyStyle`) as
+//!   `styles.mode` says; a right-click, Shift+F10 or the menu key opens Apply or Clear,
+//!   then, for a person's style, Rename Style… and Delete Style…, F2 renaming and Delete
+//!   asking, and for a built-in, which is read-only, Copy to Custom Styles…. A row that
+//!   cannot apply, a newer Apertrust's file or with no photo taking edits, is drawn
+//!   disabled, its tooltip saying why, and keeps its menu, F2 and Delete.
 //! - **Nothing is chosen:** the tool has no current style or selection.
 
 use std::collections::BTreeSet;
@@ -39,6 +43,7 @@ use std::path::{Path, PathBuf};
 use apertrust_engine::session::{Command, StyleMode, StyleState, tool_values};
 use apertrust_engine::sidecar::Parked;
 use apertrust_library::listing::browser_order;
+use apertrust_library::presets::{Stored, builtin_styles};
 use apertrust_tools::utility::UtilityDefinition;
 use apertrust_tools::{ProcessingTool, ToolValues, Widget, messages};
 use apertrust_ui::components::settings::Search;
@@ -49,11 +54,20 @@ use apertrust_ui::{Icon, Translator, theme};
 use eframe::egui::{self, Rect, Sense, UiBuilder, vec2};
 
 use crate::tools::Pressed;
-use crate::tree_row::TreeRow;
+use crate::tree_row::{LEVEL_INDENT, TreeRow};
 use crate::utility::{Context, UtilityTool};
 
 /// The tool's id, and its declaration's.
 pub const ID: &str = "styles";
+
+/// The two root folders' paths, in the tree's order: Built-in Styles, then Custom Styles.
+/// Every other folder's path is its root's, then its names, each after a `|`.
+pub const BUILT_IN: &str = "built-in";
+pub const CUSTOM: &str = "custom";
+
+/// What the styles applied record as a built-in style's file, before its id: no file name
+/// ([`apertrust_library::presets::file_name`]) holds a `:`, so it is never a person's.
+pub const BUILT_IN_FILE: &str = "builtin:";
 
 /// One style file as the tree lists it.
 #[derive(Clone, Debug, PartialEq)]
@@ -72,11 +86,18 @@ pub struct Listed {
     /// rewritten, so Rename Style… is not offered; a file whose tools are all retired can
     /// still be renamed.
     pub newer: bool,
+    /// A built-in style's id (`data/styles/<id>.apstyle`): read-only, with no file of the
+    /// person's; `None` for the person's own.
+    pub builtin: Option<&'static str>,
 }
 
 impl Listed {
-    /// Its file's name, as the styles applied record it.
+    /// Its file's name, as the styles applied record it: a built-in's id after
+    /// [`BUILT_IN_FILE`], `builtin:lomo`.
     pub fn file(&self) -> String {
+        if let Some(id) = self.builtin {
+            return format!("{BUILT_IN_FILE}{id}");
+        }
         self.path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -101,38 +122,54 @@ fn leaf(name: &str) -> &str {
     name.rsplit('|').next().unwrap_or(name).trim()
 }
 
-/// The styles in `folder` (`styles::stored`), each of its entries made a tool's values for
-/// `tools` or left out, and why.
-pub fn read(folder: &Path, tools: &[&dyn ProcessingTool]) -> Vec<Listed> {
-    let mut styles: Vec<Listed> = (super::stored(folder).into_iter())
-        .map(|stored| {
-            let mut left_out = Vec::new();
-            let tools = stored.newer().is_none().then(|| {
-                (stored.entries.iter())
-                    .filter_map(
-                        |entry| match tool_values(entry, tools, apertrust_tools::RETIRED) {
-                            Ok(values) => Some(values),
-                            Err(why) => {
-                                left_out.push(why);
-                                None
-                            }
-                        },
-                    )
-                    .collect()
-            });
-            // None of its entries applies: parked, as a newer Apertrust's file is.
-            let tools = tools.filter(|tools: &Vec<_>| !tools.is_empty() || left_out.is_empty());
-            Listed {
-                name: stored.name.trim().to_owned(),
-                path: stored.path.clone(),
-                tools,
-                left_out,
-                newer: stored.newer().is_some(),
-            }
-        })
-        .collect();
+/// The styles built in, each named as `words` show it ([`builtin_name`]), then the styles
+/// in `folder` (`styles::stored`), each of their entries made a tool's values for `tools`
+/// or left out, and why.
+pub fn read(folder: &Path, tools: &[&dyn ProcessingTool], words: &Translator) -> Vec<Listed> {
+    let builtins = (builtin_styles().into_iter()).map(|(id, stored)| Listed {
+        name: builtin_name(id, words),
+        builtin: Some(id),
+        ..listed(&stored, tools)
+    });
+    let own = (super::stored(folder).into_iter()).map(|stored| listed(&stored, tools));
+    let mut styles: Vec<Listed> = builtins.chain(own).collect();
     styles.sort_by(|a, b| browser_order(&a.name, &b.name));
     styles
+}
+
+/// The name the style built in as `id` shows, the Fluent message `style-builtin-<id>`, in
+/// `words`: its folders' and its own, a `|` between them.
+pub fn builtin_name(id: &str, words: &Translator) -> String {
+    words.text(&format!("style-builtin-{id}"))
+}
+
+/// `stored` as the tree lists it, a person's, each of its entries made a tool's values for
+/// `tools` or left out, and why.
+fn listed(stored: &Stored, tools: &[&dyn ProcessingTool]) -> Listed {
+    let mut left_out = Vec::new();
+    let values = stored.newer().is_none().then(|| {
+        (stored.entries.iter())
+            .filter_map(
+                |entry| match tool_values(entry, tools, apertrust_tools::RETIRED) {
+                    Ok(values) => Some(values),
+                    Err(why) => {
+                        left_out.push(why);
+                        None
+                    }
+                },
+            )
+            .collect()
+    });
+    // None of its entries applies: parked, as a newer Apertrust's file is.
+    let values = values.filter(|values: &Vec<_>| !values.is_empty() || left_out.is_empty());
+    Listed {
+        name: stored.name.trim().to_owned(),
+        path: stored.path.clone(),
+        tools: values,
+        left_out,
+        newer: stored.newer().is_some(),
+        builtin: None,
+    }
 }
 
 /// Why `style` cannot be applied, where it is parked ([`Listed::tools`]), in `words`: its
@@ -147,11 +184,24 @@ fn parked(style: &Listed, words: &Translator) -> String {
     })
 }
 
+/// The style applied, of `applied`, that `style` is: a built-in by its file, `builtin:<id>`,
+/// whatever language it was applied in; a person's by its name, never a built-in's entry.
+fn applied_entry<'a>(style: &Listed, applied: &'a [StyleState]) -> Option<&'a StyleState> {
+    let file = style.file();
+    applied.iter().find(|entry| match style.builtin {
+        Some(_) => entry.file == file,
+        None => entry.name == style.name && !entry.file.starts_with(BUILT_IN_FILE),
+    })
+}
+
 /// The command a click on `style` sends: the style applied as `mode` says, its tools this
-/// build has; none for a file this build cannot apply.
-pub fn apply(style: &Listed, mode: StyleMode) -> Option<Command> {
+/// build has, under its name, or for a built-in already among the styles `applied` the
+/// name it was applied under, so it is applied again rather than twice; none for a file
+/// this build cannot apply.
+pub fn apply(style: &Listed, mode: StyleMode, applied: &[StyleState]) -> Option<Command> {
+    let name = applied_entry(style, applied).map_or(&style.name, |entry| &entry.name);
     Some(Command::ApplyStyle {
-        name: style.name.clone(),
+        name: name.clone(),
         file: style.file(),
         mode,
         tools: style.tools.clone()?,
@@ -184,25 +234,39 @@ pub fn clear(name: &str) -> Command {
     }
 }
 
-/// What the tool keeps between frames: the styles read, none until it first shows or after
-/// one is created, renamed or deleted; Find style's text; and the folders the person opened.
-#[derive(Debug, Default)]
+/// What the tool keeps between frames: the styles read, none until it first shows, after
+/// one is created, copied, renamed or deleted, or after the language changes; Find style's
+/// text; and the folders open, by path, the two roots at first.
+#[derive(Debug)]
 pub struct Kept {
     pub listed: Option<Vec<Listed>>,
     pub find: String,
     pub open: BTreeSet<String>,
 }
 
+impl Default for Kept {
+    fn default() -> Self {
+        Kept {
+            listed: None,
+            find: String::new(),
+            open: [BUILT_IN, CUSTOM].map(str::to_owned).into(),
+        }
+    }
+}
+
 /// What the tool asks of the app.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
-    /// A style applied, by its name.
+    /// A style applied, by its file ([`Listed::file`]), which a built-in's and a person's
+    /// of the same name do not share.
     Apply(String),
     /// A style applied taken off, by its name.
     Clear(String),
     Rename(String),
     Delete(String),
-    /// A folder opened or closed, by its path of names joined by `|`.
+    /// Copy to Custom Styles…, for the built-in style of this name.
+    Copy(String),
+    /// A folder opened or closed, by its path: its root's, then its names, each after a `|`.
     Toggle(String),
     /// Find style's text, whole.
     Find(String),
@@ -272,10 +336,6 @@ impl UtilityTool for StylesTool<'_> {
         }
         self.find(ui, cx.words, &mut actions);
         ui.add_space(theme(ui.ctx()).spacing.xs);
-        if self.listed.is_empty() {
-            empty_row(ui, &cx.words.text("styles-empty"));
-            return actions;
-        }
         let label = cx.words.text("styles-tree");
         ui.scope_builder(
             UiBuilder::new()
@@ -297,11 +357,12 @@ fn shown<'a>(listed: &'a [Listed], find: &str) -> Vec<&'a Listed> {
         .collect()
 }
 
-/// One node of the tree: a folder, by its path of names, holding its children, or a style.
+/// One node of the tree: a folder, by its path ([`BUILT_IN`], [`CUSTOM`]), holding its
+/// children, or a style.
 #[derive(Debug, PartialEq)]
 enum Node<'a> {
     Folder {
-        name: &'a str,
+        name: String,
         path: String,
         children: Vec<Node<'a>>,
     },
@@ -317,25 +378,23 @@ impl Node<'_> {
     }
 }
 
-/// The tree of `styles`, folders from the `|` in their names, each level its folders first,
-/// then its styles, each by name in the file browser's order, as the board draws Film over
-/// the styles.
-fn tree_of<'a>(styles: &[&'a Listed]) -> Vec<Node<'a>> {
+/// The tree of `styles` inside the root folder `root`, folders from the `|` in their names,
+/// each level its folders first, then its styles, each by name in the file browser's order,
+/// as the board draws Film over the styles.
+fn tree_of<'a>(styles: &[&'a Listed], root: &str) -> Vec<Node<'a>> {
     let mut nodes: Vec<Node<'a>> = Vec::new();
     for style in styles {
         let mut level = &mut nodes;
-        let mut path = String::new();
+        let mut path = root.to_owned();
         for folder in style.folders() {
-            if !path.is_empty() {
-                path.push('|');
-            }
+            path.push('|');
             path.push_str(folder);
             let at = level
                 .iter()
-                .position(|node| matches!(node, Node::Folder { name, .. } if *name == folder));
+                .position(|node| matches!(node, Node::Folder { name, .. } if name == folder));
             let at = at.unwrap_or_else(|| {
                 level.push(Node::Folder {
-                    name: folder,
+                    name: folder.to_owned(),
                     path: path.clone(),
                     children: Vec::new(),
                 });
@@ -367,18 +426,36 @@ const APPLY: &str = "apply";
 const CLEAR: &str = "clear";
 const RENAME: &str = "rename";
 const DELETE: &str = "delete";
+const COPY: &str = "copy";
 
 impl StylesTool<'_> {
-    /// Whether `name` is among the styles applied.
-    fn is_applied(&self, name: &str) -> bool {
-        self.applied
-            .is_some_and(|applied| applied.iter().any(|style| style.name == name))
+    /// The name `style` is applied under, where it is among the styles applied
+    /// ([`applied_entry`]): a built-in's in whatever language it was applied in.
+    fn applied_as(&self, style: &Listed) -> Option<&str> {
+        let applied = self.applied.unwrap_or_default();
+        applied_entry(style, applied).map(|entry| entry.name.as_str())
     }
 
-    /// The tree of the styles Find style leaves, and whether its folders are all open.
-    fn nodes(&self) -> (Vec<Node<'_>>, bool) {
+    /// The tree of the styles Find style leaves, and whether its folders are all open: its
+    /// two roots, titled in `words`, each drawn but while Find style finds none of its own.
+    fn nodes(&self, words: &Translator) -> (Vec<Node<'_>>, bool) {
         let finding = !self.kept.find.trim().is_empty();
-        (tree_of(&shown(self.listed, &self.kept.find)), finding)
+        let (builtins, own): (Vec<&Listed>, Vec<&Listed>) = shown(self.listed, &self.kept.find)
+            .into_iter()
+            .partition(|style| style.builtin.is_some());
+        let roots = [
+            (BUILT_IN, "styles-built-in", builtins),
+            (CUSTOM, "styles-custom", own),
+        ];
+        let nodes = (roots.into_iter())
+            .filter(|(_, _, styles)| !finding || !styles.is_empty())
+            .map(|(path, title, styles)| Node::Folder {
+                name: words.text(title),
+                path: path.to_owned(),
+                children: tree_of(&styles, path),
+            })
+            .collect();
+        (nodes, finding)
     }
 
     /// Whether the folder `path` shows its rows.
@@ -388,8 +465,8 @@ impl StylesTool<'_> {
 
     /// The first style the tree shows, in its order, a closed folder's hidden: what Return
     /// in Find style applies.
-    fn first_shown(&self) -> Option<&Listed> {
-        let (nodes, finding) = self.nodes();
+    fn first_shown(&self, words: &Translator) -> Option<&Listed> {
+        let (nodes, finding) = self.nodes(words);
         fn walk<'a>(nodes: &[Node<'a>], open: &dyn Fn(&str) -> bool) -> Option<&'a Listed> {
             nodes.iter().find_map(|node| match node {
                 Node::Style(style) => Some(*style),
@@ -422,9 +499,11 @@ impl StylesTool<'_> {
         if returned {
             ui.memory_mut(|m| m.request_focus(id));
             if self.unavailable.is_none()
-                && let Some(first) = self.first_shown().filter(|style| style.tools.is_some())
+                && let Some(first) = self
+                    .first_shown(words)
+                    .filter(|style| style.tools.is_some())
             {
-                actions.push(Action::Apply(first.name.clone()));
+                actions.push(Action::Apply(first.file()));
             }
         }
         if !self.kept.find.is_empty() {
@@ -450,7 +529,7 @@ impl StylesTool<'_> {
     /// The tree's rows, the first drawn, folder or style, taking the id ↓ in Find style
     /// gives the focus.
     fn tree(&self, ui: &mut egui::Ui, words: &Translator, actions: &mut Vec<Action>) {
-        let (nodes, finding) = self.nodes();
+        let (nodes, finding) = self.nodes(words);
         let mut first = Some(tree_entry());
         self.rows(ui, words, &nodes, (1, finding), &mut first, actions);
     }
@@ -496,14 +575,16 @@ impl StylesTool<'_> {
                     if response.clicked() || (left && open) || (right && !open) {
                         actions.push(Action::Toggle(path.clone()));
                     }
-                    if open {
+                    if open && children.is_empty() {
+                        empty_row(ui, &words.text("styles-empty"), level + 1);
+                    } else if open {
                         self.rows(ui, words, children, (level + 1, finding), first, actions);
                     }
                 }
                 Node::Style(style) => {
                     let id = first.take();
                     let id =
-                        id.unwrap_or_else(|| ui.make_persistent_id(("styles style", &style.name)));
+                        id.unwrap_or_else(|| ui.make_persistent_id(("styles style", style.file())));
                     self.style_row(ui, words, style, (id, level), actions);
                 }
             }
@@ -520,7 +601,8 @@ impl StylesTool<'_> {
         actions: &mut Vec<Action>,
     ) {
         let t = theme(ui.ctx());
-        let applied = self.is_applied(&style.name);
+        let applied_as = self.applied_as(style);
+        let applied = applied_as.is_some();
         let parked = style.tools.is_none();
         let can_apply = !parked && self.unavailable.is_none();
         let (response, _) = TreeRow {
@@ -563,9 +645,11 @@ impl StylesTool<'_> {
         let response = response.on_hover_text(tip);
         let mac_menu = context_click(ui.ctx(), &response);
         if response.clicked() && !mac_menu && can_apply {
-            actions.push(Action::Apply(style.name.clone()));
+            actions.push(Action::Apply(style.file()));
         }
-        let focused = response.has_focus();
+        // A built-in is read-only: no key renames or deletes it.
+        let own = style.builtin.is_none();
+        let focused = own && response.has_focus();
         let pressed =
             |key: egui::Key| focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key));
         // A newer Apertrust's file is never rewritten, so never renamed.
@@ -584,20 +668,27 @@ impl StylesTool<'_> {
             } else {
                 Item::new(APPLY, words.text("styles-apply")).enabled(can_apply)
             };
-            vec![
-                Entry::Item(first),
-                Entry::Separator,
-                Entry::Item(Item::new(RENAME, words.text("styles-rename")).enabled(!style.newer)),
-                Entry::Item(Item::new(DELETE, words.text("styles-delete")).enabled(self.alerts)),
-            ]
+            let items = if own {
+                vec![
+                    Item::new(RENAME, words.text("styles-rename")).enabled(!style.newer),
+                    Item::new(DELETE, words.text("styles-delete")).enabled(self.alerts),
+                ]
+            } else {
+                vec![Item::new(COPY, words.text("styles-copy"))]
+            };
+            [Entry::Item(first), Entry::Separator]
+                .into_iter()
+                .chain(items.into_iter().map(Entry::Item))
+                .collect()
         };
         let chosen = menu_of(ui, &response, &menu, (asked, keys), entries);
         let name = style.name.clone();
         actions.extend(match chosen.as_deref() {
-            Some(APPLY) => Some(Action::Apply(name)),
-            Some(CLEAR) => Some(Action::Clear(name)),
+            Some(APPLY) => Some(Action::Apply(style.file())),
+            Some(CLEAR) => applied_as.map(|name| Action::Clear(name.to_owned())),
             Some(RENAME) => Some(Action::Rename(name)),
             Some(DELETE) => Some(Action::Delete(name)),
+            Some(COPY) => Some(Action::Copy(name)),
             _ => None,
         });
     }
@@ -675,8 +766,9 @@ fn row_menu_name(name: &str, words: &Translator) -> String {
     words.text_with("styles-row-menu", Some(&args))
 }
 
-/// The line the tool shows with no style: "No styles yet.", in `text_secondary`.
-fn empty_row(ui: &mut egui::Ui, words: &str) {
+/// The line an empty folder shows, Custom Styles with no style: "No styles yet.", in
+/// `text_secondary`, where a style's name at `level` starts, as [`TreeRow`] sets it in.
+fn empty_row(ui: &mut egui::Ui, words: &str, level: usize) {
     let t = theme(ui.ctx());
     let size = vec2(ui.available_width(), t.sizes.panel_line);
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
@@ -685,7 +777,11 @@ fn empty_row(ui: &mut egui::Ui, words: &str) {
         let galley = ui
             .painter()
             .layout_no_wrap(words.to_owned(), font, t.colors.text_secondary);
-        let at = egui::pos2(rect.left(), rect.center().y - galley.size().y / 2.0);
+        let indent = (level - 1) as f32 * LEVEL_INDENT + Icon::ChevronEnd.size() + t.spacing.xs;
+        let at = egui::pos2(
+            rect.left() + indent,
+            rect.center().y - galley.size().y / 2.0,
+        );
         ui.painter().galley(at, galley, t.colors.text_secondary);
     }
     response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, words));

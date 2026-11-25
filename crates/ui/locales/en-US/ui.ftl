@@ -8,6 +8,11 @@
 tab-color = Color
 panel-customise-tabs = Customize tabs…
 
+## The Styles tool
+
+style-builtin-natural-colour = Natural color
+style-builtin-vibrant-colour = Vibrant color
+
 ## Themes
 
 theme-grey = Gray

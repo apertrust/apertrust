@@ -267,6 +267,25 @@ styles-rename-button = Rename
 # Said over the photo where a style could not be renamed or deleted.
 style-not-renamed = Style “{ $name }” not renamed: { $error }
 style-not-deleted = Style “{ $name }” not deleted: { $error }
+# The tree's two root folders: the styles Apertrust ships, then the person's own.
+styles-built-in = Built-in Styles
+styles-custom = Custom Styles
+# A built-in style's menu item, and its dialog, which copies it into Custom Styles.
+styles-copy = Copy to Custom Styles…
+styles-copy-title = Copy to Custom Styles
+styles-copy-button = Copy
+# Said over the photo where a built-in style could not be copied.
+style-not-copied = Style “{ $name }” not copied: { $error }
+# The styles built in, each `style-builtin-<id>`. A `|` puts the style in a folder: keep
+# the folder's name the same in the three black-and-white ones.
+style-builtin-bw-luminance = Black and white|Black and white
+style-builtin-bw-hp5 = Black and white|HP5+
+style-builtin-bw-acros-100 = Black and white|Acros 100
+style-builtin-natural-colour = Natural colour
+style-builtin-vibrant-colour = Vibrant colour
+style-builtin-punchy = Punchy
+style-builtin-open-shadows-highlights = Open shadows and highlights
+style-builtin-lomo = Lomo
 
 ## A slider's marker
 

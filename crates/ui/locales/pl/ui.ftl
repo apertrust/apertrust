@@ -188,6 +188,20 @@ styles-rename-title = Zmień nazwę stylu
 styles-rename-button = Zmień nazwę
 style-not-renamed = Nie udało się zmienić nazwy stylu „{ $name }”: { $error }
 style-not-deleted = Nie udało się usunąć stylu „{ $name }”: { $error }
+styles-built-in = Style wbudowane
+styles-custom = Style własne
+styles-copy = Kopiuj do stylów własnych…
+styles-copy-title = Kopiuj do stylów własnych
+styles-copy-button = Kopiuj
+style-not-copied = Nie udało się skopiować stylu „{ $name }”: { $error }
+style-builtin-bw-luminance = Czarno-białe|Czarno-białe
+style-builtin-bw-hp5 = Czarno-białe|HP5+
+style-builtin-bw-acros-100 = Czarno-białe|Acros 100
+style-builtin-natural-colour = Naturalne kolory
+style-builtin-vibrant-colour = Żywe kolory
+style-builtin-punchy = Wyrazisty
+style-builtin-open-shadows-highlights = Otwarte cienie i światła
+style-builtin-lomo = Lomo
 
 ## Znacznik suwaka
 

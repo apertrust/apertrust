@@ -4335,6 +4335,8 @@ impl Shell {
                 .filter(|l| offered(*l, cfg!(debug_assertions)));
             self.locale = locale.unwrap_or(self.system_locale);
             apertrust_ui::set_locale(ctx, self.locale);
+            // The built-in styles are named in it.
+            self.styles.listed = None;
         }
         if settings.scale != ctx.zoom_factor() {
             ctx.set_zoom_factor(settings.scale);
@@ -5755,7 +5757,8 @@ impl App {
             };
             if let Err(error) = styles::delete(&folder, &name) {
                 tracing::warn!(target: "settings", "style {name}: {error}");
-                let said = styles::not_changed(&translator(ctx), &name, &error, false);
+                let said =
+                    styles::not_changed(&translator(ctx), styles::NOT_DELETED, &name, &error);
                 self.status = Some((said, ctx.input(|i| i.time)));
             }
             self.shell.styles.listed = None;
@@ -5797,20 +5800,22 @@ impl App {
 
     /// What the Styles tool asked for (decision 106; `styles::tool`): a style applied to the
     /// active photo as `styles.mode` says, the Viewer saying what of it was left out; a
-    /// style applied cleared; Rename Style…'s dialog; Delete Style…'s alert; a folder of
-    /// the tree opened or closed; Find style's text; and the mode.
+    /// style applied cleared; Rename Style…'s and Copy to Custom Styles…'s dialogs, each
+    /// refusing a name a style holds, built in or the person's; Delete Style…'s alert; a
+    /// folder of the tree opened or closed; Find style's text; and the mode.
     fn styles_asked(&mut self, actions: Vec<styles::tool::Action>, ctx: &egui::Context) {
         use styles::tool::Action;
         for action in actions {
             match action {
                 // Not while the photo takes no edit yet, opening, or none at all.
                 Action::Apply(_) | Action::Clear(_) if !self.mirror.takes_edits() => {}
-                Action::Apply(name) => {
+                Action::Apply(file) => {
                     let listed = self.shell.styles.listed.iter().flatten();
-                    let Some(style) = listed.into_iter().find(|s| s.name == name).cloned() else {
+                    let Some(style) = listed.into_iter().find(|s| s.file() == file).cloned() else {
                         continue;
                     };
-                    if let Some(command) = styles::tool::apply(&style, self.shell.style_mode) {
+                    let (mode, applied) = (self.shell.style_mode, &self.mirror.values.styles);
+                    if let Some(command) = styles::tool::apply(&style, mode, applied) {
                         self.send_edit(command);
                         if let Some(said) = styles::tool::left_out(&style, &translator(ctx)) {
                             self.status = Some((said, ctx.input(|i| i.time)));
@@ -5820,11 +5825,15 @@ impl App {
                 Action::Clear(name) => {
                     self.send_edit(styles::tool::clear(&name));
                 }
-                Action::Rename(name) => {
+                Action::Rename(ref name) | Action::Copy(ref name) => {
                     let Some(folder) = self.shell.presets.styles() else {
                         continue;
                     };
-                    let dialog = styles::RenameDialog::new(name, styles::taken(&folder));
+                    let refused = styles::refused(&folder, &translator(ctx));
+                    let dialog = match action {
+                        Action::Copy(_) => styles::RenameDialog::copy(name.clone(), refused),
+                        _ => styles::RenameDialog::new(name.clone(), refused),
+                    };
                     self.dialogs.open(presets::Sheet(dialog), None, ctx);
                 }
                 Action::Delete(name) => {
@@ -5856,7 +5865,28 @@ impl App {
         };
         if let Err(error) = styles::rename(&folder, from, to) {
             tracing::warn!(target: "settings", "style {from}: {error}");
-            let said = styles::not_changed(&translator(ctx), from, &error, true);
+            let said = styles::not_changed(&translator(ctx), styles::NOT_RENAMED, from, &error);
+            self.status = Some((said, ctx.input(|i| i.time)));
+        }
+        self.shell.styles.listed = None;
+    }
+
+    /// What Copy to Custom Styles… asked: the built-in style shown as `from` written into
+    /// the styles folder as `to`, the tree read again, or the Viewer saying why it could
+    /// not be.
+    fn copy_style(&mut self, from: &str, to: &str, ctx: &egui::Context) {
+        let Some(folder) = self.shell.presets.styles() else {
+            return;
+        };
+        let listed = self.shell.styles.listed.iter().flatten();
+        let found = listed.into_iter().find(|style| style.name == from);
+        let Some(id) = found.and_then(|style| style.builtin) else {
+            return;
+        };
+        let build = apertrust_base::program!().version;
+        if let Err(error) = styles::copy(&folder, id, to, build) {
+            tracing::warn!(target: "settings", "style {to}: {error}");
+            let said = styles::not_changed(&translator(ctx), styles::NOT_COPIED, from, &error);
             self.status = Some((said, ctx.input(|i| i.time)));
         }
         self.shell.styles.listed = None;
@@ -5870,7 +5900,7 @@ impl App {
         };
         let words = translator(ctx);
         let lines = styles::lines(self.mirror.tools(), &self.mirror.values.tools, &words);
-        let dialog = styles::StyleDialog::new(styles::taken(&folder), lines);
+        let dialog = styles::StyleDialog::new(styles::refused(&folder, &words), lines);
         self.dialogs.open(presets::Sheet(dialog), None, ctx);
     }
 
@@ -6280,12 +6310,13 @@ impl App {
         let (collections, exporting) = (holds(library::ID), holds(export::ID));
         let styling = holds(styles::tool::ID);
         // The styles are read as the tool first shows, and again after one is created,
-        // renamed or deleted.
+        // copied, renamed or deleted, or the language changes.
         if styling
             && self.shell.styles.listed.is_none()
             && let Some(folder) = self.shell.presets.styles()
         {
-            self.shell.styles.listed = Some(styles::tool::read(&folder, self.mirror.tools()));
+            let (tools, words) = (self.mirror.tools(), translator(ui.ctx()));
+            self.shell.styles.listed = Some(styles::tool::read(&folder, tools, &words));
         }
         if collections && !self.shell.collections_shown {
             self.shell.recents.check();
@@ -8597,7 +8628,11 @@ impl eframe::App for App {
         for asked in taken.presets {
             self.preset_named(asked);
         }
-        for (from, to) in taken.renamed {
+        for (from, to, copy) in taken.renamed {
+            if copy {
+                self.copy_style(&from, &to, ctx);
+                continue;
+            }
             self.rename_style(&from, &to, ctx);
         }
         for asked in taken.styles {
@@ -9333,7 +9368,7 @@ fn take_dialogs(
             dialog_host::Output::Log(asked) => log.push(asked),
             dialog_host::Output::Preset(asked) => presets.push(asked),
             dialog_host::Output::Style(asked) => styles.push(asked),
-            dialog_host::Output::StyleRename { from, to } => renamed.push((from, to)),
+            dialog_host::Output::StyleRename { from, to, copy } => renamed.push((from, to, copy)),
         }
     }
     let held = hold_close(ctx, dialogs);
@@ -9381,8 +9416,9 @@ struct Taken {
     presets: Vec<presets::Asked>,
     /// What Create a Style… asked, in order.
     styles: Vec<styles::Asked>,
-    /// What Rename Style… asked, each style's name and its new one, in order.
-    renamed: Vec<(String, String)>,
+    /// What Rename Style… and Copy to Custom Styles… asked, each style's name, its new one
+    /// and whether it was copied, in order.
+    renamed: Vec<(String, String, bool)>,
     /// The actions the app's keys asked for in a dialog's own window, in order.
     actions: Vec<ActionId>,
 }

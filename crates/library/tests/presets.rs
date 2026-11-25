@@ -553,3 +553,40 @@ fn the_built_in_presets_are_export_s_two_written_in_the_one_layout() {
     assert_eq!(setting(1, "export.size.width").as_deref(), Some("0"));
     assert!(presets::builtins("exposure").is_empty());
 }
+
+/// The built-in styles: eight, in their order, each a style of one tool's entry with
+/// nothing a write would drop, in the one layout, and its British English name, the three
+/// black-and-white ones in their folder.
+#[test]
+fn the_built_in_styles_are_eight_written_in_the_one_layout() {
+    let builtins = presets::builtin_styles();
+    let ids: Vec<&str> = builtins.iter().map(|(id, _)| *id).collect();
+    let expected = [
+        "bw-luminance",
+        "bw-hp5",
+        "bw-acros-100",
+        "natural-colour",
+        "vibrant-colour",
+        "punchy",
+        "open-shadows-highlights",
+        "lomo",
+    ];
+    assert_eq!(ids, expected);
+    let names: Vec<&str> = builtins.iter().map(|(_, s)| s.name.as_str()).collect();
+    assert_eq!(
+        names[..3],
+        [
+            "Black and white|Black and white",
+            "Black and white|HP5+",
+            "Black and white|Acros 100"
+        ]
+    );
+    let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../data/styles");
+    for (id, stored) in &builtins {
+        assert_eq!(stored.kind, Kind::Style, "{id}");
+        assert_eq!(stored.entries.len(), 1, "{id}");
+        assert_eq!(stored.newer(), None, "{id}");
+        let text = std::fs::read_to_string(data.join(format!("{id}.apstyle"))).unwrap();
+        assert_eq!(stored.to_xml("0.1.0"), text, "{id}");
+    }
+}

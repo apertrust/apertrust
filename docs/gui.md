@@ -3240,7 +3240,7 @@ Tools
 
 - **Name and Description** are Save as Preset…'s: Name first, focused and empty; Description optional.
 - **The tools** are those the edit touches, each a check box by its title, in pipeline order. A tool that makes a look (`ProcessingDefinition::in_styles`, darktable's `IOP_FLAGS_INCLUDE_IN_STYLES`) starts checked, as darktable's create-style dialog checks those modules; every other one starts unchecked, saying "Usually belongs to one photo" in its tooltip.
-- **Create,** the default, and **Cancel.** An empty name, or one a style already has, compared exactly, says why under the field; no tool checked says so under the tools; each disables Create. Return presses it, Escape cancels.
+- **Create,** the default, and **Cancel.** An empty name, or one a style already has, the person's or a built-in style's as shown, compared exactly, says why under the field; no tool checked says so under the tools; each disables Create. Return presses it, Escape cancels.
 - **Create writes** `<user data>/styles/<Name>.apstyle`, the name made a file name as decision 106 says, numbered where another file has it: one entry per tool checked, its values now as a preset saves them, a switched tool off an entry with no `enabled` and no value. A name a style took since the dialog opened is refused.
 - **What it says:** "Style "<name>" created" (`style-created`) over the photo for five seconds, darktable's log message's time, and to screen readers as a polite status; or why it could not be (`style-not-created`).
 - **No history step:** creating a style changes no photo.
@@ -3248,7 +3248,7 @@ Tools
 
 ### The Styles tool
 
-Built (decision 106, its phase 1; issue #371): a utility of the Photos tab, id `styles`, after Collections and before Export in the Default workspace (`data/workspaces/default.toml`), closed at first; Essentials shows Collections and Export alone, so it is hidden there. Its declaration is `apertrust_tools::utility`'s, its page one custom row (`Widget::Styles`), drawn by `crates/app/src/styles/tool.rs` (`StylesTool`). It is drawn as Collections is: its header, chevron, title and ⋯, no ↺ and no presets button, then its rows on the panel, with no frame or well, ending after its last row.
+Built (decision 106, its phase 1; issues #371 and #625): a utility of the Photos tab, id `styles`, after Collections and before Export in the Default workspace (`data/workspaces/default.toml`), closed at first; Essentials shows Collections and Export alone, so it is hidden there. Its declaration is `apertrust_tools::utility`'s, its page one custom row (`Widget::Styles`), drawn by `crates/app/src/styles/tool.rs` (`StylesTool`). It is drawn as Collections is: its header, chevron, title and ⋯, no ↺ and no presets button, then its rows on the panel, with no frame or well, ending after its last row.
 
 ```text
 ⌄ Styles                                   ⋯
@@ -3256,21 +3256,29 @@ Built (decision 106, its phase 1; issue #371): a utility of the Photos tab, id `
   ✓ Bright
                                      (one empty row)
   [🔍 Find style                            ]
-  ⌄ Film
-      Cool film
-    ✓ Warm film
-  ✓ Bright
-    Future                       (disabled: made by a newer Apertrust)
+  ⌄ Built-in Styles
+    › Black and white
+      Lomo
+      Natural colour
+      Open shadows and highlights
+      Punchy
+      Vibrant colour
+  ⌄ Custom Styles
+    ⌄ Film
+        Cool film
+      ✓ Warm film
+    ✓ Bright
+      Future                     (disabled: made by a newer Apertrust)
 ```
 
 - **The styles applied** to the active photo come first, newest first, from `Values::styles`: a 26-point row each, a grey ✓ (`text_secondary`) before its own name, then one empty row, room for the next. Shown while a photo is open; with none applied, the empty row alone; with no photo, nothing. To screen readers a list, each item "<name>, applied". A click or a right-click on one opens one command, **Clear** (`Command::ClearStyle`, noted `history-clear-style`), disabled on a photo open for viewing only.
-- **Find style,** the sunken search field with its icon and the placeholder "Find style", narrows the tree to the styles whose names hold its text, ignoring case, their folders open. ↓ moves into the tree, to its first row, Return applies the first style it shows, the field keeping the focus, and × at its end while it holds text, or Escape, clears it.
-- **The tree** lists `<user data>/styles/*.apstyle` (`styles::tool::read`), each level its folders first, then its styles, by name in the file browser's order (`browser_order`). A `|` in a name makes folders, as darktable's do (`Film|Warm film` is Warm film in Film): a folder's row is its chevron and its name, no icon, its chevron, a click, ← and → opening and closing it. Every style row keeps a chevron's width before its name, holding an accent ✓ (`accent_text`) while the style is applied, so the names line up. A style's tooltip, and its description to screen readers, names its tools. A row that cannot apply, a file a newer Apertrust wrote or with no photo taking edits, is drawn disabled, its tooltip saying why, and keeps its menu, F2 and Delete; a file a newer Apertrust wrote is never rewritten, so its Rename Style… is disabled and F2 renames nothing. To screen readers a tree, folders expandable, each style a tree item described by "applied" while it is, then its tools; nothing is selected.
+- **Find style,** the sunken search field with its icon and the placeholder "Find style", narrows the tree to the styles whose names hold its text, ignoring case, in both root folders, their folders open; a root folder with no match is hidden while it searches. ↓ moves into the tree, to its first row, Return applies the first style it shows, the field keeping the focus, and × at its end while it holds text, or Escape, clears it.
+- **The tree** (`styles::tool::read`) has two root folders, always drawn, each with its chevron, open at first and kept open or closed as other folders are: **Built-in Styles** first, the eight styles Apertrust ships (decision 106, Built-in styles), each named by its Fluent message `style-builtin-<id>`, then **Custom Styles**, the person's, `<user data>/styles/*.apstyle`, which shows "No styles yet." (`styles-empty`) in one quiet line while it holds none. Inside each, each level its folders first, then its styles, by name in the file browser's order (`browser_order`). A `|` in a name makes folders, as darktable's do (`Film|Warm film` is Warm film in Film), the three black-and-white built-ins in Black and white: a folder's row is its chevron and its name, no icon, its chevron, a click, ← and → opening and closing it. Every style row keeps a chevron's width before its name, holding an accent ✓ (`accent_text`) while the style is applied, so the names line up. A style's tooltip, and its description to screen readers, names its tools. A row that cannot apply, a file a newer Apertrust wrote or with no photo taking edits, is drawn disabled, its tooltip saying why, and keeps its menu, F2 and Delete; a file a newer Apertrust wrote is never rewritten, so its Rename Style… is disabled and F2 renames nothing. To screen readers a tree, folders expandable, each style a tree item described by "applied" while it is, then its tools; nothing is selected.
 - **No current style:** nothing is chosen; every action is a click or a right-click.
 - **A click on a style** applies it (`Command::ApplyStyle`, noted `history-style`, one Undo) as `styles.mode` says: **Append** sets the style's tools this build has; **Replace** resets the edit first. An entry this build cannot apply is skipped, and the Viewer says so and why: "1 tool of "Warm film" was left out: made by a newer Apertrust", or "a tool Apertrust has retired" (`styles-left-out`).
-- **A right-click on a style** in the tree, Shift+F10 or the menu key opens its menu: **Apply** for one not applied or **Clear** for one that is, never both; a line; **Rename Style…** and **Delete Style…**. F2 renames and Delete asks. Rename Style… is a sheet of the dialog host (`styles::RenameDialog`), its name refused where empty or another style's; Delete Style… asks first ("Delete the style "…"?"), the file going on a yes, or the Viewer saying why it could not; where the platform cannot show that alert, as on Windows for now, Delete Style… is disabled and Delete does nothing, as a preset's Delete… is.
+- **A right-click on a style** in the tree, Shift+F10 or the menu key opens its menu: **Apply** for one not applied or **Clear** for one that is, never both; a line; then, for the person's style, **Rename Style…** and **Delete Style…**, and for a built-in, which is read-only, **Copy to Custom Styles…** alone. F2 renames and Delete asks, on the person's styles alone. Rename Style… and Copy to Custom Styles… are sheets of the dialog host (`styles::RenameDialog`), the second opening on the built-in's name and writing an `.apstyle` with its entries into Custom Styles; either refuses a name that is empty, another style's or a built-in style's as shown, as Create a Style… does; Delete Style… asks first ("Delete the style "…"?"), the file going on a yes, or the Viewer saying why it could not; where the platform cannot show that alert, as on Windows for now, Delete Style… is disabled and Delete does nothing, as a preset's Delete… is.
 - **⋯** holds Create a Style… (`create-style`), **Mode ▸ Append / Replace**, kept in `styles.mode` (owner app, `append` or `replace`, default `append`, applies at once, no page in Settings), Import Style… and Export Style… drawn disabled as later, then the layout's items.
-- **With no styles:** "No styles yet." (`styles-empty`). **With no photo open,** or one open for viewing only, the tree's styles are disabled, their tooltip saying why ("Open a photo to apply a style").
+- **With no styles of the person's:** Custom Styles holds "No styles yet." (`styles-empty`). **With no photo open,** or one open for viewing only, the tree's styles are disabled, their tooltip saying why ("Open a photo to apply a style").
 - **The History tab** names a style's steps by their note: "Style <name>", "Clear <name>", and "Styles applied" for the step Compress keeps the list on.
 - **Not yet:** the preview in the Viewer while the pointer rests on a style (phase 2); favourites, editing and duplicating a style; applying to several photos (#373); importing and exporting styles.
 
