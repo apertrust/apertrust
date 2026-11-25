@@ -23,6 +23,7 @@
 //! one's page through its `UtilityTool`, its widgets the page's custom rows (decision 93).
 
 pub mod export;
+pub mod metadata;
 
 use std::collections::BTreeSet;
 
@@ -54,6 +55,12 @@ pub struct UtilityDefinition {
     /// Its collapsible groups open at first, as Export's Global options (decision 90);
     /// every other is closed at first (decision 29).
     pub open: &'static [&'static str],
+    /// Whether its header has ＋, Rows Shown, before its ⋯, which shows or hides each of
+    /// its rows, as the Metadata tool's (decision 110).
+    pub rows_shown: bool,
+    /// Its groups' title tooltips, by their ids, each a message id, as the Metadata tool's
+    /// name the standard each follows (decision 110).
+    pub tips: &'static [(&'static str, &'static str)],
 }
 
 impl UtilityDefinition {
@@ -95,6 +102,11 @@ impl UtilityDefinition {
         // What it titles is a group of its page, and what opens at first a collapsible one.
         let titled = self.titles.iter().map(|(id, _)| id);
         if let Some(id) = titled.copied().find(|id| !seen.groups.contains(id)) {
+            return Err(DefinitionError::UnknownTitle(id));
+        }
+        // So is what it gives a tooltip.
+        let tipped = self.tips.iter().map(|(id, _)| id);
+        if let Some(id) = tipped.copied().find(|id| !seen.groups.contains(id)) {
             return Err(DefinitionError::UnknownTitle(id));
         }
         if let Some(id) = self.open.iter().find(|id| !seen.collapsible.contains(*id)) {
@@ -167,6 +179,8 @@ impl UtilityDefinition {
                         return Err(DefinitionError::SettingCondition(setting));
                     }
                 }
+                // Each fact once among its facts.
+                Row::Fact(fact) => once(&mut seen.facts, fact.id, DefinitionError::DuplicateFact)?,
                 Row::Custom { widget, .. } if !widget.is_utility() => {
                     return Err(DefinitionError::Widget(*widget));
                 }
@@ -212,6 +226,7 @@ fn edits(row: &Row) -> Option<&'static str> {
         | Row::WhenSetting { .. }
         | Row::Setting(_)
         | Row::Fields(_)
+        | Row::Fact(_)
         | Row::Line { .. } => None,
     }
 }
@@ -227,6 +242,8 @@ struct Seen {
     settings: BTreeSet<&'static str>,
     /// Its lines of fields.
     fields: BTreeSet<&'static str>,
+    /// Its facts.
+    facts: BTreeSet<&'static str>,
 }
 
 /// Keeps `id` in `ids`, a snake_case id not kept before, else the error `twice` makes of
@@ -297,6 +314,8 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         measures: Some(WorksOn::Display),
         titles: &[],
         open: &[],
+        rows_shown: false,
+        tips: &[],
     },
     UtilityDefinition {
         tool: ToolDefinition {
@@ -347,6 +366,8 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         measures: None,
         titles: &[],
         open: &[],
+        rows_shown: false,
+        tips: &[],
     },
     UtilityDefinition {
         tool: ToolDefinition {
@@ -377,6 +398,8 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         measures: None,
         titles: &[],
         open: &[],
+        rows_shown: false,
+        tips: &[],
     },
     UtilityDefinition {
         tool: ToolDefinition {
@@ -402,6 +425,8 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         measures: None,
         titles: &[],
         open: &[],
+        rows_shown: false,
+        tips: &[],
     },
     export::EXPORT,
 ];
@@ -465,6 +490,8 @@ mod tests {
             measures: None,
             titles: &[],
             open: &[],
+            rows_shown: false,
+            tips: &[],
         }
     }
 
@@ -1012,6 +1039,43 @@ mod tests {
         let keyless = SettingRow { key: None, ..HIGH };
         let unkept = [field(WIDE, None), field(keyless, Some(Times))];
         assert_eq!(fields(&unkept).check(), refused);
+    }
+
+    /// A utility holds each fact once among its facts, in its groups or out of them, and
+    /// gives a tooltip only to a group of its page (decision 110).
+    #[test]
+    fn a_utility_s_facts_are_each_once_and_its_tips_its_groups() {
+        const MAKE: Row = Row::Fact(crate::Fact {
+            id: "make",
+            shown: true,
+            cut: crate::Cut::End,
+            end: None,
+        });
+        const CAMERA: Row = Row::Group(Group {
+            id: "camera",
+            kind: GroupKind::Collapsible,
+            rows: &[MAKE],
+        });
+        let mut tipped = with(&[CAMERA]);
+        tipped.tips = &[("camera", "sample-camera-tip")];
+        tipped.rows_shown = true;
+        assert_eq!(tipped.check(), Ok(()));
+        let twice = with(&[CAMERA, MAKE]);
+        assert_eq!(twice.check(), Err(DefinitionError::DuplicateFact("make")));
+        let mut unknown = with(&[CAMERA]);
+        unknown.tips = &[("lens", "sample-lens-tip")];
+        assert_eq!(unknown.check(), Err(DefinitionError::UnknownTitle("lens")));
+        assert_eq!(
+            crate::messages::of_utility(&tipped),
+            [
+                "tool-sample-rows-shown",
+                "sample-camera-tip",
+                "tool-sample-collapsible-camera",
+                "tool-sample-fact-make-label",
+                "tool-sample-fact-make-tag",
+                "tool-sample-fact-make-none",
+            ]
+        );
     }
 
     /// Its titles and the groups open at first are its page's own.

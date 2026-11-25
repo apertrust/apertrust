@@ -465,6 +465,8 @@ mod tests {
         measures: None,
         titles: &[],
         open: &[],
+        rows_shown: false,
+        tips: &[],
     };
 
     /// Draws each custom row as a line naming its widget, and says it drew it.
@@ -611,6 +613,8 @@ mod tests {
             ("more", "export-global-options"),
         ],
         open: &["more"],
+        rows_shown: false,
+        tips: &[],
     };
 
     /// Keeps its two settings, says Overwrite cannot be chosen now and why, while Keep
@@ -878,6 +882,8 @@ mod tests {
         measures: None,
         titles: &[],
         open: &[],
+        rows_shown: false,
+        tips: &[],
     };
 
     /// Keeps its width and height, gives the height a tooltip of the page's, and says

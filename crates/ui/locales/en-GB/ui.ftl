@@ -1918,6 +1918,7 @@ pick-warning-short-tip = { $control } reached its end of { $value }
 export-button = Export { photo-count }
 export-reset = Reset export settings
 export-presets = Export presets
+metadata-presets = Metadata presets
 export-preset-default = Default settings
 export-metadata-note = This version writes no EXIF, location or copyright into exported files.
 export-path-tip-unexact = { $source } → { $pattern }, filled in as it is exported

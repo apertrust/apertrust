@@ -1484,6 +1484,7 @@ pick-warning-short-tip = { $control } osiągnęła granicę { $value }
 export-button = Eksportuj { photo-count }
 export-reset = Przywróć ustawienia eksportu
 export-presets = Presety eksportu
+metadata-presets = Presety metadanych
 export-preset-default = Ustawienia domyślne
 export-metadata-note = Ta wersja nie zapisuje jeszcze w plikach EXIF, lokalizacji ani praw autorskich.
 export-path-tip-unexact = { $source } → { $pattern }, zostanie uzupełnione podczas eksportu
