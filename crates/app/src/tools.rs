@@ -1495,8 +1495,12 @@ impl Rows for Page<'_> {
                 pickers_row(ui, self, label, readout.as_ref(), &pickers, changes);
             }
             Row::Guides => guides_row(ui, words),
-            // The page drawer's own.
-            Row::Group(_) | Row::When { .. } | Row::WhenSetting { .. } | Row::Setting(_) => {}
+            // The page drawer's own; a line of fields only a utility's, so far.
+            Row::Group(_)
+            | Row::When { .. }
+            | Row::WhenSetting { .. }
+            | Row::Setting(_)
+            | Row::Fields(_) => {}
         }
     }
 }
@@ -1538,6 +1542,7 @@ fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &m
             | Row::When { .. }
             | Row::WhenSetting { .. }
             | Row::Setting(_)
+            | Row::Fields(_)
             | Row::Line {
                 start: LineStart::None | LineStart::Label(_),
                 ..

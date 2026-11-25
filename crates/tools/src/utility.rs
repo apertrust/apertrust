@@ -62,7 +62,8 @@ impl UtilityDefinition {
     /// page one untitled tab, since
     /// its header draws no tab strip; no row that edits, so its rows are settings, groups,
     /// rows following a setting and custom rows naming no control, each a utility's own
-    /// widget; no action row until a utility's are bound to the registry; each group and
+    /// widget, and lines of fields of two or three number settings under keys; no action
+    /// row until a utility's are bound to the registry; each group, line of fields and
     /// setting once by its id, groups inside a group only as [`crate::Group`] allows, each
     /// plain group with rows, each setting's kind as a control's; rows following a setting
     /// following a choice setting of its own, shown outside them and wherever they show,
@@ -141,6 +142,16 @@ impl UtilityDefinition {
                         DefinitionError::DuplicateSetting,
                     )?;
                 }
+                // Its fields' settings are the utility's, each once among them all.
+                Row::Fields(fields) => {
+                    fields.check()?;
+                    once(&mut seen.fields, fields.id, DefinitionError::Fields)?;
+                    for field in fields.fields {
+                        if !seen.settings.insert(field.setting.id) {
+                            return Err(DefinitionError::Fields(fields.id));
+                        }
+                    }
+                }
                 Row::WhenSetting { setting, is, rows } => {
                     if rows.is_empty() {
                         return Err(DefinitionError::Empty(setting));
@@ -175,8 +186,8 @@ impl UtilityDefinition {
 /// control it names, a slider's, a choice's, a toggle's, the one rows follow, a line's at
 /// its start or a custom row's; a preset row, which writes controls; a picker's rows, a
 /// line with a picker or with no end item; a computed value, which an operation computes;
-/// and the guides, a processing tool's. None for a setting, a group, rows following a
-/// setting, a line of actions alone and a custom row naming no control.
+/// and the guides, a processing tool's. None for a setting, a line of fields, a group,
+/// rows following a setting, a line of actions alone and a custom row naming no control.
 fn edits(row: &Row) -> Option<&'static str> {
     match row {
         Row::Slider(slider) => Some(slider.control),
@@ -197,7 +208,11 @@ fn edits(row: &Row) -> Option<&'static str> {
         }
         Row::Computed(computed) => Some(computed.id),
         Row::Guides => Some("guides"),
-        Row::Group(_) | Row::WhenSetting { .. } | Row::Setting(_) | Row::Line { .. } => None,
+        Row::Group(_)
+        | Row::WhenSetting { .. }
+        | Row::Setting(_)
+        | Row::Fields(_)
+        | Row::Line { .. } => None,
     }
 }
 
@@ -210,6 +225,8 @@ struct Seen {
     /// The groups with no rows yet, placeholders drawn disabled and closed.
     empty: BTreeSet<&'static str>,
     settings: BTreeSet<&'static str>,
+    /// Its lines of fields.
+    fields: BTreeSet<&'static str>,
 }
 
 /// Keeps `id` in `ids`, a snake_case id not kept before, else the error `twice` makes of
@@ -898,6 +915,103 @@ mod tests {
         assert_eq!(with(&[Row::Setting(ON)]).check(), Ok(()));
     }
 
+    /// A number kept under a key, as Export's width.
+    const WIDE: SettingRow = SettingRow {
+        id: "wide",
+        kind: ControlKind::Number {
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            default: 0.0,
+        },
+        decimals: 0,
+        track: Track::Plain,
+        key: Some("sample.size.wide"),
+        words: None,
+        end: &[],
+    };
+    const HIGH: SettingRow = SettingRow {
+        id: "high",
+        key: Some("sample.size.high"),
+        ..WIDE
+    };
+    const DEEP: SettingRow = SettingRow {
+        id: "deep",
+        key: Some("sample.size.deep"),
+        ..WIDE
+    };
+
+    /// `setting` as a field, with `before` before it.
+    const fn field(setting: SettingRow, before: Option<crate::Separator>) -> crate::Field {
+        crate::Field {
+            setting,
+            before,
+            unit: Some(crate::Unit::Pixels),
+        }
+    }
+
+    /// A line of `fields`.
+    fn fields(fields: &[crate::Field]) -> UtilityDefinition {
+        with(Box::leak(Box::new([Row::Fields(crate::Fields {
+            id: "size",
+            words: "sample-size",
+            fields: Box::leak(fields.into()),
+        })])))
+    }
+
+    /// A line of fields holds two or three number settings under keys, each once among the
+    /// utility's settings, a separator before each but the first (decision 107).
+    #[test]
+    fn a_line_of_fields_holds_two_or_three_number_settings_under_keys() {
+        use crate::Separator::{At, Times};
+        let refused = Err(DefinitionError::Fields("size"));
+        let two = [field(WIDE, None), field(HIGH, Some(Times))];
+        assert_eq!(fields(&two).check(), Ok(()));
+        let three = [
+            field(WIDE, None),
+            field(HIGH, Some(Times)),
+            field(DEEP, Some(At)),
+        ];
+        assert_eq!(fields(&three).check(), Ok(()));
+        // One field, or four.
+        assert_eq!(fields(&[field(WIDE, None)]).check(), refused);
+        const FOURTH: SettingRow = SettingRow {
+            id: "fourth",
+            key: Some("sample.size.fourth"),
+            ..WIDE
+        };
+        let four = [
+            field(WIDE, None),
+            field(HIGH, Some(Times)),
+            field(DEEP, Some(At)),
+            field(FOURTH, Some(At)),
+        ];
+        assert_eq!(fields(&four).check(), refused);
+        // A setting that is no number.
+        let choice = SettingRow {
+            key: Some("sample.size.graph"),
+            ..GRAPH
+        };
+        let not_number = [field(WIDE, None), field(choice, Some(Times))];
+        assert_eq!(fields(&not_number).check(), refused);
+        // A separator missing before the second, or one before the first.
+        let missing = [field(WIDE, None), field(HIGH, None)];
+        assert_eq!(fields(&missing).check(), refused);
+        let leading = [field(WIDE, Some(Times)), field(HIGH, Some(Times))];
+        assert_eq!(fields(&leading).check(), refused);
+        // A setting twice, in the line or beside it.
+        let twice = [field(WIDE, None), field(WIDE, Some(Times))];
+        assert_eq!(fields(&twice).check(), refused);
+        let mut beside = fields(&two);
+        beside.tool.after = &[Row::Setting(WIDE)];
+        let again = Err(DefinitionError::DuplicateSetting("wide"));
+        assert_eq!(beside.check(), again);
+        // A setting kept under no key.
+        let keyless = SettingRow { key: None, ..HIGH };
+        let unkept = [field(WIDE, None), field(keyless, Some(Times))];
+        assert_eq!(fields(&unkept).check(), refused);
+    }
+
     /// Its titles and the groups open at first are its page's own.
     #[test]
     fn its_titles_and_open_groups_are_its_page_s() {
@@ -982,9 +1096,7 @@ mod tests {
         let ids: std::collections::BTreeSet<&str> = schema.ids().collect();
         fn keys(rows: &[Row], into: &mut Vec<&'static str>) {
             for row in rows {
-                if let Row::Setting(SettingRow { key: Some(key), .. }) = row {
-                    into.push(key);
-                }
+                into.extend(row.setting_rows().filter_map(|setting| setting.key));
                 keys(row.rows(), into);
             }
         }

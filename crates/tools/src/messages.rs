@@ -599,7 +599,8 @@ pub fn utility_presets(utility: &str) -> String {
 }
 
 /// Every message a utility's header and rows imply, each once, as [`of`] lists a
-/// processing tool's: its own ↺'s name, its presets button's words, each group's title, and each setting's words and options, those it
+/// processing tool's: its own ↺'s name, its presets button's words, each group's title, each
+/// line of fields' words, and each setting's and field's words and options, those it
 /// declares where it does, a name an option declares needing none. Its custom rows' words
 /// are its widgets' own.
 pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
@@ -608,18 +609,20 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
         for row in list {
             match row {
                 Row::Group(group) => ids.push(utility.title(group.id, group.kind)),
-                Row::Setting(setting) => {
-                    ids.extend(setting_row(tool, setting).into_iter().flatten());
-                    ids.extend(
-                        setting_row_options(tool, setting).into_iter().filter_map(
-                            |word| match word {
-                                Word::Message(id) => Some(id),
-                                Word::Name(_) => None,
-                            },
-                        ),
-                    );
-                }
+                Row::Fields(fields) => ids.push(fields.words.to_owned()),
                 _ => {}
+            }
+            // A setting row's, or each field's of a line of fields.
+            for setting in row.setting_rows() {
+                ids.extend(setting_row(tool, setting).into_iter().flatten());
+                ids.extend(
+                    setting_row_options(tool, setting)
+                        .into_iter()
+                        .filter_map(|word| match word {
+                            Word::Message(id) => Some(id),
+                            Word::Name(_) => None,
+                        }),
+                );
             }
             rows(utility, row.rows(), ids);
         }
