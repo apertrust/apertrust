@@ -324,7 +324,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 Row::Group(Group {
                     id: "position_form",
                     kind: GroupKind::Plain,
-                    rows: &[/* … */ Row::Toggle { control: "autoratio" }],
+                    rows: &[/* … */ Row::Toggle { control: "autoratio", end: &[] }],
                 }),
             ],
         }],
@@ -440,9 +440,7 @@ Every row is a variant of `Row` in `crates/tools/src/definition.rs`:
 | `Custom { widget, controls }` | A painted widget from the closed `Widget` list | the Tone curve's `Curve`, the tone equalizer's `Equalizer` |
 | `Preset { preset, style }` | A preset row: one choice whose options write several controls | White balance's Settings |
 | `Setting(SettingRow)` | One of darktable's own settings for the tool, kept in the app's settings, never the edit | Colour calibration's checker, the tone equalizer's mask display |
-| `Action { id }` | One of darktable's buttons, writing controls when pressed | AgX's buttons |
-| `Pickers { .. }` | A label with colour-picker buttons at its end | the tests' `testing::Sample` |
-| `Buttons { control, buttons }` | A control's row of buttons that write it | Orientation's rotate and flip |
+| `Line { start, readout, end }` | darktable's packed line: a start (none, a label, or a control) and end items (`End::Picker`, `End::Action`), drawn in three shapes for now: a label or a readout with picker buttons at its end; a control's reset label with icon action buttons that write it; one text action alone, drawn disabled until it runs (decision 107) | AgX's Auto tune levels and buttons, Orientation's rotate and flip, the tests' `testing::Sample` |
 | `Computed(Computed)` | A read-only number the operation computes | Exposure's computed EC |
 | `Reference`, `LastPick`, `Patches` | A kept reference, what the last pick did, a picker's input and target patches | Exposure's first two; `Patches` no tool yet |
 | `Guides` | darktable's guides toggle | Orientation |
@@ -453,18 +451,18 @@ Exposure's page, trimmed, shows several at once:
 
 ```rust
 rows: &[
-    Row::Choice { control: "mode", style: ChoiceStyle::Segmented },
+    Row::Choice { control: "mode", style: ChoiceStyle::Segmented, end: &[] },
     Row::When {
         control: "mode",
         is: &["manual"],
         rows: &[
-            Row::Toggle { control: "camera_bias" },
-            Row::Toggle { control: "compensate_hilite_pres" },
+            Row::Toggle { control: "camera_bias", end: &[] },
+            Row::Toggle { control: "compensate_hilite_pres", end: &[] },
             Row::Slider(
                 Slider::new("exposure")
                     .decimals(3)
                     .soft(-3.0, 4.0)
-                    .quad(Quad::Picker("exposure")),
+                    .end(End::Picker("exposure")),
             ),
             // … Picker target, Lightness, Reference
             Row::LastPick { picker: "exposure" },
@@ -492,7 +490,7 @@ The control holds what a value may be; the slider row holds how it is shown:
 - **Decimals:** `Slider::new` shows two; `.decimals(n)` sets darktable's digits.
 - **The unit,** `Control::unit`, from the closed `Unit` list: `Ev`, `Percent`, `Degrees`, `Kelvin`, `Pixels`, `Iso`. A fixed change of unit is allowed (a factor shown as a percentage, radians as degrees), and the binding converts back.
 - **The track:** `Track::Plain` by default; `.track(Track::Luminance)` and the others paint darktable's colour ramps, as Colour balance RGB's luminance rows do. `.no_fill()` drops the fill from the default to the value.
-- **The quad:** `.quad(Quad::Picker(id))` puts a picker's button at the row's end, as on Exposure's slider.
+- **The quad:** `.end(End::Picker(id))` puts a picker's button at the row's end, as on Exposure's slider, darktable's quad its one end item (decision 107). A choice, a toggle and a setting take `end: &[]` until theirs are drawn.
 - **A range that moves with other controls,** as AgX's pivot does, comes from `ProcessingTool::range`.
 
 [tools/README.md](../tools/README.md#sliders-against-darktable) says how each is read from darktable's `gui_init`, and every tool's test compares them with `testing::slider_differences`.

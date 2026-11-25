@@ -63,7 +63,7 @@ The wireframe's board for the Exposure tool designs a page that explains itself.
 - **`Row::WhenSetting { setting, is, rows }`:** rows shown while a choice setting holds one of `is`, as `Row::When` does for a control; `ProcessingDefinition::check` holds `setting` to a choice `Row::Setting` of the tool.
 - **`Row::Reference { picker, lightness, photo }`:** the reference row, naming its picker, the number setting holding the reference's L and the text setting holding its photo's path; it joins `Row::pickers()`, and a tool's settings, which a picker's `settings` must name, are its `Row::Setting`s and the settings a `Row::Reference` names.
 - **`Row::LastPick { picker }`:** the last pick's readout of a picker that writes controls, and the warning line above it.
-- **The rows with no control** are `Row::Setting`, `Row::Action` (replaced by a line row's `Action` end item, [0107](0107-packed-lines-one-line-row-with-end-items.md), planned), `Row::Patches`, `Row::Computed` ([0087](0087-the-raws-histogram-counted-once-for-an-operation-that-reads-it.md)), `Row::Reference` and `Row::LastPick`. `Row::Patches` stays for Colour calibration's Area colour mapping; Exposure no longer uses it.
+- **The rows with no control** are `Row::Setting`, a line row with no control at its start, its end items pickers or actions ([0107](0107-packed-lines-one-line-row-with-end-items.md)), `Row::Patches`, `Row::Computed` ([0087](0087-the-raws-histogram-counted-once-for-an-operation-that-reads-it.md)), `Row::Reference` and `Row::LastPick`. `Row::Patches` stays for Colour calibration's Area colour mapping; Exposure no longer uses it.
 
 **What a pick shows.**
 
