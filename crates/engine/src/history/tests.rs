@@ -55,7 +55,13 @@ fn step(id: u64, change: Change) -> Step {
         note: None,
         batch: None,
         change,
+        styles: None,
     }
+}
+
+/// The clock a Compress in these tests writes a list-only step at.
+fn compressing() -> Clock {
+    Clock::at(1_000_000, None, MachineId::UNKNOWN)
 }
 
 /// The change of the one tool that differs from `before` to `after`.
@@ -121,6 +127,7 @@ fn names(changes: &[Change]) -> Vec<String> {
             Change::Entry(Entry::Tool { tool, .. }) => tool.clone(),
             Change::Entry(Entry::Operation { operation, .. }) => format!("{operation} params"),
             Change::Reset(entries) => format!("reset of {}", entries.len()),
+            Change::None => "no tool".to_owned(),
         })
         .collect()
 }
@@ -773,14 +780,14 @@ fn compress_keeps_each_tool_s_last_entry_drops_empty_ones_and_every_step_after_t
     log.add(step(4, changed(&brighter, &ungrained)));
     log.add(step(5, changed(&ungrained, &brightened(0.9))));
     log.set_end(4);
-    let compressed = log.compressed();
+    let compressed = log.compressed(compressing());
     assert_eq!(ids_and_end(&compressed), (vec![3], 1));
     // Kept as it was: its id, clock, source, note, batch and entry.
     assert_eq!(compressed.steps()[0], log.steps()[2]);
     assert_eq!(compressed.fold(), log.fold());
     // A step that is its tool's last keeps its note and batch.
     log.set_end(3);
-    let kept = log.compressed();
+    let kept = log.compressed(compressing());
     assert_eq!(ids_and_end(&kept), (vec![2, 3], 2));
     assert_eq!(
         (&kept.steps()[0].note, kept.steps()[0].batch),
@@ -792,11 +799,11 @@ fn compress_keeps_each_tool_s_last_entry_drops_empty_ones_and_every_step_after_t
     reset.add(step(1, changed(&Edit::default(), &one)));
     add(&mut reset, 2, &one, &Edit::default(), &[Wrote::All]);
     assert!(matches!(reset.steps()[1].change, Change::Reset(_)));
-    assert_eq!(ids_and_end(&reset.compressed()), (vec![], 0));
+    assert_eq!(ids_and_end(&reset.compressed(compressing())), (vec![], 0));
     // At Original, nothing is kept; compressed again, a log is as it was.
     log.set_end(0);
-    assert_eq!(log.compressed(), Log::default());
-    assert_eq!(compressed.compressed(), compressed);
+    assert_eq!(log.compressed(compressing()), Log::default());
+    assert_eq!(compressed.compressed(compressing()), compressed);
 }
 
 /// Compress keeps every default step, the end's or Original's photo needing them, though a
@@ -808,7 +815,7 @@ fn compress_keeps_every_default_step() {
     let defaults: Vec<u64> = log.steps().iter().map(|step| step.id.0).collect();
     let one = brightened(0.5);
     log.add(step(1, changed(&Edit::default(), &one)));
-    let compressed = log.compressed();
+    let compressed = log.compressed(compressing());
     assert_eq!(
         ids_and_end(&compressed),
         (vec![defaults[0], defaults[1], 1], 3)
@@ -817,7 +824,7 @@ fn compress_keeps_every_default_step() {
     assert_eq!(compressed.fold(), log.fold());
     // Sample reset after: its last step empty, no step of the person's kept for it.
     log.add(step(2, changed(&one, &Edit::default())));
-    assert_eq!(ids_and_end(&log.compressed()), (defaults, 2));
+    assert_eq!(ids_and_end(&log.compressed(compressing())), (defaults, 2));
 }
 
 /// A log of darktable's default steps, those darktable has off until its workflow applies
@@ -847,7 +854,10 @@ fn compress_and_truncate_leave_the_photo_as_it_shows_at_the_end_and_at_original(
     for end in 1..=log.steps().len() {
         let mut at = log.clone();
         at.set_end(end);
-        for (name, rewritten) in [("compress", at.compressed()), ("truncate", at.truncated())] {
+        for (name, rewritten) in [
+            ("compress", at.compressed(compressing())),
+            ("truncate", at.truncated()),
+        ] {
             assert_eq!(rewritten.fold(), at.fold_to(end), "{name} at {end}");
             assert_eq!(rewritten.fold_to(0), at.fold_to(0), "{name} at {end}");
             assert_eq!(rewritten.defaults(), 3, "{name} at {end}");
@@ -858,14 +868,14 @@ fn compress_and_truncate_leave_the_photo_as_it_shows_at_the_end_and_at_original(
     }
     let mut among = log.clone();
     among.set_end(1);
-    let compressed = among.compressed();
+    let compressed = among.compressed(compressing());
     assert_eq!((compressed.steps().len(), compressed.end()), (3, 1));
     let unapplied: BTreeSet<String> = ["agx", "exposure"].map(str::to_owned).into();
     assert_eq!(compressed.fold().unapplied, unapplied);
     assert_eq!(among.truncated(), compressed);
     let mut original = log;
     original.set_end(0);
-    assert_eq!(original.compressed(), Log::default());
+    assert_eq!(original.compressed(compressing()), Log::default());
     assert_eq!(original.truncated(), Log::default());
 }
 
@@ -959,4 +969,81 @@ fn undo_s_fallback_stops_above_a_default_step_after_the_person_s() {
     assert_eq!(log.undo_end(), Some(4));
     log.set_end(4);
     assert_eq!(log.undo_end(), None);
+}
+
+/// A tool `tool` a style set from `before` to `after`, each Grain at that strength or reset.
+fn style_tool(tool: &str, before: Option<f32>, after: Option<f32>) -> StyleTool {
+    let state = |strength: Option<f32>| {
+        strength.map_or_else(ToolValues::new, |strength| {
+            grained(&Edit::default(), strength).tools["grain"].clone()
+        })
+    };
+    StyleTool {
+        tool: tool.to_owned(),
+        before: state(before),
+        after: state(after),
+    }
+}
+
+fn style(name: &str, tools: Vec<StyleTool>) -> AppliedStyle {
+    AppliedStyle {
+        name: name.to_owned(),
+        file: format!("{name}.apstyle"),
+        tools,
+    }
+}
+
+/// The session's change of the list replayed on a newer list (decision 106): a style
+/// cleared taken out, a style applied put at the top, its tools' state before from the
+/// joined log, the earlier item's where the tool still held its after, and the earlier
+/// item's other tools kept; a style below one cleared stays as it was.
+#[test]
+fn replay_lays_the_session_s_change_of_the_list_on_the_newer_one() {
+    // The newer file: A, setting grain from 1 to 2 and soften, above B.
+    let newer_a = style(
+        "A",
+        vec![
+            style_tool("grain", Some(1.0), Some(2.0)),
+            style_tool("soften", None, Some(5.0)),
+        ],
+    );
+    let b = style("B", vec![style_tool("vignette", None, Some(3.0))]);
+    // The session applies A on grain alone, from 9, which it held, to 2.
+    let ours = style("A", vec![style_tool("grain", Some(9.0), Some(2.0))]);
+    let stepped: BTreeSet<String> = ["grain".to_owned()].into();
+    let grain_at = |strength: f32| move |_: &str| style_tool("grain", Some(strength), None).before;
+    let mut rebuilt = vec![newer_a.clone(), b.clone()];
+    replay(
+        &mut rebuilt,
+        (&[], std::slice::from_ref(&ours)),
+        &stepped,
+        grain_at(2.0),
+    );
+    // Grain held A's after just before: A's earlier before kept, soften kept.
+    assert_eq!(rebuilt, [newer_a.clone(), b.clone()]);
+    // Grain held 7 instead: its before is 7.
+    let mut rebuilt = vec![b.clone(), newer_a.clone()];
+    replay(
+        &mut rebuilt,
+        (&[], std::slice::from_ref(&ours)),
+        &stepped,
+        grain_at(7.0),
+    );
+    let names: Vec<_> = rebuilt.iter().map(|style| &style.name[..]).collect();
+    assert_eq!(names, ["A", "B"]);
+    assert_eq!(
+        rebuilt[0].tools[0],
+        style_tool("grain", Some(7.0), Some(2.0))
+    );
+    assert_eq!(rebuilt[0].tools[1], newer_a.tools[1]);
+    // A Clear of A: taken out, and B, promoted, is not applied again.
+    let mut rebuilt = vec![newer_a.clone(), b.clone()];
+    let none = BTreeSet::new();
+    replay(
+        &mut rebuilt,
+        (&[ours.clone(), b.clone()], std::slice::from_ref(&b)),
+        &none,
+        grain_at(0.0),
+    );
+    assert_eq!(rebuilt, [b]);
 }

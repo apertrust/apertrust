@@ -77,7 +77,9 @@ pub use apertrust_library::sidecar::{
 pub(crate) use apertrust_library::sidecar::{file_name, writer};
 
 use crate::edit::Edit;
-use crate::history::{self, BatchId, Change, Log, Note, Step, StepId, StepSource};
+use crate::history::{
+    self, AppliedStyle, BatchId, Change, Log, Note, Step, StepId, StepSource, StyleTool,
+};
 
 /// An edit read back: its log and the edit it folds to, the version it was saved as, the
 /// build that wrote it, what could not be used, and the file as text, which a write keeps.
@@ -286,27 +288,26 @@ fn from_edits(
                 newer = newer.or(found);
                 entries.extend(read);
             }
-            if entries.is_empty() && !step.entries.is_empty() {
+            let styles = (step.styles.as_ref()).map(|list| {
+                read_styles(
+                    list,
+                    &mut warnings,
+                    &mut newer,
+                    (operations, tools),
+                    retired,
+                )
+            });
+            // A step left with no entry is left out, but one holding the styles applied.
+            if entries.is_empty() && !step.entries.is_empty() && styles.is_none() {
                 continue;
             }
             end += usize::from(at < applied);
-            steps.push(typed_step(step, entries));
+            steps.push(typed_step(step, entries, styles));
         }
     }
     // A warning once, however many steps hold the same entry.
     let mut seen = HashSet::new();
     warnings.retain(|warning| seen.insert(warning.clone()));
-    // The styles applied a step holds (decision 106) are not kept by this reading yet: a
-    // field a save would drop, so the edit opens for viewing only.
-    let mut problems = file.problems.clone();
-    if let Some(copy) = file.copies.first() {
-        for step in copy.history.iter().filter(|step| step.styles.is_some()) {
-            problems.push(Problem::UnknownField {
-                place: format!("step {} of copy {}", step.id, copy.id),
-                field: "apertrust:styles".to_owned(),
-            });
-        }
-    }
     let log = Log::from_steps(steps, end);
     Loaded {
         edit: log.fold(),
@@ -314,17 +315,23 @@ fn from_edits(
         version: file.version,
         build: file.build.clone(),
         newer,
-        problems,
+        problems: file.problems.clone(),
         warnings,
         file,
     }
 }
 
-/// A step of the text layer's with `entries`, its entries read: Reset's where it is noted
-/// `history-reset` or holds other than one entry, else its one tool's. What cannot be
-/// read, which the text layer told as a [`Problem`], is read as nothing: an id or a batch
-/// as 0, a source as You, a clock as the unknown machine's at 1970.
-fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
+/// A step of the text layer's with `entries`, its entries read, and `styles`, its list of
+/// styles applied read: Reset's where it is noted `history-reset`; its one tool's where it
+/// holds one entry; no tool's where it holds none and a list (decision 106), a list-only
+/// step; else Reset's, as one of no entry and no list is. What cannot be read, which the
+/// text layer told as a [`Problem`], is read as nothing: an id or a batch as 0, a source as
+/// You, a clock as the unknown machine's at 1970.
+fn typed_step(
+    step: &text::Step,
+    mut entries: Vec<history::Entry>,
+    styles: Option<Vec<AppliedStyle>>,
+) -> Step {
     let hex = |text: &str| u64::from_str_radix(text, 16).unwrap_or(0);
     let note = step.note.clone().map(|note| match note {
         text::Note::Message { id, args } => Note::Message { id, args },
@@ -333,6 +340,7 @@ fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
     let reset = matches!(&note, Some(Note::Message { id, .. }) if id == Note::RESET);
     let change = match entries.len() {
         1 if !reset => Change::Entry(entries.remove(0)),
+        0 if !reset && styles.is_some() => Change::None,
         _ => Change::Reset(entries),
     };
     Step {
@@ -342,7 +350,46 @@ fn typed_step(step: &text::Step, mut entries: Vec<history::Entry>) -> Step {
         note,
         batch: step.batch.as_deref().map(|batch| BatchId(hex(batch))),
         change,
+        styles,
     }
+}
+
+/// A step's list of styles applied read (decision 106): each style's tools, its entries
+/// before and after it read as every step's entries are, migrated or clamped with a
+/// warning, what tells a newer Apertrust wrote them told in `newer` where nothing has yet;
+/// a tool this build keeps none of, a retired tool, left out of both.
+fn read_styles(
+    list: &[text::AppliedStyle],
+    warnings: &mut Vec<String>,
+    newer: &mut Option<Newer>,
+    (operations, tools): (&[&dyn Operation], &[&dyn ProcessingTool]),
+    retired: &[&str],
+) -> Vec<AppliedStyle> {
+    let mut read = |entry: &Entry| {
+        let (read, found) = read_entry(entry.clone(), warnings, (operations, tools), retired);
+        *newer = newer.take().or(found);
+        match read {
+            Some(history::Entry::Tool { tool, values }) => Some((tool, values)),
+            _ => None,
+        }
+    };
+    (list.iter())
+        .map(|style| AppliedStyle {
+            name: style.name.clone(),
+            file: style.file.clone(),
+            tools: (style.before.iter().zip(&style.after))
+                .filter_map(|(before, after)| {
+                    let (before, after) = (read(before), read(after));
+                    let ((tool, before), (_, after)) = (before?, after?);
+                    Some(StyleTool {
+                        tool,
+                        before,
+                        after,
+                    })
+                })
+                .collect(),
+        })
+        .collect()
 }
 
 /// One entry of a step read for `operations` and `tools`: a tool's whole state, or an
@@ -495,7 +542,37 @@ fn step_text(
         entries: (step.change.entries().iter())
             .map(|entry| entry_text(entry, operations, tools))
             .collect(),
-        styles: None,
+        styles: (step.styles.as_ref()).map(|list| {
+            (list.iter())
+                .map(|style| style_text(style, operations, tools))
+                .collect()
+        }),
+    }
+}
+
+/// A style applied as the text layer holds it: its name and file, and each tool's entry
+/// before it and after it as version 1 writes one.
+fn style_text(
+    style: &AppliedStyle,
+    operations: &[&dyn Operation],
+    tools: &[&dyn ProcessingTool],
+) -> text::AppliedStyle {
+    let entries = |state: fn(&StyleTool) -> &ToolValues| {
+        (style.tools.iter())
+            .map(|tool| {
+                let entry = history::Entry::Tool {
+                    tool: tool.tool.clone(),
+                    values: state(tool).clone(),
+                };
+                entry_text(&entry, operations, tools)
+            })
+            .collect()
+    };
+    text::AppliedStyle {
+        name: style.name.clone(),
+        file: style.file.clone(),
+        before: entries(|tool| &tool.before),
+        after: entries(|tool| &tool.after),
     }
 }
 
@@ -1798,6 +1875,7 @@ pub(crate) mod tests {
             note: None,
             batch: None,
             change,
+            styles: None,
         };
         let words = Some(Note::Text("warmer".to_owned()));
         let batch = Some(BatchId(0x0f1e_2d3c_4b5a_6978));
@@ -1855,6 +1933,47 @@ pub(crate) mod tests {
         let mut file = Edits::new("");
         file.photo = Some("IMG.ARW".to_owned());
         log_xml(&file, &log, &clocks, (OPERATIONS, TOOLS), BUILD)
+    }
+
+    /// The styles applied a log holds (decision 106) read back as they were, a list-only
+    /// step's as no tool's, not as an empty Reset; and a list-only step whose one entry is a
+    /// retired tool's, left out as it is read, stays as no tool's, holding its list.
+    #[test]
+    fn the_styles_applied_read_back_and_a_list_only_step_is_no_reset() {
+        let (mut log, clocks) = logged();
+        let style = AppliedStyle {
+            name: "Warm".to_owned(),
+            file: "Warm.apstyle".to_owned(),
+            tools: vec![StyleTool {
+                tool: "look".to_owned(),
+                before: ToolValues::new(),
+                after: edited().tools["look"].clone(),
+            }],
+        };
+        log.hold_styles(vec![style.clone()]);
+        let at = clock(PI_DAY + 9_000, 0, "5e1f22c9");
+        let note = Some(Note::clear_style("Warm"));
+        log.add_change(vec![Change::None], StepSource::Style, note, at);
+        log.hold_styles(Vec::new());
+        let mut clocks = clocks;
+        history::advance(&mut clocks, at);
+        let xml = log_xml(&Edits::new(""), &log, &clocks, (OPERATIONS, TOOLS), BUILD);
+        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
+        assert!(loaded.view_only().is_none(), "{:?}", loaded.problems);
+        assert_eq!(loaded.log, log);
+        assert!(loaded.log.styles().is_empty());
+        assert_eq!(loaded.log.styles_at(loaded.log.end() - 1), [style]);
+        // The list-only step's entries, the last step's, hold a retired tool's.
+        let entries = xml.rfind("<apertrust:entries>").unwrap();
+        let empty = entries + xml[entries..].find("<rdf:Seq/>").unwrap();
+        let retired = format!(
+            r#"{}<rdf:Seq><rdf:li><rdf:Description apertrust:tool="lens"/></rdf:li></rdf:Seq>{}"#,
+            &xml[..empty],
+            &xml[empty + "<rdf:Seq/>".len()..]
+        );
+        let loaded = from_xml(&retired, OPERATIONS, TOOLS, &["lens"]).unwrap();
+        assert!(loaded.view_only().is_none(), "{:?}", loaded.problems);
+        assert_eq!(loaded.log, log);
     }
 
     /// A log written as version 2 reads back as it was, its steps, their ids, clocks,
@@ -2088,23 +2207,6 @@ pub(crate) mod tests {
             assert!(view_only.to_string().contains(said), "{name}");
             assert_eq!(loaded.log.steps().len(), 5, "{name}");
         }
-    }
-
-    /// A step holding the styles applied (decision 106) is a field this reading does not keep
-    /// yet: the edit opens for viewing only rather than lose the list at its next save.
-    #[test]
-    fn a_step_holding_the_styles_applied_opens_the_edit_for_viewing_only() {
-        let xml = logged_xml().replacen(
-            "</apertrust:entries>",
-            "</apertrust:entries><apertrust:styles><rdf:Seq/></apertrust:styles>",
-            1,
-        );
-        let loaded = from_xml(&xml, OPERATIONS, TOOLS, &[]).unwrap();
-        let view_only = loaded.view_only().expect("for viewing only");
-        assert!(
-            matches!(&view_only.reason, Reason::Unreadable(Problem::UnknownField { field, .. }) if field == "apertrust:styles"),
-            "{view_only:?}"
-        );
     }
 
     /// A file that names its tools as nightly builds did before decision 4's rename,

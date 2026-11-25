@@ -413,7 +413,8 @@ fn compress_truncate_and_discard_are_undone_and_redone_whole() {
                     // The log as Compress or Truncate makes it from the end, at the step
                     // where one is named.
                     let expected = match which {
-                        0 => at_step.compressed(),
+                        // No style is applied, so no step of the list is written.
+                        0 => at_step.compressed(Clock::at(0, None, MachineId::UNKNOWN)),
                         _ => at_step.truncated(),
                     };
                     assert_eq!(made, expected, "{context}");

@@ -117,6 +117,7 @@ pub(crate) mod open;
 mod outbox;
 mod pickers;
 mod selection;
+mod styles;
 mod thumbnail;
 
 use std::borrow::Cow;
@@ -367,6 +368,35 @@ pub enum Command {
         note: Option<Note>,
         commands: Vec<Command>,
     },
+    /// Apply the style `name`, from the file named `file` in the styles folder, as one change
+    /// of source Style noted `history-style` with its name (decision 106; `docs/history.md`,
+    /// The styles applied): with [`StyleMode::Replace`], the whole edit reset first, as
+    /// [`Command::Reset`] does; then each of `tools` set as [`Command::SetTool`] sets it,
+    /// checked and refused alike, all or none, a step of each tool it changes sharing a
+    /// batch. The client reads the `.apstyle` and turns each entry into values with
+    /// [`sidecar::tool_values`], leaving a parked one out. The style goes to the top of the
+    /// styles applied, [`Values::styles`], any item of its name taken out first, with each
+    /// tool's state before and after it: before, its state in the edit just before the
+    /// change, its reset state after a Replace's reset, or, applied again, the earlier
+    /// item's state before it where the tool still held what that set; the earlier item's
+    /// tools it does not set kept as they were. The change's last step holds the list; one
+    /// that moves the list and no tool is a step holding the list alone; one that moves
+    /// neither makes none. Refused inside a [`Command::Step`] ([`SessionError::NotInStep`]).
+    ApplyStyle {
+        name: String,
+        file: String,
+        mode: StyleMode,
+        tools: Vec<(String, ToolValues)>,
+    },
+    /// Clear the style `name` (decision 106): each tool it set whose state is still the one
+    /// the style left goes back to its state before the style, and the style leaves the
+    /// styles applied, as one change of source Style noted `history-clear-style` with its
+    /// name, a step of each tool put back sharing a batch, the last holding the list; a tool
+    /// changed since keeps its value; with none put back, a step holding the list alone.
+    /// One Undo takes it back, the list included. A name the list lacks is refused
+    /// ([`SessionError::UnknownStyle`]), and so is a `ClearStyle` inside a [`Command::Step`]
+    /// ([`SessionError::NotInStep`]).
+    ClearStyle { name: String },
     /// The History tab's eye, held (decision 78): the live frame shows the tool as if it
     /// were reset while `hidden`, off for a switched tool and at its defaults for one
     /// every photo runs, whose operation is never skipped; with `hidden` false, as the edit
@@ -514,6 +544,16 @@ pub enum Command {
     /// removal, for a test.
     #[cfg(test)]
     HoldClear(export_job::testing::Hold),
+}
+
+/// How [`Command::ApplyStyle`] applies a style (decision 106), as the person chooses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StyleMode {
+    /// Sets the style's tools alone.
+    #[default]
+    Append,
+    /// Resets the whole edit first, as [`Command::Reset`] does, then sets them.
+    Replace,
 }
 
 /// Whether `command` acts on the open photo's edit, as every command does but these: the
@@ -937,6 +977,21 @@ pub struct Values {
     /// decoded and uploaded, while every command on the edit is refused
     /// ([`SessionError::NotLive`]), and true from the batch of its first live frame.
     pub live: bool,
+    /// The styles applied to the photo, newest first, as its history holds them at its end
+    /// (decision 106), which the Styles tool lists and [`Command::ClearStyle`] takes off.
+    pub styles: Vec<StyleState>,
+}
+
+/// A style applied to the photo, as a client lists it (decision 106).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StyleState {
+    /// Its name as applied.
+    pub name: String,
+    /// Its file name in the styles folder as applied, though it may be renamed or deleted
+    /// since.
+    pub file: String,
+    /// The ids of the tools it set, in the order it set them.
+    pub tools: Vec<String>,
 }
 
 impl Values {
@@ -1306,6 +1361,10 @@ pub enum SessionError {
     /// is as it was.
     #[error("there is no earlier selection to go back to")]
     NoPreviousSelection,
+    /// [`Command::ClearStyle`] named a style the open photo's styles applied do not list
+    /// ([`Values::styles`]): nothing changes.
+    #[error("the style {name} is not applied to the photo")]
+    UnknownStyle { name: String },
     /// [`Command::CancelJob`] named a job that cannot be cancelled: it goes on.
     #[error("job {job} cannot be cancelled")]
     NotCancellable { job: JobId },
@@ -3436,6 +3495,13 @@ impl Engine {
                 Command::Step { commands, .. } => {
                     commands.iter().filter_map(changed_tool).collect()
                 }
+                Command::ApplyStyle { mode, tools, .. } => match mode {
+                    StyleMode::Replace => vec![None],
+                    StyleMode::Append => {
+                        (tools.iter()).map(|(tool, _)| Some(tool.clone())).collect()
+                    }
+                },
+                Command::ClearStyle { name } => self.style_tools(name),
                 command => changed_tool(command).into_iter().collect(),
             };
             // A tool's picker on, and its tool's state, before a move through the history
@@ -4106,6 +4172,13 @@ impl Engine {
             Command::Truncate { after } => return self.rewrite(history::Rewrite::Truncate(after)),
             Command::DiscardHistory => return self.rewrite(history::Rewrite::Discard),
             Command::Step { commands, .. } => return self.apply_step(commands),
+            Command::ApplyStyle {
+                name,
+                file,
+                mode,
+                tools,
+            } => return self.apply_style(&name, &file, mode, tools),
+            Command::ClearStyle { name } => return self.clear_style(&name),
             Command::Open(_)
             | Command::Close
             | Command::Resize { .. }
@@ -6386,6 +6459,13 @@ impl Open {
             through,
             extent,
             live: self.input.is_some(),
+            styles: (self.history.styles().iter())
+                .map(|style| StyleState {
+                    name: style.name.clone(),
+                    file: style.file.clone(),
+                    tools: style.tools.iter().map(|tool| tool.tool.clone()).collect(),
+                })
+                .collect(),
         }
     }
 
@@ -6591,6 +6671,7 @@ mod tests {
     mod history;
     mod selection;
     mod set_tool;
+    mod styles;
     mod view;
 
     use std::sync::mpsc::Receiver;
@@ -7174,6 +7255,15 @@ mod tests {
             set("brightness", ControlValue::Number(0.5), true),
             Command::Reset,
             Command::RetrySave,
+            Command::ApplyStyle {
+                name: "Warm film".to_owned(),
+                file: "Warm film.apstyle".to_owned(),
+                mode: StyleMode::Append,
+                tools: Vec::new(),
+            },
+            Command::ClearStyle {
+                name: "Warm film".to_owned(),
+            },
         ]));
         let refused: Vec<u64> = events
             .iter()
@@ -7186,7 +7276,8 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(refused, [early, late, late + 1, late + 2], "{events:?}");
+        let late: Vec<u64> = (late..late + 5).collect();
+        assert_eq!(refused, [&[early][..], &late].concat(), "{events:?}");
         let reported = values(&events);
         assert!(!reported.live);
         assert_eq!(

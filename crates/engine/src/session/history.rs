@@ -56,6 +56,12 @@
 //! an edit open for viewing only because of a `sidecar::Problem`, `DiscardHistory` starts
 //! the log afresh from the edit as read ([`PhotoHistory::afresh`]).
 //!
+//! A style's change, `ApplyStyle` or `ClearStyle` (`session/styles.rs`, decision 106), leaves
+//! the list of styles applied it makes to [`PhotoHistory::complete`], which puts it on the
+//! change's last step, or on a step of its own where the change moves no tool; a Reset
+//! empties it. A newer file taken in has the steps laid on it hold their lists rebuilt on
+//! its own ([`crate::history::replay`]).
+//!
 //! A change merges into the step before it as darktable's undo merges a widget's quick
 //! repeats (`_dev_undo_start_record_target`, `src/develop/develop.c:1351-1370`): the same
 //! target, a control or a preset row, of the same source, You or Auto, with no note, made
@@ -67,18 +73,18 @@
 //! client sent them, and the frames' publications, both handed in, so a test sets them.
 
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::time::{Duration, Instant};
 
 use apertrust_library::clock::{Clock, MachineId};
 use apertrust_plugin::{ImageContext, Operation};
 use apertrust_tools::{Moment, ProcessingTool, ToolValues};
 
-use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
+use super::{Command, Effect, Engine, Event, Open, SessionError, StyleMode, on_edit};
 use crate::edit::Edit;
 use crate::history::{
-    Change, Described, Entry, History, Log, Move, Note, Step, StepId, StepSource, Wrote, advance,
-    latest,
+    AppliedStyle, Change, Described, Entry, History, Log, Move, Note, Step, StepId, StepSource,
+    Wrote, advance, latest, replay,
 };
 
 /// The open photo's log, its undo records and what its next step is measured from.
@@ -126,6 +132,16 @@ pub(super) struct PhotoHistory {
     /// or Redo brought back, by id: a newer file taken in before the log without them is
     /// written keeps them, and its end stands ([`Self::take_in`]).
     dropped: HashSet<StepId>,
+    /// The list of styles applied the change being completed leaves, an `ApplyStyle`'s or a
+    /// `ClearStyle`'s, which its last step holds, or a step of its own where it moves no
+    /// tool ([`Self::complete`]).
+    styles: Option<Vec<AppliedStyle>>,
+    /// Whether the change being completed reset the whole edit, which empties the list of
+    /// styles applied though it may move no tool.
+    reset: bool,
+    /// Whether the change being completed is a Replace, which records its Reset step
+    /// whatever it moves.
+    replace: bool,
 }
 
 /// What the sidecar holds of the log as the session last read it or the writer last wrote
@@ -280,6 +296,9 @@ impl PhotoHistory {
             saved,
             cleared: false,
             dropped: HashSet::new(),
+            styles: None,
+            reset: false,
+            replace: false,
         }
     }
 
@@ -331,6 +350,31 @@ impl PhotoHistory {
     #[cfg(test)]
     pub(super) fn log(&self) -> &Log {
         &self.log
+    }
+
+    /// The styles applied to the edit, newest first, as the log holds them at its end
+    /// (decision 106).
+    pub(super) fn styles(&self) -> &[AppliedStyle] {
+        self.log.styles()
+    }
+
+    /// The change being completed leaves the list of styles applied `styles`: its last step
+    /// holds it, or, where it moves no tool, a step of its own, where it differs from the
+    /// list the log holds.
+    pub(super) fn leave_styles(&mut self, styles: Vec<AppliedStyle>) {
+        self.styles = Some(styles);
+    }
+
+    /// The change being completed is a Replace: it records its Reset step, an empty one
+    /// where it reset no tool, whatever else it moves.
+    pub(super) fn replacing(&mut self) {
+        self.replace = true;
+    }
+
+    /// The change being completed reset the whole edit: it empties the list of styles
+    /// applied, a Reset's step of its own where it moves no tool.
+    pub(super) fn reset_styles(&mut self) {
+        self.reset = true;
     }
 
     /// The copy's clock vector, which the sidecar saves with the log.
@@ -438,7 +482,16 @@ impl PhotoHistory {
             .collect();
         let mut log = log;
         let mut laid = false;
-        for step in &self.log.steps()[..self.log.end()] {
+        // The styles applied, rebuilt from the newer log's end by the session's changes of
+        // the list replayed in order (decision 106), and each tool's state in the joined log
+        // just before the first step of the change being laid that set it.
+        let mut rebuilt = log.styles().to_vec();
+        let mut set: BTreeMap<String, ToolValues> = BTreeMap::new();
+        let mut change = None;
+        // Whether the change being laid has laid its Reset: the tools it sets after it are
+        // at their reset state just before.
+        let mut reset = false;
+        for (at, step) in self.log.steps()[..self.log.end()].iter().enumerate() {
             let key = (step.id, step.clock);
             if theirs.contains(&key) || base.steps.contains(&key) {
                 continue;
@@ -451,6 +504,43 @@ impl PhotoHistory {
             let mut step = step.clone();
             if log.position(step.id).is_some() {
                 step.id = log.new_id();
+            }
+            // A step of no batch, or of another batch, begins another change.
+            if step.batch.is_none() || change != Some(step.batch) {
+                set.clear();
+                reset = false;
+            }
+            change = Some(step.batch);
+            let joined = log.fold();
+            for entry in step.change.entries() {
+                if let Entry::Tool { tool, .. } = entry {
+                    let state = || match reset {
+                        true => ToolValues::new(),
+                        false => joined.tools.get(tool).cloned().unwrap_or_default(),
+                    };
+                    set.entry(tool.clone()).or_insert_with(state);
+                }
+            }
+            // Every Reset laid empties the list, whether or not it stores one; a step that
+            // stores one replays what it differs by from the list before it.
+            let had = !rebuilt.is_empty();
+            match (&step.change, &step.styles) {
+                (Change::Reset(_), _) => {
+                    rebuilt.clear();
+                    step.styles = had.then(Vec::new);
+                    reset = true;
+                }
+                (_, Some(after)) => {
+                    let stepped = set.keys().cloned().collect();
+                    let before = self.log.styles_at(at);
+                    let joined = |tool: &str| {
+                        (set.get(tool).cloned())
+                            .unwrap_or_else(|| joined.tools.get(tool).cloned().unwrap_or_default())
+                    };
+                    replay(&mut rebuilt, (before, after), &stepped, joined);
+                    step.styles = Some(rebuilt.clone());
+                }
+                (_, None) => {}
             }
             log.add(step);
             laid = true;
@@ -559,6 +649,9 @@ impl PhotoHistory {
     /// the fold keeps it as it was, so it is saved with that tool's own next step.
     pub(super) fn complete(&mut self, edit: &Edit, source: StepSource, note: Option<Note>) -> bool {
         let written = self.written.take();
+        let styles = self.styles.take();
+        let reset = std::mem::take(&mut self.reset);
+        let replace = std::mem::take(&mut self.replace);
         let wrote = written
             .as_ref()
             .map_or(&[][..], |written| &written.wrote[..]);
@@ -567,6 +660,25 @@ impl PhotoHistory {
         // but applies the tools not applied: a step of what it reset.
         if changes.is_empty() && edit.unapplied.is_empty() && !self.stepped.unapplied.is_empty() {
             changes = applied_by(wrote, &self.stepped.unapplied);
+        }
+        // A change that resets the whole edit records its Reset step, empty where it reset no
+        // tool, so the log says the edit was reset, as a Replace's style laid on a newer file
+        // reads it (decision 106); and a Reset that moves no tool but empties the styles
+        // applied is that step alone.
+        let resets = |changes: &[Change]| changes.iter().any(|c| matches!(c, Change::Reset(_)));
+        let any = !changes.is_empty() || !self.log.styles().is_empty();
+        if ((reset && any) || replace) && !resets(&changes) {
+            changes.insert(0, Change::Reset(Vec::new()));
+        }
+        // A change of the list alone: one step holding it, no tool's (decision 106).
+        let list_only = changes.is_empty()
+            && (styles.as_ref()).is_some_and(|styles| styles.as_slice() != self.log.styles());
+        // So is a list a change ending on a Reset leaves, as a Replace that moved no tool,
+        // which Reset's step, emptying the list, cannot hold.
+        let after_reset = matches!(changes.last(), Some(Change::Reset(_)))
+            && (styles.as_ref()).is_some_and(|styles| !styles.is_empty());
+        if list_only || after_reset {
+            changes.push(Change::None);
         }
         if changes.is_empty() {
             return false;
@@ -596,10 +708,16 @@ impl PhotoHistory {
         {
             merge.published = written.published;
         } else {
-            let one = changes.len() == 1;
+            let one = changes.len() == 1 && !list_only;
             let count = changes.len();
             let at = self.log.end();
             let dropped = self.log.add_change(changes, source, note, clock);
+            // The list it leaves, on its last step, where it moved it.
+            if let Some(styles) = styles
+                && styles.as_slice() != self.log.styles()
+            {
+                self.log.hold_styles(styles);
+            }
             let kept = self.log.end() - at - count;
             self.done.push(Record::Added {
                 at,
@@ -833,8 +951,10 @@ impl PhotoHistory {
         defaults: &[&str],
     ) -> Result<Option<Edit>, StepId> {
         self.complete(edit, StepSource::You, None);
-        let log = self.ending_at(up_to)?.compressed();
-        Ok(self.rewrite(log, Move::Compress, defaults))
+        // Its clock, the list-only step's it writes the styles applied on too.
+        let clock = Clock::now(self.clock.as_ref(), self.machine);
+        let log = self.ending_at(up_to)?.compressed(clock);
+        Ok(self.rewrite_at(log, Move::Compress, defaults, clock))
     }
 
     /// Truncate, as [`Self::compress`]: the person's steps after the end, or after `after`,
@@ -877,11 +997,22 @@ impl PhotoHistory {
     /// of `defaults` at the rewrite's clock, the end after them, written with the first
     /// change, the file holding no step meanwhile. `None`, recording nothing, where `log` is
     /// the log already.
-    fn rewrite(&mut self, mut log: Log, what: Move, defaults: &[&str]) -> Option<Edit> {
+    fn rewrite(&mut self, log: Log, what: Move, defaults: &[&str]) -> Option<Edit> {
+        let clock = Clock::now(self.clock.as_ref(), self.machine);
+        self.rewrite_at(log, what, defaults, clock)
+    }
+
+    /// [`Self::rewrite`] at `clock`, the rewrite's own.
+    fn rewrite_at(
+        &mut self,
+        mut log: Log,
+        what: Move,
+        defaults: &[&str],
+        clock: Clock,
+    ) -> Option<Edit> {
         if log == self.log {
             return None;
         }
-        let clock = Clock::now(self.clock.as_ref(), self.machine);
         let saved = if log.steps().is_empty() {
             log.add_defaults(defaults, clock);
             false
@@ -1021,6 +1152,8 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
         | Command::ApplyPreset { .. } => Some((StepSource::You, None)),
         // Its step is noted `history-reset` as it is made.
         Command::Reset => Some((StepSource::You, None)),
+        Command::ApplyStyle { name, .. } => Some((StepSource::Style, Some(Note::style(name)))),
+        Command::ClearStyle { name } => Some((StepSource::Style, Some(Note::clear_style(name)))),
         Command::Step {
             source,
             note,
@@ -1060,7 +1193,11 @@ fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
 /// though it moves no value.
 fn resets(command: &Command) -> Vec<Wrote> {
     match command {
-        Command::Reset => vec![Wrote::All],
+        Command::Reset
+        | Command::ApplyStyle {
+            mode: StyleMode::Replace,
+            ..
+        } => vec![Wrote::All],
         Command::ResetTool { tool } => vec![Wrote::Tool(tool.clone())],
         Command::Step { commands, .. } => commands.iter().flat_map(resets).collect(),
         _ => Vec::new(),
@@ -1247,7 +1384,11 @@ impl Engine {
             self.step(*source, note.clone());
         }
         let completes = completes(&command);
-        let is_step = matches!(command, Command::Step { .. });
+        // A `Step`, or a style's change, which reports what its commands wrote.
+        let is_step = matches!(
+            command,
+            Command::Step { .. } | Command::ApplyStyle { .. } | Command::ClearStyle { .. }
+        );
         let writes = (in_step(&command) || is_step).then(|| (target(&command), wrote(&command)));
         let retry = matches!(command, Command::RetrySave);
         let resets = resets(&command);
@@ -1265,8 +1406,17 @@ impl Engine {
             open.unsaved = true;
             effect.render = true;
             if is_step {
-                effect.wrote.extend(resets);
+                effect.wrote.extend(resets.iter().cloned());
             }
+        }
+        // A reset of the whole edit empties the styles applied, though it may move no tool.
+        if resets.contains(&Wrote::All)
+            && applied.is_ok()
+            && let Some(open) = &mut self.open
+        {
+            open.history.reset_styles();
+            // Emptying the list is a change to save, though the edit is as it was.
+            open.unsaved |= !open.history.styles().is_empty();
         }
         if let Some(open) = &mut self.open {
             match (&applied, writes) {

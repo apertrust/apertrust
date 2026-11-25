@@ -1990,6 +1990,7 @@ mod tests {
             through: 0,
             extent: [6000, 4000],
             live: true,
+            styles: Vec::new(),
         }
     }
 
