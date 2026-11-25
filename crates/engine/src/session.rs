@@ -400,7 +400,9 @@ pub enum Command {
     /// while the History tab's eye hides a tool ([`SessionError::Hidden`]),
     /// and for a picker no tool declares ([`SessionError::UnknownPicker`]); a point, an
     /// area, a switch or a reset with no picker on ([`SessionError::NoPicker`]); a
-    /// setting no picker of the tool reads ([`SessionError::UnknownSetting`]).
+    /// switch, a point for an area picker or an area for a point picker, of a tool's
+    /// picker that takes one kind ([`SessionError::OneKind`]); a setting no picker of the
+    /// tool reads ([`SessionError::UnknownSetting`]).
     Picker(PickerCommand),
     /// Cancel a job, as its progress's cancel does (decision 57): a queued job never
     /// runs, and a running one stops at its body's next check, its GPU task dropped
@@ -1142,6 +1144,15 @@ pub struct ViewState {
     pub placement: Option<Placement>,
 }
 
+/// A picker's kind in [`SessionError::OneKind`]'s words.
+fn kind_words(kind: &apertrust_tools::PickerKind) -> &'static str {
+    match kind {
+        apertrust_tools::PickerKind::Area => "an area",
+        apertrust_tools::PickerKind::Point => "a point",
+        apertrust_tools::PickerKind::PointArea => "a point or an area",
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum SessionError {
     /// The [`Command::Open`] that [`Session::send`] numbered `open` failed, as `error`
@@ -1266,6 +1277,12 @@ pub enum SessionError {
     /// one-shot pick's ([`PickerCommand::Once`]), which takes no moves.
     #[error("no colour picker is on")]
     NoPicker,
+    /// A tool's picker that takes one kind, `takes`, was asked for the other (decision
+    /// 105): a [`PickerCommand::Switch`], a [`PickerCommand::Point`] for an area picker or
+    /// a [`PickerCommand::Area`] for a point picker. The picker stays at its kind and place,
+    /// a drag under way going on.
+    #[error("the colour picker takes only {}", kind_words(.takes))]
+    OneKind { takes: apertrust_tools::PickerKind },
     /// [`PickerCommand::On`] or [`PickerCommand::Once`] named a tool's picker while the
     /// History tab's eye hides a tool ([`Command::Hide`]): its reading would be the view's,
     /// not the edit's, and what it wrote would reach the edit and its exports (decision 78).

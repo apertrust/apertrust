@@ -1104,6 +1104,151 @@ impl ProcessingTool for Spot {
     }
 }
 
+/// [`Spot`] with a point picker, as RGB levels' take a point alone.
+struct Dot;
+
+static DOT: ProcessingDefinition = ProcessingDefinition {
+    tool: ToolDefinition::processing("dot", SPOT.tool.tabs),
+    pickers: &[Picker {
+        kind: PickerKind::Point,
+        ..SPOT.pickers[0]
+    }],
+    ..SPOT
+};
+
+impl ProcessingTool for Dot {
+    fn definition(&self) -> &'static ProcessingDefinition {
+        &DOT
+    }
+
+    fn owns(&self) -> &'static [Owned] {
+        &SPOT_OWNS
+    }
+
+    fn bind(&self, _: &ToolValues, _: &ImageContext, _: &Base) -> Vec<Setting> {
+        Vec::new()
+    }
+}
+
+/// The one failure in `events`, as its variant prints.
+fn refused(events: &[Event]) -> String {
+    match &failures(events)[..] {
+        [error] => format!("{error:?}"),
+        _ => panic!("{events:?}"),
+    }
+}
+
+/// Whether `events` hold a reading, a change of the values or a step.
+fn changed(events: &[Event]) -> bool {
+    (events.iter()).any(|e| {
+        matches!(
+            e,
+            Event::Picker { .. } | Event::Values(_) | Event::History(_)
+        )
+    })
+}
+
+/// A tool's picker that takes one kind keeps it (decision 105): with the area picker on,
+/// `Switch` and a `Point` are refused as `OneKind`, nothing read, changed or stepped, the
+/// picker on at its area; a drag under way goes on, one step; with none on, `Switch` is
+/// still `NoPicker`.
+#[test]
+fn an_area_picker_refuses_a_switch_and_a_point() {
+    let path = scratch("picker-one-kind-area");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    assert_eq!(
+        refused(&driven.run([picker(PickerCommand::Switch)])),
+        "NoPicker"
+    );
+    driven.run([on_tool("brightness", true)]);
+    driven.picked();
+    driven.run([moved([0.1, 0.1], [0.4, 0.5], true)]);
+    driven.picked();
+    driven.writes();
+    for command in [picker(PickerCommand::Switch), point([0.5, 0.5])] {
+        let events = driven.run([command]);
+        assert_eq!(refused(&events), "OneKind { takes: Area }");
+        assert!(!changed(&events), "{events:?}");
+        assert!(driven.picked().is_empty());
+        assert!(driven.engine.pickers.on());
+    }
+    assert!(written(&driven.writes()).is_empty());
+    // On again, it starts where it was: the area.
+    driven.run([on_tool("brightness", true)]);
+    let picked = driven.picked();
+    let reading = readings(&picked)[0].as_ref().expect("a reading");
+    assert!(
+        same(reading.region, Region::Area([0.1, 0.1, 0.4, 0.5])),
+        "{reading:?}"
+    );
+
+    // A switch refused mid-drag: the drag goes on, and its release is one step.
+    driven.writes();
+    let before = sources(&driven).len();
+    driven.run([moved([0.2, 0.2], [0.5, 0.5], false)]);
+    driven.picked();
+    assert_eq!(
+        refused(&driven.run([picker(PickerCommand::Switch)])),
+        "OneKind { takes: Area }"
+    );
+    driven.run([moved([0.2, 0.2], [0.6, 0.6], false)]);
+    assert!(changed(&driven.picked()));
+    driven.run([moved([0.2, 0.2], [0.6, 0.6], true)]);
+    driven.picked();
+    assert_eq!(written(&driven.writes()).len(), 1);
+    assert_eq!(sources(&driven).len(), before + 1);
+    remove(&path);
+}
+
+/// A point picker refuses an area and a switch; a picker that takes both kinds, a tool's
+/// and the Colour picker's, still switches, reading the other kind.
+#[test]
+fn a_point_picker_refuses_an_area_and_both_kinds_still_switch() {
+    let path = scratch("picker-one-kind-point");
+    let mut driven = Driven::new(&[&Dot]);
+    driven.open(&path);
+    driven.run([on_picker("dot", "red", false)]);
+    driven.picked();
+    for command in [area([0.1, 0.1], [0.4, 0.5]), picker(PickerCommand::Switch)] {
+        let events = driven.run([command]);
+        assert_eq!(refused(&events), "OneKind { takes: Point }");
+        assert!(!changed(&events), "{events:?}");
+        assert!(driven.picked().is_empty());
+    }
+    remove(&path);
+
+    let path = scratch("picker-both-kinds");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.run([on_tool("spread", true)]);
+    driven.picked();
+    let events = driven.run([picker(PickerCommand::Switch)]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let picked = driven.picked();
+    let reading = readings(&picked)[0].as_ref().expect("a reading");
+    assert!(matches!(reading.region, Region::Point(_)), "{reading:?}");
+    assert!(reading.tool.is_some(), "{reading:?}");
+    driven.reading([on(true)]);
+    let reading = driven.reading([picker(PickerCommand::Switch)]);
+    assert!(matches!(reading.region, Region::Point(_)), "{reading:?}");
+    remove(&path);
+}
+
+/// `OneKind` names the kind the picker takes.
+#[test]
+fn one_kind_says_which_kind_the_picker_takes() {
+    let words = |takes| SessionError::OneKind { takes }.to_string();
+    assert_eq!(
+        words(PickerKind::Area),
+        "the colour picker takes only an area"
+    );
+    assert_eq!(
+        words(PickerKind::Point),
+        "the colour picker takes only a point"
+    );
+}
+
 #[test]
 fn a_picker_in_the_raw_stage_reads_the_mosaic_per_cfa_colour() {
     let path = scratch("picker-mosaic");
@@ -3575,6 +3720,67 @@ fn colour_balance_rgb_s_hue_picker_turns_it_on_and_writes_its_hue_wrapped() {
     assert_eq!(opposite.number("global_h"), hue);
     let apart = (opposite.number("global_h") - own.number("global_h")).rem_euclid(360.0);
     assert!((apart - 180.0).abs() < 1e-3, "{apart}");
+    remove(&path);
+}
+
+/// A press that leaves a one-kind picker's area where it is with other keys held is read
+/// again, its keys applied: Colour balance RGB's hue picker, given the area with no key,
+/// writes the area's own hue as Ctrl is held on the same area (decision 105).
+#[test]
+fn the_same_area_with_other_keys_is_applied_again() {
+    let path = scratch("picker-same-area-keys");
+    let mut driven = Driven::new(&[&ColourBalanceRgb]);
+    driven.open(&path);
+    driven.run([on_colour_balance("global_hue", false)]);
+    driven.picked();
+    let pressed = |command| {
+        picker(PickerCommand::Area {
+            from: [0.2, 0.2],
+            to: [0.5, 0.5],
+            done: true,
+            keys: PickKeys {
+                command,
+                shift: false,
+            },
+        })
+    };
+    let hue = |driven: &mut Driven, command| {
+        let mut events = driven.run([pressed(command)]);
+        events.extend(driven.picked());
+        assert!(failures(&events).is_empty(), "{events:?}");
+        let reading = (driven.engine.pickers)
+            .latest_reading("colorbalancergb")
+            .unwrap();
+        let image = &driven.engine.open.as_ref().unwrap().image;
+        let keys = PickKeys {
+            command,
+            shift: false,
+        };
+        let picked = (ColourBalanceRgb)
+            .pick(
+                "global_hue",
+                reading,
+                &Controls::new(),
+                image,
+                &[],
+                None,
+                None,
+                keys,
+            )
+            .unwrap();
+        let written = (events.iter().rev())
+            .find_map(|event| match event {
+                Event::Values(values) => Some(colour_balance(values).number("global_h")),
+                _ => None,
+            })
+            .expect("the hue written");
+        (written, picked.writes.number("global_h").rem_euclid(360.0))
+    };
+    let (written, opposite) = hue(&mut driven, false);
+    assert_eq!(written, opposite);
+    let (written, own) = hue(&mut driven, true);
+    assert_eq!(written, own);
+    assert!(((own - opposite).rem_euclid(360.0) - 180.0).abs() < 1e-3);
     remove(&path);
 }
 

@@ -220,7 +220,7 @@ The gestures on the photo (decision 105; [pickers.md](pickers.md#the-plan)), a c
 
 - [x] 105.1 A press a click while within 6 points, by distance alone, for every picker; a still press on a touch screen never resetting the area.
 - [x] 105.2 A picker that takes one kind keeps it on the photo: no Ctrl-click or Space switch, the viewer bar's words without it.
-- [ ] 105.3 The session refuses a switch, a point or an area of a kind the picker does not take.
+- [x] 105.3 The session refuses a switch, a point or an area of a kind the picker does not take.
 - [x] 105.4 A click's area at a fixed size on screen, its size at Fit, at every zoom.
 - [ ] 105.5 A picker with both kinds: a click for a point, a drag for an area, no switch, with the Colour picker (79.16).
 
