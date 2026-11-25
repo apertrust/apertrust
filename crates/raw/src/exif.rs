@@ -18,19 +18,28 @@
 //! The shooting data darktable reads from a raw's EXIF into its image
 //! (`_exif_decode_exif_data` in `src/common/exif.cc`) for its variables
 //! (`docs/ports/variables.md`), as far as rawler's EXIF reaches: the standard EXIF tags
-//! rawler reads, where darktable, through Exiv2, prefers a maker note's for some.
+//! rawler reads, where darktable, through Exiv2, prefers a maker note's for some. With
+//! them, what the Metadata tool shows of IFD0, the Exif IFD and the GPS IFD (decision
+//! 110): rawler's fields first, then the tags it lacks, read through its TIFF parser
+//! ([`crate::tags`]).
 
+use rawler::decoders::RawMetadata;
 use rawler::exif::Exif as RawlerExif;
-use rawler::formats::tiff::Rational;
+use rawler::formats::tiff::{Rational, SRational};
+
+use crate::cropfactors::{self, Inputs};
+use crate::tags::{self, Tags};
 
 /// The photo's shooting data from its EXIF, each `None` where the file records none, as
 /// darktable reads them (`dt_image_t`'s `exif_*` and `geoloc`, and the metadata its import
-/// takes from the EXIF). The camera's names, its ISO and its exposure bias are
-/// [`RawImage`](crate::RawImage)'s.
+/// takes from the EXIF), and the rest the Metadata tool shows (decision 110), each with its
+/// tag. The camera's names as rawler spells them, its ISO and its exposure bias are
+/// [`RawImage`](crate::RawImage)'s too.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Exif {
     /// When the photo was taken, the camera's clock: DateTimeOriginal with
-    /// SubSecTimeOriginal's milliseconds; `None` where it does not hold a valid time.
+    /// SubSecTimeOriginal's milliseconds and OffsetTimeOriginal; `None` where it does not
+    /// hold a valid time.
     pub taken: Option<DateTime>,
     /// The exposure time in seconds: ExposureTime, or 2^−ShutterSpeedValue.
     pub exposure_time: Option<f32>,
@@ -55,14 +64,150 @@ pub struct Exif {
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
     pub elevation: Option<f64>,
-    /// Artist, Copyright and an ASCII UserComment, which darktable's import takes as the
-    /// photo's creator, rights and description.
+    /// Artist (0x013B), Copyright (0x8298) and an ASCII UserComment, which darktable's
+    /// import takes as the photo's creator, rights and description.
     pub artist: Option<String>,
     pub copyright: Option<String>,
     pub user_comment: Option<String>,
+    /// Make (0x010F) and Model (0x0110) as IFD0 writes them, trimmed.
+    pub make_written: Option<String>,
+    pub model_written: Option<String>,
+    /// BodySerialNumber (0xA431) and CameraOwnerName (0xA430).
+    pub serial_number: Option<String>,
+    pub owner_name: Option<String>,
+    /// Software (0x0131).
+    pub software: Option<String>,
+    /// DateTime (0x0132), when the file was last changed by the camera, with SubSecTime
+    /// and OffsetTime.
+    pub date_time: Option<DateTime>,
+    /// Orientation (0x0112), as the tag holds it.
+    pub orientation_code: Option<u16>,
+    /// XResolution, YResolution and ResolutionUnit (0x011A, 0x011B, 0x0128).
+    pub resolution: Option<Resolution>,
+    /// ImageDescription (0x010E).
+    pub image_description: Option<String>,
+    /// DateTimeDigitized (0x9004) with SubSecTimeDigitized and OffsetTimeDigitized.
+    pub date_digitised: Option<DateTime>,
+    /// ExposureMode (0xA402), LightSource (0x9208), SceneCaptureType (0xA406) and
+    /// SubjectDistanceRange (0xA40C), as the tags hold them.
+    pub exposure_mode: Option<u16>,
+    pub light_source: Option<u16>,
+    pub scene_type: Option<u16>,
+    pub subject_distance_range: Option<u16>,
+    /// DigitalZoomRatio (0xA404); 0 where the camera used none.
+    pub digital_zoom: Option<f32>,
+    /// Contrast (0xA408), Saturation (0xA409) and Sharpness (0xA40A), as the tags hold
+    /// them.
+    pub contrast: Option<u16>,
+    pub saturation: Option<u16>,
+    pub sharpness: Option<u16>,
+    /// BrightnessValue (0x9203), in EV.
+    pub brightness: Option<f32>,
+    /// ColorSpace (0xA001), as the tag holds it.
+    pub colour_space: Option<u16>,
+    /// ImageUniqueID (0xA420), else a CR3's unique id as 32 hexadecimal digits.
+    pub unique_image_id: Option<String>,
+    /// SensitivityType (0x8830), as the tag holds it.
+    pub sensitivity_type: Option<u16>,
+    /// ExposureBiasValue (0x9204), in EV.
+    pub exposure_bias: Option<f32>,
+    /// LensMake (0xA433) and LensSerialNumber (0xA435), as rawler reads them.
+    pub lens_make: Option<String>,
+    pub lens_serial_number: Option<String>,
+    /// LensSpecification (0xA432): the shortest and longest focal lengths in mm, and the
+    /// f-numbers at each, 0 for a part the lens does not record.
+    pub lens_specification: Option<[f32; 4]>,
+    /// FocalLengthIn35mmFilm (0xA405), in mm.
+    pub focal_length_35mm: Option<f32>,
+    /// The crop factor, as darktable works it out (`src/cropfactors.rs`).
+    pub crop_factor: Option<f32>,
+    /// MaxApertureValue (0x9205) as an f-number, 2^(v / 2).
+    pub max_aperture: Option<f32>,
+    /// GPSImgDirection and GPSImgDirectionRef.
+    pub gps_direction: Option<Direction>,
+    /// GPSDateStamp and GPSTimeStamp, in UTC.
+    pub gps_time: Option<DateTime>,
+    /// GPSSpeed and GPSSpeedRef.
+    pub gps_speed: Option<Speed>,
+    /// GPSHPositioningError, in m.
+    pub gps_accuracy: Option<f64>,
+    /// GPSSatellites and GPSMapDatum, as written.
+    pub gps_satellites: Option<String>,
+    pub gps_map_datum: Option<String>,
+    /// The fields Apertrust does not read from this file's format yet, by their names
+    /// here: those `src/tags.rs` reads, where the IFDs cannot be reached; every one
+    /// ([`Exif::unread_all`]) where the file's metadata cannot be read; none otherwise.
+    pub unread: Vec<&'static str>,
 }
 
-/// A date and time as the camera's clock showed it, with no time zone.
+/// Every field of [`Exif`] but `unread`, by its name, as [`Exif::unread`] lists them.
+const FIELDS: &[&str] = &[
+    "taken",
+    "exposure_time",
+    "aperture",
+    "focal_length",
+    "focus_distance",
+    "exposure_program",
+    "metering_mode",
+    "white_balance",
+    "flash",
+    "lens",
+    "latitude",
+    "longitude",
+    "elevation",
+    "artist",
+    "copyright",
+    "user_comment",
+    "make_written",
+    "model_written",
+    "serial_number",
+    "owner_name",
+    "software",
+    "date_time",
+    "orientation_code",
+    "resolution",
+    "image_description",
+    "date_digitised",
+    "exposure_mode",
+    "light_source",
+    "scene_type",
+    "subject_distance_range",
+    "digital_zoom",
+    "contrast",
+    "saturation",
+    "sharpness",
+    "brightness",
+    "colour_space",
+    "unique_image_id",
+    "sensitivity_type",
+    "exposure_bias",
+    "lens_make",
+    "lens_serial_number",
+    "lens_specification",
+    "focal_length_35mm",
+    "crop_factor",
+    "max_aperture",
+    "gps_direction",
+    "gps_time",
+    "gps_speed",
+    "gps_accuracy",
+    "gps_satellites",
+    "gps_map_datum",
+];
+
+impl Exif {
+    /// Nothing read and every field listed unread: what a file whose metadata cannot be
+    /// read gives, so each says why it shows nothing.
+    pub fn unread_all() -> Exif {
+        Exif {
+            unread: FIELDS.to_vec(),
+            ..Exif::default()
+        }
+    }
+}
+
+/// A date and time as a clock showed it: the camera's, with the offset from UTC it
+/// recorded where it did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DateTime {
     /// 1 to 9999.
@@ -79,23 +224,168 @@ pub struct DateTime {
     pub second: u8,
     /// 0 to 999.
     pub millisecond: u16,
+    /// The clock's offset from UTC in minutes, east positive, from the offset tag beside
+    /// the time ("+01:00"); `None` where none is recorded.
+    pub offset_minutes: Option<i16>,
 }
 
-/// darktable's reading of rawler's EXIF data and lens name.
-pub(crate) fn read(exif: &RawlerExif) -> Exif {
-    // Exiv2's `toFloat` of a rational: 0 for a denominator of 0.
-    let value = |r: &Rational| {
-        if r.d == 0 {
-            0.0
-        } else {
-            r.n as f32 / r.d as f32
-        }
-    };
-    let signed = |n: i32, d: i32| if d == 0 { 0.0 } else { n as f32 / d as f32 };
-    let exposure_time = exif.exposure_time.as_ref().map(value).or_else(|| {
-        exif.shutter_speed_value
-            .map(|apex| (-signed(apex.n, apex.d)).exp2())
+/// A resolution as IFD0 records it: XResolution and YResolution in pixels per
+/// ResolutionUnit, 2 inches (EXIF's default where it is missing) or 3 centimetres.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Resolution {
+    pub x: f32,
+    pub y: f32,
+    pub unit: u16,
+}
+
+/// Where the camera pointed, in degrees from north, and whether north is true or
+/// magnetic, by GPSImgDirectionRef's `T` and `M`; `None` for another reference.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Direction {
+    pub degrees: f64,
+    pub magnetic: Option<bool>,
+}
+
+/// How fast the receiver moved, `value` in the unit GPSSpeedRef names: `K` kilometres an
+/// hour, `M` miles an hour, `N` knots.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Speed {
+    pub value: f64,
+    pub unit: char,
+}
+
+/// darktable's reading of rawler's EXIF data and lens name, with the rest of rawler's
+/// metadata the Metadata tool shows, the tags rawler lacks (`tags`, `None` where the
+/// file's IFDs cannot be reached, which [`Exif::unread`] then lists) and the crop factor
+/// worked out from them, for the camera the file's Model names, else rawler's model.
+pub(crate) fn read(metadata: &RawMetadata, tags: Option<&Tags>) -> Exif {
+    let exif = &metadata.exif;
+    let mut read = read_rawler(exif);
+    let gps = exif.gps.as_ref();
+    fn text(text: &Option<String>) -> Option<&str> {
+        text.as_deref().map(str::trim).filter(|t| !t.is_empty())
+    }
+    read.serial_number = text(&exif.serial_number).map(str::to_owned);
+    read.owner_name = text(&exif.owner_name).map(str::to_owned);
+    read.date_time = (exif.modify_date.as_deref()).and_then(|at| {
+        let sub = exif.sub_sec_time.as_deref();
+        dated(at, sub, exif.offset_time.as_deref())
     });
+    read.date_digitised = (exif.create_date.as_deref()).and_then(|at| {
+        let sub = exif.sub_sec_time_digitized.as_deref();
+        dated(at, sub, exif.offset_time_digitized.as_deref())
+    });
+    read.orientation_code = exif.orientation;
+    read.exposure_mode = exif.exposure_mode;
+    read.light_source = exif.light_source;
+    read.scene_type = exif.scene_capture_type;
+    read.subject_distance_range = exif.subject_distance_range;
+    read.colour_space = exif.color_space;
+    read.sensitivity_type = exif.sensitivity_type;
+    read.brightness = exif.brightness_value.as_ref().map(signed);
+    read.exposure_bias = exif.exposure_bias.as_ref().map(signed);
+    read.lens_make = text(&exif.lens_make).map(str::to_owned);
+    read.lens_serial_number = text(&exif.lens_serial_number).map(str::to_owned);
+    read.lens_specification = exif
+        .lens_spec
+        .as_ref()
+        .map(|spec| spec.each_ref().map(value));
+    read.max_aperture = (exif.max_aperture_value.as_ref()).map(|apex| (value(apex) / 2.0).exp2());
+    read.gps_direction = gps.and_then(|gps| {
+        Some(Direction {
+            degrees: f64::from(value(gps.gps_img_direction.as_ref()?)),
+            magnetic: match gps.gps_img_direction_ref.as_deref().map(str::trim) {
+                Some("T") => Some(false),
+                Some("M") => Some(true),
+                _ => None,
+            },
+        })
+    });
+    read.gps_time =
+        gps.and_then(|gps| gps_time(gps.gps_date_stamp.as_deref()?, gps.gps_timestamp.as_ref()?));
+    read.gps_speed = gps.and_then(|gps| {
+        Some(Speed {
+            value: f64::from(value(gps.gps_speed.as_ref()?)),
+            unit: gps.gps_speed_ref.as_deref()?.trim().chars().next()?,
+        })
+    });
+    read.gps_accuracy = (gps.and_then(|gps| gps.gps_h_positioning_error.as_ref()))
+        .map(|error| f64::from(value(error)));
+    read.gps_satellites = gps
+        .and_then(|gps| text(&gps.gps_satellites))
+        .map(str::to_owned);
+    read.gps_map_datum = gps
+        .and_then(|gps| text(&gps.gps_map_datum))
+        .map(str::to_owned);
+    let unique = metadata.unique_image_id.map(|id| format!("{id:032X}"));
+    let Some(tags) = tags else {
+        read.unique_image_id = unique;
+        // darktable's table still gives the crop factor of a camera it lists, by rawler's
+        // model; the camera's names as rawler spells them stand for the file's own.
+        let crop = cropfactors::crop_factor(&Inputs {
+            focal_length: read.focal_length.unwrap_or(0.0),
+            model: &metadata.model,
+            ..Inputs::default()
+        });
+        read.crop_factor = (crop.is_finite() && crop > 0.0).then_some(crop);
+        read.unread = (tags::FIELDS.iter().copied())
+            .filter(|field| match *field {
+                "make_written" => metadata.make.trim().is_empty(),
+                "model_written" => metadata.model.trim().is_empty(),
+                "crop_factor" => read.crop_factor.is_none(),
+                _ => true,
+            })
+            .collect();
+        return read;
+    };
+    read.make_written = tags.make.clone();
+    read.model_written = tags.model.clone();
+    read.software = tags.software.clone();
+    read.image_description = tags.image_description.clone();
+    read.resolution = tags.resolution;
+    read.digital_zoom = tags.digital_zoom;
+    read.contrast = tags.contrast;
+    read.saturation = tags.saturation;
+    read.sharpness = tags.sharpness;
+    read.unique_image_id = tags.unique_image_id.clone().or(unique);
+    read.focal_length_35mm = tags.focal_length_35mm;
+    let crop = cropfactors::crop_factor(&Inputs {
+        focal_length: read.focal_length.unwrap_or(0.0),
+        focal_length_35mm: tags.focal_length_35mm.unwrap_or(0.0),
+        focal_plane: tags.focal_plane,
+        dimensions: tags.dimensions,
+        olympus_diagonal: tags.olympus_diagonal,
+        model: tags.model.as_deref().unwrap_or(&metadata.model),
+    });
+    read.crop_factor = (crop.is_finite() && crop > 0.0).then_some(crop);
+    read
+}
+
+/// Exiv2's `toFloat` of a rational: 0 for a denominator of 0.
+fn value(r: &Rational) -> f32 {
+    if r.d == 0 {
+        0.0
+    } else {
+        r.n as f32 / r.d as f32
+    }
+}
+
+/// Exiv2's `toFloat` of a signed rational: 0 for a denominator of 0.
+fn signed(r: &SRational) -> f32 {
+    if r.d == 0 {
+        0.0
+    } else {
+        r.n as f32 / r.d as f32
+    }
+}
+
+/// darktable's reading of rawler's EXIF data and lens name: what darktable's image holds.
+fn read_rawler(exif: &RawlerExif) -> Exif {
+    let exposure_time = exif
+        .exposure_time
+        .as_ref()
+        .map(value)
+        .or_else(|| exif.shutter_speed_value.map(|apex| (-signed(&apex)).exp2()));
     let aperture = exif.fnumber.as_ref().map(value).or_else(|| {
         exif.aperture_value
             .as_ref()
@@ -106,10 +396,10 @@ pub(crate) fn read(exif: &RawlerExif) -> Exif {
         degrees_to_number(degrees?, side?.chars().next().unwrap_or('\0'))
     };
     Exif {
-        taken: exif
-            .date_time_original
-            .as_deref()
-            .and_then(|text| taken(text, exif.sub_sec_time_original.as_deref())),
+        taken: exif.date_time_original.as_deref().and_then(|text| {
+            let sub = exif.sub_sec_time_original.as_deref();
+            dated(text, sub, exif.offset_time_original.as_deref())
+        }),
         exposure_time,
         aperture,
         focal_length: exif.focal_length.as_ref().map(value),
@@ -133,7 +423,60 @@ pub(crate) fn read(exif: &RawlerExif) -> Exif {
             .user_comment
             .clone()
             .filter(|text| !text.is_empty() && text != "binary comment"),
+        ..Exif::default()
     }
+}
+
+/// A time as [`taken`] reads it, with the offset `offset` records.
+fn dated(text: &str, subsec: Option<&str>, offset: Option<&str>) -> Option<DateTime> {
+    let at = taken(text, subsec)?;
+    Some(DateTime {
+        offset_minutes: offset.and_then(offset_minutes),
+        ..at
+    })
+}
+
+/// An EXIF offset from UTC, "+01:00" or "-05:30", in minutes; `None` for anything else, as
+/// a camera's "   :  " for none.
+fn offset_minutes(text: &str) -> Option<i16> {
+    let bytes = text.trim().as_bytes();
+    let [sign @ (b'+' | b'-'), h1, h2, b':', m1, m2] = *bytes else {
+        return None;
+    };
+    let digits = [h1, h2, m1, m2];
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let [h1, h2, m1, m2] = digits.map(|d| i16::from(d - b'0'));
+    let (hours, minutes) = (h1 * 10 + h2, m1 * 10 + m2);
+    if hours > 14 || minutes > 59 {
+        return None;
+    }
+    let total = hours * 60 + minutes;
+    Some(if sign == b'-' { -total } else { total })
+}
+
+/// The GPS clock's time, GPSDateStamp's "YYYY:MM:DD" and GPSTimeStamp's hours, minutes and
+/// seconds, in UTC; `None` where either is not a valid time.
+fn gps_time(date: &str, time: &[Rational; 3]) -> Option<DateTime> {
+    let [hours, minutes, seconds] = time
+        .each_ref()
+        .map(|r| (r.d != 0).then(|| f64::from(r.n) / f64::from(r.d)));
+    let (hours, minutes, seconds) = (hours?, minutes?, seconds?);
+    let whole = seconds.trunc();
+    let text = format!(
+        "{} {:02}:{:02}:{:02}",
+        date.trim(),
+        hours as u32,
+        minutes as u32,
+        whole as u32
+    );
+    let millisecond = ((seconds - whole) * 1000.0).round().min(999.0) as u16;
+    Some(DateTime {
+        millisecond,
+        offset_minutes: Some(0),
+        ..taken(&text, None)?
+    })
 }
 
 /// `_find_datetime_taken` and `dt_datetime_exif_to_numbers`: the first 19 characters,
@@ -181,6 +524,7 @@ fn taken(text: &str, subsec: Option<&str>) -> Option<DateTime> {
         minute: minute as u8,
         second: second as u8,
         millisecond,
+        offset_minutes: None,
     })
 }
 
@@ -252,6 +596,7 @@ mod tests {
             minute,
             second,
             millisecond,
+            offset_minutes: None,
         };
         assert_eq!(
             taken("2017:07:20 10:52:48", Some("50")),
@@ -313,5 +658,150 @@ mod tests {
             "Sigma 24-70mm F2.8 DG DN | Art 019"
         );
         assert_eq!(lens_name("XF18mmF2 R", Some("FUJIFILM")), "XF18mmF2 R");
+    }
+
+    #[test]
+    fn reads_an_offset_from_utc() {
+        assert_eq!(offset_minutes("+01:00"), Some(60));
+        assert_eq!(offset_minutes("-05:30"), Some(-330));
+        assert_eq!(offset_minutes(" +00:00 "), Some(0));
+        // A camera's blank offset, and one out of range.
+        assert_eq!(offset_minutes("   :  "), None);
+        assert_eq!(offset_minutes("+15:00"), None);
+        assert_eq!(offset_minutes("01:00"), None);
+        let at = dated("2026:07:04 08:10:01", Some("12"), Some("+01:00")).unwrap();
+        assert_eq!((at.millisecond, at.offset_minutes), (120, Some(60)));
+    }
+
+    #[test]
+    fn reads_the_gps_clock_in_utc() {
+        let r = |n, d| Rational { n, d };
+        let time = gps_time("2026:07:04", &[r(7, 1), r(10, 1), r(1250, 100)]).unwrap();
+        let wanted = (2026, 7, 4, 7, 10, 12, 500, Some(0));
+        let got = (
+            time.year,
+            time.month,
+            time.day,
+            time.hour,
+            time.minute,
+            time.second,
+            time.millisecond,
+            time.offset_minutes,
+        );
+        assert_eq!(got, wanted);
+        assert_eq!(gps_time("2026:07:04", &[r(7, 0), r(0, 1), r(0, 1)]), None);
+        assert_eq!(gps_time("    :  :  ", &[r(7, 1), r(0, 1), r(0, 1)]), None);
+    }
+
+    /// The metadata rawler gives with `exif`, and no unique id.
+    fn metadata(exif: RawlerExif) -> RawMetadata {
+        RawMetadata {
+            exif,
+            ..RawMetadata::default()
+        }
+    }
+
+    #[test]
+    fn reads_rawler_s_fields_beside_darktable_s() {
+        let r = |n, d| Rational { n, d };
+        let exif = RawlerExif {
+            serial_number: Some(" 0000417 ".to_owned()),
+            owner_name: Some(String::new()),
+            create_date: Some("2026:07:04 08:10:01".to_owned()),
+            offset_time_digitized: Some("+01:00".to_owned()),
+            max_aperture_value: Some(r(297, 100)),
+            lens_spec: Some([r(24, 1), r(70, 1), r(28, 10), r(0, 0)]),
+            brightness_value: Some(SRational { n: 76, d: 10 }),
+            exposure_bias: Some(SRational { n: -1, d: 3 }),
+            gps: Some(rawler::exif::ExifGPS {
+                gps_img_direction: Some(r(213, 1)),
+                gps_img_direction_ref: Some("M".to_owned()),
+                gps_speed: Some(r(12, 1)),
+                gps_speed_ref: Some("K".to_owned()),
+                gps_map_datum: Some("WGS-84".to_owned()),
+                ..Default::default()
+            }),
+            ..RawlerExif::default()
+        };
+        let read = read(&metadata(exif), Some(&Tags::default()));
+        assert_eq!(read.serial_number.as_deref(), Some("0000417"));
+        assert_eq!(read.owner_name, None);
+        assert_eq!(
+            read.date_digitised.and_then(|at| at.offset_minutes),
+            Some(60)
+        );
+        // f/2.8 from its APEX value.
+        let max = read.max_aperture.unwrap();
+        assert!((max - 2.8).abs() < 0.01, "{max}");
+        assert_eq!(read.lens_specification, Some([24.0, 70.0, 2.8, 0.0]));
+        assert_eq!(read.brightness, Some(7.6));
+        assert!((read.exposure_bias.unwrap() + 1.0 / 3.0).abs() < 1e-6);
+        assert_eq!(
+            read.gps_direction,
+            Some(Direction {
+                degrees: 213.0,
+                magnetic: Some(true)
+            })
+        );
+        assert_eq!(
+            read.gps_speed,
+            Some(Speed {
+                value: 12.0,
+                unit: 'K'
+            })
+        );
+        assert_eq!(read.gps_map_datum.as_deref(), Some("WGS-84"));
+        assert!(read.unread.is_empty());
+    }
+
+    #[test]
+    fn a_file_whose_ifds_cannot_be_reached_lists_the_tags_unread() {
+        let mut unique = metadata(RawlerExif::default());
+        unique.unique_image_id = Some(0x4f2a);
+        let read = read(&unique, None);
+        assert_eq!(read.unread, tags::FIELDS);
+        assert_eq!(read.software, None);
+        // A CR3's unique id stands in for ImageUniqueID, as 32 hexadecimal digits.
+        assert_eq!(
+            read.unique_image_id.as_deref(),
+            Some("00000000000000000000000000004F2A")
+        );
+        // The camera's names stand for Make and Model; darktable's table gives the crop
+        // factor of a camera it lists.
+        let mut named = metadata(RawlerExif::default());
+        named.make = "Canon".to_owned();
+        named.model = "Canon EOS 5D Mark IV".to_owned();
+        let read = super::read(&named, None);
+        assert_eq!(read.crop_factor, Some(1.0));
+        let unread: Vec<&str> = (tags::FIELDS.iter().copied())
+            .filter(|field| !matches!(*field, "make_written" | "model_written" | "crop_factor"))
+            .collect();
+        assert_eq!(read.unread, unread);
+    }
+
+    #[test]
+    fn a_file_whose_metadata_cannot_be_read_lists_every_field_unread() {
+        let read = Exif::unread_all();
+        assert_eq!(read.unread, FIELDS);
+        assert_eq!(read.exposure_time, None);
+        assert!(read.unread.iter().all(|field| *field != "unread"));
+    }
+
+    #[test]
+    fn works_out_the_crop_factor_from_the_tags() {
+        let exif = RawlerExif {
+            focal_length: Some(Rational { n: 183, d: 10 }),
+            ..RawlerExif::default()
+        };
+        let tags = Tags {
+            focal_length_35mm: Some(28.0),
+            ..Tags::default()
+        };
+        let read = read(&metadata(exif), Some(&tags));
+        let crop = read.crop_factor.unwrap();
+        assert!((crop - 28.0 / 18.3).abs() < 1e-5, "{crop}");
+        assert_eq!(read.focal_length_35mm, Some(28.0));
+        let none = super::read(&metadata(RawlerExif::default()), Some(&Tags::default()));
+        assert_eq!(none.crop_factor, None);
     }
 }

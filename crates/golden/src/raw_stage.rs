@@ -858,6 +858,7 @@ mod tests {
     /// A sensor with these photosites and nothing else of note.
     fn test_raw(width: u32, height: u32, values: Vec<u16>) -> RawImage {
         RawImage {
+            format: "DNG",
             camera: Camera {
                 make: "Test".into(),
                 model: "Sensor".into(),

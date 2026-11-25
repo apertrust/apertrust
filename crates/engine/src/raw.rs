@@ -273,6 +273,7 @@ mod tests {
 
     fn raw(color_matrices: &[(Illuminant, Mat3)], dng_color: Option<DngColor>) -> RawImage {
         RawImage {
+            format: "DNG",
             camera: RawCamera {
                 make: "Test".into(),
                 model: "Camera".into(),

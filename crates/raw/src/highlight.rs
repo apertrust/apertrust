@@ -30,6 +30,7 @@ use std::io::{Read, Seek};
 
 use rawler::bits::Endian;
 use rawler::formats::bmff::Bmff;
+use rawler::formats::bmff::ext_cr3::cr3desc::Cr3DescBox;
 use rawler::formats::tiff::ifd::OffsetMode;
 use rawler::formats::tiff::reader::TiffReader;
 use rawler::formats::tiff::{GenericTiffReader, IFD, Value};
@@ -168,12 +169,18 @@ const NIKON_LEAST: usize = 12;
 
 /// A CR3's Canon maker note, the TIFF in its CMT3 box; `None` for a raw that is not one.
 fn cr3_maker_note(source: &RawSource) -> Option<IFD> {
+    Some(cr3_description(source)?.cmt3.tiff.root_ifd().clone())
+}
+
+/// A CR3's Canon description box, whose CMT1 to CMT4 boxes hold its IFD0, its Exif IFD,
+/// its maker note and its GPS IFD, each a TIFF of its own; `None` for a raw that is not
+/// one or whose boxes do not parse.
+pub(crate) fn cr3_description(source: &RawSource) -> Option<Cr3DescBox> {
     if source.subview(4, 8).ok()? != b"ftypcrx " {
         return None;
     }
     let bmff = Bmff::new(&mut source.reader()).ok()?;
-    let description = bmff.filebox.moov.cr3desc?;
-    Some(description.cmt3.tiff.root_ifd().clone())
+    bmff.filebox.moov.cr3desc
 }
 
 /// A tag's values as Exiv2's `toLong` reads each, where darktable's `FIND_EXIF_TAG` finds
@@ -219,6 +226,23 @@ fn nikon(note: &IFD) -> Option<Mode> {
 /// the two is a directory of its own: at the offset its tag holds where the tag is a
 /// directory pointer, or at the tag's own data where it is of the undefined type.
 fn olympus<R: Read + Seek>(reader: &mut R, exif: &IFD, data: &[u8]) -> Option<Mode> {
+    let gradation = |reader: &mut R, directory: u16, tag: u16| {
+        longs(&olympus_directory(reader, exif, data, directory)?, tag)
+    };
+    gradation(reader, 0x2020, 0x050f)
+        .or_else(|| gradation(reader, 0x2031, 0x0112))
+        .map(Mode::OlympusGradation)
+}
+
+/// The sub-directory `directory` of the Olympus or OM System maker note `data`, which the
+/// Exif IFD `exif` holds, as Exiv2 reads it: CameraSettings (0x2020), RawDevelopment2
+/// (0x2031) or Equipment (0x2010); `None` where the note or the directory does not parse.
+pub(crate) fn olympus_directory<R: Read + Seek>(
+    reader: &mut R,
+    exif: &IFD,
+    data: &[u8],
+    directory: u16,
+) -> Option<IFD> {
     let start = exif
         .base
         .checked_add(u32::try_from(exif.get_entry(ExifTag::MakerNotes)?.offset()?).ok()?)?;
@@ -234,21 +258,16 @@ fn olympus<R: Read + Seek>(reader: &mut R, exif: &IFD, data: &[u8]) -> Option<Mo
     };
     start.checked_add(header as u32)?;
     let note = IFD::new(reader, header as u32, start, 0, endian, &[]).ok()?;
-    let mut gradation = |directory: u16, tag: u16| {
-        let entry = note.get_entry(directory)?;
-        let at = match entry.value {
-            Value::Undefined(_) => u32::try_from(entry.offset()?).ok()?,
-            _ => note
-                .get_entry_raw_with_len(directory, reader, 4)
-                .ok()??
-                .get_force_u32(0),
-        };
-        start.checked_add(at)?;
-        longs(&IFD::new(reader, at, start, 0, endian, &[]).ok()?, tag)
+    let entry = note.get_entry(directory)?;
+    let at = match entry.value {
+        Value::Undefined(_) => u32::try_from(entry.offset()?).ok()?,
+        _ => note
+            .get_entry_raw_with_len(directory, reader, 4)
+            .ok()??
+            .get_force_u32(0),
     };
-    gradation(0x2020, 0x050f)
-        .or_else(|| gradation(0x2031, 0x0112))
-        .map(Mode::OlympusGradation)
+    start.checked_add(at)?;
+    IFD::new(reader, at, start, 0, endian, &[]).ok()
 }
 
 #[cfg(test)]

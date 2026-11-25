@@ -172,18 +172,20 @@ fn crop_mode(source: &RawSource) -> Option<i64> {
 /// is not a RAF or one whose maker note does not parse. Its tags that hold one value or
 /// two, which sit in their entries, read as Exiv2 reads them.
 pub(crate) fn raf_maker_note(source: &RawSource) -> Option<IFD> {
+    let exif = raf_exif(source)?;
+    exif.find_first_ifd_with_tag(ExifTag::MakerNotes)?
+        .parse_makernote(&mut source.reader(), OffsetMode::Absolute, &[])
+        .ok()?
+}
+
+/// A RAF's EXIF, the IFD0 of its embedded JPEG with its Exif IFD below it, where Exiv2
+/// reads a RAF's tags; `None` for a raw that is not a RAF or one whose EXIF does not parse.
+pub(crate) fn raf_exif(source: &RawSource) -> Option<IFD> {
     if !raf::is_raf(source) {
         return None;
     }
-    let mut reader = source.reader();
-    let exif = IFD::new_root(
-        &mut reader,
-        pointer(source, JPEG_POINTER)?.checked_add(EXIF_HEADER)?,
-    )
-    .ok()?;
-    exif.find_first_ifd_with_tag(ExifTag::MakerNotes)?
-        .parse_makernote(&mut reader, OffsetMode::Absolute, &[])
-        .ok()?
+    let at = pointer(source, JPEG_POINTER)?.checked_add(EXIF_HEADER)?;
+    IFD::new_root(&mut source.reader(), at).ok()
 }
 
 fn pointer(source: &RawSource, at: u64) -> Option<u32> {
@@ -195,7 +197,7 @@ fn pointer(source: &RawSource, at: u64) -> Option<u32> {
 /// rational's numerator over its denominator in f32, 0 for a zero denominator, which
 /// rawler's own conversion makes infinite; `None` for a tag Exiv2 would take as missing,
 /// one without values, or one of values that are not numbers.
-fn exiv2_floats(value: &Value) -> Option<Vec<f32>> {
+pub(crate) fn exiv2_floats(value: &Value) -> Option<Vec<f32>> {
     let ratio = |n: f32, d: f32| if d == 0.0 { 0.0 } else { n / d };
     let values: Option<Vec<f32>> = match value {
         Value::SRational(values) => Some(

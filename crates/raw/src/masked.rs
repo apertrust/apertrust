@@ -169,6 +169,7 @@ mod tests {
             height: height - 2,
         };
         RawImage {
+            format: "DNG",
             camera: Camera {
                 make: "Test".into(),
                 model: "Sensor".into(),
