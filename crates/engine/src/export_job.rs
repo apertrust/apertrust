@@ -79,7 +79,7 @@ use crate::jobs::{self, Context, Destination, Interrupted, Job, Message, Offer, 
 use crate::names::{self, Shot, Sizes};
 use crate::pipeline::{self, Instance, Limits, Pipe, PlanError, Resample};
 use crate::session::{Command, Decoded, Event, Load, Outbox, Retries};
-use crate::sidecar;
+use crate::sidecar::{self, FileStamp};
 
 /// What the session reports of an export job's photos, as `Event::Export`, in order: each
 /// photo's start and result, then the job's counts. The job itself, queued, running, its
@@ -428,6 +428,23 @@ impl Snapshot {
     /// Its file's size and modified time as it was read, `None` where there was no file.
     pub(crate) fn stamp(&self) -> Option<Stamp> {
         self.stamp
+    }
+
+    /// Its file's size, modified time and the hash of its text as it was read, which a write
+    /// over the file as read compares (decision 109), hashed as it is asked: `None` where
+    /// there was no file, and where one was there that could not be read, which a write over
+    /// it then finds changed.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the apply-style job's, #373's next step")
+    )]
+    pub(crate) fn file_stamp(&self) -> Option<FileStamp> {
+        let (stamp, xml) = (self.stamp?, self.xml.as_ref().ok()?.as_ref()?);
+        Some(FileStamp {
+            len: stamp.len,
+            modified: stamp.modified,
+            hash: apertrust_library::index::hash(xml.as_bytes()),
+        })
     }
 
     /// Its text, none where there is no file: what an opening photo reads its edit from

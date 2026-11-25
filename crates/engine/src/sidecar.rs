@@ -169,6 +169,43 @@ pub fn read(
     Ok(loaded)
 }
 
+/// A file's size, modified time and the BLAKE3 hash of its bytes: what tells a write over
+/// the file as read that another program wrote it after it was read, one that kept the size
+/// and set the time back among them (decision 109), as `apertrust-cli edit` stamps a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileStamp {
+    pub len: u64,
+    pub modified: Option<SystemTime>,
+    pub hash: [u8; 32],
+}
+
+impl FileStamp {
+    /// The file at `path`'s, from the one file opened, `None` where there is none; an error
+    /// where one is there that cannot be read, as a folder in its place, so nothing is
+    /// written over what could not be read.
+    pub fn read(path: &Path) -> io::Result<Option<FileStamp>> {
+        use std::io::Read;
+        let mut file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let metadata = file.metadata()?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok(Some(FileStamp::of(&metadata, &bytes)))
+    }
+
+    /// A file's, from `metadata` and the `bytes` read of it.
+    pub fn of(metadata: &std::fs::Metadata, bytes: &[u8]) -> FileStamp {
+        FileStamp {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            hash: apertrust_library::index::hash(bytes),
+        }
+    }
+}
+
 /// The XMP of an edit as `build` writes version 1, the build recorded in `x:xmptk`: every
 /// tool it touches in the order of `tools`, then every operation it sets a parameter
 /// of in the order of `operations`. Every build reads it; the engine writes version 2
