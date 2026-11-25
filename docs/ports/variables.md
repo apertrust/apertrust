@@ -121,7 +121,7 @@ Formats are C's, in the C locale ([Deliberate differences](#deliberate-differenc
 | `EXIF.LENS`, `LENS` | `exif_lens` | [EXIF](#the-exif-fields) |
 | `IMAGE.ID.NEXT`, `ID`, `IMAGE.ID` | the library's ids, `%0*u` with `[n]` digits | nothing here: no library yet (D7) |
 | `IMAGE.EXIF` | `dt_image_print_exif()`: "1/250 f/8.0 18mm ISO 500", its `/` kept | the same |
-| `VERSION.NAME`, `VERSION_NAME`, `VERSION.IF_MULTI`, `VERSION_IF_MULTI`, `VERSION` | the duplicate's version and name | nothing here: no duplicates yet (D7) |
+| `VERSION.NAME`, `VERSION_NAME`, `VERSION.IF_MULTI`, `VERSION_IF_MULTI`, `VERSION` | the duplicate's version and name | nothing here: no duplicates yet (D7); planned, the virtual copy's number and name, darktable's version name read into it (decision 110) |
 | `JOBCODE` | the job code, "export" | the same |
 | `ROLL.NAME`, `ROLL_NAME` | the folder's last `[n]` parts, 1 by default | the same |
 | `FILE.DIRECTORY`, `FILE_DIRECTORY`, `FILE.FOLDER`, `FILE_FOLDER` | `g_path_get_dirname()` of the path | the same |
