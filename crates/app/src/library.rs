@@ -291,7 +291,8 @@ impl UtilityTool for Collections<'_> {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 top_line(ui, self, &mut actions);
             }
-            // Its groups scroll under the top line, Collections keeping its height.
+            // Its groups grow with the tree up to the list's cap, then scroll under the top
+            // line.
             Widget::CollectionsGroups => {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 section_list(ui, "collections groups", |ui| {
@@ -1416,10 +1417,11 @@ mod tests {
         assert_eq!(rows, ["Wedding", "Edits", "Selects"]);
     }
 
-    /// Collections keeps its height whatever its tree holds, the groups scrolling under the
+    /// Collections ends right after a short tree's last row and stops growing at two thirds
+    /// of the Tools panel's body, its header included, a longer tree scrolling under the
     /// top line, which stays where it is; the top line has a tool's margins.
     #[test]
-    fn collections_keeps_its_height_and_its_top_line_while_the_tree_scrolls() {
+    fn collections_grows_with_its_tree_up_to_its_cap_and_keeps_its_top_line_as_it_scrolls() {
         let with = |subfolders: usize| {
             move || {
                 let Folder::Open(mut listing) = listing(120, true) else {
@@ -1429,10 +1431,14 @@ mod tests {
                 Folder::Open(listing)
             }
         };
-        // Collections, then a line after it, to find where it ends.
+        // Collections, then a line after it, to find where it ends; the panel's height and
+        // top, where Collections starts.
+        let panel = std::rc::Rc::new(std::cell::Cell::new((0.0, 0.0)));
         let drawn = |subfolders: usize| {
             let folder = with(subfolders);
+            let panel = std::rc::Rc::clone(&panel);
             sized(egui::vec2(320.0, 1200.0), move |ui, actions| {
+                panel.set((ui.available_height(), ui.cursor().top()));
                 let (folder, recent, keys) = (folder(), recent(), keys());
                 let mut collections = Collections {
                     folder: &folder,
@@ -1457,7 +1463,13 @@ mod tests {
         long.run();
         let end =
             |harness: &Harness<'_, Vec<Action>>| harness.get_by_label("After Collections").rect();
-        assert_eq!(end(&short).top(), end(&long).top());
+        let row = |harness: &Harness<'_, Vec<Action>>, name: &str| {
+            harness.get_by_role_and_label(Role::TreeItem, name).rect()
+        };
+        // A short tree: its last row, then only the body's bottom margin and its hairline.
+        let t = theme(&long.ctx);
+        let under = end(&short).top() - row(&short, "Day 1").bottom();
+        assert!(under < 2.0 * t.spacing.l, "{under}");
         // The top line's box, centred in its one-line row, starts where a tool's first
         // row starts, under its header and in from the panel's start.
         let mut tool = Harness::builder()
@@ -1475,17 +1487,23 @@ mod tests {
             );
         tool.run();
         let first = *tool.state();
-        let line = theme(&long.ctx).sizes.panel_line;
+        let line = t.sizes.panel_line;
         let top_line = long.get_by_label("What is open").rect();
         assert_eq!(top_line.left(), first.x);
         assert_eq!(top_line.center().y, first.y + line / 2.0);
+        // A long tree: Collections, from its header to its hairline, two thirds of the
+        // panel's body high, the line after it following by the item spacing.
+        let (height, top) = panel.get();
+        let (tall, two_thirds) = (end(&long).top() - top, height * 2.0 / 3.0);
+        assert!(
+            tall >= two_thirds - 0.5 && tall < two_thirds + t.spacing.l,
+            "{tall} {two_thirds}"
+        );
         // The groups scroll, the last row out of sight below Collections until then; the
         // top line does not.
-        let row = |harness: &Harness<'_, Vec<Action>>, name: &str| {
-            harness.get_by_role_and_label(Role::TreeItem, name).rect()
-        };
         let root = row(&long, "Wedding");
-        assert!(row(&long, "Day 59").top() > end(&long).top());
+        let before = end(&long).top();
+        assert!(row(&long, "Day 59").top() > before);
         long.hover_at(root.center());
         long.event(egui::Event::MouseWheel {
             unit: egui::MouseWheelUnit::Point,
@@ -1498,7 +1516,7 @@ mod tests {
         assert!(row(&long, "Day 59").bottom() < end(&long).top());
         assert!(row(&long, "Wedding").top() < root.top());
         assert_eq!(long.get_by_label("What is open").rect(), top_line);
-        assert_eq!(end(&long).top(), end(&short).top());
+        assert_eq!(end(&long).top(), before);
         // A row that takes the focus out of sight is scrolled back into it.
         assert!(row(&long, "Wedding").bottom() < top_line.bottom());
         long.get_by_role_and_label(Role::TreeItem, "Wedding")

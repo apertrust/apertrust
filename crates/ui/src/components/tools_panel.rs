@@ -1042,6 +1042,8 @@ impl<'a> PanelBody<'a> {
     pub fn show(self, ui: &mut Ui, scrolling: impl FnOnce(&mut Ui)) {
         let t = theme(ui.ctx());
         let height = ui.available_height();
+        // Kept while the sections are drawn, for their lists' cap ([`panel_height`]).
+        ui.data_mut(|d| d.insert_temp(panel_height_id(), height));
         if let Some(pinned) = self.pinned {
             scroll_area(ui, &t, |ui| {
                 ScrollArea::vertical()
@@ -1075,7 +1077,18 @@ impl<'a> PanelBody<'a> {
         {
             stuck(ui.painter(), header, &t);
         }
+        ui.data_mut(|d| d.remove::<f32>(panel_height_id()));
     }
+}
+
+/// The height of the Tools panel's body being drawn, while its sections are
+/// ([`PanelBody::show`]); none outside one.
+pub(super) fn panel_height(ctx: &egui::Context) -> Option<f32> {
+    ctx.data(|d| d.get_temp(panel_height_id()))
+}
+
+fn panel_height_id() -> egui::Id {
+    egui::Id::unique("apertrust-ui tools panel height")
 }
 
 /// Under a header the list scrolls under: the separator's hairline at its foot, then a

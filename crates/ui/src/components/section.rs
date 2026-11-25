@@ -633,7 +633,10 @@ impl<'a> Section<'a> {
                 })
                 .show(ui, |ui| {
                     ui.set_width(width - 2.0 * margin);
+                    // Where the section starts, for a list in its body ([`section_list`]).
+                    ui.data_mut(|d| d.insert_temp(section_top_id(), top));
                     body(ui);
+                    ui.data_mut(|d| d.remove::<f32>(section_top_id()));
                 });
         }
 
@@ -701,13 +704,15 @@ pub fn section_body<R>(ui: &mut Ui, body: impl FnOnce(&mut Ui) -> R) -> R {
 }
 
 /// A list scrolling inside a section's body: every scrolling area inside a tool is one,
-/// so they all look and behave alike. It is `sizes.section_list` high whatever `add` draws,
-/// so the section keeps its height, and scrolls when the content is taller. Its scroll bar
-/// is egui's floating one in the quiet bar's colours ([`super::quiet_scroll`]), drawn in
-/// the body's end margin ([`Section::body_margin`]), clear of the rows: hidden until the
-/// pointer is over the list and the content is taller than it, then a thin thumb on its
-/// `sunken` track, as wide as the Tools panel's under the pointer and while dragged. Call
-/// it inside a section's body; `id_salt` tells it from another list there.
+/// so they all look and behave alike. It is as high as what `add` draws, ending right after
+/// its last row, and scrolls once its section would grow past two thirds of the Tools
+/// panel's body ([`super::PanelBody`]), its header and what is above the list included;
+/// outside one, past `sizes.section_list`. Its scroll bar is egui's floating one in the
+/// quiet bar's colours ([`super::quiet_scroll`]), drawn in the body's end margin
+/// ([`Section::body_margin`]), clear of the rows: hidden until the pointer is over the list
+/// and the content is taller than it, then a thin thumb on its `sunken` track, as wide as
+/// the Tools panel's under the pointer and while dragged. Call it inside a section's body
+/// ([`Section::show`]); `id_salt` tells it from another list there.
 pub fn section_list<R>(
     ui: &mut Ui,
     id_salt: impl std::hash::Hash + std::fmt::Debug,
@@ -716,10 +721,23 @@ pub fn section_list<R>(
     let t = theme(ui.ctx());
     let margin = Section::body_margin(&t);
     let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(width, t.sizes.section_list), Sense::hover());
+    // The section's header and rows above the list, and the body's bottom margin under it.
+    let around = ui
+        .data(|d| d.get_temp::<f32>(section_top_id()))
+        .map_or(0.0, |top| ui.cursor().top() - top)
+        + t.spacing.m;
+    let cap = super::tools_panel::panel_height(ui.ctx()).map_or(t.sizes.section_list, |height| {
+        (height * 2.0 / 3.0 - around)
+            .round()
+            .max(t.sizes.panel_line)
+    });
+    // Drawn into the end margin too, for the bar; the body takes only what the rows did.
     let mut list = ui.new_child(
         UiBuilder::new()
-            .max_rect(rect.with_max_x(rect.right() + margin))
+            .max_rect(Rect::from_min_size(
+                ui.cursor().min,
+                vec2(width + margin, cap),
+            ))
             .layout(*ui.layout()),
     );
     list.spacing_mut().scroll = egui::style::ScrollStyle {
@@ -730,10 +748,17 @@ pub fn section_list<R>(
     };
     let area = egui::ScrollArea::vertical()
         .id_salt(id_salt)
-        .auto_shrink([false, false])
+        .auto_shrink([false, true])
+        .max_height(cap)
         .content_margin(Margin {
             right: margin as i8,
             ..Margin::ZERO
         });
-    super::quiet_scroll(&mut list, area, add)
+    let out = super::quiet_scroll(&mut list, area, add);
+    ui.allocate_exact_size(vec2(width, list.min_rect().height()), Sense::hover());
+    out
+}
+
+fn section_top_id() -> egui::Id {
+    egui::Id::unique("apertrust-ui section top")
 }
