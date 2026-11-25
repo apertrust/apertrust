@@ -1005,7 +1005,7 @@ pub struct OnPhoto<'a> {
     pub panning: bool,
 }
 
-/// A drag of the picker on the photo, between its press and its release.
+/// What a press of the picker on the photo moves, between the press and the release.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Drag {
     /// The point follows the pointer; `last` is where it was sent last.
@@ -1018,8 +1018,37 @@ enum Drag {
     },
 }
 
+/// A press on the photo with its drag, between the press and the release.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Press {
+    /// Where it went down, on the screen.
+    origin: Pos2,
+    /// Whether the pointer has gone past [`CLICK`] from `origin`: a drag from then to the
+    /// release, wherever it goes after; until then a click, and nothing follows it.
+    dragging: bool,
+    drag: Drag,
+}
+
 /// How near an area's edges, in points, a press takes their corner, strictly within it.
 const CORNER: f32 = 6.0;
+
+/// How far, in points on the screen, a press may move from where it went down and stay a
+/// click (decision 105): egui's default `max_click_dist`, a drag only past it, but by
+/// distance alone, never by egui's click time.
+const CLICK: f32 = 6.0;
+
+/// Whether a press that went down at `origin` is a drag with the pointer at `pos`: past
+/// [`CLICK`] points from it, however long it has been held.
+fn dragging(origin: Pos2, pos: Pos2) -> bool {
+    origin.distance(pos) > CLICK
+}
+
+/// Whether a press of the secondary button, `secondary`, resets the picker at `region`:
+/// on an area, from the button itself, never egui's long press on a touch screen,
+/// `long_touched`, until Touch mode settles touch (decision 105).
+fn resets(secondary: bool, long_touched: bool, region: Region) -> bool {
+    secondary && !long_touched && matches!(region, Region::Area(_))
+}
 
 /// What the picker on the photo did this frame ([`on_photo`]).
 #[derive(Debug, Default, PartialEq)]
@@ -1075,7 +1104,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
 
     // The pointer.
     let drag_id = id.with("drag");
-    let mut drag: Option<Drag> = ctx.data(|d| d.get_temp(drag_id));
+    let mut drag: Option<Press> = ctx.data(|d| d.get_temp(drag_id));
     let (pressed, released, down, moved, pos, origin, modifiers) = ui.input(|i| {
         (
             i.pointer.primary_pressed(),
@@ -1105,16 +1134,25 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     if let Some(origin) = pressed_at {
         response.request_focus();
         let mac = ctx.os() == egui::os::OperatingSystem::Mac;
-        drag = pressed_on(&mut commands, on, at(origin), origin, modifiers, mac);
+        drag =
+            pressed_on(&mut commands, on, at(origin), origin, modifiers, mac).map(|drag| Press {
+                origin,
+                dragging: false,
+                drag,
+            });
     }
     let moved = moved && pressed_at.is_none_or(|origin| pos != Some(origin));
     // Held past the area's edge, the view moves under a still pointer: followed too, and
     // on the release, so it ends where the pointer is on the photo as now placed.
     let outside = pos.is_some_and(|pos| !on.area.contains(pos));
-    let moved = !pinching && (moved || (drag.is_some() && (down || released) && outside));
-    if let (Some(now), Some(pos), true) = (drag, pos, moved) {
+    let held_past = drag.is_some_and(|press| press.dragging) && (down || released) && outside;
+    let moved = !pinching && (moved || held_past);
+    // A click until the pointer goes past the threshold: what the press sent stays.
+    if let (Some(press), Some(pos), true) = (drag, pos, moved)
+        && (press.dragging || dragging(press.origin, pos))
+    {
         let to = at(pos);
-        drag = Some(match now {
+        let followed = match press.drag {
             Drag::Point { .. } => {
                 commands.push(PickerCommand::Point {
                     at: to,
@@ -1136,10 +1174,15 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
                     last: Some((held, to)),
                 }
             }
+        };
+        drag = Some(Press {
+            dragging: true,
+            drag: followed,
+            ..press
         });
     }
     if released && let Some(ended) = drag.take() {
-        match ended {
+        match ended.drag {
             Drag::Point { last } => commands.push(PickerCommand::Point {
                 at: last,
                 done: true,
@@ -1158,13 +1201,18 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
             Drag::Area { last: None, .. } => {}
         }
     }
-    if response.secondary_clicked() && matches!(on.region, Region::Area(_)) {
+    if resets(
+        response.secondary_clicked(),
+        response.long_touched(),
+        on.region,
+    ) {
         commands.push(PickerCommand::Reset);
     }
     // The crosshair, the move pointer over a corner a press would take and while an area
     // is dragged.
     let corner = pos.is_some_and(|pos| on_corner(on, pos));
-    if matches!(drag, Some(Drag::Area { .. })) || (!on.panning && response.hovered() && corner) {
+    let area_dragged = drag.is_some_and(|press| matches!(press.drag, Drag::Area { .. }));
+    if area_dragged || (!on.panning && response.hovered() && corner) {
         ctx.set_cursor_icon(CursorIcon::Move);
     } else if !on.panning && (response.hovered() || drag.is_some()) {
         ctx.set_cursor_icon(CursorIcon::Crosshair);
@@ -1237,10 +1285,10 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
         Some(drag) => {
             d.insert_temp(drag_id, drag);
         }
-        None => d.remove::<Drag>(drag_id),
+        None => d.remove::<Press>(drag_id),
     });
-    // A drag past the area's edge.
-    let pan = (drag.is_some() && down)
+    // A drag past the area's edge, once past the threshold.
+    let pan = (drag.is_some_and(|press| press.dragging) && down)
         .then_some(pos)
         .flatten()
         .map(|pos| pos - on.area.clamp(pos))
@@ -1266,12 +1314,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     paint_label(&overlay, on, place, response.has_focus());
     // None while A held gives the pointer to the pan.
     let pointer = pos.filter(|_| !on.panning && response.contains_pointer());
-    paint_badge(
-        &overlay,
-        on,
-        pointer,
-        matches!(drag, Some(Drag::Area { .. })),
-    );
+    paint_badge(&overlay, on, pointer, area_dragged);
     let reveal = keyed.then(|| revealed(on, region, &overlay)).flatten();
 
     // To screen readers.
@@ -2299,6 +2342,186 @@ mod tests {
             sent(&mut harness)[..],
             [PickerCommand::Area { from, .. }, _] if from != [0.98, 0.98]
         ));
+    }
+
+    /// Where `pos` on the screen is in the photo's coordinates, as the photo takes a press.
+    fn photo_at(pos: egui::Pos2) -> [f32; 2] {
+        let p = (pos - PHOTO.min) / PHOTO.size();
+        [p.x, p.y]
+    }
+
+    fn area(from: [f32; 2], to: [f32; 2], done: bool) -> PickerCommand {
+        PickerCommand::Area {
+            from,
+            to,
+            done,
+            keys: PickKeys::default(),
+        }
+    }
+
+    /// The click's area round the photo's middle, as a press there sends it.
+    fn clicked(done: bool) -> PickerCommand {
+        let [left, top, right, bottom] = Region::pressed([0.5, 0.5], 400.0 / 300.0);
+        area([left, top], [right, bottom], done)
+    }
+
+    /// A press is a click until the pointer goes more than 6 points from where it went
+    /// down, egui's `max_click_dist` (decision 105): on an area picker the click's area
+    /// stays as the press sent it, done on the release. Past them the area runs from the
+    /// press to the pointer, at least a frame pixel each way, and stays a drag when the
+    /// pointer comes back.
+    #[test]
+    fn an_area_s_press_is_a_click_until_it_moves_past_6_points() {
+        let mut harness = scene();
+        harness.get_by_role_and_label(Role::Button, QUAD).click();
+        harness.run();
+        answer(&mut harness, DEFAULT_AREA);
+        sent(&mut harness);
+        let press = at(0.5, 0.5);
+        for by in [vec2(5.0, 0.0), vec2(0.0, -6.0), vec2(-6.0, 0.0)] {
+            answer(&mut harness, DEFAULT_AREA);
+            drag(&mut harness, press, press + by);
+            assert_eq!(
+                sent(&mut harness),
+                [clicked(false), clicked(true)],
+                "{by:?}"
+            );
+        }
+
+        answer(&mut harness, DEFAULT_AREA);
+        let past = press + vec2(7.0, 0.0);
+        drag(&mut harness, press, past);
+        let pixel = [1.0 / 400.0, 1.0 / 300.0];
+        let to = at_least_a_pixel([0.5, 0.5], photo_at(past), pixel);
+        assert_eq!(
+            sent(&mut harness),
+            [
+                clicked(false),
+                area([0.5, 0.5], to, false),
+                area([0.5, 0.5], to, true)
+            ]
+        );
+
+        // Back to the press after passing the threshold: still a drag.
+        answer(&mut harness, DEFAULT_AREA);
+        harness.hover_at(press);
+        harness.run();
+        harness.drag_at(press);
+        harness.run();
+        harness.hover_at(past);
+        harness.run();
+        harness.hover_at(press);
+        harness.run();
+        harness.drop_at(press);
+        harness.run();
+        let back = at_least_a_pixel([0.5, 0.5], [0.5, 0.5], pixel);
+        assert_eq!(
+            sent(&mut harness),
+            [
+                clicked(false),
+                area([0.5, 0.5], to, false),
+                area([0.5, 0.5], back, false),
+                area([0.5, 0.5], back, true)
+            ]
+        );
+    }
+
+    /// Time never counts: a press held still for over a second, egui's click time being
+    /// 0.8 s, is a click all the same.
+    #[test]
+    fn a_press_held_still_is_a_click_however_long() {
+        let mut harness = scene();
+        harness.get_by_role_and_label(Role::Button, QUAD).click();
+        harness.run();
+        answer(&mut harness, DEFAULT_AREA);
+        sent(&mut harness);
+        let press = at(0.5, 0.5);
+        harness.hover_at(press);
+        harness.run();
+        harness.drag_at(press);
+        // Each step a quarter of a second.
+        for _ in 0..5 {
+            harness.step();
+        }
+        harness.hover_at(press + vec2(3.0, 2.0));
+        harness.step();
+        harness.drop_at(press + vec2(3.0, 2.0));
+        harness.run();
+        assert_eq!(sent(&mut harness), [clicked(false), clicked(true)]);
+    }
+
+    /// A corner taken moves nothing until the pointer is past the threshold: let go within
+    /// it, nothing is sent; past it, the area runs from the opposite corner.
+    #[test]
+    fn a_corner_moves_only_past_6_points() {
+        let mut harness = scene();
+        harness.get_by_role_and_label(Role::Button, QUAD).click();
+        harness.run();
+        answer(&mut harness, DEFAULT_AREA);
+        sent(&mut harness);
+        let corner = at(0.98, 0.98);
+        drag(&mut harness, corner, corner + vec2(-5.0, 0.0));
+        assert_eq!(sent(&mut harness), []);
+        assert_eq!(harness.state().mirror.region(), Some(DEFAULT_AREA));
+        let past = corner + vec2(-7.0, 0.0);
+        drag(&mut harness, corner, past);
+        assert_eq!(
+            sent(&mut harness),
+            [
+                area([0.02, 0.02], photo_at(past), false),
+                area([0.02, 0.02], photo_at(past), true)
+            ]
+        );
+    }
+
+    /// A point stays where the press put it until the pointer is past the threshold, then
+    /// follows it.
+    #[test]
+    fn a_point_follows_only_past_6_points() {
+        let mut harness = scene();
+        harness
+            .get_by_role_and_label(Role::Button, SPREAD_BUTTON)
+            .click();
+        harness.run();
+        answer(&mut harness, Region::Point([0.5, 0.5]));
+        sent(&mut harness);
+        let point = |at, done| PickerCommand::Point {
+            at,
+            done,
+            keys: PickKeys::default(),
+        };
+        let press = at(0.25, 0.5);
+        drag(&mut harness, press, press + vec2(5.0, 0.0));
+        assert_eq!(
+            sent(&mut harness),
+            [point([0.25, 0.5], false), point([0.25, 0.5], true)]
+        );
+        let past = press + vec2(7.0, 0.0);
+        drag(&mut harness, press, past);
+        assert_eq!(
+            sent(&mut harness),
+            [
+                point([0.25, 0.5], false),
+                point(photo_at(past), false),
+                point(photo_at(past), true)
+            ]
+        );
+    }
+
+    /// The threshold is egui's default click distance, a drag only past it; and only the
+    /// secondary button itself resets an area, never egui's long press on a touch screen.
+    #[test]
+    fn the_threshold_is_egui_s_and_a_long_press_resets_nothing() {
+        assert_eq!(CLICK, egui::InputOptions::default().max_click_dist);
+        let origin = pos2(100.0, 100.0);
+        assert!(!dragging(origin, origin + vec2(5.9, 0.0)));
+        assert!(!dragging(origin, origin + vec2(0.0, 6.0)));
+        assert!(dragging(origin, origin + vec2(6.1, 0.0)));
+        let area = Region::Area([0.2, 0.2, 0.4, 0.4]);
+        assert!(resets(true, false, area));
+        assert!(!resets(true, true, area));
+        assert!(!resets(false, false, area));
+        assert!(!resets(true, false, Region::Point([0.5, 0.5])));
     }
 
     /// Clicks `button` in the photo's middle with `modifiers` held.

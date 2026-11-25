@@ -158,7 +158,7 @@ Pick has none: its picker's area is the live picker's, drawn while it is on. Eac
 
 | Gesture | Is |
 | --- | --- |
-| Click | A press and release that moves at most 6 points from where it went down, however long it is held: egui's `max_click_dist`, never its click time, shared with the pickers (decision 105, planned; built, egui's drag threshold, which counts the time too) |
+| Click | A press and release that moves at most 6 points from where it went down, however long it is held: egui's `max_click_dist`, never its click time, shared with the pickers (decision 105; built for a picker's press, 105.1, and for Pan's drag egui's drag threshold, which counts the time too) |
 | Area | A drag past those 6 points, from the press to the release, its end moved where needed to lie at least one frame pixel from the press on each axis, so a drag along one axis is an area too |
 | Shape | A drag whose direction counts, from its start to its end: a gradient |
 | Stroke | The pointer's path while pressed, with the pen's pressure where it gives one |
