@@ -196,7 +196,7 @@ pub enum Problem {
     /// A step's `apertrust:styles` holding what cannot be read as a style applied
     /// (decision 106), as `what` says: an item that is no struct, one lacking its name or
     /// file, or its before or after, a before and an after that are not the same tools'
-    /// entries, or a name twice in the list.
+    /// entries, or the same style twice in the list ([`same_style`]).
     #[error("step {step} of copy {copy} holds {what} among its styles applied")]
     AppliedStyle {
         copy: String,
@@ -249,6 +249,24 @@ pub struct Step {
     /// changed the list, empty where it emptied it; `None` where it left the list as it was
     /// (decision 106).
     pub styles: Option<Vec<AppliedStyle>>,
+}
+
+/// What the styles applied record as a built-in style's file, before its id
+/// (`builtin:lomo`): no file name of the person's holds a `:`, so it is never one
+/// (decision 106).
+pub const BUILT_IN_FILE: &str = "builtin:";
+
+/// Whether the style applied `name` from `file` is the one applied `other` from
+/// `other_file` (decisions 106 and 109): by file where either file is a built-in's,
+/// `builtin:<id>`, the same style only where both files are the same, so a built-in applied
+/// in another language is found and a person's style named as a built-in is never taken for
+/// it; by name where neither is.
+pub fn same_style((name, file): (&str, &str), (other, other_file): (&str, &str)) -> bool {
+    if file.starts_with(BUILT_IN_FILE) || other_file.starts_with(BUILT_IN_FILE) {
+        file == other_file
+    } else {
+        name == other
+    }
 }
 
 /// A style applied to the photo, an item of a step's list (decision 106): its name as
@@ -883,8 +901,8 @@ fn read_step(fields: &[Property], copy: &str, problems: &mut Vec<Problem>) -> St
 /// that is no `rdf:Seq`, a field of an item a save would drop, and what in an entry it
 /// would, as for `apertrust:entries`; and, as [`Problem::AppliedStyle`], an item that is no
 /// struct, which is left out, one lacking its name or file, or its before or after, a
-/// before and an after that are not the same tools' entries in the same order, and a name
-/// twice in the list.
+/// before and an after that are not the same tools' entries in the same order, and the same
+/// style twice in the list, by name, or by file for a built-in ([`same_style`]).
 fn read_styles(
     node: &Node,
     (copy, step): (&str, &str),
@@ -897,7 +915,6 @@ fn read_styles(
         what,
     };
     let place = format!("the styles of {place}");
-    let mut names = std::collections::HashSet::new();
     let mut list = Vec::new();
     for item in array_items(Some(node), ArrayKind::Seq, &place, "styles", problems) {
         let Some(fields) = item.fields().filter(|_| item.qualifiers.is_empty()) else {
@@ -942,8 +959,10 @@ fn read_styles(
             (Some(before), Some(after)) if before == after => {}
             _ => problems.push(problem("a before and an after that are not the same tools")),
         }
-        if !names.insert(style.name.clone()) {
-            problems.push(problem("a style's name twice"));
+        let same =
+            |kept: &AppliedStyle| same_style((&kept.name, &kept.file), (&style.name, &style.file));
+        if list.iter().any(same) {
+            problems.push(problem("a style twice"));
         }
         list.push(style);
     }

@@ -575,7 +575,23 @@ fn a_style_applied_that_cannot_be_read_is_a_problem() {
                 warm,
                 1,
             ),
-            vec![style("a style's name twice")],
+            vec![style("a style twice")],
+        ),
+        (
+            // A built-in twice, under two names, as applied in two languages.
+            xml.replacen(r#""Warm film.apstyle""#, r#""builtin:lomo""#, 1)
+                .replacen(r#""R&amp;D _x_ _y_.apstyle""#, r#""builtin:lomo""#, 1),
+            vec![style("a style twice")],
+        ),
+        (
+            // A built-in beside a person's style of its name: two styles (decision 109).
+            xml.replacen(
+                r#"apertrust:name="R&amp;D &quot;x&quot; &lt;y&gt;""#,
+                warm,
+                1,
+            )
+            .replacen(r#""R&amp;D _x_ _y_.apstyle""#, r#""builtin:warm-film""#, 1),
+            vec![],
         ),
         (
             xml.replacen(warm, &format!(r#"{warm} apertrust:rating="2""#), 1),

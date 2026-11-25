@@ -64,9 +64,11 @@ fn append(name: &str, tools: &[(&str, ToolValues)]) -> Command {
     apply(name, StyleMode::Append, tools)
 }
 
+/// `ClearStyle` of the style `name`, its file `<name>.apstyle`.
 fn clear(name: &str) -> Command {
     Command::ClearStyle {
         name: name.to_owned(),
+        file: format!("{name}.apstyle"),
     }
 }
 
@@ -802,5 +804,64 @@ fn a_replace_that_moves_nothing_records_its_reset_step() {
         (&Change::Reset(Vec::new()), &None)
     );
     assert_eq!(list.change, Change::None);
+    remove(&path);
+}
+
+/// `ApplyStyle` of the built-in style `id` under `name`, its file `builtin:<id>`.
+fn built_in(name: &str, id: &str, tools: &[(&str, ToolValues)]) -> Command {
+    match append(name, tools) {
+        Command::ApplyStyle {
+            name, mode, tools, ..
+        } => Command::ApplyStyle {
+            name,
+            file: format!("builtin:{id}"),
+            mode,
+            tools,
+        },
+        _ => unreachable!("an ApplyStyle"),
+    }
+}
+
+/// A built-in style is known by its file (decision 109): applied again in another language
+/// it moves to the top under the name sent rather than being listed twice, and a person's
+/// style named as a built-in is listed beside it.
+#[test]
+fn a_built_in_style_applied_again_in_another_language_moves_to_the_top() {
+    let path = scratch("styles-built-in");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&path);
+    driven.run([built_in("Lomo", "lomo", &[grain(40.0)])]);
+    driven.run([append("Faded", &[soften(30.0)])]);
+    let events = driven.run([built_in("Ломо", "lomo", &[grain(60.0)])]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert_eq!(listed(&events), ["Ломо", "Faded"]);
+    // Grain still held the built-in's after: its state before the built-in first set it.
+    assert_eq!(
+        tool_of(&styles(&driven)[0], "grain").before,
+        ToolValues::new()
+    );
+    let events = driven.run([append("Ломо", &[vignette(50.0)])]);
+    assert_eq!(listed(&events), ["Ломо", "Ломо", "Faded"]);
+    assert_eq!(styles(&driven)[0].file, "Ломо.apstyle");
+    // Saved, the two read again as two styles, no problem.
+    driven.writes();
+    let read = saved(&path);
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    assert_eq!(read.log.styles().len(), 3);
+    // Clear on the built-in's row of the two of one name: by its file, the built-in alone,
+    // and a picker's turning off looks at its tools, not the person's style's.
+    let engine = &driven.engine;
+    let tools = |file: &str| engine.style_tools("Ломо", file);
+    assert_eq!(tools("builtin:lomo"), [Some("grain".to_owned())]);
+    assert_eq!(tools("Ломо.apstyle"), [Some("vignette".to_owned())]);
+    let cleared = driven.run([Command::ClearStyle {
+        name: "Ломо".to_owned(),
+        file: "builtin:lomo".to_owned(),
+    }]);
+    assert!(failures(&cleared).is_empty(), "{cleared:?}");
+    assert_eq!(listed(&cleared), ["Ломо", "Faded"]);
+    assert_eq!(styles(&driven)[0].file, "Ломо.apstyle");
+    assert!(edit(&driven).tool("grain").is_none());
+    assert!(edit(&driven).tool("vignette").is_some());
     remove(&path);
 }

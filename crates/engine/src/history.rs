@@ -399,7 +399,19 @@ pub struct StyleTool {
     pub after: ToolValues,
 }
 
+pub use apertrust_library::sidecar::BUILT_IN_FILE;
+
 impl AppliedStyle {
+    /// Whether it is the style `name` from `file` (decisions 106 and 109): by file where
+    /// either its file or `file` is a built-in's, `builtin:<id>`, the same style only where
+    /// both files are the same, so a built-in applied in another language is found and a
+    /// person's style named as a built-in is never taken for it; by name where neither is.
+    /// The sidecar's reading holds a list to the same rule, so a list the session leaves
+    /// always reads ([`apertrust_library::sidecar::same_style`]).
+    pub fn is(&self, name: &str, file: &str) -> bool {
+        apertrust_library::sidecar::same_style((&self.name, &self.file), (name, file))
+    }
+
     /// The style `name` from `file` applied over `earlier`, its item already on the list,
     /// `set` each tool this application set with its state just before it and after it
     /// (decision 106): a tool that still held what `earlier` set keeps `earlier`'s state
@@ -441,10 +453,11 @@ impl AppliedStyle {
     }
 }
 
-/// `list` with `style` at the top, any item of its name taken out first.
+/// `list` with `style` at the top, any item that is the same style taken out first
+/// ([`AppliedStyle::is`]).
 pub fn on_top(list: &[AppliedStyle], style: AppliedStyle) -> Vec<AppliedStyle> {
     let mut list: Vec<AppliedStyle> = (list.iter())
-        .filter(|kept| kept.name != style.name)
+        .filter(|kept| !kept.is(&style.name, &style.file))
         .cloned()
         .collect();
     list.insert(0, style);
@@ -454,9 +467,10 @@ pub fn on_top(list: &[AppliedStyle], style: AppliedStyle) -> Vec<AppliedStyle> {
 /// A newer log's list of styles applied, `rebuilt`, after one of the session's steps laid
 /// on it that changed the session's list from `before` to `after` (decision 106, A newer
 /// file taken in): each style cleared taken out where `rebuilt` holds it, and each style
-/// added or moved to the top put at the top, in `after`'s order, any item of its name taken
-/// out first, with the session's after states. It is applied again over the item `rebuilt`
-/// holds of its name, by [`AppliedStyle::applied`]'s rule: a tool it `set`, as the steps of
+/// added or moved to the top put at the top, in `after`'s order, any item of the same style
+/// taken out first ([`AppliedStyle::is`]), with the session's after states. It is applied
+/// again over the item `rebuilt` holds of the same style, by [`AppliedStyle::applied`]'s
+/// rule: a tool it `set`, as the steps of
 /// its change show or as its item differs from the one before, takes its state in the
 /// joined log just before the step that set it, `joined`, or the earlier item's state
 /// before it where it still held that item's after; a tool an earlier application set keeps
@@ -468,24 +482,26 @@ pub(crate) fn replay(
     stepped: &BTreeSet<String>,
     joined: impl Fn(&str) -> ToolValues,
 ) {
-    let was = |name: &str| before.iter().find(|style| style.name == name);
-    let cleared = |name: &str| was(name).is_some() && after.iter().all(|now| now.name != name);
-    rebuilt.retain(|kept| !cleared(&kept.name));
+    let was = |item: &AppliedStyle| before.iter().find(|style| style.is(&item.name, &item.file));
+    let cleared = |item: &AppliedStyle| {
+        was(item).is_some() && after.iter().all(|now| !now.is(&item.name, &item.file))
+    };
+    rebuilt.retain(|kept| !cleared(kept));
     // The top before, of the styles still listed: one there only as those above it were
     // cleared was not moved.
-    let top = before.iter().find(|style| !cleared(&style.name));
+    let top = before.iter().find(|style| !cleared(style));
     let moved: Vec<&AppliedStyle> = (after.iter().enumerate())
         .filter(|(at, style)| {
-            let earlier = was(&style.name);
-            earlier != Some(*style) || (*at == 0 && top.map(|top| &top.name) != Some(&style.name))
+            let topped = *at == 0 && !top.is_some_and(|top| top.is(&style.name, &style.file));
+            was(style) != Some(*style) || topped
         })
         .map(|(_, style)| style)
         .collect();
     for style in moved.into_iter().rev() {
         let earlier = (rebuilt.iter())
-            .find(|kept| kept.name == style.name)
+            .find(|kept| kept.is(&style.name, &style.file))
             .cloned();
-        let previous = was(&style.name);
+        let previous = was(style);
         let tools = (style.tools.iter())
             .map(|tool| {
                 let then = (previous.into_iter())

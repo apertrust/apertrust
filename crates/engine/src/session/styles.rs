@@ -82,7 +82,7 @@ impl Engine {
                 after: state(&open.edit, tool),
             })
             .collect();
-        let earlier = list.iter().find(|style| style.name == name);
+        let earlier = list.iter().find(|style| style.is(name, file));
         let style = AppliedStyle::applied(name, file, earlier, set);
         let styles = on_top(&list, style);
         open.unsaved |= styles.as_slice() != open.history.styles();
@@ -97,24 +97,23 @@ impl Engine {
         })
     }
 
-    /// [`Command::ClearStyle`]: each tool the style `name` set whose state is still the one
-    /// it left goes back to its state before it, redrawn as `SetTool`'s is, and the style
-    /// leaves the list the change leaves; [`SessionError::UnknownStyle`] where the list
-    /// lacks it. Its steps are left to [`Self::apply_edit`].
-    pub(super) fn clear_style(&mut self, name: &str) -> Result<Effect, SessionError> {
+    /// [`super::Command::ClearStyle`]: each tool the style `name` from `file` set whose state
+    /// is still the one it left goes back to its state before it, redrawn as `SetTool`'s is,
+    /// and the style leaves the list the change leaves; [`SessionError::UnknownStyle`] where
+    /// the list lacks it. Its steps are left to [`Self::apply_edit`].
+    pub(super) fn clear_style(&mut self, name: &str, file: &str) -> Result<Effect, SessionError> {
         let Some(open) = &self.open else {
             return Ok(Effect::default());
         };
-        let list = open.history.styles();
-        let Some(style) = list.iter().find(|style| style.name == name).cloned() else {
+        // The item that is the style, by its file for a built-in (decision 109): it alone
+        // leaves the list, never a person's style named as a built-in.
+        let mut styles = open.history.styles().to_vec();
+        let Some(at) = styles.iter().position(|style| style.is(name, file)) else {
             return Err(SessionError::UnknownStyle {
                 name: name.to_owned(),
             });
         };
-        let styles: Vec<AppliedStyle> = (list.iter())
-            .filter(|kept| kept.name != name)
-            .cloned()
-            .collect();
+        let style = styles.remove(at);
         let mut back = Vec::new();
         let changed = self.change(|edit, tools, _, image| {
             let mut redrawn = Vec::new();
@@ -152,12 +151,14 @@ impl Engine {
         })
     }
 
-    /// The tools the style `name` set, by id, as a [`Command::ClearStyle`] may change them,
-    /// none where the open photo's list lacks it.
-    pub(super) fn style_tools(&self, name: &str) -> Vec<Option<String>> {
+    /// The tools the style `name` from `file` set, by id, as a
+    /// [`super::Command::ClearStyle`] may change them, none where the open photo's list lacks
+    /// it.
+    pub(super) fn style_tools(&self, name: &str, file: &str) -> Vec<Option<String>> {
         (self.open.iter())
             .flat_map(|open| open.history.styles())
-            .filter(|style| style.name == name)
+            .find(|style| style.is(name, file))
+            .into_iter()
             .flat_map(|style| &style.tools)
             .map(|tool| Some(tool.tool.clone()))
             .collect()

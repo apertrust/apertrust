@@ -1047,3 +1047,43 @@ fn replay_lays_the_session_s_change_of_the_list_on_the_newer_one() {
     );
     assert_eq!(rebuilt, [b]);
 }
+
+/// A style's item is matched by its file where either side is a built-in's, by name only
+/// where neither is (decision 109): a built-in applied in another language moves to the top
+/// under the name sent, and a person's style named as a built-in is never taken for it.
+#[test]
+fn a_built_in_style_is_matched_by_its_file() {
+    let item = |name: &str, file: &str| AppliedStyle {
+        name: name.to_owned(),
+        file: file.to_owned(),
+        tools: Vec::new(),
+    };
+    let lomo = item("Lomo", "builtin:lomo");
+    let mine = item("Warm film", "Warm film.apstyle");
+    // (the item, the name and file sent, whether it is that style)
+    let cases = [
+        (&lomo, "Lomo", "builtin:lomo", true),
+        (&lomo, "Ломо", "builtin:lomo", true),
+        (&lomo, "Lomo", "Lomo.apstyle", false),
+        (&lomo, "Lomo", "builtin:sepia", false),
+        (&mine, "Warm film", "Warm film.apstyle", true),
+        (&mine, "Warm film", "Renamed.apstyle", true),
+        (&mine, "Warm film", "builtin:warm-film", false),
+        (&mine, "Cool film", "Warm film.apstyle", false),
+    ];
+    for (kept, name, file, is) in cases {
+        assert_eq!(kept.is(name, file), is, "{kept:?} as {name} from {file}");
+    }
+    let list = [mine.clone(), lomo.clone()];
+    let names = |list: &[AppliedStyle]| -> Vec<String> {
+        list.iter().map(|style| style.name.clone()).collect()
+    };
+    assert_eq!(
+        names(&on_top(&list, item("Ломо", "builtin:lomo"))),
+        ["Ломо", "Warm film"]
+    );
+    assert_eq!(
+        names(&on_top(&list, item("Lomo", "Lomo.apstyle"))),
+        ["Lomo", "Warm film", "Lomo"]
+    );
+}
