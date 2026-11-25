@@ -940,6 +940,14 @@ pub struct ActionEnd {
     /// snake_case, unique among the tool's actions; `tool-<tool>-<id>` in the registry.
     pub id: &'static str,
     pub face: Face,
+    /// Empty for a button that runs its action. Otherwise an icon button that opens a menu
+    /// of these actions in place of running one, as AgX's Reset primaries offers
+    /// Blender-like, Smooth and Unmodified (`agx.c:2100-2121`): 2 to [`MOST_IN_SUBMENU`],
+    /// each one of the tool's own, snake_case and unique among its actions, with an
+    /// action's words, its registry action `tool-<tool>-<id>` and its availability, and
+    /// none with a menu of its own. The button's words name the menu and it runs nothing,
+    /// so it is no registry action.
+    pub menu: &'static [&'static str],
     /// Drawn disabled and never run until what it runs is built, as [`Control::unported`]
     /// is for a control (decision 29).
     pub unported: bool,
@@ -964,6 +972,8 @@ pub enum ButtonIcon {
     FlipHorizontal,
     /// The same across a horizontal line.
     FlipVertical,
+    /// A list with a turning arrow: AgX's menu of primaries to start again from.
+    PrimariesMenu,
 }
 
 impl Row {
@@ -1545,6 +1555,10 @@ pub enum DefinitionError {
     ReservedAction(&'static str),
     #[error("the action {0} is called as a control is; one availability rule takes either's id")]
     ActionIsControl(&'static str),
+    #[error(
+        "the action {0}'s menu is no icon button's, or holds fewer than 2 or more than {MOST_IN_SUBMENU} actions"
+    )]
+    ActionMenu(&'static str),
     #[error("two computed values are called {0}")]
     DuplicateComputed(&'static str),
     #[error(
@@ -1905,6 +1919,8 @@ impl ProcessingDefinition {
         );
         let mut last_picks = BTreeSet::new();
         let mut readouts = BTreeSet::new();
+        // The actions that run, which a context menu or the toolbar may name.
+        let mut runnable = BTreeSet::new();
         for &Placed { row, ref at } in &placed {
             // A group with no rows has nothing behind it yet; rows following a control
             // must be rows.
@@ -1925,20 +1941,35 @@ impl ProcessingDefinition {
             {
                 return Err(DefinitionError::Widget(*widget));
             }
-            // Each action at a row's end has an id of its own among the tool's actions,
-            // never a control's: availability asks one rule with either.
-            for ActionEnd { id, .. } in row.end().iter().filter_map(End::action) {
-                if !is_id(id) {
-                    return Err(DefinitionError::Id(id));
+            // Each action at a row's end, and each of a menu's, has an id of its own among
+            // the tool's actions, never a control's: availability asks one rule with
+            // either. A menu is an icon button's, of 2 to `MOST_IN_SUBMENU` actions, and
+            // its button runs nothing.
+            for ActionEnd { id, face, menu, .. } in row.end().iter().filter_map(End::action) {
+                let fits = menu.is_empty()
+                    || (matches!(face, Face::Icon(_))
+                        && (2..=MOST_IN_SUBMENU).contains(&menu.len()));
+                if !fits {
+                    return Err(DefinitionError::ActionMenu(id));
                 }
-                if *id == "tabs" {
-                    return Err(DefinitionError::ReservedAction(id));
-                }
-                if !actions.insert(*id) {
-                    return Err(DefinitionError::DuplicateAction(id));
-                }
-                if self.control(id).is_some() {
-                    return Err(DefinitionError::ActionIsControl(id));
+                for (id, runs) in std::iter::once((id, menu.is_empty()))
+                    .chain(menu.iter().map(|item| (item, true)))
+                {
+                    if !is_id(id) {
+                        return Err(DefinitionError::Id(id));
+                    }
+                    if *id == "tabs" {
+                        return Err(DefinitionError::ReservedAction(id));
+                    }
+                    if !actions.insert(*id) {
+                        return Err(DefinitionError::DuplicateAction(id));
+                    }
+                    if self.control(id).is_some() {
+                        return Err(DefinitionError::ActionIsControl(id));
+                    }
+                    if runs {
+                        runnable.insert(*id);
+                    }
                 }
             }
             match row {
@@ -2275,19 +2306,19 @@ impl ProcessingDefinition {
         }
         for item in self.tool.menus {
             let entry = item.entry.actions();
-            if let Some(action) = entry.iter().find(|action| !actions.contains(*action)) {
+            if let Some(action) = entry.iter().find(|action| !runnable.contains(*action)) {
                 return Err(DefinitionError::UnknownMenuAction(action));
             }
             check_section(item)?;
         }
         check_menus(self.tool.menus)?;
-        let unknown = (self.tool.toolbar.iter()).find(|item| !actions.contains(item.action));
+        let unknown = (self.tool.toolbar.iter()).find(|item| !runnable.contains(item.action));
         if let Some(item) = unknown {
             return Err(DefinitionError::UnknownToolbarAction(item.action));
         }
         let buttons: Vec<&str> = (self.rows())
             .flat_map(|row| row.end().iter().filter_map(End::action))
-            .filter(|action| matches!(action.face, Face::Icon(_)))
+            .filter(|action| matches!(action.face, Face::Icon(_)) && action.menu.is_empty())
             .map(|action| action.id)
             .collect();
         check_toolbar(self.tool.toolbar, Some(MOST_ON_TOOLBAR), &buttons)?;
@@ -2325,6 +2356,32 @@ impl ProcessingDefinition {
     pub fn action_ends(&self) -> impl Iterator<Item = &ActionEnd> {
         self.rows()
             .flat_map(|row| row.end().iter().filter_map(End::action))
+    }
+
+    /// Every action of the tool with whether it is not ported, in the page's order: each
+    /// action at its rows' ends, a menu button's own and then each of its menu's, which is
+    /// as ported as its button (decision 107).
+    pub fn action_ids(&self) -> Vec<(&'static str, bool)> {
+        let mut ids = Vec::new();
+        for end in self.action_ends() {
+            ids.push((end.id, end.unported));
+            ids.extend(end.menu.iter().map(|item| (*item, end.unported)));
+        }
+        ids
+    }
+
+    /// The tool's actions that run, with whether each is not ported, in the page's order:
+    /// each action at its rows' ends with no menu, and each item of a menu in its button's
+    /// place, the button running nothing (decision 107).
+    pub fn own_actions(&self) -> Vec<(&'static str, bool)> {
+        let mut ids = Vec::new();
+        for end in self.action_ends() {
+            match end.menu {
+                [] => ids.push((end.id, end.unported)),
+                items => ids.extend(items.iter().map(|item| (*item, end.unported))),
+            }
+        }
+        ids
     }
 
     /// The options of the tool's choice setting `id` ([`Row::Setting`]), if it has one.
@@ -2801,6 +2858,7 @@ mod tests {
                 end: &[End::Action(ActionEnd {
                     id: $id,
                     face: Face::Text,
+                    menu: &[],
                     unported: true,
                 })],
             }
@@ -2812,6 +2870,7 @@ mod tests {
         End::Action(ActionEnd {
             id,
             face: Face::Icon(ButtonIcon::RotateLeft),
+            menu: &[],
             unported: false,
         })
     }
@@ -4245,7 +4304,12 @@ mod tests {
 
     /// An action at a line's end: `id`, its face and whether it is ported.
     fn action(id: &'static str, face: Face, unported: bool) -> End {
-        End::Action(ActionEnd { id, face, unported })
+        End::Action(ActionEnd {
+            id,
+            face,
+            menu: &[],
+            unported,
+        })
     }
 
     /// A line of `end` after `start`, with `readout`.
@@ -4318,6 +4382,7 @@ mod tests {
                     end: &[End::Action(ActionEnd {
                         id: "auto",
                         face: Face::Text,
+                        menu: &[],
                         unported: false,
                     })],
                 },
@@ -4385,6 +4450,54 @@ mod tests {
         ];
         assert_eq!(
             picking(&[], &rows),
+            Err(DefinitionError::ActionIsControl("detail"))
+        );
+    }
+
+    /// A menu is an icon button's, of 2 to `MOST_IN_SUBMENU` actions, each snake_case and
+    /// unique among the tool's actions, none a control's; its button runs nothing, so no
+    /// context menu or toolbar item may name it (decision 107).
+    #[test]
+    fn a_menu_is_an_icon_button_s_of_two_to_eight_actions() {
+        let icon = Face::Icon(ButtonIcon::PrimariesMenu);
+        let menu = |face, menu: &'static [&'static str]| {
+            line(
+                LineStart::Label("reset"),
+                None,
+                &[End::Action(ActionEnd {
+                    id: "reset",
+                    face,
+                    menu,
+                    unported: false,
+                })],
+            )
+        };
+        let contrast = Row::Slider(Slider::new("contrast"));
+        let check = |row: Row| picking(&[], &[row, contrast.clone()]);
+        assert_eq!(check(menu(icon, &["soft", "plain"])), Ok(()));
+        let refused = |id| Err(DefinitionError::ActionMenu(id));
+        assert_eq!(
+            check(menu(Face::Text, &["soft", "plain"])),
+            refused("reset")
+        );
+        assert_eq!(check(menu(icon, &["soft"])), refused("reset"));
+        let nine: &'static [&'static str] = &["a", "b", "c", "d", "e", "f", "g", "h", "i"];
+        assert_eq!(check(menu(icon, nine)), refused("reset"));
+        assert_eq!(
+            check(menu(icon, &["soft", "Plain"])),
+            Err(DefinitionError::Id("Plain"))
+        );
+        assert_eq!(
+            check(menu(icon, &["soft", "soft"])),
+            Err(DefinitionError::DuplicateAction("soft"))
+        );
+        // Its button's id among them, which a menu's item would name twice.
+        assert_eq!(
+            check(menu(icon, &["soft", "reset"])),
+            Err(DefinitionError::DuplicateAction("reset"))
+        );
+        assert_eq!(
+            check(menu(icon, &["soft", "detail"])),
             Err(DefinitionError::ActionIsControl("detail"))
         );
     }

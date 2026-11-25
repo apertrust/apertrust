@@ -1042,8 +1042,8 @@ pub struct ToolState {
     /// Every readout of its lines of pickers, in the definition's order: Colour
     /// calibration's CCT and the light's colour.
     pub readouts: Vec<ReadoutState>,
-    /// Every action at its rows' ends, in the page's order, with whether it can run
-    /// (decision 107).
+    /// Every action at its rows' ends, a menu button's and its menu's among them, in the
+    /// page's order, with whether it can run (decision 107).
     pub actions: Vec<ActionState>,
 }
 
@@ -6597,11 +6597,8 @@ impl Open {
     fn actions(&mut self, tool: &dyn ProcessingTool, values: &Controls) -> Vec<ActionState> {
         let definition = tool.definition();
         let editable = self.view_only.is_none();
-        let ends = || {
-            definition
-                .action_ends()
-                .map(|end| (end.id, editable && !end.unported))
-        };
+        let ids = definition.action_ids();
+        let ends = || (ids.iter()).map(|&(id, unported)| (id, editable && !unported));
         let answered = catch_unwind(AssertUnwindSafe(|| {
             ends()
                 .map(|(id, can)| ActionState {
@@ -9727,6 +9724,7 @@ mod tests {
                         end: &[apertrust_tools::End::Action(apertrust_tools::ActionEnd {
                             id: "act",
                             face: apertrust_tools::Face::Text,
+                            menu: &[],
                             unported: false,
                         })],
                     },

@@ -54,7 +54,7 @@
 use std::collections::BTreeMap;
 
 use apertrust_engine::session::{Command, SelectionCommand};
-use apertrust_tools::{End, ProcessingDefinition};
+use apertrust_tools::ProcessingDefinition;
 use apertrust_ui::components::{
     BrowserBarAction, BrowserPosition, SortKey, ThumbnailSize, ToolsPanelPosition,
 };
@@ -2443,7 +2443,7 @@ pub fn all() -> impl Iterator<Item = &'static Action> {
 }
 
 /// The built-in tools' own actions as registry actions (decision 91), made once as the
-/// app starts from their definitions: one for each [`End::Action`] at a row's end,
+/// app starts from their definitions: one for each [`apertrust_tools::End::Action`] at a row's end,
 /// `tool-<tool>-<action>`, its words the action's full name
 /// (`tool-<tool>-action-<action>-full`), no default keys, in the view's scope. One that
 /// runs, as a button, runs as pressing it does ([`Intent::ToolAction`]), while the photo
@@ -2480,14 +2480,12 @@ pub fn tool_actions() -> &'static [Action] {
     })
 }
 
-/// A tool's own actions, in its panel's order, each with whether it runs, not unported.
+/// A tool's own actions, in its panel's order, each with whether it runs, not unported: a
+/// menu's items in their button's place, the button running nothing (decision 107).
 fn own_actions(definition: &'static ProcessingDefinition) -> Vec<(&'static str, bool)> {
-    let mut actions = Vec::new();
-    for row in definition.rows() {
-        let ends = row.end().iter().filter_map(End::action);
-        actions.extend(ends.map(|action| (action.id, !action.unported)));
-    }
-    actions
+    (definition.own_actions().into_iter())
+        .map(|(id, unported)| (id, !unported))
+        .collect()
 }
 
 /// Whether a tool's button can run: the photo takes edits, live and not open for viewing
@@ -5027,22 +5025,27 @@ pub(crate) mod tests {
         assert_eq!(keymap.overrides(), &wanted);
     }
 
-    /// Decision 91: every built tool's own actions are registry actions, one for each
-    /// action row and each button, `tool-<tool>-<action>`, with no default keys, found by
-    /// id beside the static ones; a button's runs as pressing it does, an action row's,
-    /// drawn disabled until built, never.
+    /// Decisions 91 and 107: every built tool's own actions are registry actions, one for
+    /// each action at a row's end and each item of a menu in its button's place, the menu
+    /// button none, `tool-<tool>-<action>`, with no default keys, found by id beside the
+    /// static ones; a button's runs as pressing it does, one not ported never.
     #[test]
     fn every_tool_s_own_actions_are_registry_actions_found_by_id() {
         let ids: Vec<&str> = tool_actions().iter().map(|a| a.id.0).collect();
-        for id in [
-            "tool-flip-rotate_ccw",
-            "tool-flip-rotate_cw",
-            "tool-flip-flip_horizontally",
-            "tool-flip-flip_vertically",
-            "tool-agx-read_exposure",
-        ] {
-            assert!(ids.contains(&id), "{id} in {ids:?}");
-        }
+        assert_eq!(
+            ids,
+            [
+                "tool-agx-read_exposure",
+                "tool-agx-primaries_blender_like",
+                "tool-agx-primaries_smooth",
+                "tool-agx-primaries_unmodified",
+                "tool-agx-set_from_above",
+                "tool-flip-rotate_ccw",
+                "tool-flip-rotate_cw",
+                "tool-flip-flip_horizontally",
+                "tool-flip-flip_vertically",
+            ]
+        );
         let every: Vec<&str> = all().map(|a| a.id.0).collect();
         let unique: HashSet<&str> = every.iter().copied().collect();
         assert_eq!(unique.len(), every.len());

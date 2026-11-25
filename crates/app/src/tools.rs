@@ -788,12 +788,12 @@ fn follow_availability(
             }
         }
     }
-    // An action at a row's end follows the same rule by its id (decision 107).
-    let ends: Vec<&ActionEnd> = tool.definition().action_ends().collect();
+    // An action at a row's end, or a menu's, follows the same rule by its id (decision 107).
+    let ids = tool.definition().action_ids();
     let moved = catch_unwind(AssertUnwindSafe(|| {
-        let moved = ends.iter().filter_map(|end| {
-            let now = tool.available(end.id, &after, image);
-            (now != tool.available(end.id, before, image)).then_some((end.id, now && !end.unported))
+        let moved = ids.iter().filter_map(|&(id, unported)| {
+            let now = tool.available(id, &after, image);
+            (now != tool.available(id, before, image)).then_some((id, now && !unported))
         });
         moved.collect::<Vec<_>>()
     }));
@@ -1478,14 +1478,20 @@ impl Rows for Page<'_> {
             } => reference_row(ui, self, picker, lightness, photo, changes),
             Row::LastPick { picker } => last_pick_row(ui, self, picker),
             // The three shapes the rows before decision 107 drew keep their own drawing,
-            // and so their pixels: icon actions that run after a control, one text action
-            // alone, drawn at the line's start, or pickers after no start, a label or a
-            // readout. Every other line is a line row.
+            // and so their pixels: icon actions that run after a control, each allowed by
+            // the tool's rule, as the button row draws them with the control's
+            // availability; one text action alone, drawn at the line's start; or pickers
+            // after no start, a label or a readout. Every other line is a line row.
             Row::Line {
                 start: LineStart::Control(control),
                 readout: None,
                 end,
-            } if end.iter().all(runs_with_icon) => {
+            } if end.iter().all(runs_with_icon)
+                && end
+                    .iter()
+                    .filter_map(End::action)
+                    .all(|a| self.allowed(a.id)) =>
+            {
                 let buttons: Vec<(&'static str, ButtonIcon)> = (end.iter())
                     .filter_map(|item| match item {
                         End::Action(ActionEnd {
@@ -1745,6 +1751,7 @@ pub fn icon(icon: ButtonIcon) -> apertrust_ui::Icon {
         ButtonIcon::RotateRight => apertrust_ui::Icon::RotateRight,
         ButtonIcon::FlipHorizontal => apertrust_ui::Icon::FlipHorizontal,
         ButtonIcon::FlipVertical => apertrust_ui::Icon::FlipVertical,
+        ButtonIcon::PrimariesMenu => apertrust_ui::Icon::PrimariesMenu,
     }
 }
 
@@ -1779,6 +1786,7 @@ fn runs_with_icon(item: &End) -> bool {
         item,
         End::Action(ActionEnd {
             face: Face::Icon(_),
+            menu: [],
             unported: false,
             ..
         })
@@ -1803,7 +1811,8 @@ fn action_row(ui: &mut egui::Ui, page: &Page, action: &ActionEnd, changes: &mut 
 }
 
 /// An end item as the panel draws it: a picker's button with its words, or an action's
-/// words and whether it can run.
+/// words and whether it can run, and a menu button's items, each an action with its short
+/// label and whether it can run.
 enum EndWords<'a> {
     Picker(&'static str, PickerWords<'a>),
     Action {
@@ -1812,6 +1821,7 @@ enum EndWords<'a> {
         full: String,
         promise: String,
         enabled: bool,
+        items: Vec<(&'static str, String, bool)>,
     },
 }
 
@@ -1820,8 +1830,19 @@ impl<'a> Page<'a> {
     /// rule allows it on the values shown, as the session reports it with the tool's state
     /// and the pending display follows it (decision 107).
     fn runs(&self, action: &ActionEnd) -> bool {
-        let reported = (self.state.actions.iter()).find(|state| state.id == action.id);
-        self.editable && !action.unported && reported.is_none_or(|state| state.available)
+        self.runs_id(action.id, action.unported)
+    }
+
+    /// Whether the action `id`, a menu's item among them, can run now, as [`Self::runs`].
+    fn runs_id(&self, id: &str, unported: bool) -> bool {
+        self.editable && !unported && self.allowed(id)
+    }
+
+    /// Whether the tool's rule allows the action `id` on the values shown, as the session
+    /// reports it with the tool's state and the pending display follows it.
+    fn allowed(&self, id: &str) -> bool {
+        let reported = (self.state.actions.iter()).find(|state| state.id == id);
+        reported.is_none_or(|state| state.available)
     }
 
     /// What pressing the action `id` asks: the tool's action on the values shown.
@@ -1845,12 +1866,20 @@ impl<'a> Page<'a> {
                 End::Action(action) => {
                     let [label, full, promise] =
                         messages::action(tool, action.id).map(|id| self.words.text(&id));
+                    let items = (action.menu.iter())
+                        .map(|&item| {
+                            let [label, ..] = messages::action(tool, item);
+                            let runs = self.runs_id(item, action.unported);
+                            (item, self.words.text(&label), runs)
+                        })
+                        .collect();
                     Some(EndWords::Action {
                         action,
                         label,
                         full,
                         promise,
                         enabled: self.runs(&action),
+                        items,
                     })
                 }
             })
@@ -1869,6 +1898,11 @@ impl<'a> Page<'a> {
                 Some(self.pressed(ui, picker, action))
             }
             (EndWords::Action { action, .. }, EndAction::Pressed) => Some(self.run(action.id)),
+            // A menu's item, one of its own actions.
+            (EndWords::Action { items, .. }, EndAction::Chosen(chosen)) => items
+                .iter()
+                .find(|(item, _, runs)| *item == chosen && *runs)
+                .map(|(item, _, _)| self.run(item)),
             _ => None,
         }
     }
@@ -1882,10 +1916,33 @@ fn end_items<'w>(words: &'w [EndWords]) -> Vec<EndItem<'w>> {
             EndWords::Picker(_, button) => EndItem::Picker(button.button()),
             EndWords::Action {
                 action,
+                full,
+                promise,
+                enabled,
+                items,
+                ..
+            } if !items.is_empty() => EndItem::Menu {
+                icon: icon(match action.face {
+                    Face::Icon(face) => face,
+                    // A menu button is an icon's (`ProcessingDefinition::check`).
+                    Face::Text => ButtonIcon::PrimariesMenu,
+                }),
+                name: full,
+                promise: Some(promise),
+                enabled: *enabled,
+                entries: (items.iter())
+                    .map(|(id, label, runs)| {
+                        popup::Entry::Item(popup::Item::new(*id, label.clone()).enabled(*runs))
+                    })
+                    .collect(),
+            },
+            EndWords::Action {
+                action,
                 label,
                 full,
                 promise,
                 enabled,
+                ..
             } => match action.face {
                 Face::Icon(face) => EndItem::Icon {
                     icon: icon(face),
@@ -3522,10 +3579,10 @@ mod tests {
         for (control, shown) in tool.definition().controls.iter().zip(&mut state.controls) {
             shown.available = !control.unported && tool.available(control.id, &values, &image);
         }
-        state.actions = (tool.definition().action_ends())
-            .map(|end| ActionState {
-                id: end.id,
-                available: !end.unported && tool.available(end.id, &values, &image),
+        state.actions = (tool.definition().action_ids().into_iter())
+            .map(|(id, unported)| ActionState {
+                id,
+                available: !unported && tool.available(id, &values, &image),
             })
             .collect();
     }
@@ -7022,7 +7079,7 @@ mod tests {
     /// AgX's page as darktable draws it: on Settings, Read exposure drawn disabled until
     /// what it runs is built, dynamic range scaling live, and the three collapsible groups, Show curve disabled, Advanced curve
     /// parameters showing the gamma only while the pivot is not kept on the diagonal; on
-    /// Primaries, while adjustments are on, Reset primaries, disabled, and the primaries
+    /// Primaries, while adjustments are on, Reset primaries' menu button, and the primaries
     /// before tone mapping, Reverse all with Set from above at its end, which runs on the
     /// values shown and is disabled at once as Reverse all turns on, and while Reverse all
     /// is off the purity boosts after it.
@@ -7078,7 +7135,7 @@ mod tests {
             tab: 1,
         });
         harness.run();
-        assert!(disabled(&harness, Role::Button, "Reset primaries"));
+        assert!(!disabled(&harness, Role::Button, "Reset primaries"));
         assert!(!disabled(&harness, Role::Button, "Set from above"));
         assert!(harness.query_by_label("Red attenuation").is_some());
         assert!(harness.query_by_label("Red purity boost").is_some());
@@ -9067,6 +9124,113 @@ mod tests {
             harness.state().changes,
             [pressed("white", false), pressed("range", true)]
         );
+    }
+
+    /// AgX's Primaries tab in `which`, its changes shown as the app's mirror shows them.
+    fn primaried(which: Builtin) -> Harness<'static, Toned> {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(400.0, 620.0))
+            .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(which)))
+            .build_ui_state(
+                |ui, toned: &mut Toned| {
+                    let panel = theme(ui.ctx()).colors.panel;
+                    ui.painter()
+                        .rect_filled(ui.ctx().content_rect(), 0.0, panel);
+                    let mut panels = Panels::default();
+                    panels.apply(&Change::Tab {
+                        tool: "agx",
+                        tab: 1,
+                    });
+                    let changes = section(
+                        ui,
+                        &Agx,
+                        &untouched(&Agx),
+                        Head {
+                            open: true,
+                            ..Head::default()
+                        },
+                        &panels,
+                        &|_: &str| GROUP_OPEN,
+                        true,
+                        None,
+                        &Pickers::NONE,
+                    );
+                    toned.changes.extend(changes);
+                },
+                Toned {
+                    on: None,
+                    changes: Vec::new(),
+                },
+            );
+        harness.run();
+        harness
+    }
+
+    /// Reset primaries is a line: its label, then a menu button that opens a menu of
+    /// Blender-like, Smooth and Unmodified, reported expanded while open; choosing Smooth
+    /// runs its action on the values shown, sent as one gesture, one history step.
+    #[test]
+    fn reset_primaries_opens_its_menu_and_smooth_sends_its_writes() {
+        let mut harness = primaried(Builtin::Dark);
+        // Its label, then its button, named by the same words.
+        assert_eq!(harness.query_all_by_label("Reset primaries").count(), 2);
+        let button = harness.get_by_role_and_label(Role::Button, "Reset primaries");
+        assert_eq!(button.accesskit_node().data().is_expanded(), Some(false));
+        button.click();
+        harness.run();
+        let menu = harness.get_by_role_and_label(Role::Menu, "Reset primaries");
+        let items: Vec<String> = menu
+            .query_all_by_role(Role::MenuItem)
+            .filter_map(|node| node.accesskit_node().label())
+            .collect();
+        assert_eq!(items, ["Blender-like", "Smooth", "Unmodified"]);
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Smooth")
+            .click();
+        harness.run();
+        let Some(Change::Action {
+            tool: "agx",
+            action: "primaries_smooth",
+            values,
+        }) = harness.state().changes.last().cloned()
+        else {
+            panic!("{:?}", harness.state().changes);
+        };
+        let writes = action_writes(
+            &[&Agx],
+            "agx",
+            "primaries_smooth",
+            &values,
+            &testing::image(),
+            false,
+        );
+        let image = testing::image();
+        let smooth = Agx.action("primaries_smooth", &values, &image).unwrap();
+        assert_eq!(writes.len(), smooth.iter().count());
+        assert!(writes[..writes.len() - 1].iter().all(|(_, _, done)| !done));
+        assert!(writes.last().unwrap().2);
+        for (control, value, _) in &writes {
+            assert_eq!(smooth.get(control), Some(value), "{control}");
+        }
+    }
+
+    /// AgX's Primaries tab, Reset primaries' menu button and Set from above at Reverse
+    /// all's end, in each theme, and the menu open in the dark one.
+    #[test]
+    fn agx_s_primaries() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, theme) in THEMES {
+            let mut harness = primaried(which);
+            harness.snapshot(format!("agx-primaries-{theme}"));
+            results.extend_harness(&mut harness);
+        }
+        let mut harness = primaried(Builtin::Dark);
+        harness
+            .get_by_role_and_label(Role::Button, "Reset primaries")
+            .click();
+        harness.run();
+        harness.snapshot("agx-primaries-menu-dark");
+        results.extend_harness(&mut harness);
     }
 
     /// AgX's Settings tab with its pickers drawn, Auto tune levels' on, in each theme.

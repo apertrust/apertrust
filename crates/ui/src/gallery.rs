@@ -921,7 +921,7 @@ fn line_rows(ui: &mut Ui, t: &Theme, reverse_all: &mut bool) {
         LineRow::new(
             LineStart::Label("Reset primaries"),
             vec![EndItem::Menu {
-                icon: Icon::Presets,
+                icon: Icon::PrimariesMenu,
                 name: "Reset primaries",
                 promise: Some("Reset primaries to a predefined configuration."),
                 enabled: true,

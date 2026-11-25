@@ -566,6 +566,7 @@ mod tests {
             end: &[End::Action(ActionEnd {
                 id: "refresh",
                 face: Face::Text,
+                menu: &[],
                 unported: true,
             })],
         }]);

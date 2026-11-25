@@ -90,6 +90,7 @@ const fn button(id: &'static str, icon: ButtonIcon) -> End {
     End::Action(ActionEnd {
         id,
         face: Face::Icon(icon),
+        menu: &[],
         unported: false,
     })
 }
