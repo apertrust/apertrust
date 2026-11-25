@@ -22,7 +22,7 @@ use apertrust_plugin::{
     Camera, DngCorrection, FujifilmCorrection, ImageContext, LensCorrection, OlympusCorrection,
     Pattern, PipeKind, SonyCorrection,
 };
-use apertrust_raw::{CfaColor, DngColor, Illuminant, Pixels, RawImage, Rect};
+use apertrust_raw::{CfaColor, DngColor, Illuminant, Pixels, RawImage};
 
 use crate::compute::{ComputeError, GpuImage};
 use crate::gpu::GpuContext;
@@ -33,9 +33,7 @@ use crate::gpu::GpuContext;
 /// none (decision 23).
 pub fn image_context(raw: &RawImage) -> ImageContext {
     let crop = raw.active_area;
-    let declared = raw
-        .default_crop
-        .map_or(crop, |declared| intersect(declared, crop));
+    let declared = raw.developed_size();
     let embedded = raw.dng_color.as_ref().and_then(dng_matrix);
     let cfa = raw.cfa.as_ref().map(|cfa| Pattern {
         width: cfa.width,
@@ -218,22 +216,6 @@ fn dng_matrix(dng: &DngColor) -> Option<Mat3> {
     Some(chosen.xyz_to_camera)
 }
 
-/// The part of `a` inside `b`; `b` itself when they do not overlap.
-fn intersect(a: Rect, b: Rect) -> Rect {
-    let (x0, y0) = (a.x.max(b.x), a.y.max(b.y));
-    let x1 = (a.x + a.width).min(b.x + b.width);
-    let y1 = (a.y + a.height).min(b.y + b.height);
-    if x1 <= x0 || y1 <= y0 {
-        return b;
-    }
-    Rect {
-        x: x0,
-        y: y0,
-        width: x1 - x0,
-        height: y1 - y0,
-    }
-}
-
 /// The raw's 16-bit mosaic, as the raw stage's input; `None` for a raw that is not a
 /// one-value-per-photosite mosaic of integers.
 pub fn upload(gpu: &GpuContext, raw: &RawImage) -> Option<Result<GpuImage, ComputeError>> {
@@ -247,7 +229,7 @@ pub fn upload(gpu: &GpuContext, raw: &RawImage) -> Option<Result<GpuImage, Compu
 #[cfg(test)]
 mod tests {
     use apertrust_color::mul;
-    use apertrust_raw::{BlackLevel, Camera as RawCamera, ColorMatrix, Orientation};
+    use apertrust_raw::{BlackLevel, Camera as RawCamera, ColorMatrix, Orientation, Rect};
 
     use super::*;
 
