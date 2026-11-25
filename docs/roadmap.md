@@ -237,6 +237,15 @@ One cursor chosen at a time decides what a press on the photo does (decision 104
 - [x] 104.7 The label on the picker's area naming its tool, and the pointer's badge, drawn by the overlay.
 - [ ] 104.8 The Colour picker's own group in the well, after Pick, with the Colour picker tool (79.16): its cursor on Shift+K, the second door to its picker, and Start as, Point or Area.
 
+### Line rows and end items
+
+darktable's packed lines as one line row, and the buttons at a row's end as a closed list of end items (decision 107; [gui.md](gui.md#line-rows-and-end-items)), one pull request each, each reviewed before the next:
+
+- [ ] 107.1 `Row::Line` and `end` replace `Row::Pickers`, `Row::Buttons`, `Row::Action` and the slider's quad, with no change of behaviour: every page as it is.
+- [ ] 107.2 AgX's buttons: a press runs the tool's action; end items with their availability; Reset primaries with its menu, Set from above at Reverse all's end, unavailable while it is on; Read exposure through Exposure's published effective exposure; the toe and shoulder warnings; Auto tune levels and Read exposure back on one line, as darktable has them.
+- [ ] 107.3 `Row::Fields`, two or three compact controls on one line, folding into labelled rows when narrow, with Export's pixels line moved to it; the centimetre and inch lines and the scale stay `Widget::ExportSize`.
+- [ ] 107.4 The rest with each tool's port: computes (the tone equalizer's wands, demosaic's capture sharpen radius, Rotate and perspective's detect lines and fit), mode cursors and the Geometry group with Straighten, mask views, a tab strip's end items, and the colour kind of setting.
+
 ### Scopes
 
 - [x] Histogram, waveform, RGB parade and vectorscope, counted on the GPU after each frame, with clipping totals (decision 19).

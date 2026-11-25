@@ -96,7 +96,7 @@ None: the page is darktable's.
 
 - **Control id:** `orientation`, darktable's params field and the operation's parameter; option ids the operation's choices, so the binding needs no table.
 - **The default:** auto, darktable's, rather than the photo's orientation itself: the edit holds nothing until the user turns the photo, and the photo's own orientation stays the camera's.
-- **The buttons:** a button row (`Row::Buttons`) and `ProcessingTool::action`, the generic piece another tool's buttons reuse: a pure function of the values shown and the photo, its writes sent as `SetControl`, so no new command and no stored state.
+- **The buttons:** a button row (`Row::Buttons`) and `ProcessingTool::action`, the generic piece another tool's buttons reuse: a pure function of the values shown and the photo, its writes sent as `SetControl`, so no new command and no stored state. Planned (decision 107): a line row starting with the control, its four buttons `Action` end items, drawn as now.
 - **Rows:** F0 to F6; no first step, since every photo runs `flip`, and no order row, since there is one control.
 - **Row ids:** F, for flip.
 - **In `TOOLS`:** after White balance, before Exposure.
