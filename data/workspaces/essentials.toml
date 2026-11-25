@@ -1,6 +1,7 @@
 # The Essentials workspace, built in (decision 96): Photos, Adjust with the tools most
-# edits need, then History, Scopes pinned over Adjust. Every other tool is in no tab, so
-# hidden: a workspace decides only what is shown, and a hidden tool is still processed.
+# edits need, then History, Collections pinned over Photos and Scopes over Adjust. Every
+# other tool is in no tab, so hidden: a workspace decides only what is shown, and a hidden
+# tool is still processed.
 # The app embeds this file and reads it as it reads a person's own
 # (crates/app/src/layout.rs). A person's changed copy is
 # <user data>/workspaces/essentials.toml, in the same format.
@@ -46,7 +47,10 @@ icon = "adjust"
 id = "history"
 icon = "history"
 
+# Collections is pinned, and kept first in Photos' order too, where it shows pinned, as
+# Default keeps it.
 [pinned]
+photos = ["collections"]
 adjust = ["scopes"]
 
 [order]

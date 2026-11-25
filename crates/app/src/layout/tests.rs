@@ -27,9 +27,8 @@ use crate::settings::testing::Folder;
 /// bottom, by tool id, those still to build included: Adjust in editing order, with the
 /// edit's tone mapper, one of AgX, Sigmoid and Filmic RGB, at its place, and the Tone curve
 /// at RGB curve's until RGB curve replaces it; Raw in processing order. The Photos tab
-/// holds Collections, then Styles, then the Export tool, its last (decisions 73, 90 and
-/// 106); History its
-/// section alone.
+/// holds Collections, pinned ([`DEFAULT_PINNED`]), then Styles, then the Export tool, its
+/// last (decisions 73, 90 and 106); History its section alone.
 const DECISION_38: [(&str, &[&str]); 7] = [
     ("photos", &["collections", "styles", "export"]),
     (
@@ -77,16 +76,30 @@ const DECISION_38: [(&str, &[&str]); 7] = [
 /// histogram sits over its groups.
 const SCOPES_PINNED: [&str; 5] = ["adjust", "detail", "geometry", "effects", "raw"];
 
+/// The Default workspace's pinned tools by tab: Collections over the Photos tab's tools
+/// (decision 73), Scopes over the editing tabs' ([`SCOPES_PINNED`]).
+const DEFAULT_PINNED: [(&str, &[&str]); 6] = [
+    ("photos", &[COLLECTIONS]),
+    ("adjust", &[SCOPES]),
+    ("detail", &[SCOPES]),
+    ("geometry", &[SCOPES]),
+    ("effects", &[SCOPES]),
+    ("raw", &[SCOPES]),
+];
+
+/// Collections' id.
+const COLLECTIONS: &str = crate::library::ID;
+
 fn default_layout() -> Layout {
     Layout::defaults(DEFAULT).expect("built in")
 }
 
 /// Holds the built-in workspace `layout` to `recorded`, its decision's tabs and their
 /// tools: its tabs in order, each listing the built tools recorded for it in their order
-/// and no other, Scopes pinned in `pinned` alone, each tool recorded in one tab only; a
-/// whole file in the model's format, with no `seen`, nothing hidden, and no name nor any
-/// tab's title, which the interface takes from Fluent.
-fn holds_to(layout: &Layout, recorded: &[(&str, &[&str])], pinned: &[&str]) {
+/// and no other, the tools `pinned` lists pinned in its tabs alone, each tool recorded in
+/// one tab only; a whole file in the model's format, with no `seen`, nothing hidden, and
+/// no name nor any tab's title, which the interface takes from Fluent.
+fn holds_to(layout: &Layout, recorded: &[(&str, &[&str])], pinned: &[(&str, &[&str])]) {
     assert_eq!(layout.version, VERSION);
     assert_eq!(layout.name, None, "a built-in's name is Fluent's");
     assert!(layout.seen.is_empty());
@@ -104,8 +117,7 @@ fn holds_to(layout: &Layout, recorded: &[(&str, &[&str])], pinned: &[&str]) {
         let order: Vec<&str> = layout.order[*id].iter().map(String::as_str).collect();
         assert_eq!(order, expected, "{id}");
         let kept = layout.pinned.get(*id).cloned().unwrap_or_default();
-        let scopes = pinned.contains(id).then_some(vec![SCOPES.to_owned()]);
-        assert_eq!(kept, scopes.unwrap_or_default(), "{id}");
+        assert_eq!(kept, pinned_in(pinned, id), "{id}");
     }
     let mut placed: Vec<&str> = recorded
         .iter()
@@ -122,6 +134,14 @@ fn holds_to(layout: &Layout, recorded: &[(&str, &[&str])], pinned: &[&str]) {
             tab.id
         );
     }
+}
+
+/// The tools `pinned` pins in the tab `id`, none where it names no such tab.
+fn pinned_in<'a>(pinned: &[(&str, &'a [&'a str])], id: &str) -> &'a [&'a str] {
+    pinned
+        .iter()
+        .find(|(tab, _)| *tab == id)
+        .map_or(&[], |(_, tools)| tools)
 }
 
 /// Holds the built-in workspace `layout` to the build: every tool and icon it names exists,
@@ -223,11 +243,14 @@ fn tab<'a>(shown: &'a Shown, id: &str) -> &'a Tab {
     tab.unwrap_or_else(|| panic!("no tab {id}"))
 }
 
-/// The bundled Default workspace is decision 38's ([`holds_to`]).
+/// The bundled Default workspace is decision 38's ([`holds_to`]), Collections pinned over
+/// the Photos tab's tools.
 #[test]
 fn the_default_workspace_is_decision_38_s() {
     let layout = default_layout();
-    holds_to(&layout, &DECISION_38, &SCOPES_PINNED);
+    holds_to(&layout, &DECISION_38, &DEFAULT_PINNED);
+    let shown = names_only_what_exists(&layout);
+    assert_eq!(tab(&shown, "photos").pinned, [COLLECTIONS]);
 }
 
 /// The bundled Default workspace names only what the build has ([`names_only_what_exists`]).
@@ -244,13 +267,14 @@ fn the_default_workspace_names_only_tools_and_icons_that_exist() {
     assert_eq!(tab(&shown, "geometry").icon, Icon::Correct);
 }
 
-/// The bundled Essentials workspace (decision 96): Photos, Adjust with Scopes pinned over
-/// the tools most edits need, and History, as a whole file with no name, nothing in `seen`
-/// or `hidden` and no tab's title; it names only what the build has
+/// The bundled Essentials workspace (decision 96): Photos with Collections pinned, Adjust
+/// with Scopes pinned over the tools most edits need, and History, as a whole file with no
+/// name, nothing in `seen` or `hidden` and no tab's title; it names only what the build has
 /// ([`names_only_what_exists`]), every other tool is in no tab, so hidden, and it opens on
 /// Adjust.
 #[test]
 fn the_essentials_workspace_shows_the_tools_most_edits_need() {
+    const PINNED: [(&str, &[&str]); 2] = [("photos", &[COLLECTIONS]), ("adjust", &[SCOPES])];
     const RECORDED: [(&str, &[&str]); 3] = [
         ("photos", &["collections", "export"]),
         (
@@ -267,15 +291,18 @@ fn the_essentials_workspace_shows_the_tools_most_edits_need() {
         ("history", &["history"]),
     ];
     let layout = Layout::defaults(ESSENTIALS).expect("built in");
-    holds_to(&layout, &RECORDED, &["adjust"]);
+    holds_to(&layout, &RECORDED, &PINNED);
     let shown = names_only_what_exists(&layout);
     for (id, tools) in RECORDED {
-        let pinned: &[&str] = if id == "adjust" { &[SCOPES] } else { &[] };
+        // A tool in both lists shows pinned.
+        let pinned = pinned_in(&PINNED, id);
+        let order: Vec<&str> = tools
+            .iter()
+            .copied()
+            .filter(|t| !pinned.contains(t))
+            .collect();
         let tab = tab(&shown, id);
-        assert_eq!(
-            (tab.pinned.as_slice(), tab.order.as_slice()),
-            (pinned, tools)
-        );
+        assert_eq!((tab.pinned.as_slice(), &tab.order), (pinned, &order));
     }
     let listed: Vec<&str> = RECORDED.iter().flat_map(|(_, t)| t.to_vec()).collect();
     let mut hidden: Vec<&str> = (known().into_iter())
