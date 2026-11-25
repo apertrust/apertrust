@@ -424,7 +424,7 @@ fn a_newer_file_taken_in_over_default_steps_never_written_loses_no_move() {
     let black = ControlValue::Number(0.01);
     (blacker.set_control(&Exposure, "black_level", black, &testing::image())).unwrap();
     let changes = crate::history::Change::between(&Edit::default(), &blacker, &[]);
-    theirs.add_change(changes, StepSource::You, None, clock);
+    theirs.add_change(changes, StepSource::You, None, None, clock);
     let file = sidecar::Edits::new("");
     sidecar::write_log(
         &sidecar,
@@ -563,7 +563,7 @@ fn a_newer_file_taken_in_gets_no_default_step_never_written() {
     let black = ControlValue::Number(0.01);
     (blacker.set_control(&Exposure, "black_level", black, &testing::image())).unwrap();
     let changes = crate::history::Change::between(&Edit::default(), &blacker, &[]);
-    theirs.add_change(changes, StepSource::You, None, clock);
+    theirs.add_change(changes, StepSource::You, None, None, clock);
     let file = sidecar::Edits::new("");
     let tools = (OPERATIONS, DEFAULTS);
     sidecar::write_log(&sidecar, &file, &theirs, &[clock], tools, "cli").unwrap();
@@ -1831,7 +1831,7 @@ fn add_at(path: &Path, value: f32, clock: Clock) {
     let amount = ControlValue::Number(value);
     (edit.set_control(&Soften, "amount", amount, &testing::image())).unwrap();
     let changes = crate::history::Change::between(&log.fold(), &edit, &[]);
-    log.add_change(changes, StepSource::You, None, clock);
+    log.add_change(changes, StepSource::You, None, None, clock);
     let mut clocks = read.clocks().to_vec();
     crate::history::advance(&mut clocks, clock);
     let path = sidecar::path_for(path);
@@ -2249,7 +2249,7 @@ fn a_move_of_the_end_clamps_what_it_moves_to() {
     let (coarse, biased) = (value(None), value(Some(20.0)));
     for (before, after) in [(&Edit::default(), &coarse), (&coarse, &biased)] {
         let changes = crate::history::Change::between(before, after, &[]);
-        log.add_change(changes, StepSource::You, None, clock);
+        log.add_change(changes, StepSource::You, None, None, clock);
     }
     let xml = sidecar::log_xml(
         &sidecar::Edits::new(""),
@@ -2463,7 +2463,7 @@ fn rewrite_elsewhere(path: &Path, steps: &[usize], end: usize) {
         .max()
         .unwrap();
     let clock = Clock::at(last.when + 60_000, None, "00000000".parse().unwrap());
-    log.add_change(changes, StepSource::You, None, clock);
+    log.add_change(changes, StepSource::You, None, None, clock);
     let mut clocks = read.clocks().to_vec();
     crate::history::advance(&mut clocks, clock);
     let path = sidecar::path_for(path);
@@ -2795,7 +2795,7 @@ fn moved_elsewhere(path: &Path, end: usize, add: bool) {
         let amount = ControlValue::Number(40.0);
         (edit.set_control(&Soften, "amount", amount, &testing::image())).unwrap();
         let changes = crate::history::Change::between(&log.fold(), &edit, &[]);
-        log.add_change(changes, StepSource::You, None, clock);
+        log.add_change(changes, StepSource::You, None, None, clock);
     }
     let mut clocks = read.clocks().to_vec();
     crate::history::advance(&mut clocks, clock);

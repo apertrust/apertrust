@@ -1956,7 +1956,7 @@ pub(crate) mod tests {
         log.hold_styles(vec![style.clone()]);
         let at = clock(PI_DAY + 9_000, 0, "5e1f22c9");
         let note = Some(Note::clear_style("Warm"));
-        log.add_change(vec![Change::None], StepSource::Style, note, at);
+        log.add_change(vec![Change::None], StepSource::Style, note, None, at);
         log.hold_styles(Vec::new());
         let mut clocks = clocks;
         history::advance(&mut clocks, at);
@@ -2334,7 +2334,7 @@ pub(crate) mod tests {
                 edit.set_control(&Look, "strength", value, &image).unwrap();
                 let changes = Change::between(&before, &edit, &[]);
                 let clock = clock(PI_DAY + step as u64, 0, "5e1f22c9");
-                log.add_change(changes, StepSource::You, None, clock);
+                log.add_change(changes, StepSource::You, None, None, clock);
             }
             // Ids of their own, so the child's logs are the parent's, byte for byte.
             let steps = (log.steps().iter().enumerate())
@@ -2445,7 +2445,7 @@ pub(crate) mod tests {
             let changes = Change::between(&before, &edit, &[]);
             let clock = Clock::now(last.as_ref(), machine);
             last = Some(clock);
-            log.add_change(changes, StepSource::You, None, clock);
+            log.add_change(changes, StepSource::You, None, None, clock);
             history::advance(&mut clocks, clock);
         }
         let mut file = Edits::new("");

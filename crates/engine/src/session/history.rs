@@ -76,15 +76,15 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::time::{Duration, Instant};
 
-use apertrust_library::clock::{Clock, MachineId};
+use apertrust_library::clock::{Clock, MachineId, wall_clock};
 use apertrust_plugin::{ImageContext, Operation};
 use apertrust_tools::{Moment, ProcessingTool, ToolValues};
 
-use super::{Command, Effect, Engine, Event, Open, SessionError, StyleMode, on_edit};
+use super::{Command, Effect, Engine, Event, Open, SessionError, on_edit};
 use crate::edit::Edit;
 use crate::history::{
-    AppliedStyle, Change, Described, Entry, History, Log, Move, Note, Step, StepId, StepSource,
-    Wrote, advance, latest, replay,
+    AppliedStyle, BatchId, Change, Described, Entry, History, Log, Move, Note, Step, StepId,
+    StepSource, Wrote, advance, latest, replay,
 };
 
 /// The open photo's log, its undo records and what its next step is measured from.
@@ -265,6 +265,12 @@ impl PhotoHistory {
     /// is given none, so its steps keep their numbers and a default tool a later build
     /// adds runs at its defaults with no step.
     pub(super) fn read(log: Log, clocks: Vec<Clock>, defaults: &[&str]) -> Self {
+        Self::read_at(log, clocks, defaults, wall_clock())
+    }
+
+    /// [`Self::read`], the default steps of a photo never edited made with the wall clock at
+    /// `wall`, a command's own, so they come before its steps whenever it runs.
+    pub(super) fn read_at(log: Log, clocks: Vec<Clock>, defaults: &[&str], wall: u64) -> Self {
         let machine = MachineId::current();
         let mut log = log;
         let read = (log.steps().iter().map(|step| &step.clock)).chain(&clocks);
@@ -274,7 +280,7 @@ impl PhotoHistory {
         if !saved && !defaults.is_empty() {
             // Their clock is the vector's too, so the file they go into holds no step past
             // it.
-            let made = Clock::now(clock.as_ref(), machine);
+            let made = Clock::at(wall, clock.as_ref(), machine);
             log.add_defaults(defaults, made);
             advance(&mut clocks, made);
             clock = Some(made);
@@ -350,6 +356,21 @@ impl PhotoHistory {
     #[cfg(test)]
     pub(super) fn log(&self) -> &Log {
         &self.log
+    }
+
+    /// The log and the copy's clock vector, to write, as a photo that is not open is
+    /// changed (decision 109).
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "the apply-style job's, #373's next step")
+    )]
+    pub(super) fn into_log(self) -> (Log, Vec<Clock>) {
+        (self.log, self.clocks)
+    }
+
+    /// A batch id no step of the log has.
+    pub(super) fn new_batch(&self) -> BatchId {
+        self.log.new_batch()
     }
 
     /// The styles applied to the edit, newest first, as the log holds them at its end
@@ -640,14 +661,22 @@ impl PhotoHistory {
 
     /// Makes what changed since the last step a step of each tool it touched, of `source`
     /// with `note` ([`Change::between`]), and says whether it made any: a change that changes
-    /// nothing makes none. Several share a batch id; a Reset's step is noted
+    /// nothing makes none. Each is in `batch`, the command's, else several share a new
+    /// batch id ([`Log::add_change`]); their clock is the command's wall time `wall`, after
+    /// the latest clock the history has made or read. A Reset's step is noted
     /// `history-reset`. They drop the steps after the end, which Undo brings back, and clear
     /// the undone records. A change of one tool that merges into the step before it makes
     /// none of its own and adds no record: that step keeps its id, takes the change's entry
     /// and the latest clock. A tool the change did not write that the edit holds as the
     /// fold as read, its clamp or its redraw, makes no step ([`Self::measured_from`]), and
     /// the fold keeps it as it was, so it is saved with that tool's own next step.
-    pub(super) fn complete(&mut self, edit: &Edit, source: StepSource, note: Option<Note>) -> bool {
+    pub(super) fn complete(
+        &mut self,
+        edit: &Edit,
+        (source, note): (StepSource, Option<Note>),
+        batch: Option<BatchId>,
+        wall: u64,
+    ) -> bool {
         let written = self.written.take();
         let styles = self.styles.take();
         let reset = std::mem::take(&mut self.reset);
@@ -689,7 +718,7 @@ impl PhotoHistory {
                 Entry::Operation { .. } => None,
             })
             .collect();
-        let clock = Clock::now(self.clock.as_ref(), self.machine);
+        let clock = Clock::at(wall, self.clock.as_ref(), self.machine);
         // Of one target, source You or Auto, no note: what may merge, or be merged into.
         let target = written.as_ref().and_then(|written| {
             let merges = matches!(source, StepSource::You | StepSource::Auto) && note.is_none();
@@ -711,7 +740,7 @@ impl PhotoHistory {
             let one = changes.len() == 1 && !list_only;
             let count = changes.len();
             let at = self.log.end();
-            let dropped = self.log.add_change(changes, source, note, clock);
+            let dropped = self.log.add_change(changes, source, note, batch, clock);
             // The list it leaves, on its last step, where it moved it.
             if let Some(styles) = styles
                 && styles.as_slice() != self.log.styles()
@@ -751,6 +780,23 @@ impl PhotoHistory {
         self.set_stepped(stepped);
         self.changed = true;
         true
+    }
+
+    /// [`Self::complete`] of a change not yet a step, of source You with no note, as a move
+    /// of the end makes one first: in no batch of its own and at the wall clock now.
+    fn complete_pending(&mut self, edit: &Edit) -> bool {
+        self.complete(edit, (StepSource::You, None), None, wall_clock())
+    }
+
+    /// [`Self::complete`] at the wall clock now, in no batch of the caller's, for a test.
+    #[cfg(test)]
+    pub(super) fn complete_now(
+        &mut self,
+        edit: &Edit,
+        source: StepSource,
+        note: Option<Note>,
+    ) -> bool {
+        self.complete(edit, (source, note), None, wall_clock())
     }
 
     /// What a change to `edit` that wrote `wrote` is measured from: the log's fold, but
@@ -831,7 +877,7 @@ impl PhotoHistory {
     /// Undo, `edit` the edit as it stands, a change not yet a step made one first: the
     /// edit it leaves, or `None` where there is nothing to undo.
     pub(super) fn undo(&mut self, edit: &Edit) -> Option<Edit> {
-        self.complete(edit, StepSource::You, None);
+        self.complete_pending(edit);
         let record = match self.done.pop() {
             Some(Record::Added { at, kept, held }) => {
                 // The change's steps leave the log, and the steps they dropped come back.
@@ -872,7 +918,7 @@ impl PhotoHistory {
     /// Redo, `edit` the edit as it stands, a change not yet a step made one first: the
     /// edit it leaves, or `None` where there is nothing to redo.
     pub(super) fn redo(&mut self, edit: &Edit) -> Option<Edit> {
-        self.complete(edit, StepSource::You, None);
+        self.complete_pending(edit);
         let record = match self.undone.pop() {
             Some(Record::Added { at, kept, held }) => {
                 // The change's steps again, and the steps after the end dropped again.
@@ -922,7 +968,7 @@ impl PhotoHistory {
         edit: &Edit,
         step: Option<StepId>,
     ) -> Result<Option<Edit>, StepId> {
-        self.complete(edit, StepSource::You, None);
+        self.complete_pending(edit);
         let to = match step {
             Some(id) => self.log.position(id).ok_or(id)? + 1,
             None => 0,
@@ -950,7 +996,7 @@ impl PhotoHistory {
         up_to: Option<StepId>,
         defaults: &[&str],
     ) -> Result<Option<Edit>, StepId> {
-        self.complete(edit, StepSource::You, None);
+        self.complete_pending(edit);
         // Its clock, the list-only step's it writes the styles applied on too.
         let clock = Clock::now(self.clock.as_ref(), self.machine);
         let log = self.ending_at(up_to)?.compressed(clock);
@@ -965,7 +1011,7 @@ impl PhotoHistory {
         after: Option<StepId>,
         defaults: &[&str],
     ) -> Result<Option<Edit>, StepId> {
-        self.complete(edit, StepSource::You, None);
+        self.complete_pending(edit);
         let log = self.ending_at(after)?.truncated();
         Ok(self.rewrite(log, Move::Truncate, defaults))
     }
@@ -985,7 +1031,7 @@ impl PhotoHistory {
     /// a log of default steps alone never written with the end after them, which it would
     /// leave as it is.
     pub(super) fn discard(&mut self, edit: &Edit, defaults: &[&str]) -> Option<Edit> {
-        self.complete(edit, StepSource::You, None);
+        self.complete_pending(edit);
         if self.unwritten() && self.log.end() == self.log.steps().len() {
             return None;
         }
@@ -1152,7 +1198,8 @@ fn completes(command: &Command) -> Option<(StepSource, Option<Note>)> {
         | Command::ApplyPreset { .. } => Some((StepSource::You, None)),
         // Its step is noted `history-reset` as it is made.
         Command::Reset => Some((StepSource::You, None)),
-        Command::ApplyStyle { name, .. } => Some((StepSource::Style, Some(Note::style(name)))),
+        // `ApplyStyle` makes its own steps, in its batch, as on a photo that is not open
+        // (`session/styles.rs`, decision 109).
         Command::ClearStyle { name, .. } => {
             Some((StepSource::Style, Some(Note::clear_style(name))))
         }
@@ -1195,11 +1242,7 @@ fn applied_by(wrote: &[Wrote], unapplied: &BTreeSet<String>) -> Vec<Change> {
 /// though it moves no value.
 fn resets(command: &Command) -> Vec<Wrote> {
     match command {
-        Command::Reset
-        | Command::ApplyStyle {
-            mode: StyleMode::Replace,
-            ..
-        } => vec![Wrote::All],
+        Command::Reset => vec![Wrote::All],
         Command::ResetTool { tool } => vec![Wrote::Tool(tool.clone())],
         Command::Step { commands, .. } => commands.iter().flat_map(resets).collect(),
         _ => Vec::new(),
@@ -1391,7 +1434,10 @@ impl Engine {
             command,
             Command::Step { .. } | Command::ApplyStyle { .. } | Command::ClearStyle { .. }
         );
-        let writes = (in_step(&command) || is_step).then(|| (target(&command), wrote(&command)));
+        // `ApplyStyle` tells its history what it wrote itself, as it makes its steps.
+        let styled = matches!(command, Command::ApplyStyle { .. });
+        let writes = (in_step(&command) || (is_step && !styled))
+            .then(|| (target(&command), wrote(&command)));
         let retry = matches!(command, Command::RetrySave);
         let resets = resets(&command);
         let before = self.open.as_ref().map(|open| open.edit.clone());
@@ -1471,7 +1517,8 @@ impl Engine {
         if let Some(open) = &mut self.open
             && open.view_only.is_none()
         {
-            open.history.complete(&open.edit, source, note);
+            open.history
+                .complete(&open.edit, (source, note), None, wall_clock());
         }
     }
 

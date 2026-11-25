@@ -2586,6 +2586,7 @@ fn a_newer_file_s_white_balance_stands(name: &str, reopen: bool) {
         Change::between(&fold, &newer, &[]),
         StepSource::You,
         None,
+        None,
         clock,
     );
     clocks.push(clock);

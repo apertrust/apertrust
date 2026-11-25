@@ -372,8 +372,9 @@ pub enum Command {
     /// of source Style noted `history-style` with its name (decision 106; `docs/history.md`,
     /// The styles applied): with [`StyleMode::Replace`], the whole edit reset first, as
     /// [`Command::Reset`] does; then each of `tools` set as [`Command::SetTool`] sets it,
-    /// checked and refused alike, all or none, a step of each tool it changes sharing a
-    /// batch. The client reads the `.apstyle` and turns each entry into values with
+    /// checked and refused alike, all or none, a step of each tool it changes, each in the
+    /// command's batch, one step's too (decision 109). The client reads the `.apstyle` and
+    /// turns each entry into values with
     /// [`sidecar::tool_values`], leaving a parked one out. The style goes to the top of the
     /// styles applied, [`Values::styles`], any item of the same style taken out first, by
     /// its file where either is a built-in's, `builtin:<id>`, else by its name, with each
@@ -4110,12 +4111,7 @@ impl Engine {
             }
             Command::SetTool { tool, values } => {
                 let changed = self.change(|edit, tools, _, image| {
-                    let found = edit::tool(tools, &tool)?;
-                    for warning in edit.set_tool(found, &values, image)? {
-                        tracing::warn!(target: "pipe", "{warning}");
-                    }
-                    edit.redraw(&[found], image);
-                    Ok(())
+                    styles::set_tool(edit, (tools, image), &tool, &values)
                 })?;
                 // darktable's preset runs `gui_update` once its parameters are written.
                 self.remember_redrawn(Some(&tool), changed);
@@ -4201,10 +4197,7 @@ impl Engine {
                 });
             }
             Command::Reset => {
-                let changed = self.change(|edit, _, _, _| {
-                    *edit = Edit::default();
-                    Ok(())
-                })?;
+                let changed = self.change(|edit, _, _, _| styles::reset(edit))?;
                 self.remember_redrawn(None, changed);
                 (changed, true)
             }
@@ -4220,7 +4213,14 @@ impl Engine {
                 file,
                 mode,
                 tools,
-            } => return self.apply_style(&name, &file, mode, tools),
+            } => {
+                return self.apply_style(styles::Style {
+                    name: &name,
+                    file: &file,
+                    mode,
+                    tools: &tools,
+                });
+            }
             Command::ClearStyle { name, file } => return self.clear_style(&name, &file),
             Command::Open(_)
             | Command::Close
@@ -10389,7 +10389,7 @@ mod tests {
         let image = testing::image();
         (newer.set_control(&WhiteBalance, "red", red.clone(), &image)).unwrap();
         let changes = Change::between(&fold, &newer, &[]);
-        theirs.add_change(changes, StepSource::You, None, clock);
+        theirs.add_change(changes, StepSource::You, None, None, clock);
         clocks.push(clock);
         let file = sidecar::Edits::new("");
         let tools = (OPERATIONS, TOOLS);
