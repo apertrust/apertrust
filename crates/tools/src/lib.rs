@@ -79,13 +79,13 @@ pub use definition::{
     ActionEnd, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
     CursorDef, CursorGroup, CursorGroupDef, DefinitionError, End, Face, Field, Fields, Gesture,
     Group, GroupKind, LineStart, MAX_POINTS, MIN_GAP, MOST_IN_SUBMENU, MOST_ON_TOOLBAR, MenuEntry,
-    MenuItem, Picker, PickerKind, Place, PresetRow, ProcessingDefinition, Range, ReadoutDef, Reset,
-    Row, Section, Separator, SettingRow, SettingWords, Slider, Space, Surface, Tab, ToolCursor,
-    ToolDefinition, ToolbarItem, Track, Unit, View, Widget, Word, check_menus, check_section,
-    check_toolbar, slider_step,
+    MenuItem, Picker, PickerKind, Place, PresetRow, ProcessingDefinition, Published, Range,
+    ReadoutDef, Reset, Row, Section, Separator, SettingRow, SettingWords, Slider, Space, Surface,
+    Tab, ToolCursor, ToolDefinition, ToolbarItem, Track, Unit, View, Widget, Word, check_menus,
+    check_section, check_toolbar, slider_step,
 };
 use pick::{PickKeys, Picked, Reading, Readout};
-pub use values::{ControlValue, Controls, Mark, ToolValues};
+pub use values::{ControlValue, Controls, Mark, PublishedValues, ToolValues};
 
 /// The built-in tools, in the order the session reports them and an edit saves them:
 /// Raw black/white point, Highlight reconstruction, Demosaic, AgX and Output colour
@@ -312,13 +312,30 @@ pub trait ProcessingTool: Send + Sync {
         None
     }
 
-    /// What darktable's button `action`, an [`End::Action`], writes when the tool's
-    /// controls hold `values`, every control, the edit's over the defaults: each control
-    /// it sets with its new value, which a client sends as `SetControl`, one change, as
-    /// orientation's rotate composes the orientation shown with a quarter turn. Pure, as
-    /// [`Self::bind`] is, so the panel computes it from the values it shows. `None`, as
-    /// provided, for an action the tool does not run.
-    fn action(&self, _action: &str, _values: &Controls, _image: &ImageContext) -> Option<Controls> {
+    /// What darktable's button `action`, an [`End::Action`] or a menu's item, writes when
+    /// the tool's controls hold `values`, every control, the edit's over the defaults, and
+    /// the facts it reads ([`ActionEnd::reads`]) are `read`: each control it sets with its
+    /// new value, which a client sends as `SetControl`, one change, as orientation's rotate
+    /// composes the orientation shown with a quarter turn. Pure, as [`Self::bind`] is, so
+    /// the panel computes it from the values it shows and the facts the other tools publish
+    /// for theirs. `None`, as provided, for an action the tool does not run.
+    fn action(
+        &self,
+        _action: &str,
+        _values: &Controls,
+        _read: &PublishedValues,
+        _image: &ImageContext,
+    ) -> Option<Controls> {
+        None
+    }
+
+    /// The fact `id` of [`ProcessingDefinition::publishes`] while the tool's controls hold
+    /// `values`, every control, the edit's over the defaults, on the photo `image`, for
+    /// another tool's action to read (decision 107): Exposure's `effective_exposure`. Pure,
+    /// as [`Self::bind`] is, so wherever the action runs the fact comes from the same edit
+    /// through the same function. `None`, as provided, for a fact the tool does not
+    /// publish.
+    fn publish(&self, _id: &str, _values: &Controls, _image: &ImageContext) -> Option<f32> {
         None
     }
 

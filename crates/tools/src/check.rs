@@ -671,6 +671,7 @@ mod tests {
                 switched: false,
                 copy_safe: true,
                 in_styles: false,
+                publishes: &[],
                 controls: CONTROLS,
                 preset_rows: &[],
                 views: &[],

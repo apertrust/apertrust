@@ -685,6 +685,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     // src/iop/channelmixerrgb.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
     copy_safe: true,
     in_styles: true,
+    publishes: &[],
 };
 
 /// Every parameter of `channelmixerrgb`: the CAT tab's, the mixer's, and `version`.

@@ -19,6 +19,8 @@
 
 use std::collections::BTreeMap;
 
+use crate::definition::Published;
+
 /// One control's value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ControlValue {
@@ -153,6 +155,29 @@ impl ToolValues {
             marks: BTreeMap::new(),
             enabled: self.enabled,
         }
+    }
+}
+
+/// The facts other tools publish that an action reads ([`crate::ActionEnd::reads`];
+/// decision 107), each from its tool's own [`crate::ProcessingTool::publish`] on the same
+/// edit: a fact its tool gives none of is left out.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PublishedValues(Vec<(Published, f32)>);
+
+impl PublishedValues {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Holds `value` for `fact`, in place of any before it.
+    pub fn set(&mut self, fact: Published, value: f32) {
+        self.0.retain(|(held, _)| *held != fact);
+        self.0.push((fact, value));
+    }
+
+    /// The value `fact` was given, if it was read.
+    pub fn get(&self, fact: &Published) -> Option<f32> {
+        (self.0.iter()).find_map(|(held, value)| (held == fact).then_some(*value))
     }
 }
 

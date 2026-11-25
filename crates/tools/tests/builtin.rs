@@ -108,6 +108,36 @@ fn images() -> Vec<ImageContext> {
     ]
 }
 
+/// Every fact an action reads is one a built tool publishes (decision 107), and every
+/// fact published is given by its tool on a photo.
+#[test]
+fn every_fact_an_action_reads_is_a_built_tool_s() {
+    let image = ImageContext::full(6000, 4000);
+    let mut read = Vec::new();
+    for tool in TOOLS {
+        let definition = tool.definition();
+        for end in definition.action_ends() {
+            for fact in end.reads {
+                let publisher = TOOLS
+                    .iter()
+                    .find(|found| found.definition().tool.id == fact.tool);
+                let publisher = publisher.unwrap_or_else(|| panic!("{fact:?}: no such tool"));
+                assert!(
+                    publisher.definition().publishes.contains(&fact.id),
+                    "{fact:?}: not published"
+                );
+                read.push((definition.tool.id, end.id, fact.tool, fact.id));
+            }
+        }
+        for id in definition.publishes {
+            let values = tool.defaults(&image);
+            assert!(tool.publish(id, &values, &image).is_some(), "{id}");
+        }
+    }
+    // None reads one until Read exposure runs.
+    assert!(read.is_empty(), "{read:?}");
+}
+
 #[test]
 fn every_built_in_tool_is_accepted() {
     let (accepted, rejected) = check::accept(TOOLS, OPERATIONS);
@@ -737,6 +767,7 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
     switched: false,
     copy_safe: true,
     in_styles: false,
+    publishes: &[],
     controls: &[
         Control {
             id: "tone",

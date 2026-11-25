@@ -567,6 +567,7 @@ mod tests {
                 id: "refresh",
                 face: Face::Text,
                 menu: &[],
+                reads: &[],
                 unported: true,
             })],
         }]);

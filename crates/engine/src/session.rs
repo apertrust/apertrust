@@ -7834,6 +7834,7 @@ mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: &[Control {
             id: "amount",
             kind: ControlKind::Number {
@@ -8309,6 +8310,7 @@ mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: &[
             Control {
                 id: "mode",
@@ -9725,6 +9727,7 @@ mod tests {
                             id: "act",
                             face: apertrust_tools::Face::Text,
                             menu: &[],
+                            reads: &[],
                             unported: false,
                         })],
                     },
@@ -9840,6 +9843,7 @@ mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: &[Control {
             id: "amount",
             kind: ControlKind::Number {
@@ -10870,6 +10874,7 @@ mod tests {
         switched: false,
         copy_safe: true,
         in_styles: false,
+        publishes: &[],
         controls: &[
             Control {
                 id: "level",

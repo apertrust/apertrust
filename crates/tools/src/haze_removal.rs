@@ -121,6 +121,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     // src/iop/hazeremoval.c's flags: `IOP_FLAGS_INCLUDE_IN_STYLES`, not `_UNSAFE_COPY`.
     copy_safe: true,
     in_styles: true,
+    publishes: &[],
 };
 
 /// Both parameters of `hazeremoval`: the tool is darktable's and owns them all.

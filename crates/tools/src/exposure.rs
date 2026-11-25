@@ -76,6 +76,10 @@ const EXPOSURE: &str = "exposure";
 const MODES: [&str; 2] = ["manual", "automatic"];
 const AUTOMATIC: u32 = 1;
 
+/// The fact it publishes for AgX's Read exposure (decision 107): its effective exposure
+/// ([`Exposure::publish`]).
+pub const EFFECTIVE_EXPOSURE: &str = "effective_exposure";
+
 /// The computed value automatic mode shows, the exposure the operation applies: what
 /// the exposure operation's `computed` gives by this id (decision 87).
 const COMPUTED_EXPOSURE: &str = "computed_exposure";
@@ -346,6 +350,8 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
     // src/iop/exposure.c's flags: neither `IOP_FLAGS_UNSAFE_COPY` nor `_INCLUDE_IN_STYLES`.
     copy_safe: true,
     in_styles: false,
+    // Its effective exposure, which AgX's Read exposure reads (decision 107).
+    publishes: &[EFFECTIVE_EXPOSURE],
 };
 
 /// darktable's picker on Exposure (`DT_COLOR_PICKER_AREA`): the exposure that maps the
@@ -722,6 +728,21 @@ impl ProcessingTool for Exposure {
 
     /// Exposure's picker is not ready while Picker target holds Reference and no reference
     /// is set (decision 88); the reference's own picker always is.
+    /// darktable's effective exposure, `dt_dev_exposure_get_effective_exposure`
+    /// (`src/develop/develop.c:3387`), which Exposure's `commit_params` caches
+    /// (`src/iop/exposure.c:604-634`), as `effective_exposure` (decision 107): the
+    /// exposure shown less what the operation takes off it ([`taken_off`]), the camera's
+    /// bias where Compensate camera exposure is on, the held-back exposure given back where
+    /// Highlight preservation mode is. In Automatic mode too, the stored exposure, as
+    /// darktable caches it before its automatic exposure is worked out.
+    fn publish(&self, id: &str, values: &Controls, image: &ImageContext) -> Option<f32> {
+        (id == EFFECTIVE_EXPOSURE).then(|| {
+            let camera = values.flag("camera_bias");
+            let highlights = values.flag("compensate_hilite_pres");
+            values.number("exposure") - taken_off(image, camera, highlights)
+        })
+    }
+
     fn picker_ready(&self, picker: &str, settings: &[(&str, ControlValue)]) -> bool {
         let setting = |id: &str| settings.iter().find(|(s, _)| *s == id).map(|(_, v)| v);
         picker != PICKER.id
@@ -1203,6 +1224,53 @@ mod tests {
         assert!(available("camera_bias", &raw(-0.67)));
         assert!(available("exposure", &raw(0.0)));
         assert!(available("black_level", &raw(0.0)));
+    }
+
+    /// Its effective exposure is darktable's `commit_params` restated in f64: the exposure,
+    /// less the camera's bias, within ±5 EV, where Compensate camera exposure is on, plus
+    /// the held-back exposure, above 0 and within −1 to +4 EV, where Highlight
+    /// preservation mode is; on Exposure's values shown, its defaults included, in
+    /// Automatic mode too.
+    #[test]
+    fn it_publishes_darktable_s_effective_exposure() {
+        assert_eq!(Exposure.definition().publishes, [EFFECTIVE_EXPOSURE]);
+        for bias in [0.0, -0.67, 1.3] {
+            for held in [0.0, 1.0] {
+                let image = preserving(bias, held);
+                for camera in [false, true] {
+                    for highlights in [false, true] {
+                        for mode in [0, AUTOMATIC] {
+                            let mut values = Exposure.defaults(&image);
+                            values.set("camera_bias", ControlValue::Bool(camera));
+                            values.set("compensate_hilite_pres", ControlValue::Bool(highlights));
+                            values.set("exposure", number(0.45));
+                            values.set("mode", ControlValue::Choice(mode));
+                            let mut expected = 0.45f64;
+                            if camera {
+                                expected -= f64::from(bias).clamp(-5.0, 5.0);
+                            }
+                            if highlights && held > 0.0 {
+                                expected += f64::from(held).clamp(-1.0, 4.0);
+                            }
+                            let published = Exposure.publish(EFFECTIVE_EXPOSURE, &values, &image);
+                            let published = f64::from(published.unwrap());
+                            assert!(
+                                (published - expected).abs() < 1e-6,
+                                "{bias} {held} {camera} {highlights}: {published} {expected}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // The defaults on a raw: 0.7 EV, the bias compensated.
+        let image = raw(-0.67);
+        let defaults = Exposure.defaults(&image);
+        let published = Exposure
+            .publish(EFFECTIVE_EXPOSURE, &defaults, &image)
+            .unwrap();
+        assert!((f64::from(published) - (0.7 + 0.67)).abs() < 1e-6);
+        assert_eq!(Exposure.publish("other", &defaults, &image), None);
     }
 
     /// A colour raw whose highlight-preserving mode held back `held` EV, with this bias.
