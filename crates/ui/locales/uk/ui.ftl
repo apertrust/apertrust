@@ -1182,9 +1182,10 @@ picker-tip-area-quad =
 
 picker-bar-name = { $tool } · { $picker }
 picker-area-label = { $tool } · { $picker }
-picker-bar-area = Перетягніть область на знімку. { $command }+клацання перемикає на точку. Клацання правою кнопкою скидає область. Esc завершує.
-picker-bar-point = { $what } { $command }+клацання перемикає на область. Esc завершує.
-picker-bar-point-what = Клацніть або перетягніть точку на знімку.
+picker-bar-area = Клацніть, щоб узяти малу область, або перетягніть її. Перетягніть кут, щоб змінити розмір. Клацання правою кнопкою скидає область. Esc завершує.
+picker-bar-point = { $what } Esc завершує.
+picker-bar-both-area = Перетягніть область на знімку. { $command }+клацання перемикає на точку. Клацання правою кнопкою скидає область. Esc завершує.
+picker-bar-both-point = { $what } { $command }+клацання перемикає на область. Esc завершує.
 picker-photo-area = Область піпетки, { $picker }
 picker-photo-point = Точка піпетки, { $picker }
 picker-photo-at-point = точка на { $x }%, { $y }%

@@ -889,8 +889,8 @@ impl ReferencePhotos {
 /// The viewer bar's words while `picker` is on, measuring an area where `area` says
 /// (`docs/pickers.md`, On the photo): which picker it is, the tool's title and the
 /// picker's name, or what a pick will do where its words follow a setting ([`by_setting`],
-/// "Exposure · Make an area middle grey"), and how to use it, its modifier as `mac` spells
-/// it. `open` is the photo that is open, which a reference measured on it names as this
+/// "Exposure · Make an area middle grey"), and how to use it by the kinds it declares, a
+/// switch's modifier, for a picker with both, as `mac` spells it. `open` is the photo that is open, which a reference measured on it names as this
 /// photo. `None` for the Colour picker's, whose words come with its tool.
 pub fn bar_words(
     words: &Translator,
@@ -918,17 +918,19 @@ pub fn bar_words(
     let name = words.text_with("picker-bar-name", Some(&args));
     let mut args = Args::new();
     args.set("command", if mac { "Cmd" } else { "Ctrl" });
-    let how = if area {
-        words.text_with("picker-bar-area", Some(&args))
-    } else {
-        // A point picker's own sentence; an area picker switched to a point has none.
-        let what = if declared.kind == PickerKind::Area {
-            words.text("picker-bar-point-what")
-        } else {
-            words.text(&messages::picker(definition.tool.id, declared.id)[3])
-        };
-        args.set("what", what);
-        words.text_with("picker-bar-point", Some(&args))
+    let what = || words.text(&messages::picker(definition.tool.id, declared.id)[3]);
+    // A picker that takes one kind keeps it; one with both switches until 105.5.
+    let how = match declared.kind {
+        PickerKind::Area => words.text("picker-bar-area"),
+        PickerKind::Point => {
+            args.set("what", what());
+            words.text_with("picker-bar-point", Some(&args))
+        }
+        PickerKind::PointArea if area => words.text_with("picker-bar-both-area", Some(&args)),
+        PickerKind::PointArea => {
+            args.set("what", what());
+            words.text_with("picker-bar-both-point", Some(&args))
+        }
     };
     Some((name, how))
 }
@@ -977,6 +979,9 @@ pub fn takes_back(ctx: &egui::Context, picker: PickerRef) -> bool {
 /// The active picker over the photo this frame.
 pub struct OnPhoto<'a> {
     pub picker: PickerRef,
+    /// The kinds it declares, both for the Colour picker's: one kind it keeps on the photo,
+    /// both it switches (decision 105).
+    pub kind: PickerKind,
     /// The photo area, the part of the photo shown, which takes the pointer and cuts the
     /// marks: the whole photo's rectangle at Fit.
     pub area: Rect,
@@ -1241,7 +1246,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
             taken
         });
         for key in pressed {
-            let Some(command) = key_command(key, region, pixel) else {
+            let Some(command) = key_command(key, on.kind, region, pixel) else {
                 continue;
             };
             if command == PickerCommand::Off {
@@ -1271,7 +1276,7 @@ pub fn on_photo(ui: &mut egui::Ui, on: &OnPhoto) -> PhotoPicked {
     });
     for (step, count) in requests {
         for _ in 0..count {
-            let command = key_command(PickerKey::Move(step, 1.0), region, pixel);
+            let command = key_command(PickerKey::Move(step, 1.0), on.kind, region, pixel);
             if let Some(command) = command {
                 drag = None;
                 keyed = true;
@@ -1400,8 +1405,9 @@ fn revealed(on: &OnPhoto, region: Region, overlay: &Overlay) -> Option<Rect> {
 
 /// What a press at `at`, in the photo's coordinates, `pos` on the screen, with `modifiers`
 /// held, on the Mac where `mac`, sends into `commands`, and the drag it starts: Ctrl alone
-/// (Cmd on the Mac) switches point and area, and the Mac's Control-click is a right-click,
-/// resetting an area; with a point, the point moves there; with an area, a press within
+/// (Cmd on the Mac) switches point and area on a picker that takes both, and is a plain
+/// press carrying `command` on one that takes one kind (decision 105); the Mac's
+/// Control-click is a right-click, resetting an area; with a point, the point moves there; with an area, a press within
 /// [`CORNER`] points of its nearest edge on each axis takes that corner, the opposite one
 /// held, as darktable's (`darkroom.c:4050-4062`), and one elsewhere starts a new area round
 /// it.
@@ -1420,7 +1426,7 @@ fn pressed_on(
         }
         return None;
     }
-    if command_alone(modifiers, mac) {
+    if on.kind == PickerKind::PointArea && command_alone(modifiers, mac) {
         commands.push(PickerCommand::Switch);
         return None;
     }
@@ -1543,10 +1549,16 @@ fn picker_key(key: Key, modifiers: Modifiers) -> Option<PickerKey> {
     }
 }
 
-/// The command `key` sends with the picker at `region`, a frame pixel `pixel` of the photo
-/// on each axis: a move or a resize held inside the photo, an area at least a pixel each
-/// way. A resize of a point sends nothing.
-fn key_command(key: PickerKey, region: Region, pixel: [f32; 2]) -> Option<PickerCommand> {
+/// The command `key` sends with the picker of `kind` at `region`, a frame pixel `pixel` of
+/// the photo on each axis: a move or a resize held inside the photo, an area at least a
+/// pixel each way. A resize of a point sends nothing, and so does a switch of a picker that
+/// takes one kind (decision 105).
+fn key_command(
+    key: PickerKey,
+    kind: PickerKind,
+    region: Region,
+    pixel: [f32; 2],
+) -> Option<PickerCommand> {
     let keys = PickKeys::default();
     let delta = |step: Step, by: f32| match step {
         Step::Left => [-by * pixel[0], 0.0],
@@ -1587,7 +1599,8 @@ fn key_command(key: PickerKey, region: Region, pixel: [f32; 2]) -> Option<Picker
             }
         }
         (PickerKey::Resize(..), Region::Point(_)) => return None,
-        (PickerKey::Switch, _) => PickerCommand::Switch,
+        (PickerKey::Switch, _) if kind == PickerKind::PointArea => PickerCommand::Switch,
+        (PickerKey::Switch, _) => return None,
         (PickerKey::Reset, _) => PickerCommand::Reset,
         (PickerKey::Off, _) => PickerCommand::Off,
     })
@@ -2042,8 +2055,10 @@ mod tests {
                     let words = apertrust_ui::translator(&ctx);
                     let name = name(&words, Sample.definition(), id);
                     let label = label(&words, Sample.definition(), id);
+                    let kind = Sample.definition().picker(id).expect("declared").kind;
                     let on = OnPhoto {
                         picker,
+                        kind,
                         area: PHOTO,
                         photo: PHOTO,
                         pixels: PIXELS,
@@ -2525,7 +2540,7 @@ mod tests {
     }
 
     /// Clicks `button` in the photo's middle with `modifiers` held.
-    fn click(harness: &mut Harness<'_, Scene>, button: PointerButton, modifiers: Modifiers) {
+    fn click<S>(harness: &mut Harness<'_, S>, button: PointerButton, modifiers: Modifiers) {
         harness.hover_at(at(0.5, 0.5));
         harness.run();
         for pressed in [true, false] {
@@ -2540,10 +2555,26 @@ mod tests {
         harness.run();
     }
 
-    /// Ctrl-click on the photo switches point and area, and a right-click resets an area;
-    /// on a point a right-click does nothing, as darktable's.
+    const COMMAND: PickKeys = PickKeys {
+        command: true,
+        shift: false,
+    };
+
+    /// A picker that takes one kind keeps it (decision 105): on the area picker Ctrl-click,
+    /// Cmd-click on the Mac, is a plain click carrying `command`, making the click's area; a
+    /// picker that takes both kinds still switches. A right-click resets an area, as the
+    /// Mac's Control-click does, and on a point does nothing, as darktable's.
     #[test]
-    fn ctrl_click_switches_and_a_right_click_resets_an_area() {
+    fn ctrl_click_is_a_click_on_one_kind_and_a_right_click_resets_an_area() {
+        let with_command = |done| match clicked(done) {
+            PickerCommand::Area { from, to, done, .. } => PickerCommand::Area {
+                from,
+                to,
+                done,
+                keys: COMMAND,
+            },
+            other => other,
+        };
         let mut harness = scene();
         harness.get_by_role_and_label(Role::Button, QUAD).click();
         harness.run();
@@ -2553,13 +2584,14 @@ mod tests {
         click(&mut harness, PointerButton::Primary, Modifiers::COMMAND);
         assert_eq!(
             sent(&mut harness),
-            [PickerCommand::Reset, PickerCommand::Switch]
+            [
+                PickerCommand::Reset,
+                with_command(false),
+                with_command(true)
+            ]
         );
-        answer(&mut harness, Region::Point([0.5, 0.5]));
-        click(&mut harness, PointerButton::Secondary, Modifiers::NONE);
-        assert_eq!(sent(&mut harness), []);
 
-        // On the Mac, Control-click is the right-click, and Cmd-click switches.
+        // On the Mac, Control-click is the right-click, and Cmd-click a click.
         let mut harness = scene_on(OperatingSystem::Mac);
         harness.get_by_role_and_label(Role::Button, QUAD).click();
         harness.run();
@@ -2569,18 +2601,106 @@ mod tests {
         click(&mut harness, PointerButton::Primary, Modifiers::MAC_CMD);
         assert_eq!(
             sent(&mut harness),
-            [PickerCommand::Reset, PickerCommand::Switch]
+            [
+                PickerCommand::Reset,
+                with_command(false),
+                with_command(true)
+            ]
         );
-        answer(&mut harness, Region::Point([0.5, 0.5]));
-        click(&mut harness, PointerButton::Primary, Modifiers::CTRL);
-        assert_eq!(sent(&mut harness), []);
+
+        // A picker that takes both kinds, turned on as an area: Ctrl-click switches, and a
+        // right-click on its point does nothing.
+        for (os, command) in [
+            (OperatingSystem::Nix, Modifiers::COMMAND),
+            (OperatingSystem::Mac, Modifiers::MAC_CMD),
+        ] {
+            let mut harness = scene_on(os);
+            harness
+                .get_by_role_and_label(Role::Button, SPREAD_BUTTON)
+                .click_secondary();
+            harness.run();
+            answer(&mut harness, DEFAULT_AREA);
+            sent(&mut harness);
+            click(&mut harness, PointerButton::Primary, command);
+            assert_eq!(sent(&mut harness), [PickerCommand::Switch], "{os:?}");
+            answer(&mut harness, Region::Point([0.5, 0.5]));
+            click(&mut harness, PointerButton::Secondary, Modifiers::NONE);
+            if os == OperatingSystem::Mac {
+                click(&mut harness, PointerButton::Primary, Modifiers::CTRL);
+            }
+            assert_eq!(sent(&mut harness), [], "{os:?}");
+        }
+    }
+
+    /// A picker of `kind` alone over the photo at `region`, on `os`, as the Viewer draws it:
+    /// the commands it sends.
+    fn alone(
+        kind: PickerKind,
+        region: Region,
+        os: OperatingSystem,
+    ) -> Harness<'static, Vec<PickerCommand>> {
+        let mut harness = Harness::builder()
+            .with_size(vec2(760.0, 400.0))
+            .with_os(os)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui_state(
+                move |ui, sent: &mut Vec<PickerCommand>| {
+                    let on = OnPhoto {
+                        picker: SPREAD,
+                        kind,
+                        area: PHOTO,
+                        photo: PHOTO,
+                        pixels: PIXELS,
+                        region,
+                        switched: region,
+                        colour: Color32::RED,
+                        name: "",
+                        label: "",
+                        badge: Icon::Pick,
+                        panning: false,
+                    };
+                    sent.extend(on_photo(ui, &on).commands);
+                },
+                Vec::new(),
+            );
+        harness.run();
+        harness
+    }
+
+    /// A point picker keeps its point: Ctrl-click, Cmd-click on the Mac, moves the point,
+    /// carrying `command`, and Space on its focused node does nothing.
+    #[test]
+    fn a_point_picker_s_ctrl_click_moves_the_point_and_space_does_nothing() {
+        let point = |done| PickerCommand::Point {
+            at: [0.5, 0.5],
+            done,
+            keys: COMMAND,
+        };
+        for (os, command) in [
+            (OperatingSystem::Nix, Modifiers::COMMAND),
+            (OperatingSystem::Mac, Modifiers::MAC_CMD),
+        ] {
+            let mut harness = alone(PickerKind::Point, Region::Point([0.25, 0.25]), os);
+            click(&mut harness, PointerButton::Primary, command);
+            assert_eq!(
+                std::mem::take(harness.state_mut()),
+                [point(false), point(true)],
+                "{os:?}"
+            );
+            assert!(on_the_photo(&harness).is_focused());
+            harness.key_press(Key::Space);
+            harness.run();
+            assert_eq!(harness.state()[..], [], "{os:?}");
+        }
     }
 
     /// With the picker on the photo focused: the arrows move it a frame pixel, Shift ten,
-    /// Alt with them an area's right or bottom edge, Space switches, Delete and Backspace
-    /// reset, and Esc ends it, the focus back on its button. Each is a completed change.
+    /// Alt with them an area's right or bottom edge, Delete and Backspace reset, and Esc ends
+    /// it, the focus back on its button. Each is a completed change. Space switches nothing
+    /// on the area picker, which takes one kind (decision 105); it switches one with both
+    /// ([`a_switch_or_a_reset_shows_at_once_and_the_keys_after_it_follow`]).
     #[test]
-    fn the_keys_move_resize_switch_reset_and_end_it() {
+    fn the_keys_move_resize_reset_and_end_it() {
         let mut harness = scene();
         harness.get_by_role_and_label(Role::Button, QUAD).click();
         harness.run();
@@ -2619,11 +2739,7 @@ mod tests {
         }
         assert_eq!(
             sent(&mut harness),
-            [
-                PickerCommand::Switch,
-                PickerCommand::Reset,
-                PickerCommand::Reset
-            ]
+            [PickerCommand::Reset, PickerCommand::Reset]
         );
         harness.key_press(Key::Escape);
         harness.run();
@@ -2973,9 +3089,59 @@ mod tests {
         assert_eq!((mirror.active(), mirror.region()), (None, None));
     }
 
+    /// Sample with its spread picker taking a point alone, as RGB levels' do.
+    struct PointSample;
+
+    impl ProcessingTool for PointSample {
+        fn definition(&self) -> &'static ProcessingDefinition {
+            use apertrust_tools::{Picker, ToolDefinition};
+            let sample = Sample.definition();
+            let pickers = (sample.pickers.iter())
+                .map(|picker| match picker.id {
+                    "spread" => Picker {
+                        kind: PickerKind::Point,
+                        ..*picker
+                    },
+                    _ => *picker,
+                })
+                .collect::<Vec<_>>();
+            Box::leak(Box::new(ProcessingDefinition {
+                tool: ToolDefinition {
+                    before: sample.tool.before,
+                    ..ToolDefinition::processing("sample", &[])
+                },
+                version: sample.version,
+                layers: sample.layers,
+                auto: sample.auto,
+                switched: sample.switched,
+                copy_safe: true,
+                in_styles: false,
+                controls: sample.controls,
+                preset_rows: sample.preset_rows,
+                views: sample.views,
+                pickers: Box::leak(pickers.into_boxed_slice()),
+                facts: None,
+            }))
+        }
+
+        fn owns(&self) -> &'static [apertrust_tools::Owned] {
+            Sample.owns()
+        }
+
+        fn bind(
+            &self,
+            _: &apertrust_tools::ToolValues,
+            _: &apertrust_plugin::ImageContext,
+            _: &apertrust_tools::Base,
+        ) -> Vec<apertrust_tools::Setting> {
+            Vec::new()
+        }
+    }
+
     /// The viewer bar names the tool and the picker, its control's label on a quad, and
-    /// says how to use it: an area's sentence, or a point picker's own; an area picker
-    /// switched to a point has none of its own. The Mac says Cmd.
+    /// says how to use it by the kinds the picker takes (decision 105): an area picker's
+    /// words, a point picker's own sentence, and for one with both until 105.5 its switch,
+    /// Cmd on the Mac.
     #[test]
     fn the_viewer_bar_names_the_picker_and_says_how_to_use_it() {
         let words = Translator::new(Locale::EnGb);
@@ -2983,18 +3149,23 @@ mod tests {
         let bar = |picker, area, mac| {
             bar_words(&words, TOOLS, &settings, None, picker, area, mac).unwrap()
         };
+        let area = "Click for a small area, or drag one. Drag a corner to resize. Right-click \
+                    resets the area. Esc ends.";
         assert_eq!(
             bar(BRIGHTNESS, true, false),
             (
                 "tool-sample-title · tool-sample-control-brightness-label".to_owned(),
-                "Drag an area on the photo. Ctrl-click switches to a point. Right-click resets the \
-                 area. Esc ends."
-                    .to_owned()
+                area.to_owned()
             )
         );
+        // An area picker is never a point, and says no modifier.
+        assert_eq!(bar(BRIGHTNESS, false, true).1, area);
+        let point: &[&dyn ProcessingTool] = &[&PointSample];
         assert_eq!(
-            bar(BRIGHTNESS, false, true).1,
-            "Click or drag the point on the photo. Cmd-click switches to an area. Esc ends."
+            bar_words(&words, point, &settings, None, SPREAD, false, false)
+                .unwrap()
+                .1,
+            "tool-sample-picker-spread-what Esc ends."
         );
         assert_eq!(
             bar(SPREAD, false, false),
@@ -3003,6 +3174,11 @@ mod tests {
                 "tool-sample-picker-spread-what Ctrl-click switches to an area. Esc ends."
                     .to_owned()
             )
+        );
+        assert_eq!(
+            bar(SPREAD, true, true).1,
+            "Drag an area on the photo. Cmd-click switches to a point. Right-click resets the \
+             area. Esc ends."
         );
         assert_eq!(
             bar_words(
@@ -3232,6 +3408,7 @@ mod tests {
                     let photo = Rect::from_center_size(PHOTO.center(), PHOTO.size() * zoom);
                     let on = OnPhoto {
                         picker: PickerRef::ColourPicker,
+                        kind: PickerKind::PointArea,
                         area: PHOTO,
                         photo,
                         pixels: PIXELS.map(|side| (side as f32 * zoom) as u32),
@@ -3280,6 +3457,7 @@ mod tests {
                 |ui, (panning, sent, region): &mut Pointing| {
                     let on = OnPhoto {
                         picker: PickerRef::ColourPicker,
+                        kind: PickerKind::PointArea,
                         area: PHOTO,
                         photo: PHOTO,
                         pixels: PIXELS,
