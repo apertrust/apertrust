@@ -4188,11 +4188,10 @@ impl Engine {
                 &self.tools,
                 self.applied,
             )));
-            // Once a batch, after its values and before its frame.
-            events.extend(self.history_event());
-        } else if rated {
-            events.extend(self.history_event());
         }
+        // Once a batch, after its values and before its frame: a rating's, or a batch on
+        // several photos whose count changed, with none.
+        events.extend(self.history_event());
         events.extend(self.rating_events(rating));
         // Where the batch changed the view or its placement, after its values and history
         // and before its frame.
