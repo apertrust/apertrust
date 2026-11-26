@@ -29,7 +29,10 @@
 //!   [`is_temporary_name`] tells such a name, and [`remove_if_stale`] removes those a
 //!   crash left;
 //! - [`persist_retrying`] is the rename, tried again for about a second where Windows
-//!   refuses it because an indexer or a virus scanner holds the file.
+//!   refuses it because an indexer or a virus scanner holds the file, and
+//!   [`persist_noclobber`] the rename that never replaces a file;
+//! - [`uncache_writes`], [`sync`] and [`read_uncached`] write a file and read it back past
+//!   the system's cache, for the library's checked copy (decision 101).
 //!
 //! Bulk listing and cloud placeholders' flags, which need foreign calls, are planned.
 
@@ -37,10 +40,14 @@ use std::borrow::Cow;
 use std::path::Path;
 
 mod temporary;
+mod uncached;
 mod write;
 
 pub use temporary::{STALE_AFTER, create, is_temporary_name, remove_if_stale};
-pub use write::{Retry, Written, persist_retrying, write, write_if, write_metadata};
+pub use uncached::{read_uncached, sync, uncache_writes};
+pub use write::{
+    Retry, Written, persist_noclobber, persist_retrying, write, write_if, write_metadata,
+};
 
 /// `path` as `tempfile` must be given it to reach any length: on Windows absolute, with
 /// `\\?\` before it, since `tempfile` hands its paths to Windows as they are, where a path
