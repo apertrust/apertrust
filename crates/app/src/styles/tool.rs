@@ -930,7 +930,7 @@ impl StylesTool<'_> {
                         level: 1,
                         name,
                         expanded: None,
-                        mark: Some((Icon::Check, t.colors.text_secondary)),
+                        mark: Some((Icon::SwatchBook, t.colors.text_secondary)),
                         icon: None,
                         count: None,
                         chosen: false,
