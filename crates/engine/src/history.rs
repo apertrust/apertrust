@@ -1095,8 +1095,8 @@ pub enum Move {
     DiscardHistory,
     /// Take back or put back a change of the photo's rating, its reject or a label
     /// (decision 110), no step of the log: `change` the last change the undo record holds,
-    /// quick repeats of one key merged, on `photos` photos, the active one alone until the
-    /// batch (decision 109). The Metadata tool's fields join it (#643).
+    /// quick repeats of one key merged, on `photos` photos, a batch's count where it is one on
+    /// several photos (decision 109), else 1. The Metadata tool's fields join it (#643).
     Field { change: RatingChange, photos: usize },
 }
 

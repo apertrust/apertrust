@@ -182,6 +182,14 @@ batch-applied =
        *[other] «{ $style }» застосовано до { $count } знімка
     }
 batch-applied-some = «{ $style }» застосовано до { $changed } із { $count } знімків
+batch-rated =
+    { $count ->
+        [one] { $style } на { $count } знімку
+        [few] { $style } на { $count } знімках
+        [many] { $style } на { $count } знімках
+       *[other] { $style } на { $count } знімка
+    }
+batch-rated-some = { $style } на { $changed } із { $count } знімків
 batch-taken-back =
     { $count ->
         [one] «{ $style }» скасовано на { $count } знімку
@@ -410,6 +418,30 @@ job-redo-batch-outcome =
         [many] «{ $style }» повернено на { $changed } із { $count } знімків
        *[other] «{ $style }» повернено на { $changed } із { $count } знімка
     }
+job-rate = Оцінювання · { photo-count }
+job-rate-outcome =
+    { $count ->
+        [one] Оцінено { $changed } із { $count } знімка
+        [few] Оцінено { $changed } із { $count } знімків
+        [many] Оцінено { $changed } із { $count } знімків
+       *[other] Оцінено { $changed } із { $count } знімка
+    }
+job-undo-rate = Скасування оцінки · { photo-count }
+job-redo-rate = Повернення оцінки · { photo-count }
+job-undo-rate-outcome =
+    { $count ->
+        [one] Оцінку скасовано на { $changed } із { $count } знімка
+        [few] Оцінку скасовано на { $changed } із { $count } знімків
+        [many] Оцінку скасовано на { $changed } із { $count } знімків
+       *[other] Оцінку скасовано на { $changed } із { $count } знімка
+    }
+job-redo-rate-outcome =
+    { $count ->
+        [one] Оцінку повернено на { $changed } із { $count } знімка
+        [few] Оцінку повернено на { $changed } із { $count } знімків
+        [many] Оцінку повернено на { $changed } із { $count } знімків
+       *[other] Оцінку повернено на { $changed } із { $count } знімка
+    }
 
 job-export-photo =
     Експортування { $number } / { $total } до { $storage ->
@@ -576,7 +608,13 @@ caption-label-green = Зелена мітка
 caption-label-blue = Синя мітка
 caption-label-purple = Фіолетова мітка
 caption-tip = { $action } ({ $key })
-caption-this-photo = { $action }, лише цей знімок
+caption-photos =
+    { $count ->
+        [one] { $action } · { $count } знімок
+        [few] { $action } · { $count } знімки
+        [many] { $action } · { $count } знімків
+       *[other] { $action } · { $count } знімка
+    }
 browser-height = Висота оглядача
 grid-rows =
     { $count ->

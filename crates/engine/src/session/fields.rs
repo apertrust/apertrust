@@ -29,8 +29,8 @@
 //! write, with that write's clock. A newer file taken in has its fields joined with the
 //! session's, the later clock winning each ([`library_fields::join`]).
 //!
-//! The active photo alone: a command naming another photo is refused until the batch of
-//! decision 109 writes the others.
+//! A command naming other photos is a batch on several photos (decision 109, `batch`),
+//! which reaches the active photo here, its record carrying the batch.
 //!
 //! [`Command::Rate`]: super::Command::Rate
 
@@ -42,22 +42,32 @@ use apertrust_library::fields::{self as library_fields, FieldChange, FieldEntry,
 use apertrust_library::sidecar::{Edits, FIRST_COPY, VirtualCopy};
 
 use super::{Engine, Event, Open, RatingChange, RatingState, SessionError};
+use crate::history::BatchId;
 
-/// One change of the open photo's fields, an undo record of the session's: the change, the
-/// last where quick repeats merged, and each field it set with the clock that set it.
-#[derive(Debug)]
+/// One change of a photo's fields, an undo record of the session's: the change, the last
+/// where quick repeats merged, each field it set with the clock that set it, and the batch
+/// on several photos it is part of, if any (decision 109), which a batch keeps for each of
+/// its photos.
+#[derive(Debug, Clone)]
 pub(super) struct FieldRecord {
     pub(super) change: RatingChange,
     /// Each field set, its value before and after, and the clock the field holds as the
     /// record last left it, which tells a field changed since.
     changes: Vec<(FieldChange, Clock)>,
+    pub(super) batch: Option<BatchId>,
 }
 
 impl FieldRecord {
-    fn new(change: RatingChange, changes: Vec<FieldChange>, clock: Clock) -> Self {
+    pub(super) fn new(
+        change: RatingChange,
+        changes: Vec<FieldChange>,
+        clock: Clock,
+        batch: Option<BatchId>,
+    ) -> Self {
         FieldRecord {
             change,
             changes: changes.into_iter().map(|change| (change, clock)).collect(),
+            batch,
         }
     }
 
@@ -71,7 +81,9 @@ impl FieldRecord {
     /// Sets each field it changed among `entries` back as it was before it, or with `back`
     /// false as it left it, at `clock`, where the field still holds the value the record left
     /// it at: one changed since, as a newer file taken in changed it, keeps its later value.
-    pub(super) fn put(&mut self, entries: &mut Vec<FieldEntry>, back: bool, clock: Clock) {
+    /// Whether it set any.
+    pub(super) fn put(&mut self, entries: &mut Vec<FieldEntry>, back: bool, clock: Clock) -> bool {
+        let mut put = false;
         for (change, set) in &mut self.changes {
             let (left, value) = match back {
                 true => (change.after, change.before),
@@ -82,7 +94,9 @@ impl FieldRecord {
             }
             library_fields::set(entries, &change.field, value, clock);
             *set = clock;
+            put = true;
         }
+        put
     }
 
     /// `later`, a quick repeat of the same change, taken into it: each field's value after
@@ -163,37 +177,28 @@ pub(super) fn stamp_darktable(file: &mut Edits, clock: impl FnOnce() -> Clock) -
 }
 
 impl Engine {
-    /// [`super::Command::Rate`], sent at `at`: `change` set on the active photo's fields, an
-    /// undo record, the edit left as it is, then saved. `photos` names the active photo or
-    /// none, another refused until the batch writes it ([`SessionError::NotActive`]); refused
-    /// with no photo open ([`SessionError::NotLive`] while one opens, else
-    /// [`SessionError::NoPhoto`]) and on a photo open for viewing only. Allowed before the
-    /// photo is live, since it needs no decode. A change that changes nothing records and
-    /// writes nothing.
-    pub(super) fn rate(
-        &mut self,
-        photos: &[PathBuf],
-        change: RatingChange,
-        at: Instant,
-    ) -> Result<(), SessionError> {
+    /// [`super::Command::Rate`] on the active photo, sent at `at`: `change` set on its
+    /// fields, an undo record, in the batch being reached where a batch on several photos
+    /// reaches it ([`Engine::batching`]), the edit left as it is, then saved. Refused with no
+    /// photo open ([`SessionError::NotLive`] while one opens, else [`SessionError::NoPhoto`])
+    /// and on a photo open for viewing only. Allowed before the photo is live, since it
+    /// needs no decode. A change that changes nothing records and writes nothing; whether it
+    /// changed any field.
+    pub(super) fn rate(&mut self, change: RatingChange, at: Instant) -> Result<bool, SessionError> {
+        let batch = self.batching.map(|batch| batch.id);
         let Some(open) = &mut self.open else {
             return Err(match self.opening {
                 Some(_) => SessionError::NotLive,
                 None => SessionError::NoPhoto,
             });
         };
-        if let Some(other) = photos.iter().find(|photo| **photo != open.photo.path) {
-            return Err(SessionError::NotActive {
-                photo: other.clone(),
-            });
-        }
         if let Some(view_only) = &open.view_only {
             return Err(SessionError::ViewOnly(view_only.clone()));
         }
         let clock = open.history.next_clock();
         let changes = change.apply(first_mut(&mut open.file), clock);
         if changes.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
         let Rating {
             stars,
@@ -203,10 +208,10 @@ impl Engine {
         let name = crate::sidecar::file_name(&open.photo.path);
         tracing::debug!(target: "pipe", "rated {name}: {stars} stars, rejected: {rejected}, labels: {labels:05b}");
         open.history
-            .rated(FieldRecord::new(change, changes, clock), at);
+            .rated(FieldRecord::new(change, changes, clock, batch), at);
         open.fields_unsaved = true;
         open.unsaved = true;
-        Ok(())
+        Ok(true)
     }
 
     /// The open photo's path and rating, which a turn compares before and after it.

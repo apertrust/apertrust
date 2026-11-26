@@ -482,10 +482,11 @@ fn selected<'a>(
     })
 }
 
-/// The photos a style applied now names (decision 109): every selected photo, in the
-/// Browser's order, where several are selected, those open for viewing only among them,
-/// which the batch skips and names; none otherwise, the style the active photo's alone.
-pub(crate) fn styled(mirror: &Mirror) -> Vec<PathBuf> {
+/// The photos a style applied, or a rating set, now names (decisions 109 and 110): every
+/// selected photo, in the Browser's order, where several are selected, those open for
+/// viewing only among them, which the batch skips and names; none otherwise, the change
+/// the active photo's alone.
+pub(crate) fn batched(mirror: &Mirror) -> Vec<PathBuf> {
     if mirror.selection_pending() || mirror.selected_count() < 2 {
         return Vec::new();
     }
@@ -1541,7 +1542,7 @@ mod tests {
         assert_eq!(exported(&f.m), one);
         assert!(exportable(&f.m));
         // One selected: a style is the active photo's alone, naming none.
-        assert!(styled(&f.m).is_empty());
+        assert!(batched(&f.m).is_empty());
         let mut f = Folder::new("a");
         f.listed(&[], false);
         f.told(&["a"], Some("a"));
@@ -1574,7 +1575,7 @@ mod tests {
         assert_eq!(exported_count(&f.m), 3);
         assert_eq!(f.m.selected_count(), 3);
         // A style names them too, in the same order (decision 109).
-        assert_eq!(styled(&f.m), [at("e"), at("c"), at("a")]);
+        assert_eq!(batched(&f.m), [at("e"), at("c"), at("a")]);
         // c's sidecar unreadable, the open a view-only: e alone.
         let mut f = Folder::new("a");
         let folder = PathBuf::from("/photos");
@@ -1607,7 +1608,7 @@ mod tests {
         f.told(&["a", "c", "e"], Some("a"));
         opened_a(&mut f, true);
         // A style names the view-only ones too, which the batch skips and names.
-        assert_eq!(styled(&f.m), [at("a"), at("c"), at("e")]);
+        assert_eq!(batched(&f.m), [at("a"), at("c"), at("e")]);
         let e = Exported {
             photos: vec![at("e")],
             left_out: 2,
@@ -1622,7 +1623,7 @@ mod tests {
     /// (decision 109), and its end is the app's to say, a reaction.
     #[test]
     fn a_batch_s_change_marks_the_photo_edited_and_its_end_is_told() {
-        use apertrust_engine::session::{BatchAction, BatchEvent, BatchId};
+        use apertrust_engine::session::{BatchAction, BatchEvent, BatchId, Batched};
         let mut f = Folder::new("a");
         let folder = PathBuf::from("/photos");
         f.m.folder.opening(folder.clone(), 100);
@@ -1665,7 +1666,7 @@ mod tests {
             command: 3,
             batch: BatchId(9),
             action: BatchAction::Applied,
-            style: "Warm film".to_owned(),
+            what: Batched::Style("Warm film".to_owned()),
             named: 1,
             changed: vec![at("c")],
             skipped: Vec::new(),
@@ -1718,7 +1719,7 @@ mod tests {
         assert_eq!(exported(&f.m).photos, [at("a"), at("b")]);
         assert_eq!(exported_count(&f.m), 2);
         // A style names it, first (decision 109).
-        assert_eq!(styled(&f.m), [at("z"), at("a"), at("b")]);
+        assert_eq!(batched(&f.m), [at("z"), at("a"), at("b")]);
     }
 
     /// A photo selected alone with none open, as a Ctrl-click with none active leaves it,

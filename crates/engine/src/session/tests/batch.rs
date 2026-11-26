@@ -410,12 +410,12 @@ fn batch_jobs_run_one_at_a_time_in_the_order_sent() {
     }
     let styles: Vec<_> = (heard.iter())
         .filter_map(|event| match event {
-            Event::Batch(BatchEvent::Ended { style, batch, .. }) => Some((style.clone(), *batch)),
+            Event::Batch(BatchEvent::Ended { what, batch, .. }) => Some((what.clone(), *batch)),
             _ => None,
         })
         .collect();
-    assert_eq!(styles[0].0, "Warm film");
-    assert_eq!(styles[1].0, "Faded");
+    assert_eq!(styles[0].0, Batched::Style("Warm film".to_owned()));
+    assert_eq!(styles[1].0, Batched::Style("Faded".to_owned()));
     driven.writes();
     assert_eq!(batches(&saved_log(&others[0])), [styles[0].1, styles[1].1]);
     remove(&active);
@@ -880,10 +880,11 @@ fn a_batch_cancelled_while_queued_lets_the_next_run() {
     assert!(driven.engine.batches[0].job().is_some());
     drop(gos);
     let heard = until_ended(&mut driven);
-    let Some(BatchEvent::Ended { style, changed, .. }) = ended(&heard) else {
+    let Some(BatchEvent::Ended { what, changed, .. }) = ended(&heard) else {
         unreachable!()
     };
-    assert_eq!((style.as_str(), changed), ("Faded", &second));
+    let faded = Batched::Style("Faded".to_owned());
+    assert_eq!((what, changed), (&faded, &second));
     driven.writes();
     assert!(
         first
@@ -1014,5 +1015,320 @@ fn redo_names_the_photos_the_undo_took_back() {
         matches!(redo, Some(Some(Move::Steps { photos: 2, .. }))),
         "{redo:?}"
     );
+    remove(&active);
+}
+
+/// `Rate` of three stars naming `photos` (decision 110).
+fn three_stars(photos: &[PathBuf]) -> Command {
+    Command::Rate {
+        photos: photos.to_vec(),
+        change: RatingChange::Stars(3),
+    }
+}
+
+fn rated(stars: u8, rejected: bool, labels: u8) -> Rating {
+    Rating {
+        stars,
+        rejected,
+        labels,
+    }
+}
+
+/// The rating the sidecar beside `photo` holds, as saved: none where there is no sidecar.
+fn saved_rating(photo: &Path) -> Rating {
+    let Ok(xml) = std::fs::read_to_string(sidecar::path_for(photo)) else {
+        return Rating::default();
+    };
+    let file = sidecar::Edits::parse(&xml, 0).unwrap();
+    Rating::of(file.copies.first().map_or(&[][..], |copy| &copy.fields))
+}
+
+/// The photos the `Rated` notices among `events` name, in order.
+fn rated_photos(events: &[Event]) -> Vec<PathBuf> {
+    (events.iter())
+        .filter_map(|event| match event {
+            Event::Rated { photo, .. } => Some(photo.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A rating on three photos, one open and one with only darktable's `.xmp` beside it: one
+/// batch, the open photo at once and the others by a quiet `rate` job reading no raw, each
+/// told by `Rated`, their logs left empty and darktable's label copied in. Undo on the open
+/// photo names the three and takes the batch back on all, darktable's stars coming back;
+/// Redo puts it back.
+#[test]
+fn a_rating_on_three_photos_is_one_batch_that_undo_takes_back_on_all() {
+    let active = scratch("batch-rate");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF
+        xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
+        xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:darktable="http://darktable.sf.net/"
+        xmp:Rating="2"><darktable:colorlabels><rdf:Seq><rdf:li>0</rdf:li></rdf:Seq>
+        </darktable:colorlabels></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    std::fs::write(apertrust_library::darktable::path_for(&others[1]), xmp).unwrap();
+    let named = [vec![active.clone()], others.clone()].concat();
+    let events = driven.run([three_stars(&named)]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert_eq!(changed(&events), std::slice::from_ref(&active));
+    let undo = events.iter().rev().find_map(|event| match event {
+        Event::History(history) => Some(history.undo),
+        _ => None,
+    });
+    assert!(
+        matches!(undo, Some(Some(Move::Field { photos: 3, .. }))),
+        "{undo:?}"
+    );
+    let heard = until_ended(&mut driven);
+    let added = heard.iter().find_map(|event| match event {
+        Event::Job {
+            event: JobEvent::Added { kind, quiet, .. },
+            ..
+        } => Some((*kind, *quiet)),
+        _ => None,
+    });
+    assert_eq!(added, Some(("rate", true)));
+    assert_eq!(changed(&heard), others);
+    assert_eq!(rated_photos(&heard), others);
+    let Some(BatchEvent::Ended {
+        what,
+        changed,
+        skipped,
+        ..
+    }) = ended(&heard)
+    else {
+        unreachable!()
+    };
+    assert_eq!(*what, Batched::Rating(RatingChange::Stars(3)));
+    assert_eq!((changed.len(), skipped.len()), (3, 0));
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    driven.writes();
+    assert_eq!(saved_rating(&others[0]), rated(3, false, 0));
+    assert_eq!(saved_rating(&others[1]), rated(3, false, 0b1));
+    assert!(
+        others
+            .iter()
+            .all(|photo| saved_log(photo).steps().is_empty())
+    );
+    // Undo on the open photo, on all three.
+    driven.run([Command::Undo]);
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!((changed.len(), skipped.len()), (3, 0));
+    driven.writes();
+    assert_eq!(saved_rating(&others[0]), rated(0, false, 0));
+    assert_eq!(saved_rating(&others[1]), rated(2, false, 0b1));
+    assert_eq!(
+        driven.engine.open.as_ref().unwrap().rating(),
+        rated(0, false, 0)
+    );
+    // Redo puts it back on each.
+    driven.run([Command::Redo]);
+    let heard = until_ended(&mut driven);
+    assert_eq!(ends(&heard)[0].0, BatchAction::PutBack);
+    driven.writes();
+    assert!(others.iter().all(|photo| saved_rating(photo).stars == 3));
+    // From a photo outside it, after the open photo's own Undo and Redo moved it there,
+    // the notice's Undo takes it back on all three, the photo left among them.
+    let outside = photos(&active, "outside", 1).remove(0);
+    driven.open(&outside);
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!((changed.len(), skipped.len()), (3, 0), "{skipped:?}");
+    driven.writes();
+    assert_eq!(saved_rating(&active), rated(0, false, 0));
+    assert_eq!(saved_rating(&others[1]), rated(2, false, 0b1));
+    remove(&active);
+}
+
+/// A photo of a rating's batch open for viewing only, a newer Apertrust's, is skipped and
+/// named, its file untouched; the others are rated, and the command is not refused.
+#[test]
+fn a_view_only_photo_is_skipped_and_named_in_a_rating_s_batch() {
+    let active = scratch("batch-rate-view-only");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let newer = sidecar::to_xml(&Edit::default(), OPERATIONS, TOOLS, "9.0.0")
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
+    let view_only = sidecar::path_for(&others[0]);
+    std::fs::write(&view_only, &newer).unwrap();
+    let events = driven.run([three_stars(&others)]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended {
+        changed, skipped, ..
+    }) = ended(&heard)
+    else {
+        unreachable!()
+    };
+    assert_eq!(changed, &others[1..]);
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ViewOnly(_))] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert_eq!(std::fs::read_to_string(&view_only).unwrap(), newer);
+    assert_eq!(saved_rating(&others[1]).stars, 3);
+    remove(&active);
+}
+
+/// A style on a photo with only darktable's `.xmp` beside it writes its first `.apxmp` with
+/// darktable's rating and label copied in, each with a clock (decision 51).
+#[test]
+fn a_style_s_batch_copies_darktable_s_rating_in() {
+    let active = scratch("batch-style-darktable");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 1);
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF
+        xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
+        xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:darktable="http://darktable.sf.net/"
+        xmp:Rating="4"><darktable:colorlabels><rdf:Seq><rdf:li>2</rdf:li></rdf:Seq>
+        </darktable:colorlabels></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    std::fs::write(apertrust_library::darktable::path_for(&others[0]), xmp).unwrap();
+    driven.run([warm(40.0, &others)]);
+    until_ended(&mut driven);
+    driven.writes();
+    assert!(grained(&others[0]));
+    assert_eq!(saved_rating(&others[0]), rated(4, false, 0b100));
+    let xml = std::fs::read_to_string(sidecar::path_for(&others[0])).unwrap();
+    let file = sidecar::Edits::parse(&xml, 0).unwrap();
+    assert!(
+        file.copies[0]
+            .fields
+            .iter()
+            .all(|entry| entry.clock.is_some())
+    );
+    remove(&active);
+}
+
+/// A photo of a rating's batch rated again since keeps its later rating and is named; the
+/// notice's Undo, `UndoBatch`, takes the batch back on the rest from a photo outside it.
+#[test]
+fn a_photo_rated_since_keeps_its_rating_and_undo_batch_takes_the_rest_back() {
+    let active = scratch("batch-rate-since");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    driven.run([three_stars(&others)]);
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    // The first rated again: opened, five stars, left again.
+    driven.open(&others[0]);
+    driven.run([Command::Rate {
+        photos: Vec::new(),
+        change: RatingChange::Stars(5),
+    }]);
+    driven.open(&active);
+    driven.writes();
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!(changed, std::slice::from_ref(&others[1]));
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ChangedSince)] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert_eq!(saved_rating(&others[0]).stars, 5);
+    assert_eq!(saved_rating(&others[1]).stars, 0);
+    remove(&active);
+}
+
+/// A rating on three photos with A active, then B, one of them, opened in a session of its
+/// own, which holds no record of the batch: the notice's Undo takes it back on all three, B
+/// live from the record the batch kept, as a photo not open is.
+#[test]
+fn undo_batch_takes_a_rating_back_on_a_photo_of_it_opened_since() {
+    let active = scratch("batch-rate-reopened");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([three_stars(&named)]);
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    driven.writes();
+    driven.open(&others[0]);
+    assert_eq!(driven.engine.open.as_ref().unwrap().rating().stars, 3);
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!((changed.len(), skipped.len()), (3, 0), "{skipped:?}");
+    assert_eq!(
+        driven.engine.open.as_ref().unwrap().rating(),
+        rated(0, false, 0)
+    );
+    driven.writes();
+    assert!(
+        named
+            .iter()
+            .all(|photo| saved_rating(photo) == rated(0, false, 0))
+    );
+    remove(&active);
+}
+
+/// A rating on two photos with A active, then A's edit changed: the notice's Undo takes the
+/// rating back on both, A's from the record the batch kept, though A's own next Undo is the
+/// edit's change, which stays.
+#[test]
+fn undo_batch_takes_a_rating_back_under_a_later_edit() {
+    let active = scratch("batch-rate-edited");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 1);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([three_stars(&named)]);
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    driven.run([Command::SetTool {
+        tool: "soften".to_owned(),
+        values: on("amount", 10.0),
+    }]);
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!((changed.len(), skipped.len()), (2, 0), "{skipped:?}");
+    let open = driven.engine.open.as_ref().unwrap();
+    assert_eq!(open.rating(), rated(0, false, 0));
+    assert!(open.edit.tool("soften").is_some());
+    driven.writes();
+    assert_eq!(saved_rating(&others[0]), rated(0, false, 0));
     remove(&active);
 }

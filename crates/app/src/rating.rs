@@ -21,11 +21,12 @@
 //! The session takes the value, never a toggle, so the app works out which way a toggle
 //! goes from the photo it is clicked on, or for a key or a menu from the active photo
 //! (decision 37): Reject and a label turn on unless that photo has them; the photo's
-//! current star clears the rating. The active photo alone, until the batch (decision 109):
-//! a click on another cell's first line opens that photo first, then rates it
-//! ([`Pending`]).
+//! current star clears the rating. With several selected it is one batch on all of them
+//! (decision 109), the active photo deciding which way a toggle goes; with one, the active
+//! photo's alone, and a click on another cell's first line rates that photo as a batch of
+//! one, never opening it ([`cell_command`]).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use apertrust_engine::session::{Command, Rating, RatingChange};
 use apertrust_ui::Translator;
@@ -86,12 +87,10 @@ impl Rate {
     }
 }
 
-/// `change` on the active photo, as the session takes it.
-pub fn command(change: RatingChange) -> Command {
-    Command::Rate {
-        photos: Vec::new(),
-        change,
-    }
+/// `change` on `photos`, as the session takes it: none for the active photo alone, else
+/// the selection's, one batch (`selection::batched`).
+pub fn command(change: RatingChange, photos: Vec<PathBuf>) -> Command {
+    Command::Rate { photos, change }
 }
 
 /// A label's number, 0 red to 4 purple, darktable's order.
@@ -113,27 +112,38 @@ pub fn cell(rating: Rating) -> CellRating {
     }
 }
 
-/// A rating a click on a cell's first line asked of a photo that is not the active one:
-/// sent once that photo has opened, as the session rates the active photo alone.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Pending {
+/// A click on a cell's first line (`BrowserOutput::cell`): what it did, the cell's photo and
+/// its rating as listed, whether it is the active photo, and whether it is one of several
+/// selected.
+pub struct Cell {
+    pub action: CellAction,
     pub photo: PathBuf,
-    pub change: RatingChange,
+    pub own: Rating,
+    pub active: bool,
+    pub in_selection: bool,
 }
 
-impl Pending {
-    /// The command to send now that `opened` is the photo open, where it is this one's.
-    pub fn take(pending: &mut Option<Pending>, opened: Option<&Path>) -> Option<Command> {
-        let waiting = pending.as_ref()?;
-        if opened != Some(waiting.photo.as_path()) {
-            return None;
-        }
-        pending.take().map(|pending| command(pending.change))
+/// The command a click on a cell's first line sends (decisions 37 and 110): on every
+/// selected photo, `batched`, where the cell is one of several selected, which way a toggle
+/// goes following the active photo's rating, `rateable`, else the cell's own; else on the
+/// cell's photo alone, from its own rating, as a batch of one that never opens it, the
+/// active photo only while it takes a rating.
+pub fn cell_command(
+    cell: Cell,
+    rateable: Option<Rating>,
+    batched: Vec<PathBuf>,
+) -> Option<Command> {
+    if cell.in_selection && !batched.is_empty() {
+        let rating = rateable.unwrap_or(cell.own);
+        let change = Rate::of_cell(cell.action, rating).change(rating);
+        return Some(command(change, batched));
     }
+    let change = Rate::of_cell(cell.action, cell.own).change(cell.own);
+    (!cell.active || rateable.is_some()).then(|| command(change, vec![cell.photo]))
 }
 
-/// What Undo and Redo name for a rating's `change` (`Move::Field`): the action's name, a
-/// reject taken back its own.
+/// What Undo and Redo name for a rating's `change` (`Move::Field`), and a rating's batch's
+/// notice: the action's name, a reject taken back its own.
 pub fn undo_words(change: RatingChange, tr: &Translator) -> String {
     let message = match change {
         RatingChange::Stars(stars) => ActionId::RATING[usize::from(stars.min(5))].0,
@@ -149,9 +159,9 @@ pub fn undo_words(change: RatingChange, tr: &Translator) -> String {
     tr.text(&message)
 }
 
-/// The caption's tooltips, each with its key as `keymap` has it, and, while several photos
-/// are selected, saying that it rates this photo alone until the batch.
-pub fn tips(keymap: &Keymap, os: OperatingSystem, tr: &Translator, several: bool) -> CaptionTips {
+/// The caption's tooltips, each with its key as `keymap` has it, and, while `photos` are
+/// selected, several, saying how many it rates (decision 37).
+pub fn tips(keymap: &Keymap, os: OperatingSystem, tr: &Translator, photos: usize) -> CaptionTips {
     let with_key = |words: String, id: ActionId| match keymap.tip(id, os, tr) {
         Some(key) => {
             let mut args = apertrust_ui::i18n::Args::new();
@@ -162,10 +172,11 @@ pub fn tips(keymap: &Keymap, os: OperatingSystem, tr: &Translator, several: bool
         None => words,
     };
     let this = |words: String| {
-        if several {
+        if photos > 1 {
             let mut args = apertrust_ui::i18n::Args::new();
             args.set("action", words);
-            tr.text_with("caption-this-photo", Some(&args))
+            args.set("count", photos as f64);
+            tr.text_with("caption-photos", Some(&args))
         } else {
             words
         }
@@ -249,21 +260,49 @@ mod tests {
         assert_eq!(words(RatingChange::ClearLabels), "Clear labels");
     }
 
-    /// A rating asked of another photo is sent once that photo is open, and only then.
+    /// A cell's star rates that cell's photo alone, as a batch of one from its own rating,
+    /// where it is not among several selected, the active photo only while it takes one; a
+    /// cell among several selected rates them all, the active photo's rating deciding.
     #[test]
-    fn a_pending_rating_waits_for_its_photo() {
+    fn a_cell_rates_its_photo_alone_or_the_selection_it_is_in() {
         let photo = PathBuf::from("/photos/B.ARW");
-        let mut pending = Some(Pending {
+        let cell = |action, active, in_selection| Cell {
+            action,
             photo: photo.clone(),
-            change: RatingChange::Stars(2),
-        });
-        let other = Path::new("/photos/A.ARW");
-        assert_eq!(Pending::take(&mut pending, Some(other)), None);
-        assert_eq!(Pending::take(&mut pending, None), None);
+            own: rated(3, false, 0),
+            active,
+            in_selection,
+        };
+        let selection = vec![PathBuf::from("/photos/A.ARW"), photo.clone()];
+        // Another photo's current star, from its own rating: cleared, it alone named.
+        let other = cell_command(cell(CellAction::Rate(3), false, false), None, Vec::new());
         assert_eq!(
-            Pending::take(&mut pending, Some(&photo)),
-            Some(command(RatingChange::Stars(2)))
+            other,
+            Some(command(RatingChange::Stars(0), vec![photo.clone()]))
         );
-        assert_eq!(pending, None);
+        // The active photo open for viewing only, alone: nothing.
+        let active = cell(CellAction::Rate(4), true, false);
+        assert_eq!(cell_command(active, None, Vec::new()), None);
+        // Among several selected: all of them, the active photo's reject deciding.
+        let reject = cell(CellAction::ToggleReject, false, true);
+        let sent = cell_command(reject, Some(rated(1, true, 0)), selection.clone());
+        assert_eq!(
+            sent,
+            Some(command(RatingChange::Rejected(false), selection))
+        );
+    }
+
+    /// The caption's tooltips name the key, and with several selected how many photos they
+    /// rate (decision 37).
+    #[test]
+    fn the_caption_s_tips_name_the_key_and_the_photos() {
+        let tr = Translator::new(apertrust_ui::Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Mac);
+        let one = tips(&keymap, OperatingSystem::Mac, &tr, 1);
+        assert_eq!(one.stars[2], "Rate 3 stars (3)");
+        assert_eq!(one.reject, "Reject (R)");
+        let twelve = tips(&keymap, OperatingSystem::Mac, &tr, 12);
+        assert_eq!(twelve.stars[2], "Rate 3 stars on 12 photos (3)");
+        assert_eq!(twelve.labels[0], "Red label on 12 photos (F1)");
     }
 }

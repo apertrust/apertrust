@@ -305,14 +305,22 @@ impl Mirror {
         matches!(self.shown, Shown::Photo { .. }) && self.previous.is_none()
     }
 
-    /// The open photo's rating where it takes one (decision 110): open, not for viewing only,
-    /// and the session has told it; none else, and the rating's actions rest.
+    /// The open photo's rating where the rating's actions can run on it (decision 110):
+    /// open, the session having told it, and not for viewing only unless several photos are
+    /// selected, when it decides which way a toggle goes and the batch skips and names it;
+    /// none else, and the rating's actions rest. They rest too while a selection command is
+    /// not yet told, Previous Selection among them, which may have made another photo
+    /// active, so a rating never reaches a photo it was not worked out for.
     pub fn rateable(&self) -> Option<Rating> {
+        if self.previous.is_some() || self.selection_pending() {
+            return None;
+        }
         let PhotoState::Open(photo) = &self.photo else {
             return None;
         };
         let state = self.rating.as_ref()?;
-        (photo.view_only.is_none() && state.photo == photo.path).then_some(state.rating)
+        let takes = photo.view_only.is_none() || self.selected_count() > 1;
+        (takes && state.photo == photo.path).then_some(state.rating)
     }
 
     /// Whether Reset would change the photo: its edit holds anything, or the history's end
@@ -1990,6 +1998,40 @@ pub(crate) mod tests {
         m.opening(PathBuf::from("/photos/b.ARW"), 4, Instant::now());
         m.not_saved(&edit, 3, "can't read it");
         assert_eq!(m.saving.left, Some((edit, "can't read it".to_owned())));
+    }
+
+    /// A photo open for viewing only takes no rating alone; with several selected it still
+    /// decides which way a toggle goes, the batch skipping and naming it (decision 110).
+    #[test]
+    fn a_view_only_photo_is_rateable_only_among_several_selected() {
+        use apertrust_engine::session::Selection;
+        let a = PathBuf::from("/photos/a.ARW");
+        let mut m = mirror();
+        m.opening(a.clone(), 1, Instant::now());
+        let mut view_only = photo(1);
+        view_only.view_only = Some(sidecar::ViewOnly {
+            build: None,
+            reason: sidecar::Reason::Newer(sidecar::Newer::Version(3)),
+        });
+        m.apply(Event::Opened(view_only));
+        let rating = Rating {
+            stars: 2,
+            rejected: false,
+            labels: 0,
+        };
+        m.apply(Event::Rating(RatingState {
+            through: 1,
+            photo: a.clone(),
+            rating,
+        }));
+        assert_eq!(m.rateable(), None);
+        m.apply(Event::Selection(Selection {
+            photos: vec![a.clone(), PathBuf::from("/photos/b.ARW")],
+            active: Some(a),
+            previous: false,
+            through: 1,
+        }));
+        assert_eq!(m.rateable(), Some(rating));
     }
 
     #[test]

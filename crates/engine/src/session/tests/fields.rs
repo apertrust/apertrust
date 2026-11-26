@@ -235,10 +235,10 @@ fn brightness(events: &[Event]) -> f32 {
     }
 }
 
-/// A photo open for viewing only refuses a rating, and so does a command naming a photo
-/// other than the active one, until the batch.
+/// A photo open for viewing only refuses a rating, its file untouched; a command naming the
+/// active photo alone rates it, as one naming none does.
 #[test]
-fn a_view_only_photo_and_another_photo_are_refused() {
+fn a_view_only_photo_refuses_a_rating_and_naming_the_active_photo_rates_it() {
     let path = scratch("rate-refused");
     let newer =
         brightened_log("0.9.0").replace(r#"apertrust:version="2""#, r#"apertrust:version="3""#);
@@ -255,18 +255,9 @@ fn a_view_only_photo_and_another_photo_are_refused() {
         newer
     );
     remove(&path);
-    let path = scratch("rate-other");
+    let path = scratch("rate-named");
     driven.open(&path);
-    let other = Command::Rate {
-        photos: vec![path.with_file_name("other.ARW")],
-        change: RatingChange::Stars(1),
-    };
-    let refused = driven.run([other]);
-    assert!(
-        matches!(failures(&refused)[..], [SessionError::NotActive { .. }]),
-        "{refused:?}"
-    );
-    // Naming the active photo is the active photo.
+    // Naming the active photo alone is the active photo.
     let named = Command::Rate {
         photos: vec![path.clone()],
         change: RatingChange::Stars(1),

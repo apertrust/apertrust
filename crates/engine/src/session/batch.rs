@@ -19,7 +19,13 @@
 //! changes. The active photo changes at once in the command's turn; the others by one
 //! `apply-style` job, which reads each one's metadata and sidecar on its worker, applies the
 //! style to its log by [`style_log`], the function the active photo's change goes through,
-//! and hands the engine thread the file's XML, which alone knows which photo is open:
+//! and hands the engine thread the file's XML, which alone knows which photo is open.
+//!
+//! A rating on several photos (decision 110), one [`Command::Rate`] naming them, is a batch
+//! the same way, by a `rate` job reading no raw: each photo's fields set with a clock of the
+//! batch's, darktable's copied in first where it has no sidecar, its log left as it is. It
+//! is no step, so each photo's [`FieldRecord`] is kept with the batch, which takes it back,
+//! but where the field changed since. Every photo is routed alike:
 //!
 //! - **open and live,** the result dropped and the style applied there as to the active
 //!   photo ([`Engine::reach`]);
@@ -36,22 +42,32 @@ use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use apertrust_library::clock::wall_clock;
+use apertrust_library::fields::FieldEntry;
 use apertrust_library::listing;
 use apertrust_plugin::Operation;
 use apertrust_tools::{ProcessingTool, ToolValues};
 
+use super::fields::{self, FieldRecord};
 use super::history::PhotoHistory;
 use super::styles::{Batch, Style, style_log};
 use super::{
-    Command, Effect, Engine, Event, Inbox, Load, Open, Outbox, Over, Reads, SessionError,
-    StyleMode, library,
+    Command, Effect, Engine, Event, Inbox, Load, Open, Outbox, Over, Rating, RatingChange, Reads,
+    SessionError, StyleMode, library,
 };
 use crate::history::{BatchId, Clock, Log};
 use crate::jobs::{self, Context, Failure, Interrupted, Job, Message};
 use crate::sidecar::{self, Edits};
 
+/// What a batch on several photos does to each, as its `Ended` names it: a style applied,
+/// by its name (decision 109), or a rating set (decision 110).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Batched {
+    Style(String),
+    Rating(RatingChange),
+}
+
 /// What a batch on several photos tells (decision 109): notices, apart from the session's
-/// batches of commands, naming the style's batch by its id.
+/// batches of commands, naming the batch by its id.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BatchEvent {
     /// A photo's change landed: the active photo's in the command's turn, another's as its
@@ -69,7 +85,7 @@ pub enum BatchEvent {
         command: u64,
         batch: BatchId,
         action: BatchAction,
-        style: String,
+        what: Batched,
         named: usize,
         changed: Vec<PathBuf>,
         skipped: Vec<(PathBuf, Skip)>,
@@ -150,11 +166,27 @@ impl Owned {
     }
 }
 
-/// A batch on several photos while it lasts: its id and clock, its style, the photos it has
-/// still to reach, and what it did to those it reached.
+/// What a batch does to each of its photos: a style applied, or a rating set.
+#[derive(Debug, Clone)]
+pub(super) enum Change {
+    Style(Owned),
+    Rate(RatingChange),
+}
+
+impl Change {
+    fn batched(&self) -> Batched {
+        match self {
+            Change::Style(style) => Batched::Style(style.name.clone()),
+            Change::Rate(change) => Batched::Rating(*change),
+        }
+    }
+}
+
+/// A batch on several photos while it lasts: its id and clock, what it does, the photos it
+/// has still to reach, and what it did to those it reached.
 pub(super) struct Pending {
     pub(super) batch: Batch,
-    pub(super) style: Owned,
+    pub(super) change: Change,
     /// What it does to its photos: applies the style, or takes it back or puts it back.
     action: BatchAction,
     /// The number of the command that started it.
@@ -187,6 +219,9 @@ struct Reached {
     /// Set as its job is cancelled: no photo is reached from then on but those whose write
     /// was handed over already.
     cancelled: bool,
+    /// For a rating's batch, each photo it set fields on, with the record that takes them
+    /// back, or puts them back, and the photo's rating it left.
+    rated: Vec<(PathBuf, FieldRecord, Rating)>,
 }
 
 /// How a photo of a batch was reached.
@@ -199,7 +234,7 @@ enum Outcome {
 
 impl Pending {
     fn new(
-        (batch, style, action): (Batch, Owned, BatchAction),
+        (batch, change, action): (Batch, Change, BatchAction),
         command: u64,
         photos: Vec<PathBuf>,
     ) -> Pending {
@@ -211,7 +246,7 @@ impl Pending {
         }
         Pending {
             batch,
-            style,
+            change,
             action,
             command,
             count: to_come.len(),
@@ -259,8 +294,16 @@ impl Pending {
         let Some(from) = self.state().from.take() else {
             return;
         };
-        let changed = from.state().changed.clone();
+        let (changed, rated) = {
+            let from = from.state();
+            (from.changed.clone(), from.rated.clone())
+        };
         let mut state = self.state();
+        for kept in rated {
+            if !state.rated.iter().any(|(photo, ..)| *photo == kept.0) {
+                state.rated.push(kept);
+            }
+        }
         for photo in changed {
             let reached = state.changed.contains(&photo)
                 || state.skipped.iter().any(|(skipped, _)| *skipped == photo);
@@ -268,6 +311,42 @@ impl Pending {
                 state.to_come.push(photo);
             }
         }
+    }
+
+    /// Keeps `record`, a rating's on `photo`, and the rating it left, `rating`, for the
+    /// batch's moves on it, in place of one kept before.
+    fn keep_rated(&self, photo: &Path, record: FieldRecord, rating: Rating) {
+        let mut state = self.state();
+        state.rated.retain(|(kept, ..)| kept != photo);
+        state.rated.push((photo.to_owned(), record, rating));
+    }
+
+    /// The record this rating's batch keeps for `photo` put on its fields, `entries`: each
+    /// field as it was before the batch, or with `redo` as the batch left it, at `clock`,
+    /// where it still holds the value the batch left (decision 110). The record and the
+    /// rating as it left them, which the caller keeps once they are the photo's; none where
+    /// the batch keeps no record of the photo or every field changed since.
+    fn put_rated(
+        &self,
+        photo: &Path,
+        entries: &mut Vec<FieldEntry>,
+        redo: bool,
+        clock: Clock,
+    ) -> Option<(FieldRecord, Rating)> {
+        let mut record = self.rated(photo)?;
+        (record.put(entries, !redo, clock)).then(|| (record, Rating::of(entries)))
+    }
+
+    /// The record a rating's batch keeps for `photo`, if any.
+    fn rated(&self, photo: &Path) -> Option<FieldRecord> {
+        let state = self.state();
+        (state.rated.iter()).find_map(|(kept, record, _)| (kept == photo).then(|| record.clone()))
+    }
+
+    /// The rating a rating's batch left on `photo`, if any.
+    fn rating_of(&self, photo: &Path) -> Option<Rating> {
+        let state = self.state();
+        (state.rated.iter()).find_map(|(kept, _, rating)| (kept == photo).then_some(*rating))
     }
 
     /// Records `photo` reached, `outcome` how, once: whether it was still to come.
@@ -298,7 +377,7 @@ impl Pending {
             command: self.command,
             batch: self.batch.id,
             action: self.action,
-            style: self.style.name.clone(),
+            what: self.change.batched(),
             named: self.count,
             changed: state.changed.clone(),
             skipped: state.skipped.clone(),
@@ -347,14 +426,15 @@ const OPENING_WAIT: Duration = Duration::from_millis(20);
 const TRIES: usize = 3;
 
 impl Engine {
-    /// [`Command::ApplyStyle`] naming `photos`, the command numbered [`Self::applied`]: one
-    /// batch drawn, its clock the wall clock now; the active photo, where named, changed at
-    /// once, a refusal skipping it rather than the command; the others by one
-    /// `apply-style` job; the batch's `Ended` now where there is no job. Refused whole while
-    /// the active photo opens, as any command on the edit; a gesture under way ends first.
-    pub(super) fn apply_style_to(
+    /// [`Command::ApplyStyle`] or [`Command::Rate`] naming `photos`, `change` what it does,
+    /// the command numbered [`Self::applied`]: one batch drawn, its clock the wall clock now;
+    /// the active photo, where named, changed at once, a refusal skipping it rather than the
+    /// command; the others by one `apply-style` or `rate` job; the batch's `Ended` now where
+    /// there is no job. Refused whole while the active photo opens, as any command on the
+    /// edit; a gesture under way ends first.
+    pub(super) fn batch_to(
         &mut self,
-        style: Owned,
+        change: Change,
         photos: Vec<PathBuf>,
         events: &mut Vec<Event>,
     ) -> Result<Effect, SessionError> {
@@ -369,7 +449,7 @@ impl Engine {
             id,
             wall: wall_clock(),
         };
-        let what = (batch, style, BatchAction::Applied);
+        let what = (batch, change, BatchAction::Applied);
         let pending = Arc::new(Pending::new(what, self.applied, photos));
         // Remembered for its Undo across photos, the latest kept.
         if self.remembered.len() == REMEMBERED {
@@ -427,9 +507,24 @@ impl Engine {
     }
 
     /// The batch `pending` applied to the open photo, `photo`, as the active photo's change
-    /// is, and recorded: left as it is where its log holds the batch already, skipped and
-    /// named where it is open for viewing only or refuses a value of the style.
+    /// is, and recorded.
     fn reach(&mut self, pending: &Arc<Pending>, photo: &Path, events: &mut Vec<Event>) -> Effect {
+        match &pending.change {
+            Change::Style(style) => self.reach_style(pending, style, photo, events),
+            Change::Rate(change) => self.reach_rating(pending, *change, photo, events),
+        }
+    }
+
+    /// The style `style` of the batch `pending` applied to the open photo, `photo`: left as
+    /// it is where its log holds the batch already, skipped and named where it is open for
+    /// viewing only or refuses a value of the style.
+    fn reach_style(
+        &mut self,
+        pending: &Arc<Pending>,
+        style: &Owned,
+        photo: &Path,
+        events: &mut Vec<Event>,
+    ) -> Effect {
         let holds = (self.open.as_ref()).is_some_and(|open| {
             let steps = open.history.log().steps();
             steps
@@ -448,7 +543,7 @@ impl Engine {
             return Effect::default();
         }
         self.batching = Some(pending.batch);
-        let applied = self.apply_edit(pending.style.command(), Instant::now());
+        let applied = self.apply_edit(style.command(), Instant::now());
         self.batching = None;
         let (outcome, effect) = match applied {
             Ok(effect) => {
@@ -478,12 +573,71 @@ impl Engine {
                 photo: photo.to_owned(),
                 edit: library::EditState::Edited,
             }));
-            for tool in Owned::changes(pending.style.mode, &pending.style.tools) {
+            for tool in Owned::changes(style.mode, &style.tools) {
                 self.picker_tool_changed(tool.as_deref(), events);
             }
         }
         pending.reach(photo, outcome);
         effect
+    }
+
+    /// The rating `change` of the batch `pending` set on the open photo, `photo`, as
+    /// [`Command::Rate`] sets it, its record in the batch, which keeps a copy for the
+    /// photo's moves once it has closed: left as it is where it holds the batch's record
+    /// already, skipped and named where it is open for viewing only.
+    fn reach_rating(
+        &mut self,
+        pending: &Arc<Pending>,
+        change: RatingChange,
+        photo: &Path,
+        events: &mut Vec<Event>,
+    ) -> Effect {
+        let id = pending.batch.id;
+        let holds =
+            (self.open.as_ref()).is_some_and(|open| open.history.field_record(id).is_some());
+        if !holds {
+            self.batching = Some(pending.batch);
+            let rated = self.rate(change, Instant::now());
+            self.batching = None;
+            let skipped = match rated {
+                Ok(true) => None,
+                Ok(false) => Some(Outcome::Unchanged),
+                Err(SessionError::ViewOnly(view_only)) => {
+                    Some(Outcome::Skipped(Skip::ViewOnly(view_only)))
+                }
+                Err(error) => Some(Outcome::Skipped(Skip::Refused(error.to_string()))),
+            };
+            if let Some(outcome) = skipped {
+                pending.reach(photo, outcome);
+                return Effect::default();
+            }
+        }
+        if !self.keep_open_record(pending, photo) {
+            return Effect::default();
+        }
+        if pending.reach(photo, Outcome::Changed) {
+            events.push(self.moved_event(pending, photo));
+        }
+        Effect {
+            save: true,
+            ..Effect::default()
+        }
+    }
+
+    /// Keeps the open photo's record of `pending`'s batch, as its reach or its own Undo or
+    /// Redo left it, and its rating, for the batch's moves on it, `photo`, once it has
+    /// closed: whether it holds one.
+    fn keep_open_record(&self, pending: &Pending, photo: &Path) -> bool {
+        let open = self.open.as_ref();
+        let held = open.and_then(|open| {
+            let record = open.history.field_record(pending.batch.id)?;
+            Some((record, open.rating()))
+        });
+        let Some((record, rating)) = held else {
+            return false;
+        };
+        pending.keep_rated(photo, record, rating);
+        true
     }
 
     /// The job `job` cancelled: the batch it runs, if any, reaches no more photos.
@@ -682,23 +836,35 @@ impl Engine {
         // The photos it reached so far; a running job's are read again as this one's job
         // starts, after it.
         let photos = source.state().changed.clone();
-        let what = (pending.batch, pending.style.clone(), action);
+        let what = (pending.batch, pending.change.clone(), action);
         let mut moving = Pending::new(what, self.applied, photos);
         moving.count = pending.count;
+        // A rating's records, which it moves, those a running job keeps adding read again
+        // as it starts.
+        moving.state().rated = source.state().rated.clone();
         moving.state().from = Some(source);
         let moving = Arc::new(moving);
         pending.state().latest = Some(Arc::clone(&moving));
+        // A rating's photo its own move did not move, opened since in a session of its own
+        // or changed since in its edit: left to the job, whose route reaches it live from the
+        // record the batch kept.
+        let rating = matches!(pending.change, Change::Rate(_));
         if let Some((active, moved)) = active
             && let Some(photo) = moving.to_come(active)
         {
             let view_only = self.open.as_ref().and_then(|open| open.view_only.clone());
             let outcome = match (moved, view_only) {
-                (true, _) => Outcome::Changed,
-                (false, Some(view_only)) => Outcome::Skipped(Skip::ViewOnly(view_only)),
-                (false, None) => Outcome::Skipped(Skip::ChangedSince),
+                (true, _) => Some(Outcome::Changed),
+                (false, Some(view_only)) => Some(Outcome::Skipped(Skip::ViewOnly(view_only))),
+                (false, None) if rating => None,
+                (false, None) => Some(Outcome::Skipped(Skip::ChangedSince)),
             };
-            moving.reach(&photo, outcome);
+            if let Some(outcome) = outcome {
+                moving.reach(&photo, outcome);
+            }
             if moved {
+                // A rating's record as the photo's own Undo or Redo left it.
+                self.keep_open_record(&moving, &photo);
                 events.push(self.moved_event(&moving, &photo));
             }
         }
@@ -735,7 +901,11 @@ impl Engine {
         let batch = pending.batch.id;
         // A change not yet a step, a gesture's among them, is a later change: made one first.
         self.step_pending();
-        if !(self.open.as_ref()).is_some_and(|open| open.history.moves_batch(batch, redo)) {
+        let moves = (self.open.as_ref()).is_some_and(|open| open.history.moves_batch(batch, redo));
+        if !moves && matches!(pending.change, Change::Rate(_)) {
+            return self.put_rated_live(pending, photo, redo, events);
+        }
+        if !moves {
             pending.reach(photo, Outcome::Skipped(Skip::ChangedSince));
             return Effect::default();
         }
@@ -745,6 +915,8 @@ impl Engine {
         };
         match self.apply_edit(command, Instant::now()) {
             Ok(effect) => {
+                // A rating's record as the move left it, for the batch's next move.
+                self.keep_open_record(pending, photo);
                 pending.reach(photo, Outcome::Changed);
                 events.push(self.moved_event(pending, photo));
                 effect
@@ -756,12 +928,50 @@ impl Engine {
         }
     }
 
+    /// A rating's batch `pending` taken back, or put back where `redo`, on the open photo,
+    /// `photo`, whose own Undo or Redo would not move it, opened since in a session of its
+    /// own or changed since in its edit: from the record the batch kept, as its job does for
+    /// a photo not open ([`Pending::put_rated`]); skipped and named as changed since, or as
+    /// open for viewing only.
+    fn put_rated_live(
+        &mut self,
+        pending: &Arc<Pending>,
+        photo: &Path,
+        redo: bool,
+        events: &mut Vec<Event>,
+    ) -> Effect {
+        let Some(open) = &mut self.open else {
+            return Effect::default();
+        };
+        if let Some(view_only) = &open.view_only {
+            pending.reach(photo, Outcome::Skipped(Skip::ViewOnly(view_only.clone())));
+            return Effect::default();
+        }
+        let clock = open.history.stamp();
+        let entries = fields::first_mut(&mut open.file);
+        let Some((record, rating)) = pending.put_rated(photo, entries, redo, clock) else {
+            pending.reach(photo, Outcome::Skipped(Skip::ChangedSince));
+            return Effect::default();
+        };
+        pending.keep_rated(photo, record, rating);
+        open.fields_unsaved = true;
+        open.unsaved = true;
+        pending.reach(photo, Outcome::Changed);
+        events.push(self.moved_event(pending, photo));
+        Effect {
+            save: true,
+            ..Effect::default()
+        }
+    }
+
     /// The batches' photos the job workers handed the engine thread since, each routed:
     /// open and live, the batch applied there; opening, told so; any other, handed to the
     /// writer over the file as read. What the live photo's change says.
     pub(super) fn take_routes(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
-        let mut changed = false;
+        let (mut changed, mut render) = (false, false);
+        // The open photo's rating before, which a rating's batch reaching it live changes.
+        let rating = self.open_rating();
         for route in std::mem::take(&mut self.routes) {
             let sidecar = sidecar::path_for(&route.photo);
             let opening =
@@ -775,6 +985,7 @@ impl Engine {
             } else if live {
                 let effect = self.reach_live(&route.pending, &route.photo, &mut events);
                 changed |= effect.render || effect.save;
+                render |= effect.render;
                 Routed::Live
             } else {
                 Routed::Handed(self.writer.write_over(sidecar, route.xml, route.read))
@@ -782,9 +993,11 @@ impl Engine {
             // A job that has gone hears nothing.
             let _ = route.answer.send(routed);
         }
+        // A rating's route saves and tells; only a style's renders.
         if changed {
-            self.edited_events(&mut events, true, false);
+            self.edited_events(&mut events, render, false);
         }
+        events.extend(self.rating_events(rating));
         events
     }
 }
@@ -808,19 +1021,48 @@ struct Run {
 fn job(run: Run) -> Job {
     let pending = &run.pending;
     let total = pending.state().to_come.len() as u64;
-    let (kind, message) = match pending.action {
-        BatchAction::Applied => ("apply-style", "job-apply-style"),
-        BatchAction::TakenBack => ("undo-batch", "job-undo-batch"),
-        BatchAction::PutBack => ("undo-batch", "job-redo-batch"),
+    let (kind, message, _) = words(pending);
+    let title = named(Message::new(message), pending).with("count", pending.count as u64);
+    let description = match &pending.change {
+        Change::Style(style) => format!("{kind} {}", style.name),
+        Change::Rate(change) => format!("{kind} {change:?}"),
     };
-    let title = Message::new(message)
-        .with("style", pending.style.name.as_str())
-        .with("count", pending.count as u64);
-    let description = format!("{kind} {}", pending.style.name);
     Job::new(kind, description, move |context| body(&run, context))
         .progress(title, true)
         .total(total)
         .quiet()
+}
+
+/// A batch job's kind and the messages of its title and its outcome, by what its batch
+/// does and how: `apply-style` or `rate`, or `undo-batch` taking either back or putting it
+/// back.
+fn words(pending: &Pending) -> (&'static str, &'static str, &'static str) {
+    match (&pending.change, pending.action) {
+        (Change::Style(_), BatchAction::Applied) => {
+            ("apply-style", "job-apply-style", "job-apply-style-outcome")
+        }
+        (Change::Style(_), BatchAction::TakenBack) => {
+            ("undo-batch", "job-undo-batch", "job-undo-batch-outcome")
+        }
+        (Change::Style(_), BatchAction::PutBack) => {
+            ("undo-batch", "job-redo-batch", "job-redo-batch-outcome")
+        }
+        (Change::Rate(_), BatchAction::Applied) => ("rate", "job-rate", "job-rate-outcome"),
+        (Change::Rate(_), BatchAction::TakenBack) => {
+            ("undo-batch", "job-undo-rate", "job-undo-rate-outcome")
+        }
+        (Change::Rate(_), BatchAction::PutBack) => {
+            ("undo-batch", "job-redo-rate", "job-redo-rate-outcome")
+        }
+    }
+}
+
+/// `message` naming the style a batch applies; a rating's words name none.
+fn named(message: Message, pending: &Pending) -> Message {
+    match &pending.change {
+        Change::Style(style) => message.with("style", style.name.as_str()),
+        Change::Rate(_) => message,
+    }
 }
 
 /// The job's body: each photo still to come reached in order until it is cancelled, then
@@ -871,19 +1113,21 @@ fn body(run: &Run, context: &Context<'_>) -> Result<(), Failure> {
                 photo: photo.clone(),
                 edit: library::sidecar_state(&sidecar::path_for(photo)),
             }));
+            // A rating's photo, whose cell follows it (decision 110).
+            if let Some(rating) = pending.rating_of(photo) {
+                run.outbox.send(Event::Rated {
+                    photo: photo.clone(),
+                    rating,
+                });
+            }
         }
     }
     let cancelled = context.cancelled();
     let ended = pending.end(cancelled);
     let changed = pending.state().changed.len() as u64;
-    let outcome = match pending.action {
-        BatchAction::Applied => "job-apply-style-outcome",
-        BatchAction::TakenBack => "job-undo-batch-outcome",
-        BatchAction::PutBack => "job-redo-batch-outcome",
-    };
+    let (.., outcome) = words(pending);
     context.set_outcome(
-        Message::new(outcome)
-            .with("style", pending.style.name.as_str())
+        named(Message::new(outcome), pending)
             .with("changed", changed)
             .with("count", pending.count as u64),
     );
@@ -900,7 +1144,9 @@ fn body(run: &Run, context: &Context<'_>) -> Result<(), Failure> {
 type Read = (Edits, Log, Vec<Clock>, Option<sidecar::FileStamp>);
 
 /// A photo's sidecar read through the edit writer after the writes handed over before, or
-/// why it is skipped: unreadable, or open for viewing only.
+/// why it is skipped: unreadable, or open for viewing only. A photo with none has the
+/// fields of darktable's `.xmp` beside it, if any, which its first write copies in
+/// (decision 51).
 fn read(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Result<Read, Skip>, Interrupted> {
     let path = sidecar::path_for(photo);
     let snapshot = context.wait(&run.reads.read(vec![path]))?.pop();
@@ -910,7 +1156,13 @@ fn read(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Result<Read, S
     let (modified, stamp) = (snapshot.changed(), snapshot.file_stamp());
     Ok(match snapshot.xml() {
         Err(error) => Err(Skip::Unreadable(error.to_string())),
-        Ok(None) => Ok((Edits::new(""), Log::default(), Vec::new(), stamp)),
+        Ok(None) => {
+            let mut file = Edits::new("");
+            if let Ok(Some(darktable)) = apertrust_library::darktable::read_fields(photo) {
+                *fields::first_mut(&mut file) = darktable.fields;
+            }
+            Ok((file, Log::default(), Vec::new(), stamp))
+        }
         Ok(Some(xml)) => {
             let (operations, tools) = (run.operations, &run.tools[..]);
             match sidecar::from_xml_at(&xml, modified, operations, tools, run.retired) {
@@ -992,24 +1244,25 @@ fn hand_over(
 
 /// One photo `change` makes a change of, read and handed over, read again where its file
 /// changed since, twice more, then named as changing; `None` where the engine thread
-/// reached it live. `change` gives the log and vector to write, or why it is left: as it
-/// is, or skipped.
+/// reached it live. `change` gives the log and vector to write, the file's fields set where
+/// it sets any, or why it is left: as it is, or skipped.
 fn change_photo(
     run: &Run,
     context: &Context<'_>,
     photo: &Path,
-    change: impl Fn(Log, Vec<Clock>) -> Result<(Log, Vec<Clock>), Outcome>,
+    change: impl Fn(&mut Edits, Log, Vec<Clock>) -> Result<(Log, Vec<Clock>), Outcome>,
 ) -> Result<Option<Outcome>, Interrupted> {
     let mut tries = 0;
     while tries < TRIES {
-        let (file, log, clocks, stamp) = match read(run, context, photo)? {
+        let (mut file, log, clocks, stamp) = match read(run, context, photo)? {
             Ok(read) => read,
             Err(skip) => return Ok(Some(Outcome::Skipped(skip))),
         };
-        let (log, clocks) = match change(log, clocks) {
+        let (log, clocks) = match change(&mut file, log, clocks) {
             Ok(changed) => changed,
             Err(outcome) => return Ok(Some(outcome)),
         };
+        let (log, clocks) = stamp_copied(&mut file, (log, clocks));
         match hand_over(run, context, photo, (file, log, clocks), stamp)? {
             Handed::Live => return Ok(None),
             Handed::Again => {}
@@ -1021,8 +1274,9 @@ fn change_photo(
     Ok(Some(Outcome::Skipped(Skip::KeptChanging)))
 }
 
-/// One photo of the batch to apply, not live as the job began it: on the disk, its
-/// metadata's image context, then the style applied to its log ([`change_photo`]).
+/// One photo of the batch to apply, not live as the job began it: on the disk, then its
+/// metadata's image context and the style applied to its log, or a rating set with no raw
+/// read ([`rate`]) ([`change_photo`]).
 fn reach(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Option<Outcome>, Interrupted> {
     let skipped = |skip| Ok(Some(Outcome::Skipped(skip)));
     match std::fs::metadata(photo) {
@@ -1030,13 +1284,17 @@ fn reach(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Option<Outcom
         Ok(_) => {}
         Err(error) => return skipped(Skip::Unreadable(error.to_string())),
     }
+    let pending = &run.pending;
+    let style = match &pending.change {
+        Change::Style(style) => style,
+        Change::Rate(change) => return rate(run, context, photo, *change),
+    };
     let image = match (run.load)(photo).and_then(|file| file.metadata()) {
         Ok(metadata) => metadata.image,
         Err(error) => return skipped(Skip::Unreadable(error.to_string())),
     };
-    let pending = &run.pending;
-    change_photo(run, context, photo, |log, clocks| {
-        let style = pending.style.style();
+    change_photo(run, context, photo, |_, log, clocks| {
+        let style = style.style();
         match style_log(
             (log, clocks),
             &run.defaults,
@@ -1051,18 +1309,96 @@ fn reach(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Option<Outcom
     })
 }
 
+/// The fields `file` was read with from darktable's `.xmp`, which have no clock yet, given
+/// one of their own as they are first written, the copy's vector advanced with it
+/// (decision 51): `log` and its vector as they are to be written.
+fn stamp_copied(file: &mut Edits, (log, clocks): (Log, Vec<Clock>)) -> (Log, Vec<Clock>) {
+    let copied = (file.copies.first()).is_some_and(|copy| {
+        let unstamped = |entry: &apertrust_library::fields::FieldEntry| entry.clock.is_none();
+        copy.fields.iter().any(unstamped)
+    });
+    if !copied {
+        return (log, clocks);
+    }
+    let mut history = PhotoHistory::read_at(log, clocks, &[], wall_clock());
+    fields::stamp_darktable(file, || history.stamp());
+    history.into_log()
+}
+
+/// The rating `change` set on one photo of its batch, its log left as it is (decision 110):
+/// each field the change sets taking a clock of the batch's after the photo's latest, and
+/// its record kept with the batch ([`change_photo`]).
+fn rate(
+    run: &Run,
+    context: &Context<'_>,
+    photo: &Path,
+    change: RatingChange,
+) -> Result<Option<Outcome>, Interrupted> {
+    let pending = &run.pending;
+    // The record kept once its write lands: where the photo is reached live instead, the
+    // engine thread keeps the live photo's.
+    let rated = std::cell::RefCell::new(None);
+    let reached = change_photo(run, context, photo, |file, log, clocks| {
+        let mut history = PhotoHistory::read_at(log, clocks, &[], pending.batch.wall);
+        let clock = history.stamp();
+        let changes = change.apply(fields::first_mut(file), clock);
+        if changes.is_empty() {
+            return Err(Outcome::Unchanged);
+        }
+        let record = FieldRecord::new(change, changes, clock, Some(pending.batch.id));
+        *rated.borrow_mut() = Some((record, Rating::of(fields::first_mut(file))));
+        Ok(history.into_log())
+    })?;
+    if let (Some(Outcome::Changed), Some((record, rating))) = (&reached, rated.into_inner()) {
+        pending.keep_rated(photo, record, rating);
+    }
+    Ok(reached)
+}
+
 /// One photo of the batch to take back, or put back where `redo`, by its end's move
-/// ([`moved_log`]): no raw read.
+/// ([`moved_log`]), or a rating's by its record ([`moved_rating`]): no raw read.
 fn moved(
     run: &Run,
     context: &Context<'_>,
     photo: &Path,
     redo: bool,
 ) -> Result<Option<Outcome>, Interrupted> {
+    if let Change::Rate(_) = run.pending.change {
+        return moved_rating(run, context, photo, redo);
+    }
     let batch = run.pending.batch.id;
-    change_photo(run, context, photo, |log, clocks| {
+    change_photo(run, context, photo, |_, log, clocks| {
         moved_log((log, clocks), batch, redo).map_err(Outcome::Skipped)
     })
+}
+
+/// One photo of a rating's batch to take back, or put back where `redo`: each field the
+/// batch's record set put as it was before the batch, or as the batch left it, at a clock of
+/// its own, but where it changed since (decision 110); [`Skip::ChangedSince`] where every
+/// one did, or where the batch keeps no record of the photo.
+fn moved_rating(
+    run: &Run,
+    context: &Context<'_>,
+    photo: &Path,
+    redo: bool,
+) -> Result<Option<Outcome>, Interrupted> {
+    let pending = &run.pending;
+    // The record as this put leaves it, kept once its write lands: where the photo is open
+    // the engine thread puts it there instead, from the record as it was.
+    let put = std::cell::RefCell::new(None);
+    let reached = change_photo(run, context, photo, |file, log, clocks| {
+        let mut history = PhotoHistory::read_at(log, clocks, &[], wall_clock());
+        let clock = history.stamp();
+        let Some(kept) = pending.put_rated(photo, fields::first_mut(file), redo, clock) else {
+            return Err(Outcome::Skipped(Skip::ChangedSince));
+        };
+        *put.borrow_mut() = Some(kept);
+        Ok(history.into_log())
+    })?;
+    if let (Some(Outcome::Changed), Some((record, rating))) = (&reached, put.into_inner()) {
+        pending.keep_rated(photo, record, rating);
+    }
+    Ok(reached)
 }
 
 /// A photo's log, as its sidecar holds it, with its end moved back over the batch `batch`,

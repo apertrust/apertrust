@@ -238,9 +238,9 @@ impl ActionId {
     pub const CURSOR_SELECT: ActionId = ActionId("cursor-select");
     pub const CURSOR_PAN: ActionId = ActionId("cursor-pan");
     pub const NEXT_PHOTO: ActionId = ActionId("next-photo");
-    /// The rating's global actions (decision 110), owned by no tool, on the active photo
-    /// until the batch (decision 109): no stars to five, the reject, each colour label,
-    /// red to purple, and Clear Labels (`rating`).
+    /// The rating's global actions (decision 110), owned by no tool, on every selected photo
+    /// as one batch (decision 109): no stars to five, the reject, each colour label, red to
+    /// purple, and Clear Labels (`rating`).
     pub const RATING: [ActionId; 6] = [
         ActionId("rating-0"),
         ActionId("rating-1"),
@@ -1052,7 +1052,8 @@ fn on_main_window(state: &State) -> bool {
 }
 
 /// Whether the rating's actions can run: a photo is open that takes a rating, not for
-/// viewing only, on the main window, with no modal dialog over it (decision 110).
+/// viewing only unless several are selected (`Mirror::rateable`), on the main window, with
+/// no modal dialog over it (decision 110).
 fn rateable(state: &State) -> bool {
     state.rating.is_some() && on_main_window(state) && !state.modal
 }
@@ -3994,12 +3995,12 @@ pub(crate) mod tests {
         }
     }
 
-    #[test]
     /// Each workspace has its action, `workspace-<id>` (decision 96): the built-in ones
     /// always, Default then darktable, named by their messages; a person's own made once,
     /// the first time it is asked for, as the app asks as it starts. None has a default key;
     /// each chooses its workspace, checked while it is the one shown, on the main window
     /// with no modal dialog over it.
+    #[test]
     fn each_workspace_has_its_action_made_once() {
         let made: Vec<&str> = workspace_actions().iter().map(|a| a.id.0).collect();
         assert_eq!(made[..2], ["workspace-default", "workspace-essentials"]);
