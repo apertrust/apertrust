@@ -565,6 +565,28 @@ fn rows_shown_hides_a_row_and_a_group_with_none_shown() {
     );
 }
 
+/// Show on Map sits one button high under the GPS facts, whatever room is left below it.
+#[test]
+fn show_on_map_takes_one_line_under_the_gps_facts() {
+    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, "GPS").click();
+    harness.run();
+    let last = harness
+        .query_all_by_role(Role::ListItem)
+        .filter(|node| {
+            node.accesskit_node()
+                .label()
+                .is_some_and(|l| l.starts_with("Altitude:"))
+        })
+        .map(|node| node.rect())
+        .next()
+        .expect("Altitude is shown");
+    let map = harness.get_by_label("Show on Map").rect();
+    let control = theme(&harness.ctx).sizes.control;
+    assert!(map.top() - last.bottom() < control, "{last:?} then {map:?}");
+}
+
 #[test]
 fn closing_a_group_writes_the_groups_open() {
     let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
