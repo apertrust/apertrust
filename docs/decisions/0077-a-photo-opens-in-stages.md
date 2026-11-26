@@ -19,9 +19,16 @@ Principle 2 constrains the picture: what is not the engine's render of the edit 
 
 | Stage | When | Viewer | Tools panel | Events |
 | --- | --- | --- | --- | --- |
-| 1. The picture | The click's frame, then within tens of milliseconds | The best picture in hand, its own shape fitted to the room, unmarked | Every tool at its defaults, drawn disabled, as now | `OpenPreview` |
-| 2. The values | Milliseconds after the `Open` | The same picture, in the place the live frame will cover | The photo's values from its sidecar, drawn disabled | `Opened`, `Values { live: false }` |
+| 1. The picture | The click's frame, then within tens of milliseconds | The best picture in hand, its own shape fitted to the room, unmarked | The photo left's values, drawn as they were and taking no input until 150 ms after the switch, then drawn disabled; with no photo shown before, every tool at its defaults, drawn disabled | `OpenPreview` |
+| 2. The values | Milliseconds after the `Open` | The same picture, in the place the live frame will cover | The photo's values from its sidecar, drawn as live and taking no input until 150 ms after a switch from a live photo, then drawn disabled | `Opened`, `Values { live: false }` |
 | 3. Live | Once the raw is decoded, uploaded and rendered | The live frame, in one swap, the picture fading out over it in 120 ms unless the system asks for reduced motion; then scopes | The values, enabled | `Values { live: true }`, then `Frame` |
+
+**The photo left stays in the Tools panel until the next photo's values come,** so a switch goes from one photo's values to the next's with no frame of defaults between, the opening state showing only where the opening is slow:
+
+- **For 150 ms from a switch away from a live photo** (`HELD_PLAIN`, counted from the first switch while it lasts), the values shown, the photo left's and then the next photo's before it is live, are drawn as a live photo's, enabled to the eye and to screen readers, with no tooltip of the opening and nothing new announced, but they take no input: no processing tool's section takes a press, a drag or a hover, and a control there with the keyboard's focus loses it. A next photo live within that time changes nothing in the panel but its values.
+- **From 150 ms on,** until the photo is live, they are drawn disabled with the tooltip "Opening IMG_2041…", as a photo opening is drawn.
+- **Nothing of them reaches the next photo:** the changes pending, the colour picker and the scopes reading go as the open is sent, every command on the edit is dropped, and History's eye on a step rests. History, the applied styles and the photo's facts stay the photo left's with them; the Styles tool and the Metadata tool's rating row keep their look for the 150 ms, a choice made meanwhile running only as the photo takes it.
+- **The next photo's `Opened`** takes its history and facts; its values, which may come in a later drain, replace the photo left's. An open that fails, or whose values have not come 1 second after the first switch while they are held, as long as the viewer bar waits before "Rendering…", ends with every tool at its defaults, drawn disabled.
 
 **The session's side.** `Open(path)` saves and closes the photo before it, cancels the earlier open's job, and adds a job of kind `open` on `SystemForeground`, with no progress, so it is never shown ([0057](0057-jobs-as-darktables-control-jobs.md)). Its body, on a job worker:
 
@@ -67,7 +74,7 @@ Refused, not queued:
 - **The session fetches it,** not the app through the library's `Thumbnails`. So it comes with no folder open (one photo from a terminal), to every client, at the panel's size, and with the open's number. The cache is the handle the binary hands the session ([0076](0076-the-cache-kinds-limits-and-control.md)) and the raw is the file the `Open` names, so the engine opens no folder by itself ([0043](0043-settings-and-apertrusts-folders.md)).
 - **No mark.** The picture is shown scaled to the place the photo takes, the place the live frame covers once the photo's values have come, with no mark, badge or words over it. Until the live frame there is no scopes graph, no clipping overlay, no value under the cursor, no zoom past fit and no on-photo control, and the swap to the live frame is one swap.
 - **Two quiet hints instead:**
-  - while the photo is not live, the disabled controls' tooltip says why, "Opening IMG_2041…", a message id with the file's name;
+  - while the photo is not live, the disabled controls' tooltip says why, "Opening IMG_2041…", a message id with the file's name, from 150 ms after a switch where the photo left's controls are drawn;
   - only if the photo is still not live about 1 second after the click (a slow share, lavapipe or WARP), the viewer bar shows a quiet "Rendering…" beside its other contents, never over the photo, gone when the live frame arrives. A fast open shows nothing.
 
 **Switching quickly**, as with the arrow keys through a folder:
@@ -116,6 +123,8 @@ Refused, not queued:
 - **A `Live` notice at stage 3** in place of `Values::live`: whether the controls take a change is state, which a notice neither resends to a client joining late nor keeps when a remote queue coalesces.
 - **Edits queued until live:** `through` no longer counts what a report includes, or a newer `Open` waits; above.
 - **Edits accepted at stage 2** against the metadata's image context and rendered once live: each change would be made against a picture that does not show it.
+- **The Tools panel at its defaults from the click until the next photo's values:** every switch blinks, the controls going to their defaults for a few frames and back.
+- **The photo left's controls drawn disabled from the click:** the panel dims and comes back on every switch, though most switches bring the next values within 150 ms.
 - **A preview mark on the opening photo and on stills:** the swap is usually under a second, a mark that flashes draws the eye to the one moment best not noticed, and a thumbnail is understood to be approximate.
 - **The app fetching the picture** through the library's `Thumbnails`: nothing with no folder open, no other client gets it, it is capped at the grid's sizes, and it reads the raw beside the open.
 - **A low-resolution first render:** above.
@@ -130,6 +139,6 @@ Refused, not queued:
   - `Values::live` and `SessionError::NotLive`;
   - kernels kept across photos.
 - **`Photo`** loses its decode and upload times, and decoding leaves the engine thread for the live photo too ([0017](0017-threads-and-the-engines-session.md)).
-- **The app's mirror** gains the opening states, the viewer bar its "Rendering…" after about 1 second, and the editing tabs the read-only values with their tooltip. The CLI's helpers that edit wait for `Values { live: true }`.
+- **The app's mirror** gains the opening states, the photo left's values held at a switch, the viewer bar its "Rendering…" after about 1 second, and the editing tabs the read-only values with their tooltip. The CLI's helpers that edit wait for `Values { live: true }`.
 - **On Linux,** rawler's `RawSource::new` populates the whole mapping as it is made, so the values wait for the whole file: the measurements say whether a mapping that is not populated is needed upstream. Compiling kernels off the engine thread is an open question ([engine.md](../engine.md#open-questions)).
 - **The roadmap** lists it in Phase 2's folder mode, before the ways in (step 9b). The rendered thumbnail as stage 1's first source waits for step 6's rendered thumbnails; until then the embedded picture comes first.
