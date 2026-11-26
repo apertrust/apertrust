@@ -1319,7 +1319,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 `fs`, with no `unsafe` (decision 53): the library uses it for its sidecar, its listing and its checked copy.
 
-- `fs::write(path, bytes)` replaces a file whole through a hidden temporary beside it (`fs::create`, named `.~NAME.XXXXXX.tmp`, `NAME` cut so the name fits 255 bytes): written, flushed, synced and renamed.
+- `fs::write(path, bytes)` replaces a file whole through a hidden temporary beside it (`fs::create`, named `.~NAME.XXXXXX.tmp`, `NAME` cut so the name fits 255 bytes): written, flushed, synced with `fs::sync` (on macOS `F_FULLFSYNC`, or `fsync` where a share refuses it, as SMB does) and renamed.
 - When the file already holds the bytes, nothing is written and the file is untouched. On an error nothing is left behind and the old file is as it was.
 - On Unix, replacing a regular file preserves its observed read, write and execute permission bits, with the temporary restricted from creation before any data is written. Special mode bits, ownership and ACLs are not copied. New files and replacements of symlinks keep the ordinary umask-filtered creation mode; a symlink's target is untouched.
 - `fs::write_if(path, bytes, still)`: the same, the file replaced only where `still`, asked just before each try of the rename, says it may be, `None` where it says no, nothing replaced and the temporary removed. A caller that compared the file's stamp before the write compares it again there, which narrows another program's window to the rename alone; no portable rename replaces a file only where it is as it was. The edit writer's write over a file as read and `apertrust-cli edit` and `history` use it.

@@ -462,9 +462,8 @@ impl Target {
             path: path.to_owned(),
             source,
         };
-        temp.as_file()
-            .sync_all()
-            .map_err(|source| failed(&self.path(), source))?;
+        // `F_FULLFSYNC` on macOS, or `fsync` where a share refuses it, as its SMB client does.
+        apertrust_base::fs::sync(temp.as_file()).map_err(|source| failed(&self.path(), source))?;
         let replaces = matches!(
             self.on_conflict,
             OnConflict::Overwrite | OnConflict::OverwriteIfChanged

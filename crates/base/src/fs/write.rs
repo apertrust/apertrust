@@ -288,7 +288,8 @@ fn write_with(
     }
     put(temp.as_file_mut(), bytes)?;
     temp.as_file_mut().flush()?;
-    temp.as_file().sync_all()?;
+    // `F_FULLFSYNC` on macOS, or `fsync` where a share refuses it, as its SMB client does.
+    super::sync(temp.as_file())?;
     let file = persist_retrying(temp, path, retry, rename).map_err(|failed| failed.error)?;
     Ok((Written::Replaced, Some(file)))
 }
