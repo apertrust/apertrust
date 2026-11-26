@@ -686,11 +686,14 @@ fn edit(
         Some(Ok(Some(xml))) => xml,
         Some(Ok(None)) | None => {
             identify(&mut read.file);
-            // darktable's rating and labels, while the photo has no `.apxmp` (decision 110),
-            // copied in at its first write.
+            // darktable's rating, labels, metadata fields and version name, while the photo
+            // has no `.apxmp` (decision 110), copied in at its first write.
             match apertrust_library::darktable::read_fields(&run.path) {
-                Ok(Some(darktable)) if !darktable.fields.is_empty() => {
-                    *super::fields::first_mut(&mut read.file) = darktable.fields;
+                Ok(Some(darktable))
+                    if !darktable.fields.is_empty() || !darktable.name.is_empty() =>
+                {
+                    let copy = super::fields::copy_mut(&mut read.file);
+                    (copy.fields, copy.name) = (darktable.fields, darktable.name);
                 }
                 Ok(_) => {}
                 Err(error) => {

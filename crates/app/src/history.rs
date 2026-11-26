@@ -2374,6 +2374,10 @@ fn named(
         Move::Compress => Some(tr.text("history-compress")),
         Move::Truncate => Some(tr.text("history-truncate")),
         Move::DiscardHistory => Some(tr.text("history-discard")),
+        // A change of the Metadata tool's fields or the copy's name, never a step
+        // (decision 110).
+        Move::Metadata { .. } => Some(tr.text("history-metadata")),
+        Move::CopyName => Some(tr.text("history-copy-name")),
         // A rating's change, never a step: its action's name (decision 110).
         Move::Field { change, photos } => {
             let named = crate::rating::undo_words(change, tr);

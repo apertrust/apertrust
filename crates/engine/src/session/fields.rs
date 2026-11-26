@@ -15,42 +15,97 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The open photo's fields, its values beside the edit (decision 110, `docs/history.md`,
-//! Behaviour): its rating, reject and colour labels, set by [`Command::Rate`], each the
-//! photo's current value with its clock in its first copy's `apertrust:fields`, never a
-//! step of its history.
+//! Behaviour): its rating, reject and colour labels, set by [`Command::Rate`], the Metadata
+//! tool's fields, set by [`Command::SetMetadata`], and the copy's name, set by
+//! [`Command::RenameCopy`], each the photo's current value with its clock in its first
+//! copy, the one open, never a step of its history.
 //!
 //! A change is an undo record of the session's ([`FieldRecord`]), which Undo takes back and
 //! Redo puts back in the order changes were made, the edit's and the fields' alike, a quick
-//! repeat of one key merged into it; Reset, Compress, Truncate and Discard History leave the
-//! fields as they are. The write leaves the log as the file holds it, so a photo only rated
-//! is given none of its default steps and stays unedited; the rendered thumbnail's version
-//! hashes the edit alone ([`apertrust_library::ops::edit_hash`]). darktable's values, read
-//! from its `.xmp` as a photo with no `.apxmp` opens, are copied into the file at its first
-//! write, with that write's clock. A newer file taken in has its fields joined with the
-//! session's, the later clock winning each ([`library_fields::join`]).
+//! repeat of one key, or a commit of the same field again, merged into it; Reset, Compress,
+//! Truncate and Discard History leave the fields as they are. The write leaves the log as
+//! the file holds it, so a photo only rated or titled is given none of its default steps and
+//! stays unedited; the rendered thumbnail's version hashes the edit alone
+//! ([`apertrust_library::ops::edit_hash`]). darktable's values, read from its `.xmp` as a
+//! photo with no `.apxmp` opens, its version name the copy's, are copied into the file at
+//! its first write, with that write's clock. A newer file taken in has its fields and name
+//! joined with the session's, the later clock winning each ([`library_fields::join`]).
+//! [`Event::Metadata`] tells the open copy's fields, its name and place as a fact.
 //!
-//! A command naming other photos is a batch on several photos (decision 109, `batch`),
-//! which reaches the active photo here, its record carrying the batch.
+//! A rating naming other photos is a batch on several photos (decision 109, `batch`), which
+//! reaches the active photo here, its record carrying the batch.
 //!
 //! [`Command::Rate`]: super::Command::Rate
+//! [`Command::SetMetadata`]: super::Command::SetMetadata
+//! [`Command::RenameCopy`]: super::Command::RenameCopy
 
 use std::path::PathBuf;
 use std::time::Instant;
 
 use apertrust_library::clock::Clock;
-use apertrust_library::fields::{self as library_fields, FieldChange, FieldEntry, Rating};
+use apertrust_library::fields::{
+    self as library_fields, COPY_NAME, FieldChange, FieldEntry, FieldValue, Rating,
+};
 use apertrust_library::sidecar::{Edits, FIRST_COPY, VirtualCopy};
 
-use super::{Engine, Event, Open, RatingChange, RatingState, SessionError};
-use crate::history::BatchId;
+use super::{
+    CopyState, Engine, Event, MetadataState, Open, RatingChange, RatingState, SessionError,
+};
+use crate::history::{BatchId, Move};
 
-/// One change of a photo's fields, an undo record of the session's: the change, the last
-/// where quick repeats merged, each field it set with the clock that set it, and the batch
-/// on several photos it is part of, if any (decision 109), which a batch keeps for each of
-/// its photos.
+/// The namespace of `xmpMM:PreservedFileName`, which an import that renames a photo keeps
+/// its camera name in (decision 85).
+const MEDIA_MANAGEMENT: &str = "http://ns.adobe.com/xap/1.0/mm/";
+
+/// What a [`FieldRecord`] changed, which tells which records merge and how Undo names it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Changed {
+    /// The rating, as the change last given.
+    Rating(RatingChange),
+    /// The Metadata tool's fields, by their properties, as the command named them.
+    Metadata(Vec<&'static str>),
+    /// The copy's name.
+    Name,
+}
+
+impl Changed {
+    /// Whether a change of `later` right after `self` merges into it: a rating of the same
+    /// kind, the same fields, or the name again.
+    fn merges(&self, later: &Changed) -> bool {
+        match (self, later) {
+            (Changed::Rating(a), Changed::Rating(b)) => a.same_kind(b),
+            (Changed::Metadata(a), Changed::Metadata(b)) => a == b,
+            (Changed::Name, Changed::Name) => true,
+            _ => false,
+        }
+    }
+
+    /// What Undo and Redo name it, on `photos` photos.
+    pub(super) fn moved(&self, photos: usize) -> Move {
+        match self {
+            Changed::Rating(change) => Move::Field {
+                change: *change,
+                photos,
+            },
+            Changed::Metadata(fields) => Move::Metadata {
+                field: match fields.as_slice() {
+                    [field] => Some(*field),
+                    _ => None,
+                },
+                photos,
+            },
+            Changed::Name => Move::CopyName,
+        }
+    }
+}
+
+/// One change of a photo's fields, an undo record of the session's: what it changed, the
+/// last where quick repeats merged, each field it set with the clock that set it, and the
+/// batch on several photos it is part of, if any (decision 109), which a batch keeps for
+/// each of its photos.
 #[derive(Debug, Clone)]
 pub(super) struct FieldRecord {
-    pub(super) change: RatingChange,
+    pub(super) change: Changed,
     /// Each field set, its value before and after, and the clock the field holds as the
     /// record last left it, which tells a field changed since.
     changes: Vec<(FieldChange, Clock)>,
@@ -59,7 +114,7 @@ pub(super) struct FieldRecord {
 
 impl FieldRecord {
     pub(super) fn new(
-        change: RatingChange,
+        change: Changed,
         changes: Vec<FieldChange>,
         clock: Clock,
         batch: Option<BatchId>,
@@ -78,21 +133,21 @@ impl FieldRecord {
             .expect("a record sets a field")
     }
 
-    /// Sets each field it changed among `entries` back as it was before it, or with `back`
-    /// false as it left it, at `clock`, where the field still holds the value the record left
-    /// it at: one changed since, as a newer file taken in changed it, keeps its later value.
-    /// Whether it set any.
-    pub(super) fn put(&mut self, entries: &mut Vec<FieldEntry>, back: bool, clock: Clock) -> bool {
+    /// Sets each field it changed in `copy` back as it was before it, or with `back` false
+    /// as it left it, at `clock`, where the field still holds the value the record left it
+    /// at: one changed since, as a newer file taken in changed it, keeps its later value.
+    /// The copy's name is one of its fields here ([`COPY_NAME`]). Whether it set any.
+    pub(super) fn put(&mut self, copy: &mut VirtualCopy, back: bool, clock: Clock) -> bool {
         let mut put = false;
         for (change, set) in &mut self.changes {
             let (left, value) = match back {
                 true => (&change.after, change.before.clone()),
                 false => (&change.before, change.after.clone()),
             };
-            if library_fields::value(entries, &change.field).as_ref() != left.as_ref() {
+            if library_fields::value_in(copy, &change.field).as_ref() != left.as_ref() {
                 continue;
             }
-            library_fields::set(entries, &change.field, value, clock);
+            library_fields::set_in(copy, &change.field, value, clock);
             *set = clock;
             put = true;
         }
@@ -113,24 +168,48 @@ impl FieldRecord {
         }
         self.change = later.change;
     }
+
+    /// Whether `later`, a change right after it, merges into it, neither of them part of a
+    /// batch on several photos, which is a record of its own.
+    pub(super) fn merges(&self, later: &FieldRecord) -> bool {
+        self.batch.is_none() && later.batch.is_none() && self.change.merges(&later.change)
+    }
 }
 
-/// The fields of `file`'s first copy, the one the session opens, made where the file has
-/// none, as [`crate::sidecar::log_xml`] would make it.
-pub(super) fn first_mut(file: &mut Edits) -> &mut Vec<FieldEntry> {
-    if file.copies.is_empty() {
-        file.copies.push(VirtualCopy {
-            id: FIRST_COPY.to_owned(),
-            number: "0".to_owned(),
-            name: String::new(),
-            name_clock: None,
-            end: String::new(),
-            clocks: Vec::new(),
-            fields: Vec::new(),
-            history: Vec::new(),
-        });
+/// A first copy, [`FIRST_COPY`], with nothing in it, as [`crate::sidecar::log_xml`] makes
+/// one for a file with none.
+pub(super) fn new_copy() -> VirtualCopy {
+    VirtualCopy {
+        id: FIRST_COPY.to_owned(),
+        number: "0".to_owned(),
+        name: String::new(),
+        name_clock: None,
+        end: String::new(),
+        clocks: Vec::new(),
+        fields: Vec::new(),
+        history: Vec::new(),
     }
-    &mut file.copies[0].fields
+}
+
+/// `file`'s first copy, the one the session opens, made where the file has none, as
+/// [`crate::sidecar::log_xml`] would make it.
+pub(super) fn copy_mut(file: &mut Edits) -> &mut VirtualCopy {
+    if file.copies.is_empty() {
+        file.copies.push(new_copy());
+    }
+    &mut file.copies[0]
+}
+
+/// The fields of `file`'s first copy ([`copy_mut`]).
+pub(super) fn first_mut(file: &mut Edits) -> &mut Vec<FieldEntry> {
+    &mut copy_mut(file).fields
+}
+
+/// What `copy` holds beside its edit, which a turn compares before and after it: its
+/// fields and its name.
+pub(super) fn beside(copy: Option<&VirtualCopy>) -> (Vec<FieldEntry>, String) {
+    copy.map(|copy| (copy.fields.clone(), copy.name.clone()))
+        .unwrap_or_default()
 }
 
 impl Open {
@@ -145,37 +224,83 @@ impl Open {
     }
 
     /// The file a newer one taken in leaves, `file`: the photo's name and fingerprint as the
-    /// session holds them, and the fields joined with the session's, the later clock winning
-    /// each, so a rating not yet written is kept.
+    /// session holds them, and the fields and the copy's name joined with the session's, the
+    /// later clock winning each, so a change not yet written is kept.
     pub(super) fn take_file(&mut self, file: Edits) {
-        let ours = self.fields().to_vec();
+        let ours = self.file.copies.first().cloned();
         let (photo, fingerprint) = (self.file.photo.take(), self.file.fingerprint.take());
         self.file = file;
         self.written = false;
         self.file.photo = photo;
         self.file.fingerprint = fingerprint.or(self.file.fingerprint.take());
-        let joined = library_fields::join(&ours, self.fields());
-        if joined != self.fields() {
-            *first_mut(&mut self.file) = joined;
+        let Some(ours) = ours else {
+            return;
+        };
+        let joined = library_fields::join(&ours.fields, self.fields());
+        let theirs = self.file.copies.first().cloned().unwrap_or_else(new_copy);
+        let (name, name_clock) = library_fields::join_name(&ours, &theirs);
+        if joined != theirs.fields || (&name, name_clock) != (&theirs.name, theirs.name_clock) {
+            let copy = copy_mut(&mut self.file);
+            copy.fields = joined;
+            (copy.name, copy.name_clock) = (name, name_clock);
+        }
+    }
+
+    /// The open copy's fields, its name and place, and the photo's preserved file name, as
+    /// [`Event::Metadata`] tells them, through the commands `through`.
+    pub(super) fn metadata(&self, through: u64) -> MetadataState {
+        let copy = self.file.copies.first();
+        let fields = (self.fields().iter())
+            .filter(|entry| !library_fields::is_rating(&entry.field))
+            .map(|entry| (entry.field.clone(), entry.value.clone()))
+            .collect();
+        let preserved = (self.file.other.iter())
+            .find(|property| property.name.is(MEDIA_MANAGEMENT, "PreservedFileName"))
+            .and_then(|property| property.node.as_str())
+            .map(str::to_owned);
+        // Values with no clock are darktable's, not yet written.
+        let darktable = copy.is_some_and(|copy| {
+            let name = !copy.name.is_empty() && copy.name_clock.is_none();
+            name || copy.fields.iter().any(|entry| entry.clock.is_none())
+        });
+        MetadataState {
+            through,
+            photo: self.photo.path.clone(),
+            fields,
+            copy: CopyState {
+                name: copy.map(|copy| copy.name.clone()).unwrap_or_default(),
+                number: 1,
+                count: self.file.copies.len().max(1),
+            },
+            preserved_file_name: preserved,
+            darktable,
         }
     }
 }
 
 /// Gives `clock` to each field of `file`'s first copy read from darktable's `.xmp`, which
-/// has none yet, as the first write copies it in (decision 51); whether there was any.
+/// has none yet, and to its name where darktable's version name gave it one, as the first
+/// write copies them in (decision 51); whether there was any.
 pub(super) fn stamp_darktable(file: &mut Edits, clock: impl FnOnce() -> Clock) -> bool {
     let Some(copy) = file.copies.first_mut() else {
         return false;
     };
-    if copy.fields.iter().all(|entry| entry.clock.is_some()) {
+    let name = !copy.name.is_empty() && copy.name_clock.is_none();
+    if !name && copy.fields.iter().all(|entry| entry.clock.is_some()) {
         return false;
     }
     let clock = clock();
     for entry in copy.fields.iter_mut().filter(|entry| entry.clock.is_none()) {
         entry.clock = Some(clock);
     }
+    if name {
+        copy.name_clock = Some(clock);
+    }
     true
 }
+
+/// What a change of fields wants: each field by its property, its value now and after.
+type Wanted = Vec<(&'static str, Option<FieldValue>, Option<FieldValue>)>;
 
 impl Engine {
     /// [`super::Command::Rate`] on the active photo, sent at `at`: `change` set on its
@@ -187,15 +312,7 @@ impl Engine {
     /// changed any field.
     pub(super) fn rate(&mut self, change: RatingChange, at: Instant) -> Result<bool, SessionError> {
         let batch = self.batching.map(|batch| batch.id);
-        let Some(open) = &mut self.open else {
-            return Err(match self.opening {
-                Some(_) => SessionError::NotLive,
-                None => SessionError::NoPhoto,
-            });
-        };
-        if let Some(view_only) = &open.view_only {
-            return Err(SessionError::ViewOnly(view_only.clone()));
-        }
+        let open = self.fields_open()?;
         let clock = open.history.next_clock();
         let changes = change.apply(first_mut(&mut open.file), clock);
         if changes.is_empty() {
@@ -208,11 +325,92 @@ impl Engine {
         } = open.rating();
         let name = crate::sidecar::file_name(&open.photo.path);
         tracing::debug!(target: "pipe", "rated {name}: {stars} stars, rejected: {rejected}, labels: {labels:05b}");
-        open.history
-            .rated(FieldRecord::new(change, changes, clock, batch), at);
+        let record = FieldRecord::new(Changed::Rating(change), changes, clock, batch);
+        open.history.rated(record, at);
         open.fields_unsaved = true;
         open.unsaved = true;
         Ok(true)
+    }
+
+    /// [`super::Command::SetMetadata`] on the active photo, sent at `at`: each of `fields`,
+    /// by its property, set to what was typed as its kind takes it
+    /// ([`FieldValue::from_typed`]), `None` clearing it, one undo record for all of them,
+    /// then saved, the edit left as it is. Refused whole for a field none of
+    /// [`library_fields::FIELDS`] is, or the rating's ([`SessionError::UnknownField`]), and
+    /// for a value its field cannot hold ([`SessionError::FieldValue`]); refused as
+    /// [`Engine::rate`] is with no photo or one open for viewing only. Whether it changed any
+    /// field.
+    pub(super) fn set_metadata(
+        &mut self,
+        fields: &[(String, Option<String>)],
+        at: Instant,
+    ) -> Result<bool, SessionError> {
+        let open = self.fields_open()?;
+        let copy = open.file.copies.first();
+        let mut wanted: Wanted = Vec::new();
+        for (property, typed) in fields {
+            let def = (library_fields::field(property))
+                .filter(|def| !library_fields::is_rating(def.property))
+                .ok_or_else(|| SessionError::UnknownField {
+                    field: property.clone(),
+                })?;
+            let now = copy.and_then(|copy| library_fields::value_in(copy, def.property));
+            let after = match typed {
+                Some(typed) => {
+                    FieldValue::from_typed(def, typed, now.as_ref()).map_err(|reason| {
+                        SessionError::FieldValue {
+                            field: property.clone(),
+                            reason,
+                        }
+                    })?
+                }
+                None => None,
+            };
+            wanted.retain(|(kept, _, _)| *kept != def.property);
+            wanted.push((def.property, now, after));
+        }
+        let properties = wanted.iter().map(|(property, ..)| *property).collect();
+        Ok(change_fields(
+            open,
+            Changed::Metadata(properties),
+            wanted,
+            at,
+        ))
+    }
+
+    /// [`super::Command::RenameCopy`]: the open copy's name set to `name`, on one line and
+    /// trimmed, an empty one clearing it, one undo record, as [`Engine::set_metadata`] sets
+    /// a field.
+    pub(super) fn rename_copy(&mut self, name: &str, at: Instant) -> Result<bool, SessionError> {
+        let open = self.fields_open()?;
+        let now =
+            (open.file.copies.first()).and_then(|copy| library_fields::value_in(copy, COPY_NAME));
+        // On one line, a pasted line break a space, as a field that takes none.
+        let name = name.lines().collect::<Vec<_>>().join(" ");
+        let name = name.trim();
+        let after = (!name.is_empty()).then(|| FieldValue::Text(name.to_owned()));
+        Ok(change_fields(
+            open,
+            Changed::Name,
+            vec![(COPY_NAME, now, after)],
+            at,
+        ))
+    }
+
+    /// The open photo, whose fields a command sets: refused with none open
+    /// ([`SessionError::NotLive`] while one opens, else [`SessionError::NoPhoto`]) and for
+    /// one open for viewing only.
+    fn fields_open(&mut self) -> Result<&mut Open, SessionError> {
+        let Some(open) = &mut self.open else {
+            return Err(match self.opening {
+                Some(_) => SessionError::NotLive,
+                None => SessionError::NoPhoto,
+            });
+        };
+        if let Some(view_only) = &open.view_only {
+            return Err(SessionError::ViewOnly(view_only.clone()));
+        }
+        Ok(open)
     }
 
     /// The open photo's path and rating, which a turn compares before and after it.
@@ -243,4 +441,57 @@ impl Engine {
             rating,
         }))
     }
+
+    /// Everything the open photo's `Metadata` fact tells but its `through`, which a turn
+    /// compares before and after it.
+    pub(super) fn open_beside(&self) -> Option<MetadataState> {
+        self.open.as_ref().map(|open| open.metadata(0))
+    }
+
+    /// The open photo's `Metadata` where anything it tells differs from `before`, as a turn
+    /// began: its photo, fields, copy, preserved file name or darktable's mark.
+    pub(super) fn metadata_events(&self, before: Option<MetadataState>) -> Option<Event> {
+        let now = self.open_beside()?;
+        if before.is_some_and(|before| before == now) {
+            return None;
+        }
+        self.metadata_fact()
+    }
+
+    /// The open photo's fields as a fact, through the commands applied.
+    pub(super) fn metadata_fact(&self) -> Option<Event> {
+        let open = self.open.as_ref()?;
+        Some(Event::Metadata(open.metadata(self.applied)))
+    }
+}
+
+/// Sets `wanted` on `open`'s copy as one undo record of `change`, sent at `at`, each field
+/// whose value changes with one clock, the copy's clock vector advanced with it; nothing
+/// for a change that changes nothing. Whether it changed any.
+fn change_fields(open: &mut Open, change: Changed, wanted: Wanted, at: Instant) -> bool {
+    let clock = open.history.next_clock();
+    let copy = copy_mut(&mut open.file);
+    let mut changes = Vec::new();
+    for (field, before, after) in wanted {
+        if before == after {
+            continue;
+        }
+        library_fields::set_in(copy, field, after.clone(), clock);
+        changes.push(FieldChange {
+            field: field.to_owned(),
+            before,
+            after,
+        });
+    }
+    if changes.is_empty() {
+        return false;
+    }
+    let name = crate::sidecar::file_name(&open.photo.path);
+    let set: Vec<&str> = changes.iter().map(|change| change.field.as_str()).collect();
+    tracing::debug!(target: "pipe", "set {} of {name}", set.join(", "));
+    open.history
+        .rated(FieldRecord::new(change, changes, clock, None), at);
+    open.fields_unsaved = true;
+    open.unsaved = true;
+    true
 }

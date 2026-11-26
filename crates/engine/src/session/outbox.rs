@@ -230,6 +230,7 @@ fn kind(event: &Event) -> &'static str {
         Event::Selection(_) => "Selection",
         Event::View(_) => "View",
         Event::Rating(_) => "Rating",
+        Event::Metadata(_) => "Metadata",
         Event::Rated { .. } => "Rated",
         Event::Failed(_) => "Failed",
     }
@@ -265,6 +266,7 @@ impl fmt::Display for Line<'_> {
             Event::Frame(frame) => write!(f, ", through {}", frame.through)?,
             Event::View(state) => write!(f, ", through {}", state.through)?,
             Event::Rating(state) => write!(f, ", through {}", state.through)?,
+            Event::Metadata(state) => write!(f, ", through {}", state.through)?,
             Event::Scopes(reading) => write!(f, ", through {}", reading.through)?,
             Event::Picker {
                 reading: Some(_),

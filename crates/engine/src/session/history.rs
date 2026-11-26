@@ -77,7 +77,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::time::{Duration, Instant};
 
 use apertrust_library::clock::{Clock, MachineId, wall_clock};
-use apertrust_library::fields::FieldEntry;
+use apertrust_library::sidecar::VirtualCopy;
 use apertrust_plugin::{ImageContext, Operation};
 use apertrust_tools::{Moment, ProcessingTool, ToolValues};
 
@@ -265,7 +265,8 @@ enum Record {
     /// log it is not, and `saved` whether that was in the file: while the record is done the
     /// log before, while it is undone the log after.
     Rewritten { what: Move, log: Log, saved: bool },
-    /// The photo's rating, reject or labels changed (decision 110), no step of the log:
+    /// The photo's rating, reject or labels, its Metadata fields or its copy's name changed
+    /// (decision 110), no step of the log:
     /// Undo puts each field back, Redo sets it again, but where it changed since.
     Field(FieldRecord),
 }
@@ -913,18 +914,18 @@ impl PhotoHistory {
 
     /// Undo, as [`Self::undo_in`] does, no field record touching the photo's fields.
     pub(super) fn undo(&mut self, edit: &Edit) -> Option<Edit> {
-        self.undo_in(edit, &mut Vec::new())
+        self.undo_in(edit, &mut fields::new_copy())
     }
 
     /// Redo, as [`Self::redo_in`] does, no field record touching the photo's fields.
     pub(super) fn redo(&mut self, edit: &Edit) -> Option<Edit> {
-        self.redo_in(edit, &mut Vec::new())
+        self.redo_in(edit, &mut fields::new_copy())
     }
 
     /// Undo, `edit` the edit as it stands, a change not yet a step made one first: the
     /// edit it leaves, or `None` where there is nothing to undo. A field record puts the
-    /// photo's `fields` back, the edit as it was.
-    pub(super) fn undo_in(&mut self, edit: &Edit, fields: &mut Vec<FieldEntry>) -> Option<Edit> {
+    /// fields of `copy`, the open one, back, the edit as it was.
+    pub(super) fn undo_in(&mut self, edit: &Edit, copy: &mut VirtualCopy) -> Option<Edit> {
         self.complete_pending(edit);
         let record = match self.done.pop() {
             Some(Record::Added { at, kept, held }) => {
@@ -949,7 +950,7 @@ impl PhotoHistory {
                 let (log, saved) = self.swap(log, saved);
                 Record::Rewritten { what, log, saved }
             }
-            Some(Record::Field(record)) => return Some(self.put_fields(record, fields, true)),
+            Some(Record::Field(record)) => return Some(self.put_fields(record, copy, true)),
             // The fallback: the end back over the step before it and its batch, which Redo
             // reverses; never over a default step, as darktable's auto-applied items are no
             // undo records.
@@ -966,8 +967,8 @@ impl PhotoHistory {
 
     /// Redo, `edit` the edit as it stands, a change not yet a step made one first: the
     /// edit it leaves, or `None` where there is nothing to redo. A field record sets the
-    /// photo's `fields` again, the edit as it was.
-    pub(super) fn redo_in(&mut self, edit: &Edit, fields: &mut Vec<FieldEntry>) -> Option<Edit> {
+    /// fields of `copy` again, the edit as it was.
+    pub(super) fn redo_in(&mut self, edit: &Edit, copy: &mut VirtualCopy) -> Option<Edit> {
         self.complete_pending(edit);
         let record = match self.undone.pop() {
             Some(Record::Added { at, kept, held }) => {
@@ -993,7 +994,7 @@ impl PhotoHistory {
                 let (log, saved) = self.swap(log, saved);
                 Record::Rewritten { what, log, saved }
             }
-            Some(Record::Field(record)) => return Some(self.put_fields(record, fields, false)),
+            Some(Record::Field(record)) => return Some(self.put_fields(record, copy, false)),
             // The fallback: the end forward over the step after it and its batch, which Undo
             // reverses.
             None => {
@@ -1165,17 +1166,12 @@ impl PhotoHistory {
     }
 
     /// The field record `record` taken back onto the undone records, or with `back` false put
-    /// back onto the done ones: each of `fields` it changed set as it was before, or after,
+    /// back onto the done ones: each field of `copy` it changed set as it was before, or after,
     /// at a clock of its own, which advances the copy's clock vector as a move of the end
     /// does, but one changed since. The edit as it stands.
-    fn put_fields(
-        &mut self,
-        mut record: FieldRecord,
-        fields: &mut Vec<FieldEntry>,
-        back: bool,
-    ) -> Edit {
+    fn put_fields(&mut self, mut record: FieldRecord, copy: &mut VirtualCopy, back: bool) -> Edit {
         let clock = Clock::now(self.clock.as_ref(), self.machine);
-        record.put(fields, back, clock);
+        record.put(copy, back, clock);
         let other = if back {
             &mut self.undone
         } else {
@@ -1213,10 +1209,8 @@ impl PhotoHistory {
         self.merge = None;
         self.changed = true;
         // A batch on several photos is its own record, so its Undo takes back no other.
-        let merges = |top: &FieldRecord, began: Instant| {
-            let alone = top.batch.is_none() && record.batch.is_none();
-            alone && top.change.same_kind(&record.change) && at < began + MERGE_WITHIN
-        };
+        let merges =
+            |top: &FieldRecord, began: Instant| top.merges(&record) && at < began + MERGE_WITHIN;
         if let (Some(Record::Field(top)), Some(began)) = (self.done.last_mut(), self.field_merge)
             && merges(top, began)
         {
@@ -1259,10 +1253,7 @@ impl PhotoHistory {
         let (start, end) = match records.last() {
             Some(Record::GoTo { .. }) => return Some(Move::GoTo),
             Some(Record::Field(record)) => {
-                return Some(Move::Field {
-                    change: record.change,
-                    photos: 1,
-                });
+                return Some(record.change.moved(1));
             }
             Some(Record::Rewritten { what, .. }) => return Some(*what),
             // The change's own steps, after the default steps it kept.
@@ -1770,15 +1761,15 @@ impl Engine {
             return Ok(Effect::default());
         };
         let edit = pending(open);
-        let before = open.rating();
-        let entries = fields::first_mut(&mut open.file);
+        let before = fields::beside(open.file.copies.first());
+        let copy = fields::copy_mut(&mut open.file);
         let moved = if redo {
-            open.history.redo_in(&edit, entries)
+            open.history.redo_in(&edit, copy)
         } else {
-            open.history.undo_in(&edit, entries)
+            open.history.undo_in(&edit, copy)
         };
         // A field put back is written as a change of its own, though the log stays as it is.
-        open.fields_unsaved |= open.rating() != before;
+        open.fields_unsaved |= fields::beside(open.file.copies.first()) != before;
         Ok(moved_to(open, moved, &self.tools))
     }
 
@@ -1834,7 +1825,12 @@ impl Engine {
         // A remembered batch on several photos names how many (decision 109).
         let moves = [&mut fact.undo, &mut fact.redo].into_iter().zip(moving);
         for ((moved, batch), redo) in moves.zip([false, true]) {
-            if let Some(Move::Steps { photos, .. } | Move::Field { photos, .. }) = moved {
+            if let Some(
+                Move::Steps { photos, .. }
+                | Move::Field { photos, .. }
+                | Move::Metadata { photos, .. },
+            ) = moved
+            {
                 *photos = batch
                     .and_then(|batch| self.batch_photos(batch, redo))
                     .unwrap_or(1);

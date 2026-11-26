@@ -183,6 +183,7 @@ use crate::sidecar;
 pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_entry, tool_values};
 pub use crate::view::{FramePlace, Placement, View, ViewScale};
 pub use apertrust_library::Rating;
+pub use apertrust_library::fields::FieldValue;
 /// The raw's EXIF a `Photo` carries, as `apertrust-raw` reads it, for a client that reads no
 /// raw (decision 110).
 pub use apertrust_raw::Exif;
@@ -336,6 +337,25 @@ pub enum Command {
         photos: Vec<PathBuf>,
         change: RatingChange,
     },
+    /// Sets the Metadata tool's fields of the active photo's open copy (decision 110), each
+    /// the photo's current value with its clock in its `.apxmp`, never a history step:
+    /// `fields` names each by its property's qualified name (`dc:title`,
+    /// `apertrust_library::fields::FIELDS`) with what was typed, made a value by the field's
+    /// kind (`FieldValue::from_typed`: trimmed, a list split at `;`, an XMP date), `None` or
+    /// empty clearing it. Several fields are one change, one Undo; a quick commit of the same
+    /// fields again merges into it. Refused whole for a field none of `FIELDS` is, or the
+    /// rating's ([`SessionError::UnknownField`]), for a value its field cannot hold
+    /// ([`SessionError::FieldValue`]) and on a photo open for viewing only; allowed before
+    /// it is live. No command on the edit: it ends no gesture and sends no `Values`, but
+    /// `Metadata` where it changed a field and `History` for Undo's words. The log stays as
+    /// the file holds it, so a photo only titled stays unedited.
+    SetMetadata {
+        fields: Vec<(String, Option<String>)>,
+    },
+    /// Renames the active photo's open copy (decision 110), `name` on one line and trimmed,
+    /// an empty one clearing it, as [`Command::SetMetadata`] sets a field: its `apertrust:name` with its
+    /// clock, one Undo, no step.
+    RenameCopy { name: String },
     /// Moves the end of the history just after `step`, one inside a batch among them, or to
     /// Original with `None`, as a click on a step in the History tab does (decision 78): the steps after it stay, and
     /// the next change drops them. Undo takes it back, and after it a change, bringing back
@@ -661,6 +681,8 @@ fn on_edit(command: &Command) -> bool {
         | Command::Library(_)
         | Command::Selection(_)
         | Command::Rate { .. }
+        | Command::SetMetadata { .. }
+        | Command::RenameCopy { .. }
         | Command::Cache(_) => false,
         #[cfg(test)]
         Command::Synthetic(_)
@@ -935,6 +957,11 @@ pub enum Event {
     /// as it opens, before the decode, and once in each turn that changed them, a
     /// [`Command::Rate`], its Undo or Redo, or a newer file taken in.
     Rating(RatingState),
+    /// The open photo's Metadata fields, its copy's name and place (decision 110): after its
+    /// rating as it opens, and once in each turn that changed them, a
+    /// [`Command::SetMetadata`], a [`Command::RenameCopy`], a rating, their Undo or Redo, or
+    /// a newer file taken in.
+    Metadata(MetadataState),
     /// A photo's rating changed, as its write was handed over, so a client's cell follows:
     /// the open photo's in the turn that changed it, after its `Rating`.
     Rated {
@@ -1000,6 +1027,8 @@ pub enum Fact {
     View,
     /// The open photo's rating: [`Event::Rating`].
     Rating,
+    /// The open photo's Metadata fields: [`Event::Metadata`].
+    Metadata,
 }
 
 impl Event {
@@ -1018,6 +1047,7 @@ impl Event {
             Event::Selection(_) => Fact::Selection,
             Event::View(_) => Fact::View,
             Event::Rating(_) => Fact::Rating,
+            Event::Metadata(_) => Fact::Metadata,
             // Each of a job's values is a topic of its own, since each event carries only
             // its own (decision 72); its adding and its end each happen once.
             Event::Job { event, .. } => match *event {
@@ -1593,9 +1623,49 @@ pub enum SessionError {
     /// The engine thread has ended, so nothing more will render.
     #[error("the engine stopped")]
     Stopped,
-    /// A [`Command::Rate`] with no photo open or opening.
+    /// A [`Command::Rate`], [`Command::SetMetadata`] or [`Command::RenameCopy`] with no
+    /// photo open or opening.
     #[error("no photo is open")]
     NoPhoto,
+    /// A [`Command::SetMetadata`] naming a field none of
+    /// `apertrust_library::fields::FIELDS` is, or one of the rating's, which
+    /// [`Command::Rate`] sets: it changed nothing.
+    #[error("there is no field {field}")]
+    UnknownField { field: String },
+    /// A [`Command::SetMetadata`] giving `field` what it cannot hold, as `reason` says: it
+    /// changed nothing.
+    #[error("{field} cannot hold that value: {reason}")]
+    FieldValue {
+        field: String,
+        reason: apertrust_library::fields::TypedError,
+    },
+}
+
+/// The open photo's Metadata fields: [`Event::Metadata`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MetadataState {
+    /// How many commands it includes, as [`Values::through`] counts them.
+    pub through: u64,
+    pub photo: PathBuf,
+    /// Each field the open copy holds but the rating's, by its property, in the order of
+    /// the properties, `None` for one cleared; a field unset is not listed.
+    pub fields: Vec<(String, Option<FieldValue>)>,
+    /// The open copy: its name, place and how many the photo has.
+    pub copy: CopyState,
+    /// The sidecar's `xmpMM:PreservedFileName`, read-only.
+    pub preserved_file_name: Option<String>,
+    /// Whether any of it is darktable's, read from its `.xmp`, not yet copied into the
+    /// `.apxmp`, which the photo's first write does.
+    pub darktable: bool,
+}
+
+/// The open virtual copy: its name, empty for none, its number counting from 1, and how
+/// many copies the photo has.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CopyState {
+    pub name: String,
+    pub number: usize,
+    pub count: usize,
 }
 
 /// Called by the [`Outbox`] when events have arrived that the client may not have seen,
@@ -3882,6 +3952,7 @@ impl Engine {
         // The open photo's rating as the batch began, and whether a `Rate` changed the
         // undo records, which a `History` then tells.
         let rating = self.open_rating();
+        let beside = self.open_beside();
         let mut rated = false;
         // Whether a tool picker's command owed an answer has nothing to write.
         let mut answer = false;
@@ -4116,6 +4187,26 @@ impl Engine {
                         save |= effect.save;
                     })
                 }
+                Command::SetMetadata { fields } => {
+                    // Earlier batches still to come on the active photo first, as a
+                    // rating's.
+                    let caught = self.catch_up(None, &mut events);
+                    (render, save) = (render | caught.render, save | caught.save);
+                    // One that changes nothing is answered as written, so a client waiting
+                    // for its write stops waiting.
+                    self.set_metadata(&fields, at).map(|changed| match changed {
+                        true => save = true,
+                        false => answer = true,
+                    })
+                }
+                Command::RenameCopy { name } => {
+                    let caught = self.catch_up(None, &mut events);
+                    (render, save) = (render | caught.render, save | caught.save);
+                    self.rename_copy(&name, at).map(|changed| match changed {
+                        true => save = true,
+                        false => answer = true,
+                    })
+                }
                 #[cfg(test)]
                 Command::HoldExport(hold) => {
                     self.export_hold = Some(hold);
@@ -4257,6 +4348,8 @@ impl Engine {
             // unless its last write has failed by then, when it writes it again.
             self.save_held();
         }
+        // After the write, which copies darktable's fields in with their clocks.
+        events.extend(self.metadata_events(beside));
         // Whether the batch published a frame, which the colour picker measured as it did.
         let mut published = false;
         // A view that moves the frame renders: to or from the detail, or the detail's
@@ -4500,7 +4593,13 @@ impl Engine {
             }
             self.applied += 1;
             // A refused change is refused as it would have been; no one is told.
-            let _ = self.apply_edit(command, at);
+            // The Metadata fields and the copy's name are no command on the edit: set as a
+            // turn sets them, for the end to save.
+            let _ = match command {
+                Command::SetMetadata { fields } => self.set_metadata(&fields, at).map(drop),
+                Command::RenameCopy { name } => self.rename_copy(&name, at).map(drop),
+                command => self.apply_edit(command, at).map(drop),
+            };
         }
         false
     }
@@ -4721,6 +4820,8 @@ impl Engine {
             | Command::Selection(_)
             | Command::UndoBatch { .. }
             | Command::Rate { .. }
+            | Command::SetMetadata { .. }
+            | Command::RenameCopy { .. }
             | Command::Cache(_) => {
                 return Ok(Effect::default());
             }
@@ -4975,11 +5076,14 @@ impl Engine {
     ///   with `Values`, `History` and a frame where the edit changed, none of it rendered
     ///   while the photo `closing`;
     ///
-    /// and `Rating` and `Rated` where taking it in changed the open photo's rating.
+    /// and `Rating` and `Rated` where taking it in changed the open photo's rating, and
+    /// `Metadata` where it changed its fields or its copy's name.
     fn newer_file(&mut self, closing: bool) -> Vec<Event> {
         let rating = self.open_rating();
+        let beside = self.open_beside();
         let mut events = self.take_newer_file(closing);
         events.extend(self.rating_events(rating));
+        events.extend(self.metadata_events(beside));
         events
     }
 
@@ -5247,6 +5351,7 @@ impl Engine {
                 events.extend(values.map(Event::Values));
                 events.extend(self.history_event());
                 events.extend(self.rating_fact());
+                events.extend(self.metadata_fact());
                 // The view placed on the photo, where its extent or the bounds since the
                 // last photo differ.
                 events.extend(self.view_event());
@@ -7316,6 +7421,7 @@ mod tests {
     mod batch;
     mod fields;
     mod history;
+    mod metadata;
     mod protocol;
     mod selection;
     mod set_tool;
@@ -12030,6 +12136,47 @@ mod tests {
         remove(&second);
     }
 
+    /// A Metadata field and the copy's name sent just before the handle drops are set and
+    /// saved as an edit's change is.
+    #[test]
+    fn fields_sent_as_the_client_drops_its_handle_are_saved() {
+        let path = scratch("dropped-fields");
+        let gpu = gpu();
+        let (session, wakes) = start_with(&gpu, &[&Sample], synthetic);
+        session.send(Command::Resize {
+            width: 40,
+            height: 40,
+        });
+        open_live(&session, &wakes, &path);
+        let (told, mut heard) = Heard::start();
+        let (long, permit) = Synthetic::new("long", Queue::UserBackground, 1, &told).gated(1);
+        session.send(Command::Synthetic(long));
+        heard.until(&Told::Began("long", 1));
+        session.send(Command::SetMetadata {
+            fields: vec![("dc:title".to_owned(), Some("Morning market".to_owned()))],
+        });
+        session.send(Command::RenameCopy {
+            name: "Black and white".to_owned(),
+        });
+        let letting_go = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(permit);
+        });
+        drop(session);
+        drop(wakes);
+        letting_go.join().unwrap();
+        let xml = std::fs::read_to_string(sidecar::path_for(&path)).expect("written");
+        let saved = sidecar::Edits::parse(&xml, 0).unwrap();
+        let copy = &saved.copies[0];
+        let title = apertrust_library::fields::value(&copy.fields, "dc:title");
+        assert_eq!(
+            title.map(|value| value.shown()).as_deref(),
+            Some("Morning market")
+        );
+        assert_eq!(copy.name, "Black and white");
+        remove(&path);
+    }
+
     #[test]
     fn commands_queued_when_the_client_drops_its_handle_are_saved() {
         let path = scratch("dropped");
@@ -13930,6 +14077,7 @@ mod tests {
             Event::Selection(_) => Topic::Fact(Fact::Selection),
             Event::View(_) => Topic::Fact(Fact::View),
             Event::Rating(_) => Topic::Fact(Fact::Rating),
+            Event::Metadata(_) => Topic::Fact(Fact::Metadata),
             Event::Rated { .. } => Topic::Notice,
             Event::Failed(_) => Topic::Notice,
         }
@@ -14075,7 +14223,7 @@ mod tests {
         }
         // Every variant, the ones a session sent among them, the selection and the view as
         // the photo opened, and every job event.
-        assert_eq!(seen.len(), 18, "{events:?}");
+        assert_eq!(seen.len(), 19, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.
