@@ -262,6 +262,8 @@ Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, all built:
 
 ### The export preview
 
+`session/summary.rs` (decision 110): `Command::Summarise` and `Event::Summary`. The session keeps each photo's size from its listing and its facts once read in the selection's collection (`selection::State`). A `UserForeground` job with no progress answers at once from what the session knows, then reads the facts it lacks, each photo's once (`Shot::read`), handing them to the engine thread to keep (`Inbox::Facts`) and answering again, the same `through`, at most every 250 ms while it reads and once all are read, the rows not read yet `Waiting`; a later `Summarise` cancels it, the facts read by then kept. A folder's open reads no facts. `session::facts` re-exports the library's `summary`.
+
 `export_preview`: `Command::PreviewExport` and `Event::ExportPreview`, a `UserForeground` job with no progress, which the next preview cancels. It reports:
 
 - each photo's file, with the sequence rule, and what On conflict would do (`Disk::foresee`, counting the files earlier photos take);

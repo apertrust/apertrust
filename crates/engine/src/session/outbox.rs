@@ -212,6 +212,7 @@ fn kind(event: &Event) -> &'static str {
         Event::ExportPreview { .. } => "ExportPreview",
         Event::Batch(BatchEvent::Changed { .. }) => "Batch Changed",
         Event::Batch(BatchEvent::Ended { .. }) => "Batch Ended",
+        Event::Summary { .. } => "Summary",
         Event::Library(event) => match event {
             LibraryEvent::Opened { .. } => "Library Opened",
             LibraryEvent::Subfolders { .. } => "Library Subfolders",
@@ -275,6 +276,9 @@ impl fmt::Display for Line<'_> {
             } => write!(f, ", through {through}, off")?,
             Event::Saved { through, .. } | Event::ExportPreview { through, .. } => {
                 write!(f, ", through {through}")?
+            }
+            Event::Summary { through, summary } => {
+                write!(f, ", through {through}, {} photos", summary.photos)?
             }
             Event::Job { event, command } => {
                 write!(f, ", job {}", event.job())?;

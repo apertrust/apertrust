@@ -723,6 +723,8 @@ impl Mirror {
             }
             // The export's own record is for scripts and the CLI: no row is drawn from it.
             Event::Export { .. } => {}
+            // The Metadata tool asks for none yet.
+            Event::Summary { .. } => {}
             // The folder took these in above.
             Event::Library(_) => {}
             // Taken in above, for Settings › Storage.

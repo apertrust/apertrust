@@ -120,6 +120,7 @@ mod outbox;
 mod pickers;
 mod selection;
 mod styles;
+mod summary;
 mod thumbnail;
 
 use std::borrow::Cow;
@@ -139,6 +140,9 @@ pub use apertrust_export::{ExportSettings, Places};
 /// The library's commands and events and what they carry (decision 54, layer 4).
 pub use apertrust_library::ops as library;
 pub use apertrust_library::ops::{LibraryCommand, LibraryEvent};
+/// The Metadata tool's summary of several photos (decision 110), as
+/// [`Event::Summary`] carries it.
+pub use apertrust_library::summary as facts;
 pub use apertrust_plugin::Value;
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, ParamValues};
 use apertrust_tools::check::{self, ToolError};
@@ -516,6 +520,15 @@ pub enum Command {
         settings: ExportSettings,
         places: Places,
     },
+    /// What the Metadata tool shows of these `photos`, any of the collection's, as
+    /// [`SelectionCommand`]'s photos name them (decision 110): answered as
+    /// [`Event::Summary`] by a job with no progress, on a job worker, which a later
+    /// `Summarise` cancels. The job reads the facts the session does not have yet, each
+    /// photo's once, kept for the next summary, a cancel keeping those read; while it reads
+    /// them it answers again, with the same `through`, at most every 250 ms, the rows not
+    /// read yet `Waiting`. A photo the collection lacks counts as one with no facts. Not a
+    /// command on the edit: it ends no gesture.
+    Summarise { photos: Vec<PathBuf> },
     /// A library command (decision 54): opening a folder, closing it, or asking for its
     /// photos' thumbnails, or those of photos opened alone. An open is a cancellable job on darktable's `UserBackground`
     /// queue, its progress as [`Event::Job`], its `Added` naming this command, and what it
@@ -571,6 +584,9 @@ pub enum Command {
     /// Holds the next export preview before it looks, for a test.
     #[cfg(test)]
     HoldPreview(export_job::testing::Hold),
+    /// Holds the next summary before it is built, for a test.
+    #[cfg(test)]
+    HoldSummary(export_job::testing::Hold),
     /// Holds the next folder's reading before it begins, or the job of the next photos opened
     /// alone once it has sent their edit states, for a test.
     #[cfg(test)]
@@ -627,6 +643,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::RetryJob { .. }
         | Command::Export { .. }
         | Command::PreviewExport { .. }
+        | Command::Summarise { .. }
         | Command::Library(_)
         | Command::Selection(_)
         | Command::Rate { .. }
@@ -635,6 +652,7 @@ fn on_edit(command: &Command) -> bool {
         Command::Synthetic(_)
         | Command::HoldExport(_)
         | Command::HoldPreview(_)
+        | Command::HoldSummary(_)
         | Command::HoldFolder(_)
         | Command::HoldWalk(_)
         | Command::HoldThumbnails(_)
@@ -787,6 +805,13 @@ pub(crate) enum Inbox {
     Route(Box<batch::Route>),
     /// A batch job ended: the engine thread starts the next ([`Engine::start_batches`]).
     BatchEnded,
+    /// Facts a summary's job read of photos of the collection the library command
+    /// numbered `open` opened, each by its path ([`summary::job`]), which the selection
+    /// keeps for the next summary.
+    Facts {
+        open: u64,
+        facts: Vec<(PathBuf, Option<Arc<library::Shot>>)>,
+    },
     Stop,
 }
 
@@ -853,6 +878,13 @@ pub enum Event {
     ExportPreview {
         through: u64,
         preview: Box<ExportPreview>,
+    },
+    /// The Metadata tool's summary of the photos [`Command::Summarise`] named, the command
+    /// numbered `through` (decision 110). A client keeps the answer with the highest
+    /// `through`; one built again as facts arrive has the same.
+    Summary {
+        through: u64,
+        summary: Arc<facts::Summary>,
     },
     /// What a [`Command::Library`] found or did, each naming the command it answers: a
     /// client keeps the number of its latest open or close and drops the rest.
@@ -926,6 +958,8 @@ pub enum Fact {
     Picker,
     /// The Export dialog's feedback: [`Event::ExportPreview`], the latest answer kept.
     ExportPreview,
+    /// The Metadata tool's summary: [`Event::Summary`], the latest answer kept.
+    Summary,
     /// A job's progress, by job.
     Progress(JobId),
     /// A job's title, darktable's message, by job.
@@ -958,6 +992,7 @@ impl Event {
             Event::Scopes(_) => Fact::Scopes,
             Event::Picker { .. } => Fact::Picker,
             Event::ExportPreview { .. } => Fact::ExportPreview,
+            Event::Summary { .. } => Fact::Summary,
             Event::Cache(_) => Fact::Cache,
             Event::History(_) => Fact::History,
             Event::Selection(_) => Fact::Selection,
@@ -1835,6 +1870,9 @@ impl Session {
                             Inbox::Classified { open, photos } if batch.is_empty() => {
                                 engine.selection.found(open, &photos);
                             }
+                            // Facts a summary read, kept for the next; no change of the
+                            // selection, so taken in whenever they come.
+                            Inbox::Facts { open, facts } => engine.selection.facts(open, facts),
                             // Sent after the batch's commands, it is applied after them, as
                             // the next turn's first: the selection follows the listing and
                             // the commands in the order they were sent.
@@ -2745,6 +2783,8 @@ struct Engine {
     cache: Option<Upkeep>,
     /// The latest export preview's job, which the next one cancels.
     preview: Option<JobId>,
+    /// The latest [`Command::Summarise`]'s job, which the next one cancels.
+    summarising: Option<JobId>,
     /// The job reading the folder last opened, which the next open or a close cancels, and
     /// whether its last chunk or its failure, or a cancel, came first: whichever does
     /// stands ([`Engine::cancel_job`]).
@@ -2792,6 +2832,8 @@ struct Engine {
     /// Holds the next export preview for a test.
     #[cfg(test)]
     preview_hold: Option<export_job::testing::Hold>,
+    #[cfg(test)]
+    summary_hold: Option<export_job::testing::Hold>,
     /// Holds the next folder's reading for a test.
     #[cfg(test)]
     folder_hold: Option<export_job::testing::Hold>,
@@ -3362,6 +3404,7 @@ impl Engine {
             jobs,
             cache: None,
             preview: None,
+            summarising: None,
             folder: None,
             shown: None,
             latest_library: 0,
@@ -3381,6 +3424,8 @@ impl Engine {
             export_hold: None,
             #[cfg(test)]
             preview_hold: None,
+            #[cfg(test)]
+            summary_hold: None,
             #[cfg(test)]
             folder_hold: None,
             #[cfg(test)]
@@ -3959,6 +4004,10 @@ impl Engine {
                     self.preview_export(photos, settings, places);
                     Ok(())
                 }
+                Command::Summarise { photos } => {
+                    self.summarise(self.applied, photos);
+                    Ok(())
+                }
                 Command::Library(command) => {
                     self.library(command, &mut events);
                     Ok(())
@@ -4023,6 +4072,11 @@ impl Engine {
                 #[cfg(test)]
                 Command::HoldPreview(hold) => {
                     self.preview_hold = Some(hold);
+                    Ok(())
+                }
+                #[cfg(test)]
+                Command::HoldSummary(hold) => {
+                    self.summary_hold = Some(hold);
                     Ok(())
                 }
                 #[cfg(test)]
@@ -4611,6 +4665,7 @@ impl Engine {
             | Command::RetryJob { .. }
             | Command::Export { .. }
             | Command::PreviewExport { .. }
+            | Command::Summarise { .. }
             | Command::Library(_)
             | Command::Selection(_)
             | Command::UndoBatch { .. }
@@ -4622,6 +4677,7 @@ impl Engine {
             Command::Synthetic(_)
             | Command::HoldExport(_)
             | Command::HoldPreview(_)
+            | Command::HoldSummary(_)
             | Command::HoldFolder(_)
             | Command::HoldWalk(_)
             | Command::HoldThumbnails(_)
@@ -5555,6 +5611,28 @@ impl Engine {
             .jobs
             .add(command, Queue::UserForeground, |_| export_preview::job(run));
         self.preview = Some(job);
+    }
+
+    /// [`Command::Summarise`], the command numbered `through`: what the collection knows of
+    /// `photos` summarised by a job, which reads the facts it lacks ([`summary::job`]), the
+    /// summary before it cancelled.
+    fn summarise(&mut self, through: u64, photos: Vec<PathBuf>) {
+        if let Some(older) = self.summarising.take() {
+            self.jobs.control.cancel(older);
+        }
+        // The open photo's edit as the batch has left it so far, as Unedited reads it.
+        self.settle_edited();
+        let (open, known) = self.selection.known(&photos);
+        let run = summary::Run {
+            through,
+            open,
+            outbox: self.jobs.outbox.clone(),
+            inbox: self.jobs.inbox.clone(),
+            #[cfg(test)]
+            hold: self.summary_hold.take(),
+        };
+        let job = (self.jobs).add(through, Queue::UserForeground, |_| summary::job(run, known));
+        self.summarising = Some(job);
     }
 
     /// [`Command::Library`], the command numbered [`Self::applied`]. An open cancels the
@@ -7186,6 +7264,7 @@ mod tests {
     mod selection;
     mod set_tool;
     mod styles;
+    mod summary;
     mod view;
 
     use std::sync::mpsc::Receiver;
@@ -8493,6 +8572,7 @@ mod tests {
                     | Inbox::Newer
                     | Inbox::Listing(_)
                     | Inbox::Classified { .. }
+                    | Inbox::Facts { .. }
                     | Inbox::Stop => {}
                 }
             }
@@ -13774,6 +13854,7 @@ mod tests {
                 | ExportStatus::Finished(_) => Topic::Notice,
             },
             Event::ExportPreview { .. } => Topic::Fact(Fact::ExportPreview),
+            Event::Summary { .. } => Topic::Fact(Fact::Summary),
             Event::Library(event) => match event {
                 LibraryEvent::Opened { .. }
                 | LibraryEvent::Subfolders { .. }
