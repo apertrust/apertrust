@@ -76,7 +76,8 @@ pub use apertrust_engine::history::BUILT_IN_FILE;
 /// One style file as the tree lists it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Listed {
-    /// Its name as written, trimmed, a `|` between its folders and its own name.
+    /// Its name as written, its blank folder names dropped and trimmed (`styles::tidy`), a
+    /// `|` between its folders and its own name.
     pub name: String,
     pub path: PathBuf,
     /// Its tools this build has, each with its values, migrated and clamped
@@ -167,7 +168,7 @@ fn listed(stored: &Stored, tools: &[&dyn ProcessingTool]) -> Listed {
     // None of its entries applies: parked, as a newer Apertrust's file is.
     let values = values.filter(|values: &Vec<_>| !values.is_empty() || left_out.is_empty());
     Listed {
-        name: stored.name.trim().to_owned(),
+        name: super::tidy(&stored.name),
         path: stored.path.clone(),
         tools: values,
         left_out,

@@ -256,7 +256,8 @@ fn create_asks_for_the_tools_checked_with_the_name_trimmed() {
         let expected = (!checked).then_some("Usually belongs to one photo");
         assert_eq!(tip.as_deref(), expected, "{title}");
     }
-    harness.state_mut().0.name = "  Warm film ".to_owned();
+    // Asked for as it is written: trimmed, its blank folder names dropped.
+    harness.state_mut().0.name = "  | Warm film ".to_owned();
     harness.run();
     for title in ["Exposure", "Grain"] {
         harness.get_by_role_and_label(Role::CheckBox, title).click();
@@ -281,16 +282,25 @@ fn create_asks_for_the_tools_checked_with_the_name_trimmed() {
 #[test]
 fn a_taken_name_or_no_tool_disables_create_and_says_why() {
     let mut harness = dialog(
-        &["Warm"],
+        &["Warm", "Lomo"],
         touched_lines(),
         OperatingSystem::Nix,
         Builtin::Dark,
     );
-    harness.state_mut().0.name = "Warm".to_owned();
-    harness.run();
-    harness.get_by_label("A style already has this name");
-    let create = harness.get_by_role_and_label(Role::Button, "Create");
-    assert!(create.accesskit_node().is_disabled());
+    // A name is refused as it would be written, its blank folder names dropped: `|Lomo` is
+    // Lomo, a built-in's as shown, and `|` alone is empty.
+    for (name, why) in [
+        ("Warm", "A style already has this name"),
+        ("|Lomo", "A style already has this name"),
+        ("Lomo|", "A style already has this name"),
+        (" | ", "A style needs a name"),
+    ] {
+        harness.state_mut().0.name = name.to_owned();
+        harness.run();
+        harness.get_by_label(why);
+        let create = harness.get_by_role_and_label(Role::Button, "Create");
+        assert!(create.accesskit_node().is_disabled(), "{name}");
+    }
     harness.state_mut().0.name = "Warm 2".to_owned();
     harness.run();
     assert!(
