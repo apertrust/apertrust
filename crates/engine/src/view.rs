@@ -27,6 +27,8 @@
 //! margin, and whether a pan stays inside it ([`covers`]); a centre mapped through a turn
 //! or a flip of the photo ([`reoriented`]).
 
+use serde::{Deserialize, Serialize};
+
 use crate::pipeline::{at_scale, fit_scale};
 
 /// The most a view enlarges the photo: 1600%, sixteen physical pixels a photo pixel.
@@ -37,7 +39,8 @@ pub const MAX_FACTOR: f32 = 16.0;
 const WHOLE: f64 = 1e-6;
 
 /// The zoom a client asks for (decision 99).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ViewScale {
     /// Half of Fit: the fitted frame, which the client draws at half, an exact 2:1 box; the
     /// engine renders nothing more for it.
@@ -48,18 +51,21 @@ pub enum ViewScale {
     /// photo's other side is cropped; never below Fit nor above [`MAX_FACTOR`].
     Fill,
     /// Physical pixels per photo pixel, 1.0 being 100%: one photo pixel per physical pixel.
-    /// Clamped to Fit and [`MAX_FACTOR`]; one not finite or not above 0 is Fit.
+    /// Clamped to Fit and [`MAX_FACTOR`]; one not finite or not above 0 is Fit. JSON holds
+    /// no factor that is not finite, and one past an `f32`, `1e39`, is refused as it is read.
+    #[serde(deserialize_with = "apertrust_base::wire::finite")]
     Factor(f32),
 }
 
 /// The zoom and its centre a client asks the session to show
 /// ([`crate::session::Command::View`]): one view per session, shared by its clients.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct View {
     pub scale: ViewScale,
     /// The point shown at the bounds' centre, in the photo's coordinates: 0 to 1 across the
     /// photo as export renders it, after every geometry, (0, 0) its top left, x to the right
     /// and y down; the colour pickers' coordinates (decision 79).
+    #[serde(deserialize_with = "apertrust_base::wire::finite")]
     pub centre: [f32; 2],
 }
 
@@ -95,7 +101,7 @@ impl View {
 }
 
 /// Where a view places the photo in the bounds: [`place`]'s answer.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Placement {
     /// Physical pixels per photo pixel on screen: the fitted scale at Fit, half of it at
     /// Small, the larger ratio at Fill, else the factor; but for Small, clamped to the

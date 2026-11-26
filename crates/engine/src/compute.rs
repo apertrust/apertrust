@@ -24,7 +24,9 @@
 
 use std::time::Instant;
 
+use apertrust_base::wire::Id;
 use apertrust_plugin::{Format, ImageDesc, PassHeader};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use wgpu::util::DeviceExt;
 
@@ -36,7 +38,8 @@ pub(crate) const WORKGROUP: u32 = 16;
 pub(crate) const DERIVATIVE_IN_BINDING: u32 = 8;
 pub(crate) const DERIVATIVE_OUT_BINDING: u32 = 9;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ComputeError {
     #[error("kernel {label} failed to compile: {message}")]
     Compile { label: String, message: String },
@@ -50,8 +53,10 @@ pub enum ComputeError {
         mebibytes(*limit)
     )]
     Binding {
-        operation: &'static str,
-        pass: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        pass: Id,
         bytes: u64,
         limit: u64,
     },
@@ -59,14 +64,17 @@ pub enum ComputeError {
         "{operation} ({pass}) dispatches {groups} workgroups along one side, more than the GPU allows ({limit})"
     )]
     Dispatch {
-        operation: &'static str,
-        pass: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        pass: Id,
         groups: u32,
         limit: u32,
     },
     #[error("{operation} needs a {} MiB buffer, more than the GPU allows ({} MiB)", mebibytes(*bytes), mebibytes(*limit))]
     Buffer {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         bytes: u64,
         limit: u64,
     },
@@ -79,14 +87,32 @@ pub enum ComputeError {
     },
     #[error("{operation} cannot dispatch a derivative entry point: {reason}")]
     Derivative {
-        operation: &'static str,
-        reason: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        reason: Id,
     },
     #[error("waiting for the GPU failed")]
+    #[serde(with = "PollErrorDef")]
     Poll(#[from] wgpu::PollError),
     #[error("reading back from the GPU failed")]
+    #[serde(with = "BufferAsyncErrorDef")]
     Map(#[from] wgpu::BufferAsyncError),
 }
+
+/// wgpu's `PollError` for serde, which wgpu's own `serde` feature does not cover; public
+/// and exhaustive in wgpu 30, so mirrored exactly.
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "wgpu::PollError", tag = "type", content = "data")]
+enum PollErrorDef {
+    Timeout,
+    WrongSubmissionIndex(u64, u64),
+}
+
+/// wgpu's `BufferAsyncError` for serde, as [`PollErrorDef`] is.
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "wgpu::BufferAsyncError")]
+struct BufferAsyncErrorDef;
 
 /// An image in a GPU storage buffer, rows top to bottom: RGBA float32 unless made
 /// with another [`Format`]. A clone shares the buffer. The buffer may be larger than

@@ -38,11 +38,13 @@ use std::num::NonZeroU64;
 use std::ops::Range;
 use std::time::Instant;
 
+use apertrust_base::wire::Id;
 use apertrust_plugin::{
     Binding, Extent, Format, ImageContext, ImageDesc, Kernel, Kind, NotPorted, Operation,
     OutputProfile, ParamError, ParamValues, Pass, PassHeader, PassKind, PipeKind, Prepared,
     Resource, Schema, Slot, Stage, Strips, Value,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use wgpu::util::DeviceExt;
 
@@ -734,50 +736,60 @@ impl Plan {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum PlanError {
     #[error("{operation}: {source}")]
     Param {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         source: ParamError,
     },
     #[error(transparent)]
     NotPorted(#[from] NotPorted),
     #[error("{operation} runs in the {stage:?} stage, but its input is {format:?}")]
     Format {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         stage: Stage,
         format: Format,
     },
     #[error("{operation}: a pass binds {resource:?}, which it does not have")]
     Binding {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         resource: Resource,
     },
     #[error("{operation} leaves an empty image, {desc}")]
     Empty {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         desc: ImageDesc,
     },
     #[error("a tile cannot start from a {0:?} image")]
     TileInput(Format),
     #[error("{operation} changes its {what} from one tile of the viewport to another")]
     TileShape {
-        operation: &'static str,
-        what: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        what: Id,
     },
     #[error(
         "{operation} made {desc} for the viewport's tile at {region:?}, not that part of the image"
     )]
     TileRegion {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         desc: ImageDesc,
         region: [u32; 4],
     },
     #[error("{operation}: {what}")]
     Geometry {
-        operation: &'static str,
-        what: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        what: Id,
     },
     #[error(
         "{operation} {} {desc} where the plan asks for {}×{} at {},{}",
@@ -788,7 +800,8 @@ pub enum PlanError {
         region[1]
     )]
     Region {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         /// Whether `desc` is what it made, or what it was given.
         made: bool,
         desc: ImageDesc,
@@ -801,7 +814,8 @@ pub enum PlanError {
         if *smaller_fits { ": a smaller viewport fits" } else { "" }
     )]
     Viewport {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         width: u32,
         height: u32,
         bytes: u64,
@@ -815,8 +829,10 @@ pub enum PlanError {
     /// outside its input.
     #[error("{operation}: {what}")]
     Detail {
-        operation: &'static str,
-        what: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        what: Id,
     },
 }
 

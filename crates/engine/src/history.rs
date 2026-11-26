@@ -58,16 +58,20 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use apertrust_base::wire::Id;
 pub use apertrust_library::clock::{Clock, MachineId};
 pub use apertrust_library::fields::RatingChange;
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 use apertrust_tools::{Base, ControlValue, Controls, Mark, ProcessingTool, ToolValues};
+use serde::{Deserialize, Serialize};
 
 use crate::edit::Edit;
 
 /// A step's id: 64 random bits, so two logs joined step by step do not collide; drawn
-/// again on a clash within its log. Written as 16 hex digits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// again on a clash within its log. Written as 16 hex digits, on the wire too, where a
+/// number above 2^53 would lose its last digits in a JavaScript client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
 pub struct StepId(pub u64);
 
 impl fmt::Display for StepId {
@@ -76,10 +80,35 @@ impl fmt::Display for StepId {
     }
 }
 
+impl From<StepId> for String {
+    fn from(id: StepId) -> Self {
+        id.to_string()
+    }
+}
+
+impl TryFrom<String> for StepId {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, String> {
+        from_hex(&text).map(StepId)
+    }
+}
+
+/// The id `text` writes as exactly 16 lowercase hex digits, as [`StepId`] and [`BatchId`]
+/// are written; an error for any other text.
+fn from_hex(text: &str) -> Result<u64, String> {
+    let digits = text.len() == 16 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+    digits
+        .then(|| u64::from_str_radix(text, 16).ok())
+        .flatten()
+        .ok_or_else(|| format!("an id is 16 lowercase hex digits, not {text:?}"))
+}
+
 /// The session's id for the steps one completed change made, one per tool it touched,
 /// and later on several photos (decision 37); never a client's. Drawn at random, again on
-/// a clash within its log. Written as 16 hex digits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// a clash within its log. Written as 16 hex digits, on the wire too, as [`StepId`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
 pub struct BatchId(pub u64);
 
 impl fmt::Display for BatchId {
@@ -88,8 +117,22 @@ impl fmt::Display for BatchId {
     }
 }
 
+impl From<BatchId> for String {
+    fn from(id: BatchId) -> Self {
+        id.to_string()
+    }
+}
+
+impl TryFrom<String> for BatchId {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, String> {
+        from_hex(&text).map(BatchId)
+    }
+}
+
 /// Who made a step: the History tab's tag and the tooltip's who.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StepSource {
     /// The person, through any client's plain commands.
     You,
@@ -130,7 +173,8 @@ impl StepSource {
 }
 
 /// What a step says of itself in place of the tools it touched.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Note {
     /// Apertrust's own words, as a message id with its arguments, worded by the client
     /// with Fluent.
@@ -1022,7 +1066,7 @@ fn random() -> u64 {
 
 /// The active photo's history, as a client lists it and names what Undo and Redo would
 /// do (decision 78): a fact, `Fact::History`, its whole topic each time.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct History {
     /// How many commands it includes, as `Values::through` counts them.
     pub through: u64,
@@ -1038,7 +1082,7 @@ pub struct History {
 }
 
 /// A step as a client shows it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryStep {
     pub id: StepId,
     pub clock: Clock,
@@ -1055,7 +1099,7 @@ pub struct HistoryStep {
 }
 
 /// What a step changed of one tool.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolChange {
     /// The tool's id, or the operation's for its unowned parameters; borrowed for one
     /// this build knows, owned for one it does not.
@@ -1068,16 +1112,18 @@ pub struct ToolChange {
 
 /// One control's change, its values each the control's default for the photo where none
 /// is set; an unowned parameter's integer as a number.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ControlChange {
-    pub control: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub control: Id,
     pub before: ControlValue,
     pub after: ControlValue,
     pub mark: [Option<Mark>; 2],
 }
 
 /// What Undo or Redo would do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Move {
     /// Take back or put back the `count` steps from `first` on, one change's: its step, or
     /// its batch's steps, added, or the end moved over them; a batch's part where `GoTo`
