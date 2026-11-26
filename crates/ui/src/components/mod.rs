@@ -304,8 +304,18 @@ pub(crate) fn menu_asked_of(ctx: &egui::Context, id: egui::Id, focused: bool) ->
     })
 }
 
+/// Whether the frame asked to copy, Ctrl+C (Cmd+C), the copy taken out of the frame so
+/// nothing else acts on it: for a focused read-only control, which copies its own value.
+pub fn copy_asked(ui: &egui::Ui) -> bool {
+    ui.input_mut(|i| {
+        let asked = i.events.iter().any(|e| matches!(e, egui::Event::Copy));
+        i.events.retain(|e| !matches!(e, egui::Event::Copy));
+        asked
+    })
+}
+
 /// `text` on one line at most `width` wide, cut at its end with … when longer.
-fn truncated(text: &str, font: FontId, width: f32, colour: Color32) -> LayoutJob {
+pub fn truncated(text: &str, font: FontId, width: f32, colour: Color32) -> LayoutJob {
     let mut job = LayoutJob::simple_singleline(text.to_owned(), font, colour);
     job.wrap.max_width = width;
     job.wrap.max_rows = 1;

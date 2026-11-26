@@ -22,7 +22,7 @@ use apertrust_engine::session::Event;
 use apertrust_engine::session::facts::{Facts, Summed, build};
 use apertrust_engine::session::library::{DateTime, Shot};
 use apertrust_engine::session::{Exif, Photo, Selection};
-use apertrust_ui::{Builtin, Locale, Theme, translator};
+use apertrust_ui::{Builtin, Locale, translator};
 use egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
@@ -39,7 +39,7 @@ const FOLDER: &str = "/Users/ana/Pictures/2026-07 Lisbon";
 
 /// A photo from the Lisbon folder whose EXIF records what the tool shows at first, a
 /// location among it.
-fn photo() -> Photo {
+pub(crate) fn photo() -> Photo {
     let mut image = apertrust_tools::testing::image();
     if let Some(camera) = &mut image.camera {
         camera.iso = 200.0;
@@ -445,52 +445,43 @@ fn scene(photo: Option<Photo>) -> Scene {
 }
 
 fn drawn(which: Builtin, width: f32, state: Scene) -> Harness<'static, Scene> {
-    Harness::builder()
-        .with_size(egui::vec2(width, 900.0))
-        .with_context_setup(move |ctx| {
-            apertrust_ui::install(ctx, Theme::builtin(which));
-            apertrust_ui::set_locale(ctx, Locale::EnGb);
-        })
-        .build_ui_state(
-            |ui, scene: &mut Scene| {
-                let settings = Settings::default();
-                let (words, mut commands) = (translator(ui.ctx()), Vec::new());
-                let head = Head {
-                    open: true,
-                    options: scene.tool.options(&words, &scene.mirror),
-                    enabled: true,
-                    presets: Some(presets::Menu {
-                        folder: scene.folder.clone(),
-                        chosen: None,
-                        alerts: true,
-                    }),
-                    ..Head::default()
-                };
-                let mut cx = Context {
-                    mirror: &scene.mirror,
-                    settings: &settings,
-                    words: &words,
-                    commands: &mut commands,
-                };
-                // The app's own routing; then its preset applied, as `App::metadata_preset`.
-                let mut out = crate::PhotosDrawn::default();
-                parts::PanelBody::new().show(ui, |ui| {
-                    crate::metadata_section(ui, &mut scene.tool, &mut cx, head, &mut out);
-                });
-                if let Some(item) = out.metadata_preset {
-                    scene.tool.apply_item(&scene.folder, &item);
-                }
-                scene.copied.extend(out.copied);
-                scene.actions.extend(out.actions);
-                scene.ran.extend(out.run);
-                // Shown and open, it asks once drawn, as the app does.
-                if let Some(command) = scene.tool.ask(true, &scene.mirror) {
-                    scene.asked.push(command);
-                    scene.tool.sent(scene.asked.len() as u64);
-                }
-            },
-            state,
-        )
+    crate::testing::drawn(which, (width, 900.0), state, |ui, scene: &mut Scene| {
+        let settings = Settings::default();
+        let (words, mut commands) = (translator(ui.ctx()), Vec::new());
+        let head = Head {
+            open: true,
+            options: scene.tool.options(&words, &scene.mirror),
+            enabled: true,
+            presets: Some(presets::Menu {
+                folder: scene.folder.clone(),
+                chosen: None,
+                alerts: true,
+            }),
+            ..Head::default()
+        };
+        let mut cx = Context {
+            mirror: &scene.mirror,
+            settings: &settings,
+            words: &words,
+            commands: &mut commands,
+        };
+        // The app's own routing; then its preset applied, as `App::metadata_preset`.
+        let mut out = crate::PhotosDrawn::default();
+        parts::PanelBody::new().show(ui, |ui| {
+            crate::metadata_section(ui, &mut scene.tool, &mut cx, head, &mut out);
+        });
+        if let Some(item) = out.metadata_preset {
+            scene.tool.apply_item(&scene.folder, &item);
+        }
+        scene.copied.extend(out.copied);
+        scene.actions.extend(out.actions);
+        scene.ran.extend(out.run);
+        // Shown and open, it asks once drawn, as the app does.
+        if let Some(command) = scene.tool.ask(true, &scene.mirror) {
+            scene.asked.push(command);
+            scene.tool.sent(scene.asked.len() as u64);
+        }
+    })
 }
 
 fn fact_named(harness: &Harness<'_, Scene>, label: &str) -> bool {
@@ -958,14 +949,7 @@ fn every_fact_row_is_summarised() {
 /// Photographs the tool at `width` in the dark and light themes, `name-dark` and
 /// `name-light`, its scene made by `make` and left as `prepare` leaves it.
 fn photograph(name: &str, width: f32, make: fn() -> Scene, prepare: fn(&mut Harness<'_, Scene>)) {
-    let mut results = egui_kittest::SnapshotResults::new();
-    for (which, theme) in [(Builtin::Dark, "dark"), (Builtin::Light, "light")] {
-        let mut harness = drawn(which, width, make());
-        harness.run();
-        prepare(&mut harness);
-        harness.snapshot(format!("{name}-{theme}"));
-        results.extend_harness(&mut harness);
-    }
+    crate::testing::photograph(name, |which| drawn(which, width, make()), prepare);
 }
 
 fn with_photo() -> Scene {

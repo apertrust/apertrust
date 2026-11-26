@@ -1141,6 +1141,7 @@ tool-vignette-control-dithering-option-output_16bit = Wyjście 16-bitowe
 tool-scopes-description = Pokazują rozkład tonów i kolorów zdjęcia: histogram, przebieg, paradę RGB lub wektoroskop. Sięgnij po nie, by oceniać ekspozycję i kolor podczas edycji.
 tool-history-description = Wypisuje wszystkie zmiany w edycji zdjęcia, od najnowszej. Sięgnij po nią, by wrócić do wcześniejszego kroku.
 tool-metadata-description = Co aparat zapisał o wybranych zdjęciach oraz tytuł, opis, twórca, prawa i miejsce, które o nich piszesz.
+tool-info-description = Nazwa, data, aparat i ekspozycja aktywnego zdjęcia w jednym spojrzeniu.
 tool-styles-description = Pokazuje style zastosowane do zdjęcia, a potem wszystkie twoje style. Sięgnij po nie, by nadać zdjęciu wygląd jednym kliknięciem.
 
 tool-kind-corrective = Naprawia problem

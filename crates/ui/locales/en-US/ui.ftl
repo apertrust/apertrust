@@ -81,3 +81,7 @@ export-profile-tip = Image settings: the photo's own, in Raw › Output color pr
 ## The Metadata tool.
 
 metadata-metering_mode-2 = Center-weighted average
+
+## The Info tool.
+
+info-spoken-focal = { $value } millimeters

@@ -706,6 +706,8 @@ section-styles = Стилі
     .search = стилі вигляд
 section-metadata = Метадані
     .search = метадані exif iptc відомості камера об’єктив gps
+section-info = Відомості
+    .search = відомості інформація знімок камера об’єктив
 collections-folders = Теки
 section-export = Експорт
     .search = Експорт
@@ -1694,6 +1696,51 @@ alert-preset-delete-message = Його файл буде вилучено.
 alert-preset-delete-button = Видалити
 alert-style-delete-title = Видалити стиль «{ $name }»?
 alert-style-delete-message = Його файл буде видалено. Знімки, до яких його застосовано, збережуть свої редагування.
+
+## Інструмент «Відомості».
+
+info-copy-information = Копіювати відомості
+info-show-in-metadata = Показати в метаданих
+info-no-photo = Немає знімка
+info-no-lens = Об’єктив не записано
+info-white-balance-auto = AWB
+info-white-balance-manual = WB
+info-dimensions = { $width } × { $height }
+info-weight = · { $size }
+info-camera = Камера
+info-size = Розмір
+info-spoken-focal = { $value } мм
+info-spoken-aperture = f { $value }
+info-spoken-shutter = { $count ->
+        [one] { $value } секунди
+        [few] { $value } секунди
+        [many] { $value } секунд
+       *[other] { $value } секунди
+    }
+info-format-ari = ARRIRAW
+info-format-arw = Sony Alpha Raw
+info-format-cr2 = Canon Raw 2
+info-format-cr3 = Canon Raw 3
+info-format-crw = Canon Raw
+info-format-dcr = Kodak Digital Camera Raw
+info-format-dcs = Kodak Digital Camera System
+info-format-dng = Цифровий негатив
+info-format-erf = Epson Raw Format
+info-format-iiq = Phase One Intelligent Image Quality
+info-format-kdc = Kodak Digital Camera
+info-format-mef = Mamiya Electronic Format
+info-format-mos = Leaf Mosaic
+info-format-mrw = Minolta Raw
+info-format-nef = Nikon Electronic Format
+info-format-nrw = Nikon Raw
+info-format-orf = Olympus Raw Format
+info-format-pef = Pentax Electronic File
+info-format-qtk = QuickTake
+info-format-raf = Fujifilm Raw
+info-format-rw2 = Panasonic Raw 2
+info-format-srw = Samsung Raw
+info-format-3fr = Hasselblad 3F Raw
+info-format-x3f = Sigma X3F
 
 ## Інструмент «Метадані» (рішення 110).
 

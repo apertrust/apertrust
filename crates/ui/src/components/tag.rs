@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! A tag: a few letters marking a fact, as the Info tool's "AWB" after the camera and "DNG"
-//! after the size. Light with dark letters, as a checked box
+//! after the size (`docs/gui.md`, The Info tool). Light with dark letters, as a checked box
 //! is: `check` behind `check_mark`, the letters 10 points SemiBold, no border, its corners
 //! `radius_small`. It takes no focus; its tooltip says what it stands for, which screen
 //! readers hear as its description.

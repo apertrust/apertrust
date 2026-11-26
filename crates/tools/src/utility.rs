@@ -15,7 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The utilities (`docs/gui.md`, The Tools panel, One tool model): the Tools
-//! panel's tools that edit nothing, Scopes, History, Collections, Styles and Export, with
+//! panel's tools that edit nothing, Scopes, History, Collections, Metadata, Info, Styles
+//! and Export, with
 //! no [`ProcessingDefinition`](crate::ProcessingDefinition). Each is listed in [`UTILITIES`]
 //! with its words, its sentence `tool-<id>-description` as a tool's, what it measures,
 //! which its header's tooltip says ([`crate::about`]), what its header's ↺ does, its page
@@ -286,13 +287,14 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// Compress History, Truncate History and Create a Style…, then Discard History… apart, as
 /// the destructive one; Collections, the Photos tab's first; Styles, whose ⋯ holds Create
 /// a Style… (decision 106); Metadata between Collections and Styles
-/// ([`metadata::METADATA`]); and Export, its last ([`export::EXPORT`]). The pages of Scopes,
-/// History, Collections and Styles are their own widgets as custom rows, which keep what each
+/// ([`metadata::METADATA`]); Info, the active photo at a glance, in no built-in workspace's
+/// tabs; and Export, its last ([`export::EXPORT`]). The pages of Scopes, History,
+/// Collections, Info and Styles are their own widgets as custom rows, which keep what each
 /// drew before (decision 93): Scopes' the graph with its buttons, History's its steps,
-/// Collections' its recents line and its Folders, Styles' its lists; Metadata's are facts
-/// in groups; Export's are setting rows in groups, with custom rows of its own. Scopes,
-/// History and Collections are open at first, Metadata, Styles and Export closed, as every
-/// processing tool is ([`ToolDefinition::open_at_first`]).
+/// Collections' its recents line and its Folders, Info's its card, Styles' its lists;
+/// Metadata's are facts in groups; Export's are setting rows in groups, with custom rows of
+/// its own. Scopes, History, Collections and Info are open at first, Metadata, Styles and
+/// Export closed, as every processing tool is ([`ToolDefinition::open_at_first`]).
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -404,6 +406,32 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         tips: &[],
     },
     metadata::METADATA,
+    UtilityDefinition {
+        tool: ToolDefinition {
+            id: "info",
+            tabs: &[Tab {
+                id: None,
+                rows: &[Row::Custom {
+                    widget: Widget::Info,
+                    controls: &[],
+                }],
+            }],
+            before: &[],
+            after: &[],
+            // It edits nothing and keeps no settings: no ↺, no presets.
+            reset: Reset::None,
+            presets: false,
+            open_at_first: true,
+            menus: &[],
+            toolbar: &[],
+            cursors: &[],
+        },
+        measures: None,
+        titles: &[],
+        open: &[],
+        rows_shown: false,
+        tips: &[],
+    },
     UtilityDefinition {
         tool: ToolDefinition {
             id: "styles",
@@ -536,9 +564,9 @@ mod tests {
         }
     }
 
-    /// Every processing tool is closed at first; of the utilities, Collections, Scopes and
-    /// History are open and Export closed (decision 93), until the person opens or closes
-    /// one.
+    /// Every processing tool is closed at first; of the utilities, Collections, Scopes,
+    /// History and Info are open and Export closed (decision 93), until the person opens or
+    /// closes one.
     #[test]
     fn processing_tools_start_closed_and_the_utilities_as_declared() {
         for tool in crate::TOOLS {
@@ -554,6 +582,7 @@ mod tests {
             ("history", true),
             ("collections", true),
             ("metadata", false),
+            ("info", true),
             ("styles", false),
             ("export", false),
         ];

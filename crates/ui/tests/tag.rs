@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The tag, checked by what it paints and by what screen
+//! The tag (`docs/gui.md`, The Info tool), checked by what it paints and by what screen
 //! readers hear.
 
 use apertrust_ui::components::Tag;

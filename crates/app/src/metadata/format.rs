@@ -118,13 +118,13 @@ impl Source<'_> {
         self.of.exif
     }
 
-    pub(super) fn say(&self, id: &str, args: &[(&str, String)]) -> String {
+    pub(crate) fn say(&self, id: &str, args: &[(&str, String)]) -> String {
         say(self.words, id, args)
     }
 
     /// `value` with at most `decimals` decimals, its trailing zeros trimmed, in the
     /// language's numbers, signed where asked.
-    fn trimmed(&self, value: f64, decimals: usize, signed: bool) -> String {
+    pub(crate) fn trimmed(&self, value: f64, decimals: usize, signed: bool) -> String {
         let text = self.words.format_number(value, decimals, signed);
         let separator = self.words.decimal_separator();
         if !text.contains(separator) {
@@ -134,7 +134,7 @@ impl Source<'_> {
         text.trim_end_matches(separator).to_owned()
     }
 
-    fn number(&self, value: f64, decimals: usize) -> String {
+    pub(crate) fn number(&self, value: f64, decimals: usize) -> String {
         self.words.format_number(value, decimals, false)
     }
 
@@ -328,7 +328,7 @@ pub fn fact(id: &str, source: &Source<'_>) -> Shown {
 }
 
 /// The message `id` with `args`, in `words`.
-pub(super) fn say(words: &Translator, id: &str, args: &[(&str, String)]) -> String {
+pub(crate) fn say(words: &Translator, id: &str, args: &[(&str, String)]) -> String {
     let mut fluent = Args::new();
     for (name, value) in args {
         fluent.set(*name, value.as_str());
@@ -337,12 +337,12 @@ pub(super) fn say(words: &Translator, id: &str, args: &[(&str, String)]) -> Stri
 }
 
 /// A value the photo records: more than 0, and a number.
-fn recorded(value: Option<f32>) -> Option<f32> {
+pub(crate) fn recorded(value: Option<f32>) -> Option<f32> {
     value.filter(|v| v.is_finite() && *v > 0.0)
 }
 
 /// A clock's date and time, as chrono holds it.
-pub(super) fn naive(at: &DateTime) -> Option<chrono::NaiveDateTime> {
+pub(crate) fn naive(at: &DateTime) -> Option<chrono::NaiveDateTime> {
     chrono::NaiveDate::from_ymd_opt(i32::from(at.year), u32::from(at.month), u32::from(at.day))?
         .and_hms_opt(
             u32::from(at.hour),

@@ -1507,6 +1507,9 @@ pub enum Widget {
     MetadataLabels,
     /// Show on Map after its GPS group's facts, drawn disabled until the map comes.
     MetadataMap,
+    /// The Info tool's card: the active photo's name, date, camera, lens, size and its five
+    /// exposure values.
+    Info,
 }
 
 impl Widget {
@@ -1527,7 +1530,8 @@ impl Widget {
             | Widget::ExportEnd
             | Widget::MetadataRating
             | Widget::MetadataLabels
-            | Widget::MetadataMap => true,
+            | Widget::MetadataMap
+            | Widget::Info => true,
             Widget::Curve
             | Widget::ColourWheels
             | Widget::Equalizer
@@ -3283,6 +3287,7 @@ mod tests {
             Widget::CollectionsTopLine,
             Widget::CollectionsGroups,
             Widget::Styles,
+            Widget::Info,
         ] {
             let rows = Box::leak(Box::new([Row::Custom {
                 widget,

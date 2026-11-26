@@ -891,6 +891,8 @@ section-styles = Styles
     .search = styles looks
 section-metadata = Metadata
     .search = metadata exif iptc information camera lens gps
+section-info = Info
+    .search = info information glance photo camera lens
 collections-folders = Folders
 section-export = Export
     .search = export
@@ -2143,6 +2145,54 @@ alert-preset-delete-message = Its file is removed.
 alert-preset-delete-button = Delete
 alert-style-delete-title = Delete the style “{ $name }”?
 alert-style-delete-message = Its file is removed. Photos it was applied to keep their edits.
+
+## The Info tool: the active photo at a glance. Its ⋯ items; its one line with no photo,
+## and its lens line with none; the white balance's tags, auto and manual, after the
+## camera; its size line, $width × $height then $size on disk; the labels Copy Information
+## gives the camera and size lines; and what screen readers hear of its values, $value in
+## the language's numbers, $count 1 for a fraction of a second. Then each format's name,
+## the type tag's tooltip, by the decoder's name for it in lower case.
+
+info-copy-information = Copy Information
+info-show-in-metadata = Show in Metadata
+info-no-photo = No photo
+info-no-lens = No lens recorded
+info-white-balance-auto = AWB
+info-white-balance-manual = WB
+info-dimensions = { $width } × { $height }
+info-weight = · { $size }
+info-camera = Camera
+info-size = Size
+info-spoken-focal = { $value } millimetres
+info-spoken-aperture = f { $value }
+info-spoken-shutter = { $count ->
+        [one] { $value } second
+       *[other] { $value } seconds
+    }
+info-format-ari = ARRIRAW
+info-format-arw = Sony Alpha Raw
+info-format-cr2 = Canon Raw 2
+info-format-cr3 = Canon Raw 3
+info-format-crw = Canon Raw
+info-format-dcr = Kodak Digital Camera Raw
+info-format-dcs = Kodak Digital Camera System
+info-format-dng = Digital Negative
+info-format-erf = Epson Raw Format
+info-format-iiq = Phase One Intelligent Image Quality
+info-format-kdc = Kodak Digital Camera
+info-format-mef = Mamiya Electronic Format
+info-format-mos = Leaf Mosaic
+info-format-mrw = Minolta Raw
+info-format-nef = Nikon Electronic Format
+info-format-nrw = Nikon Raw
+info-format-orf = Olympus Raw Format
+info-format-pef = Pentax Electronic File
+info-format-qtk = QuickTake
+info-format-raf = Fujifilm Raw
+info-format-rw2 = Panasonic Raw 2
+info-format-srw = Samsung Raw
+info-format-3fr = Hasselblad 3F Raw
+info-format-x3f = Sigma X3F
 
 ## The Metadata tool (decision 110): its header, its rows' values and tooltips, the EXIF
 ## codes in words (CIPA DC-008, EXIF 3.0), its presets.

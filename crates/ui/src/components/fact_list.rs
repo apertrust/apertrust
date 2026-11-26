@@ -33,12 +33,12 @@
 //! - **To screen readers** it is a List named as the caller says, each row an item named
 //!   "Label: value".
 
-use egui::{
-    Event, FontId, Key, Modifiers, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2,
-};
+use egui::{FontId, Key, Modifiers, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2};
 
 use super::grid_cell::paint_labels;
-use super::{ColourLabel, ColourLabels, IconButton, focus_ring_centred, middle_cut, truncated};
+use super::{
+    ColourLabel, ColourLabels, IconButton, copy_asked, focus_ring_centred, middle_cut, truncated,
+};
 use crate::{Icon, theme, translator};
 
 /// A row's height, in points: a fact's line, shorter than a tool's rows (`panel_line`),
@@ -162,12 +162,9 @@ impl<'a> FactList<'a> {
             if pressed && self.facts[at].end.is_some_and(|end| end.enabled) {
                 output.end = Some(at);
             }
-            let copy = ui.input_mut(|i| {
-                let asked = i.events.iter().any(|e| matches!(e, Event::Copy));
-                i.events.retain(|e| !matches!(e, Event::Copy));
-                asked
-            });
-            if copy && let Some(value) = self.facts[at].value {
+            if copy_asked(ui)
+                && let Some(value) = self.facts[at].value
+            {
                 ui.ctx().copy_text(value.to_owned());
                 output.copied = Some(at);
             }
