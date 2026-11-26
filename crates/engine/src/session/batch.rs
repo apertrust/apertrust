@@ -479,8 +479,9 @@ impl Engine {
     }
 
     /// Every earlier batch that still has the active photo to come applied to it, in the
-    /// order sent, before a command on its edit (decision 109); what they did to it.
-    pub(super) fn catch_up(&mut self, events: &mut Vec<Event>) -> Effect {
+    /// order sent, before a command on its edit (decision 109), but those of the batch `but`,
+    /// which the command takes back; what they did to it.
+    pub(super) fn catch_up(&mut self, but: Option<BatchId>, events: &mut Vec<Event>) -> Effect {
         let mut effect = Effect::default();
         if self.opening.is_some() {
             return effect;
@@ -489,6 +490,9 @@ impl Engine {
             return effect;
         };
         for pending in self.batches.clone() {
+            if Some(pending.batch.id) == but {
+                continue;
+            }
             if let Some(photo) = pending.to_come(&active) {
                 let reached = self.reach_live(&pending, &photo, events);
                 effect.render |= reached.render;
@@ -784,8 +788,9 @@ impl Engine {
         self.move_others(&pending, redo, active, events);
     }
 
-    /// [`Command::UndoBatch`]: the remembered batch `batch` taken back on each of its
-    /// photos still on it, the active one, once live, by its own Undo where that would take
+    /// [`Command::UndoBatch`]: any other batch still to reach the active photo applied to it
+    /// first, then the remembered batch `batch` taken back on each of its photos still on
+    /// it, the active one, once live, by its own Undo where that would take
     /// it back and it is not open for viewing only, the others by an `undo-batch` job, an
     /// active photo still opening among them, routed once live; one the session does not
     /// remember refused.
@@ -800,6 +805,8 @@ impl Engine {
         else {
             return Err(SessionError::UnknownBatch { batch });
         };
+        // Any other batch still to reach the active photo applied to it first, never this one.
+        let caught = self.catch_up(Some(batch), events);
         // Still opening, it is the job's: no command on the edit is taken before it is live.
         let live = self.open.as_ref().filter(|_| self.opening.is_none());
         let active = live.map(|open| open.sidecar.clone());
@@ -814,10 +821,12 @@ impl Engine {
         let moves = on_active
             && (self.open.as_ref())
                 .is_some_and(|o| o.view_only.is_none() && o.history.moves_batch(batch, false));
-        let effect = match moves {
+        let mut effect = match moves {
             true => self.apply_edit(Command::Undo, Instant::now())?,
             false => Effect::default(),
         };
+        effect.render |= caught.render;
+        effect.save |= caught.save;
         let done = (active.as_deref())
             .filter(|_| on_active)
             .map(|active| (active, moves));
