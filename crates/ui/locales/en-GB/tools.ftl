@@ -1212,6 +1212,7 @@ tool-vignette-control-dithering-option-output_16bit = 16-bit output
 tool-scopes-description = Shows how the photo’s tones and colours are spread: histogram, waveform, RGB parade or vectorscope. Reach for it to judge exposure and colour as you edit.
 tool-history-description = Lists every change to the photo’s edit, newest first. Reach for it to go back to an earlier step.
 tool-metadata-description = What the camera recorded about the selected photos, and the title, description, creator, rights and place you write about them.
+tool-info-description = The active photo’s name, date, camera and exposure at a glance.
 tool-styles-description = Lists the styles applied to the photo, then every style you have made. Reach for it to give a photo a look in one click.
 
 tool-kind-corrective = Fixes a problem

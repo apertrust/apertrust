@@ -31,7 +31,7 @@
 pub mod format;
 pub mod several;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -642,7 +642,7 @@ impl Rated {
             }
         } else if let Some(rating) = (open.or(shown))
             // While a selection command is untold, no photo, as the other rows.
-            .filter(|_| open_photo(cx).is_some() && mirror.selection_settled())
+            .filter(|_| active_photo(cx.mirror).is_some() && mirror.selection_settled())
         {
             photos = 1;
             count(rating);
@@ -871,7 +871,7 @@ impl Metadata {
                 }
             }
             Subject::Several { .. } => {
-                let active = open_photo(cx).map(format::Of::photo);
+                let active = active_photo(cx.mirror).map(format::Of::photo);
                 let several = several::Words {
                     words,
                     home: self.home.as_deref(),
@@ -887,19 +887,10 @@ impl Metadata {
                 }
             }
             Subject::One(photo) => {
-                let shown = format::fact(id, &self.source(photo, cx));
-                let why = if photo.exif.unread.contains(&exif_field(id)) {
-                    let mut args = Args::new();
-                    args.set("format", photo.format.as_str());
-                    words.text_with("metadata-fact-unread", Some(&args))
-                } else {
-                    none
-                };
-                let first = shown.value.clone().unwrap_or(why);
-                let tip = [Some(first), shown.note].into_iter().flatten();
+                let (value, tip) = one_fact(id, photo, &self.source(photo, cx));
                 Worded {
-                    value: shown.value,
-                    tip: tip.collect::<Vec<_>>().join("\n"),
+                    value,
+                    tip,
                     enabled: true,
                 }
             }
@@ -922,9 +913,31 @@ impl Metadata {
     }
 }
 
-/// The active photo, where one is open.
-fn open_photo<'a>(cx: &'a Context<'_>) -> Option<&'a Photo> {
-    match &cx.mirror.photo {
+/// One photo's fact `id` as `source` words it: its value, `None` for "—", and its tooltip
+/// before its tag, the value or why it has none (the camera recorded none, or Apertrust
+/// does not read it from the file's format), then what it adds.
+pub(crate) fn one_fact(
+    id: &str,
+    photo: &Photo,
+    source: &format::Source<'_>,
+) -> (Option<String>, String) {
+    let words = source.words;
+    let shown = format::fact(id, source);
+    let why = if photo.exif.unread.contains(&exif_field(id)) {
+        let mut args = Args::new();
+        args.set("format", photo.format.as_str());
+        words.text_with("metadata-fact-unread", Some(&args))
+    } else {
+        words.text(&messages::fact_words(ID, id)[2])
+    };
+    let first = shown.value.clone().unwrap_or(why);
+    let tip = [Some(first), shown.note].into_iter().flatten();
+    (shown.value, tip.collect::<Vec<_>>().join("\n"))
+}
+
+/// The active photo, where one is open, whatever else is selected.
+pub(crate) fn active_photo(mirror: &Mirror) -> Option<&Photo> {
+    match &mirror.photo {
         crate::mirror::PhotoState::Open(photo) => Some(photo),
         _ => None,
     }
@@ -990,7 +1003,7 @@ impl<'a> Subject<'a> {
             return Subject::Several { count, names };
         }
         // The selection on its way may leave the active photo out: nothing until it is told.
-        match open_photo(cx).filter(|_| cx.mirror.selection_settled()) {
+        match active_photo(cx.mirror).filter(|_| cx.mirror.selection_settled()) {
             Some(photo) => Subject::One(photo),
             None => Subject::None,
         }

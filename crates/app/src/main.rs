@@ -64,6 +64,7 @@ mod find;
 mod folder;
 mod hardware;
 mod history;
+mod info;
 mod instance;
 mod jobs;
 mod layout;
@@ -6584,6 +6585,7 @@ impl App {
         let (collections, exporting) = (holds(library::ID), holds(export::ID));
         let styling = holds(styles::tool::ID);
         let describing = holds(metadata::ID);
+        let glancing = holds(info::ID);
         // The styles are read as the tool first shows, and again after one is created,
         // copied, renamed or deleted, or the language changes: the built-ins whatever the
         // user data folder, the person's only with one.
@@ -6622,6 +6624,7 @@ impl App {
                 ..self.shell.styles_head(ui.ctx(), &state)
             }),
             metadata: describing.then(|| self.metadata_head(ui.ctx(), &state)),
+            info: glancing.then(|| self.info_head(ui.ctx(), &state)),
             collections: (self.shell).layout_head(ui.ctx(), library::ID, &state),
             export: exporting.then(|| ExportShown {
                 head: tools::Head {
@@ -6749,8 +6752,16 @@ impl App {
             self.shell
                 .toggle_section(&metadata::definition().tool, false);
         }
+        if photos.info_toggle {
+            self.shell.toggle_section(&info::definition().tool, false);
+        }
         if let Some(text) = photos.copied.take() {
             ui.ctx().copy_text(text);
+        }
+        // Show in Metadata: the Metadata tool opened in its tab, as Add Tool ▸ shows a tool.
+        if photos.show_metadata {
+            self.shell.reveal(metadata::ID);
+            ui.ctx().request_repaint();
         }
         if let Some(item) = photos.metadata_preset.take() {
             self.preset(metadata::ID, item, ui.ctx());
@@ -6805,15 +6816,33 @@ impl App {
     /// The Metadata tool's header (decision 110): its own ⋯ items, Copy Information and Copy
     /// Coordinates, then the layout's, with the photo they act on, and its presets.
     fn metadata_head(&self, ctx: &egui::Context, state: &State) -> tools::Head {
-        let definition = &metadata::definition().tool;
+        let own = self.metadata.options(&translator(ctx), &self.mirror);
+        self.own_head(ctx, &metadata::definition().tool, own, state)
+    }
+
+    /// The Info tool's header: its own ⋯ items, Copy Information and Show in Metadata, then
+    /// the layout's.
+    fn info_head(&self, ctx: &egui::Context, state: &State) -> tools::Head {
+        let own = info::options(&translator(ctx), &self.mirror);
+        self.own_head(ctx, &info::definition().tool, own, state)
+    }
+
+    /// A utility's header as the shell gives it, its ⋯ starting with its own items `own`,
+    /// then the layout's after a separator, with the photo they act on.
+    fn own_head(
+        &self,
+        ctx: &egui::Context,
+        definition: &ToolDefinition,
+        mut own: Vec<apertrust_ui::popup::Entry>,
+        state: &State,
+    ) -> tools::Head {
         let head = self.shell.head(ctx, definition, state, false);
-        let mut options = self.metadata.options(&translator(ctx), &self.mirror);
         if !head.options.is_empty() {
-            options.push(apertrust_ui::popup::Entry::Separator);
+            own.push(apertrust_ui::popup::Entry::Separator);
         }
-        options.extend(head.options);
+        own.extend(head.options);
         tools::Head {
-            options,
+            options: own,
             photo: self.mirror.photo.open(),
             ..head
         }
@@ -10216,6 +10245,8 @@ struct PhotosShown {
     styles: Option<tools::Head>,
     /// The Metadata tool's header, where the tab shown holds it.
     metadata: Option<tools::Head>,
+    /// The Info tool's, where the tab shown holds it.
+    info: Option<tools::Head>,
     export: Option<ExportShown>,
 }
 
@@ -10253,6 +10284,10 @@ struct PhotosDrawn {
     copied: Option<String>,
     /// Whether the Metadata tool was drawn, which asks for several photos' summary.
     metadata_drawn: bool,
+    /// Whether the Info tool's header was toggled, and its Show in Metadata chosen; what
+    /// its Copy Information copies goes into `copied`.
+    info_toggle: bool,
+    show_metadata: bool,
 }
 
 /// Routes the change of a utility's setting row, `key` in full set to `value` (decision
@@ -10304,6 +10339,10 @@ fn photos_tool(
         && let Some(head) = shown.metadata.take()
     {
         metadata_section(ui, metadata, cx, head, out);
+    } else if id == info::ID
+        && let Some(head) = shown.info.take()
+    {
+        info_section(ui, cx, head, out);
     } else if id == styles::tool::ID
         && let Some(head) = shown.styles.take()
     {
@@ -10380,6 +10419,30 @@ fn metadata_section(
     out.changes.extend(section.changes);
     // Rating's stars and the labels' dots run the rating's actions, as the keys do.
     out.run.extend(metadata.take_ran());
+}
+
+/// Draws the Info tool's section with `head`, what it asked for going into `out`: its
+/// header's registry actions, its toggle, what Copy Information copies and Show in Metadata.
+fn info_section(
+    ui: &mut egui::Ui,
+    cx: &mut utility::Context<'_>,
+    head: tools::Head,
+    out: &mut PhotosDrawn,
+) {
+    let section = utility::section(ui, &mut info::Info, cx, head, false);
+    for pressed in &section.pressed {
+        match pressed {
+            tools::Pressed::Run(id) => out.run.push(*id),
+            tools::Pressed::Toggle => out.info_toggle = true,
+            tools::Pressed::Own(id) if id == info::COPY_INFORMATION => {
+                let photo = metadata::active_photo(cx.mirror);
+                out.copied = photo.map(|photo| info::Card::of(photo, cx.words).copied);
+            }
+            tools::Pressed::Own(id) if id == info::SHOW_IN_METADATA => out.show_metadata = true,
+            _ => {}
+        }
+    }
+    out.changes.extend(section.changes);
 }
 
 /// What the tab shown's sections asked for, as [`panel_body`] returns it: Scopes', the
@@ -10461,7 +10524,9 @@ fn panel_body(
                 changes.extend(drawn.changes);
                 history_asked.extend(drawn.actions);
             }
-            library::ID | export::ID | styles::tool::ID | metadata::ID => others(ui, id, cx),
+            library::ID | export::ID | styles::tool::ID | metadata::ID | info::ID => {
+                others(ui, id, cx);
+            }
             _ => {
                 let tool = tools.iter().find(|tool| tool.definition().tool.id == id);
                 let state_of = values.tools.iter().find(|state| state.tool == id);
@@ -16208,14 +16273,14 @@ mod tests {
         // Kept off, it opens on the tab it opens on.
         let off = essentials(&folder, false);
         assert_eq!(shown_id(&off), "adjust");
-        // The Default workspace hides nothing: its Hidden tab shows, empty.
+        // The Default workspace hides the Info tool alone.
         let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Nix);
         shell.open_workspace(layout::Workspace::builtin_default());
         let state = shell.state(&ctx, false, false);
         assert_eq!(state.hidden_tab, Some(false));
         shell.run(ActionId::PANEL_TAB_HIDDEN, &state, &ctx, &[]);
         assert_eq!(shown_id(&shell), layout::HIDDEN);
-        assert!(shell.shown_tab().unwrap().order.is_empty());
+        assert_eq!(shell.shown_tab().unwrap().order, [info::ID]);
     }
 
     /// What reveals a tool reveals a hidden one in the Hidden tab, shown for the moment
@@ -16439,11 +16504,18 @@ mod tests {
         harness.get_by_label("Set by --conf for this run");
     }
 
-    /// The Default workspace's Hidden tab, shown, says it holds nothing.
+    /// The Default workspace's Hidden tab, shown, says it holds nothing once the Info tool,
+    /// its one hidden tool, is in a tab.
     #[test]
     fn the_hidden_tab_with_nothing_hidden_says_so() {
         let folder = settings::testing::Folder::new("panel-hidden-empty");
         let mut harness = tools_panel(&folder);
+        let shown = layout::Move::ToTab {
+            tool: info::ID,
+            from: None,
+            to: "photos".to_owned(),
+        };
+        assert!(harness.state_mut().shell.workspace.apply(&shown));
         harness.state_mut().shell.show_hidden = true;
         harness.run();
         harness.get_by_role_and_label(Role::Tab, "Hidden").click();
@@ -23438,6 +23510,7 @@ mod tests {
                                 collections: tools::Head::default(),
                                 styles: None,
                                 metadata: None,
+                                info: None,
                                 export: Some(shown),
                             };
                             let no_titles = |id: &str| id.to_owned();
@@ -28297,6 +28370,29 @@ mod tests {
         item.click();
         harness.run();
         assert_eq!(harness.state().shell.panel_tab, COLLECTIONS);
+    }
+
+    /// `Shell::reveal` on the Metadata tool, which `App::tools_panel` runs for the Info
+    /// tool's Show in Metadata, opens it in its tab from another, as Add Tool ▸ shows a tool:
+    /// the Photos tab in the Default workspace, the Hidden tab in Essentials, which places it
+    /// in none.
+    #[test]
+    fn show_in_metadata_opens_the_metadata_tool_in_its_tab() {
+        let metadata = &metadata::definition().tool;
+        let mut shell = opened_on("adjust");
+        assert!(!shell.section_open(metadata));
+        shell.reveal(metadata::ID);
+        assert_eq!(shell.shown_tab().map(|tab| tab.id.as_str()), Some("photos"));
+        assert!(shell.section_open(metadata));
+        assert_eq!(shell.reveal, Some(metadata::ID));
+        let folder = settings::testing::Folder::new("show-in-metadata");
+        let mut shell = essentials(&folder, false);
+        shell.reveal(metadata::ID);
+        assert_eq!(
+            shell.shown_tab().map(|tab| tab.id.as_str()),
+            Some(layout::HIDDEN)
+        );
+        assert!(shell.section_open(metadata));
     }
 
     /// Ctrl+E (Cmd+E on the Mac) reveals the Export tool from another tab: it chooses the

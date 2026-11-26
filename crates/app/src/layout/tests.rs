@@ -89,6 +89,8 @@ const DEFAULT_PINNED: [(&str, &[&str]); 6] = [
 
 /// Collections' id.
 const COLLECTIONS: &str = crate::library::ID;
+/// The tools no built-in workspace places, so in every one's Hidden tab: the Info tool.
+const HIDDEN_BY_DEFAULT: [&str; 1] = [crate::info::ID];
 
 fn default_layout() -> Layout {
     Layout::defaults(DEFAULT).expect("built in")
@@ -177,11 +179,15 @@ fn names_only_what_exists(layout: &Layout) -> Shown {
     shown
 }
 
-/// Holds `shown` to placing every tool of the Tools panel, none hidden: Scopes in each tab
-/// of `pinned`, every other tool in one tab.
+/// Holds `shown` to placing every tool of the Tools panel but those no built-in workspace
+/// places ([`HIDDEN_BY_DEFAULT`]), which it hides: Scopes in each tab of `pinned`, every
+/// other tool in one tab.
 fn places_every_tool(shown: &Shown, pinned: &[&str]) {
-    assert!(shown.hidden.is_empty(), "{:?}", shown.hidden);
-    for tool in known() {
+    assert_eq!(shown.hidden, HIDDEN_BY_DEFAULT);
+    for tool in known()
+        .into_iter()
+        .filter(|t| !HIDDEN_BY_DEFAULT.contains(t))
+    {
         let tabs = shown.tabs.iter().filter(|tab| tab.holds(tool)).count();
         let expected = if tool == SCOPES { pinned.len() } else { 1 };
         assert_eq!(tabs, expected, "{tool} in {tabs} tabs");
@@ -322,8 +328,8 @@ fn the_essentials_workspace_shows_the_tools_most_edits_need() {
 
 /// The Hidden tab (decision 96): id `hidden`, its title `tab-hidden`, its icon Lucide's
 /// `eye-off`, nothing pinned; the workspace's hidden tools, processing tools in pipeline
-/// order, first at the top, as Default's Raw lists them, then utilities. Default hides
-/// none; Essentials every tool its three tabs leave out; Export is never in it.
+/// order, first at the top, as Default's Raw lists them, then utilities. Default hides the
+/// Info tool alone; Essentials every tool its three tabs leave out; Export is never in it.
 #[test]
 fn the_hidden_tab_lists_the_hidden_tools_in_processing_order() {
     let workspaces = Workspaces::builtin();
@@ -332,7 +338,8 @@ fn the_hidden_tab_lists_the_hidden_tools_in_processing_order() {
     assert_eq!(tab.id, HIDDEN);
     assert_eq!(tab.title, Title::Message("tab-hidden".to_owned()));
     assert_eq!(tab.icon, Icon::EyeOff);
-    assert!(tab.pinned.is_empty() && tab.order.is_empty());
+    assert!(tab.pinned.is_empty());
+    assert_eq!(tab.order, HIDDEN_BY_DEFAULT);
     let (essentials, _) = workspaces.open(ESSENTIALS);
     let order = &essentials.hidden_tab().order;
     let built: Vec<&str> = [
@@ -349,6 +356,7 @@ fn the_hidden_tab_lists_the_hidden_tools_in_processing_order() {
         "vignette",
         "colorout",
         "metadata",
+        "info",
         "styles",
     ]
     .into_iter()
@@ -1434,7 +1442,7 @@ fn a_written_file_lists_one_item_a_line() {
     );
     let text = std::fs::read_to_string(&file).unwrap();
     assert!(
-        text.contains("hidden = [\n    \"grain\",\n    \"bloom\",\n]"),
+        text.contains("hidden = [\n    \"info\",\n    \"grain\",\n    \"bloom\",\n]"),
         "{text}"
     );
     assert!(text.contains("seen = [\n    \""), "{text}");
@@ -1519,9 +1527,9 @@ fn add_tool_lists_every_tool_not_in_the_tab_hidden_ones_last() {
             *tool
         })
         .collect();
-    let mut both = ["grain", "vignette"];
-    both.sort_by_key(|id| hidden_order(id));
-    assert_eq!(hidden, both);
+    let mut all = ["grain", "vignette", crate::info::ID];
+    all.sort_by_key(|id| hidden_order(id));
+    assert_eq!(hidden, all);
     // Emptied, Effects lists them all; Detail, still to come, takes none.
     for tool in shown_tab(&workspace, "effects").order.clone() {
         moved(&mut workspace, Move::Hide { tool });

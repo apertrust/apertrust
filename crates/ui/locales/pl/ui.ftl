@@ -711,6 +711,8 @@ section-styles = Style
     .search = style wygląd
 section-metadata = Metadane
     .search = metadane exif iptc informacje aparat obiektyw gps
+section-info = Informacje
+    .search = informacje zdjęcie aparat obiektyw
 collections-folders = Foldery
 section-export = Eksport
     .search = eksportuj
@@ -1698,6 +1700,51 @@ alert-preset-delete-message = Jego plik zostanie usunięty.
 alert-preset-delete-button = Usuń
 alert-style-delete-title = Usunąć styl „{ $name }”?
 alert-style-delete-message = Jego plik zostanie usunięty. Zdjęcia, do których go zastosowano, zachowają swoje edycje.
+
+## Narzędzie Informacje.
+
+info-copy-information = Kopiuj informacje
+info-show-in-metadata = Pokaż w metadanych
+info-no-photo = Brak zdjęcia
+info-no-lens = Nie zapisano obiektywu
+info-white-balance-auto = AWB
+info-white-balance-manual = WB
+info-dimensions = { $width } × { $height }
+info-weight = · { $size }
+info-camera = Aparat
+info-size = Rozmiar
+info-spoken-focal = { $value } mm
+info-spoken-aperture = f { $value }
+info-spoken-shutter = { $count ->
+        [one] { $value } sekundy
+        [few] { $value } sekundy
+        [many] { $value } sekund
+       *[other] { $value } sekundy
+    }
+info-format-ari = ARRIRAW
+info-format-arw = Sony Alpha Raw
+info-format-cr2 = Canon Raw 2
+info-format-cr3 = Canon Raw 3
+info-format-crw = Canon Raw
+info-format-dcr = Kodak Digital Camera Raw
+info-format-dcs = Kodak Digital Camera System
+info-format-dng = Cyfrowy negatyw
+info-format-erf = Epson Raw Format
+info-format-iiq = Phase One Intelligent Image Quality
+info-format-kdc = Kodak Digital Camera
+info-format-mef = Mamiya Electronic Format
+info-format-mos = Leaf Mosaic
+info-format-mrw = Minolta Raw
+info-format-nef = Nikon Electronic Format
+info-format-nrw = Nikon Raw
+info-format-orf = Olympus Raw Format
+info-format-pef = Pentax Electronic File
+info-format-qtk = QuickTake
+info-format-raf = Fujifilm Raw
+info-format-rw2 = Panasonic Raw 2
+info-format-srw = Samsung Raw
+info-format-3fr = Hasselblad 3F Raw
+info-format-x3f = Sigma X3F
 
 ## Narzędzie Metadane (decyzja 110).
 

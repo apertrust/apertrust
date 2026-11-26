@@ -307,6 +307,12 @@ impl Translator {
         medium_date(self.locale, date, year).unwrap_or_default()
     }
 
+    /// `date` in the locale's long date with its weekday, as screen readers say it:
+    /// "Saturday, 4 July 2026" in British English. Empty for a date the calendar cannot place.
+    pub fn format_spoken_date(&self, date: chrono::NaiveDate) -> String {
+        long_date(self.locale, date).unwrap_or_default()
+    }
+
     /// `at`'s time to the minute, as the locale writes it after a medium date: "08:10" in
     /// British English, "8:10 AM" in American. Empty for a time the calendar cannot place.
     pub fn format_time(&self, at: chrono::NaiveDateTime) -> String {
@@ -620,6 +626,28 @@ static DAYS_TO_MINUTE: [OnceLock<DateTimes>; 4] = [
     OnceLock::new(),
 ];
 
+/// The CLDR formatters of a long date with its weekday, made when first used.
+static LONG_DAYS: [OnceLock<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::YMDE>>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+
+/// `date` in `locale`'s long date with its weekday.
+fn long_date(locale: Locale, date: chrono::NaiveDate) -> Option<String> {
+    use chrono::Datelike as _;
+    let at = Date::try_new_gregorian(date.year(), date.month() as u8, date.day() as u8).ok()?;
+    let formatter = LONG_DAYS[locale.numbers()].get_or_init(|| {
+        FixedCalendarDateTimeFormatter::try_new(
+            (&language_of(locale)).into(),
+            fieldsets::YMDE::long(),
+        )
+        .expect("CLDR data for every locale's language is compiled in")
+    });
+    Some(formatter.format(&at).to_string())
+}
+
 fn language_of(locale: Locale) -> icu_locale_core::Locale {
     (locale.language().parse()).expect("the locales' ids are valid; tested")
 }
@@ -854,6 +882,9 @@ mod tests {
             "сб, 4 лип. 2026\u{202f}р., 08:10:01"
         );
         assert_eq!(long(Locale::Pl, None), "sob., 4 lip 2026, 08:10:01");
+        let spoken = |locale| Translator::new(locale).format_spoken_date(at.date());
+        assert_eq!(spoken(Locale::EnGb), "Saturday, 4 July 2026");
+        assert_eq!(spoken(Locale::EnUs), "Saturday, July 4, 2026");
         let short = |locale| Translator::new(locale).format_date_time_to_second(at);
         assert_eq!(short(Locale::EnGb), "4 Jul 2026, 08:10:01");
         let bytes = |locale, size, decimals, unit| {
