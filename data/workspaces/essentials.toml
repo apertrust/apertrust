@@ -15,10 +15,9 @@
 version = 1
 hidden = []
 
-# The Toolbar's items in order (decision 92): the default list. The Mac never draws the menu
-# button, and keeps it in the list.
+# The Toolbar's items in order (decision 92): the default list. The menu button is no item:
+# on Windows and Linux it stands first whatever the list holds.
 toolbar = [
-    "menu-button",
     "import",
     "export",
     "reset",

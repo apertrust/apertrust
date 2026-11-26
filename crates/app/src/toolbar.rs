@@ -57,13 +57,10 @@ pub struct Placeable {
     pub words: Option<&'static str>,
 }
 
-/// The menu button's id, a part's (decision 92): Show Menu Button puts it back first.
-pub const MENU_BUTTON: &str = "menu-button";
-
-/// The parts (decision 92), by id, each with its icon and words. The assistant joins them
-/// in Phase 6.
-const PARTS: [(&str, Option<Icon>, Option<&str>); 4] = [
-    (MENU_BUTTON, Some(Icon::Menu), Some("toolbar-menu")),
+/// The parts (decision 92), by id, each with its icon and words. The menu button is none:
+/// on Windows and Linux it stands first whatever the list holds, so an old file's
+/// `menu-button` is an id the set lacks. The assistant joins them in Phase 6.
+const PARTS: [(&str, Option<Icon>, Option<&str>); 3] = [
     ("jobs", None, Some("jobs-name")),
     ("save-state", None, None),
     ("cursors", None, Some("cursor-well")),
@@ -303,7 +300,6 @@ mod tests {
         assert_eq!(once.len(), ids.len(), "an id twice: {ids:?}");
         let kinds: Vec<(&str, Kind)> = set.iter().map(|placed| (placed.id, placed.kind)).collect();
         for (id, kind) in [
-            ("menu-button", Kind::Part),
             ("cursors", Kind::Part),
             ("import", Kind::App),
             ("guides", Kind::App),
@@ -336,18 +332,27 @@ mod tests {
         for id in ["reset", "export", "tool-flip-rotate_cw", "show-collections"] {
             assert!(first(id), "{id}");
         }
-        for id in ["import", "open", "settings", "menu-button", "space"] {
+        for id in ["import", "open", "settings", "cursors", "space"] {
             assert!(!first(id), "{id}");
         }
     }
 
-    /// Parts' and spacings' ids are their own: none is a registry action's, as
-    /// `menu-button` is not the `menu` action.
+    /// Parts' and spacings' ids are their own: none is a registry action's.
     #[test]
     fn no_part_s_id_is_a_registry_id() {
         for id in PARTS.iter().map(|(id, _, _)| *id).chain(SPACINGS) {
             assert!(actions::named(id).is_none(), "{id} is a registry action's");
         }
+    }
+
+    /// Decision 92: the menu button is no item of the list, so the set holds no
+    /// `menu-button`, and an old file's is skipped where it stands.
+    #[test]
+    fn the_set_holds_no_menu_button() {
+        assert!(set().iter().all(|placed| placed.id != "menu-button"));
+        let drawn = listed(["import", "menu-button", "undo"]);
+        let ids: Vec<&str> = drawn.iter().map(|placed| placed.id).collect();
+        assert_eq!(ids, ["import", "undo"]);
     }
 
     /// Every item's words exist in every language.

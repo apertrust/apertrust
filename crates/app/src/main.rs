@@ -3572,8 +3572,6 @@ impl Shell {
             toolbar_labels: self.toolbar_labels,
             // The toolbar menu's own, as it opens ([`Shell::toolbar_menu`]).
             toolbar_item: None,
-            menu_button_hidden: self.drawn_menus
-                && !(self.workspace.toolbar().iter()).any(|id| id == toolbar::MENU_BUTTON),
             toolbar_kept: self.workspace.keeps_toolbar(),
             panel_tab: self.panel_tab,
             workspace: actions::workspace(&self.workspace.id),
@@ -3736,7 +3734,6 @@ impl Shell {
         );
         let entries = listed.iter().filter_map(|placed| {
             let entry = match (placed.kind, placed.id) {
-                (toolbar::Kind::Part, "menu-button") => ToolbarEntry::MenuButton,
                 (toolbar::Kind::Part, "jobs") => ToolbarEntry::Jobs,
                 (toolbar::Kind::Part, "save-state") => ToolbarEntry::SaveState,
                 (toolbar::Kind::Part, "cursors") => ToolbarEntry::Cursors,
@@ -4197,14 +4194,6 @@ impl Shell {
             // Run on its item by the toolbar menu alone ([`Shell::toolbar_menu`]): with no
             // item it never runs from here.
             Intent::ToolbarHide => {}
-            Intent::ShowMenuButton => {
-                let toolbar = self.workspace.toolbar();
-                if !toolbar.iter().any(|id| id == toolbar::MENU_BUTTON) {
-                    let first = std::iter::once(toolbar::MENU_BUTTON.to_owned());
-                    let list = first.chain(toolbar.iter().cloned()).collect();
-                    self.move_toolbar(layout::Move::Toolbar(list), ctx);
-                }
-            }
             Intent::ResetToolbar => self.move_toolbar(layout::Move::ResetToolbar, ctx),
             Intent::View(view) => self.view = view,
             // A tab bar's menu lists tools under the tab shown as it opened.
@@ -23513,12 +23502,12 @@ mod tests {
         harness.run();
     }
 
-    /// Decision 92: the toolbar menu's Hide takes the item it opened on, by a right-click or
-    /// Shift+F10, out of the workspace's Toolbar, and Show Menu Button puts the menu button
-    /// back first; each change is the whole list, written into the workspace's file from
-    /// its bundled one, the rest of the list as it was.
+    /// Decision 92: the toolbar menu's Hide takes the item it opened on, by a right-click,
+    /// out of the workspace's Toolbar, the whole list written into the workspace's file
+    /// from its bundled one, the rest of the list as it was. Shift+F10 on the menu button,
+    /// which is no item, opens the menu with no Hide, the list unchanged.
     #[test]
-    fn hide_and_show_menu_button_write_the_workspace_s_toolbar() {
+    fn hide_writes_the_workspace_s_toolbar() {
         let folder = settings::testing::Folder::new("toolbar-menu-hide");
         let files = folder.0.join("workspaces");
         let mut harness = bench(OperatingSystem::Nix);
@@ -23542,29 +23531,24 @@ mod tests {
             .get_by_role_and_label(Role::MenuItem, "Hide “Undo”")
             .click();
         harness.run();
-        assert_eq!(list(&harness), without(&["undo"]));
+        let shown = without(&["undo"]);
+        assert_eq!(list(&harness), shown);
         assert!(harness.query_by_label("Undo").is_none());
-        // The menu button hidden, from Shift+F10 on it; Show Menu Button puts it back at the
-        // start.
+        // Shift+F10 on the menu button: the toolbar menu as on the empty areas, no Hide.
         harness.get_by_role_and_label(Role::Button, "Menu").focus();
         harness.run();
         harness.key_press_modifiers(Modifiers::SHIFT, egui::Key::F10);
         harness.run();
-        harness
-            .get_by_role_and_label(Role::MenuItem, "Hide “Menu”")
-            .click();
+        let items = (harness.query_all_by_role(Role::MenuItem))
+            .chain(harness.query_all_by_role(Role::MenuItemCheckBox));
+        let labels: Vec<String> = (items.filter_map(|item| item.accesskit_node().label()))
+            .map(|label| label.to_string())
+            .collect();
+        assert!(labels.contains(&"Toolbar labels".to_owned()), "{labels:?}");
+        assert!(labels.iter().all(|l| !l.starts_with("Hide")), "{labels:?}");
+        harness.key_press(Key::Escape);
         harness.run();
-        assert_eq!(list(&harness), without(&["undo", "menu-button"]));
-        let empty = empty_point(&harness);
-        right_click_bench(&mut harness, empty);
-        assert!(harness.query_by_label("Hide “Menu”").is_none());
-        harness
-            .get_by_role_and_label(Role::MenuItem, "Show menu button")
-            .click();
-        harness.run();
-        let shown = without(&["undo"]);
         assert_eq!(list(&harness), shown);
-        assert_eq!(shown[0], "menu-button");
         // Written into the workspace's own file; the bundled list unchanged.
         harness.state_mut().shell.workspace_files.flush();
         let (read, warnings) = layout::Workspace::open(Some(&files), layout::DEFAULT);
@@ -23651,8 +23635,8 @@ mod tests {
             harness.get_by_role_and_label(Role::MenuItem, &item).click();
             harness.run();
         };
-        // The menu button first: the next item drawn that can take the focus.
-        let next = [
+        // The first action that can run, then the next item drawn that can take the focus.
+        let first = [
             "Import…",
             "Export…",
             "Reset",
@@ -23664,14 +23648,16 @@ mod tests {
         .into_iter()
         .find(|name| enabled(&harness, name))
         .expect("an enabled action");
-        hide(&mut harness, "Menu");
-        assert_eq!(harness.state().shell.announced, "Menu hidden");
-        assert_eq!(focused(&harness).as_deref(), Some(next));
         // Every action hidden in turn from the keys, the focus moving on each time, until
         // the last lands it on the cursors' well next, on its chosen face.
-        let mut name = next.to_owned();
+        let mut name = first.to_owned();
+        let mut announced = false;
         for _ in 0..8 {
             hide(&mut harness, &name);
+            if !announced {
+                assert_eq!(harness.state().shell.announced, format!("{name} hidden"));
+                announced = true;
+            }
             let faces = harness.query_all_by_role(Role::RadioButton);
             let mut face = faces.filter(|f| f.accesskit_node().is_focused());
             if let Some(face) = face.next() {
@@ -23689,20 +23675,23 @@ mod tests {
     }
 
     /// Decision 92: Hide from the keys on a Toolbar's last item moves the focus where F6
-    /// goes next, nothing left on the Toolbar to take it.
+    /// goes next, no item left in the list to take it, the menu button being none.
     #[test]
     fn hide_from_the_keys_on_the_last_item_moves_the_focus_on() {
         let mut harness = bench(OperatingSystem::Nix);
         harness.state_mut().title_bar = Some(0.0);
-        let alone = layout::Move::Toolbar(vec!["menu-button".to_owned()]);
+        harness.state_mut().photo = true;
+        let alone = layout::Move::Toolbar(vec!["guides".to_owned()]);
         assert!(harness.state_mut().shell.workspace.apply(&alone));
         harness.run();
-        harness.get_by_role_and_label(Role::Button, "Menu").focus();
+        harness
+            .get_by_role_and_label(Role::Button, "Guides")
+            .focus();
         harness.run();
         harness.key_press_modifiers(Modifiers::SHIFT, egui::Key::F10);
         harness.run();
         harness
-            .get_by_role_and_label(Role::MenuItem, "Hide “Menu”")
+            .get_by_role_and_label(Role::MenuItem, "Hide “Guides”")
             .click();
         harness.run();
         assert!(harness.state().shell.workspace.toolbar().is_empty());
@@ -27179,33 +27168,64 @@ mod tests {
         assert!(focused.top() >= bar.bottom(), "{focused:?} in {bar:?}");
     }
 
-    /// With the menu button out of the list, F10 and Alt with an access key still open the
-    /// menus, hung from the Toolbar's start (decision 92).
+    /// The menu button is no item of the list (decision 92): a list without `menu-button`
+    /// still draws it first on Linux, and F10 and Alt with an access key open the menus
+    /// from it.
     #[test]
-    fn with_no_menu_button_the_keys_still_open_the_menus() {
+    fn a_list_without_the_menu_button_still_draws_it_first() {
         let folder = settings::testing::Folder::new("toolbar-no-menu-button");
         let mut harness = bench(OperatingSystem::Nix);
         harness.run();
         show_toolbar(&mut harness, &folder, &["import", "undo"]);
-        assert!(
-            harness
-                .query_by_role_and_label(Role::Button, "Menu")
-                .is_none()
-        );
         let bar = harness.get_by_role(Role::Toolbar).rect();
+        let button = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+        assert_eq!(button.left(), bar.left() + 8.0);
+        assert!(button.right() < harness.get_by_label("Import…").rect().left());
         harness.key_press(Key::F10);
         harness.run();
         assert!(menu_open(&harness, "Menu"));
-        // Where the button would stand: Import… there now.
-        let anchor = Toolbar::menu_anchor(&harness.ctx).expect("an anchor");
-        assert_eq!(anchor.left(), bar.left() + 8.0);
-        assert_eq!(anchor.left(), harness.get_by_label("Import…").rect().left());
+        assert_eq!(Toolbar::menu_anchor(&harness.ctx), Some(button));
         harness.key_press(Key::F10);
         harness.run();
         assert!(!menu_open(&harness, "Menu"));
         alt(&mut harness, Key::F, Some("f"));
         assert!(menu_open(&harness, "Menu"));
         assert!(menu_open(&harness, "File"));
+    }
+
+    /// An old file's `menu-button` in the middle of its list is skipped where it stands
+    /// (decision 92): the menu button is drawn once, first, on Linux, and nothing where the
+    /// id stands; on the Mac none. The id stays in the list.
+    #[test]
+    fn an_old_file_s_menu_button_draws_nothing_where_it_stands() {
+        let list = ["import", "menu-button", "undo"];
+        let folder = settings::testing::Folder::new("toolbar-old-menu-button");
+        for os in [OperatingSystem::Nix, OperatingSystem::Mac] {
+            let mut harness = bench(os);
+            harness.run();
+            show_toolbar(&mut harness, &folder, &list);
+            assert_eq!(harness.state().shell.workspace.toolbar(), list, "{os:?}");
+            let bar = harness.get_by_role(Role::Toolbar).rect();
+            let mut drawn: Vec<(f32, String)> = (harness.get_all_by_role(Role::Button))
+                .filter(|b| bar.contains(b.rect().center()))
+                .filter_map(|b| Some((b.rect().left(), b.accesskit_node().label()?.to_string())))
+                .collect();
+            drawn.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let names: Vec<&str> = drawn.iter().map(|(_, name)| name.as_str()).collect();
+            let expected: &[&str] = if os == OperatingSystem::Mac {
+                &["Import…", "Undo"]
+            } else {
+                &["Menu", "Import…", "Undo"]
+            };
+            assert_eq!(names, expected, "{os:?}");
+            // Import… and Undo side by side, nothing between them.
+            let import = harness.get_by_label("Import…").rect();
+            let undo = harness.get_by_label("Undo").rect();
+            assert!(
+                undo.left() - import.right() < 8.0,
+                "{os:?}: {import:?}, {undo:?}"
+            );
+        }
     }
 
     /// With the cursors' well out of the list, every cursor's key still chooses it

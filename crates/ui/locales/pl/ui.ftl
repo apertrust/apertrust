@@ -318,7 +318,6 @@ action-reset-toolbar = Resetuj pasek narzędzi
 action-toolbar-hide = Ukryj element paska narzędzi
 toolbar-menu-hide = Ukryj „{ $item }”
 toolbar-item-hidden = { $item }: ukryto
-action-show-menu-button = Pokaż przycisk menu
 toolbar-customise-later = Dostosowywanie paska narzędzi pojawi się w jednej z kolejnych wersji
 status-saving = Zapisywanie…
 status-saving-tip = Edycja tego zdjęcia wciąż jest zapisywana obok niego

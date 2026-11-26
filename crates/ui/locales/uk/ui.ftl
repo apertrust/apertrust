@@ -317,7 +317,6 @@ action-reset-toolbar = Скинути смугу інструментів
 action-toolbar-hide = Сховати елемент смуги інструментів
 toolbar-menu-hide = Сховати «{ $item }»
 toolbar-item-hidden = { $item }: сховано
-action-show-menu-button = Показати кнопку меню
 toolbar-customise-later = Налаштування смуги інструментів з'явиться в одній із наступних версій
 status-saving = Збереження…
 status-saving-tip = Обробку цього фото ще записують поруч із ним
