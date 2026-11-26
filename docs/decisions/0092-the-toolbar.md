@@ -2,7 +2,7 @@
 
 ## Context
 
-The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, by default the menu button on Windows and Linux, Import…, Export…, Reset, Undo, Redo, the cursors' well, Guides, Copy edit and Apply edit, the jobs spinner and the save state. As it narrows it folds the actions into » one at a time.
+The Toolbar is each main window's title bar ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is drawn from the workspace's list of item ids, after the menu button on Windows and Linux, by default Import…, Export…, Reset, Undo, Redo, the cursors' well, Guides, Copy edit and Apply edit, the jobs spinner and the save state. As it narrows it folds the actions into » one at a time.
 
 People want the actions they use on every photo within reach, and tools want buttons of their own there, such as Orientation's rotations. Several things constrain how:
 
@@ -14,18 +14,19 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the caption buttons and the Mac's traffic lights may be moved or hidden. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, the toolbar menu with View › Panels' items, Reset Toolbar among them, and an action's own menu, Guides' the first. Planned: the Customise Toolbar window, much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the menu button, the caption buttons and the Mac's traffic lights may be moved or hidden. The menu button is fixed at the Toolbar's start on Windows and Linux, no item of the list. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, the toolbar menu with View › Panels' items, Reset Toolbar among them, and an action's own menu, Guides' the first. Planned: the Customise Toolbar window, much later.
 
 ### The list and its defaults
 
-There is one ordered list of item ids for each workspace. The caption buttons and the traffic lights are not in it: they stay where the platform puts them, and the toolbar fills the room between its start inset and its end.
+There is one ordered list of item ids for each workspace. The menu button, the caption buttons and the traffic lights are not in it: they stay where they are drawn, and the toolbar fills the room between its start inset, or the menu button, and its end.
 
 | Platform | The default list, today's order |
 | --- | --- |
 | macOS | (the traffic lights) `import`, `export`, `cull` (Phase 3), `reset`, `undo`, `redo`, `flexible-space`, `cursors`, `jobs`, `assistant` (Phase 6), `save-state`, `flexible-space`, `guides`, `space`, `copy-edit`, `apply-edit` |
-| Windows, Linux | `menu-button`, then the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
+| Windows, Linux | (the menu button) the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
-- There is one list for every platform. The Mac never shows `menu-button` and never takes it out of the list.
+- There is one list for every platform.
+- **The menu button** stands first on Windows and Linux, before every item, whatever the list holds, drawn as the app's icon or ☰ as the setting Menu button, `toolbar.menu_button`, says ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is the one way to the menus by the pointer there, so nothing moves, removes or adds it, the workspace's file and the Customise Toolbar window alike; the Mac draws none. A file's `menu-button`, written by an older build, is an id this build does not know: skipped where it stands, and kept in the file.
 - Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the viewer bar has them. So is Settings….
 - **The cursors' well,** `cursors`, stands between two flexible spaces at the start of the middle group, the jobs spinner and the save state after it, which they centre in the room between the actions at the start and Guides, Copy edit and Apply edit at the end ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
 
@@ -33,14 +34,14 @@ There is one ordered list of item ids for each workspace. The caption buttons an
 
 | Kind | Ids | How many |
 | --- | --- | --- |
-| Parts | `menu-button` (Windows and Linux, drawn as the app's icon or ☰ as the setting Menu button says, [0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)), `jobs`, `save-state`, `assistant` (Phase 6), and `cursors`, the whole well of cursors, every group in it ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | One each |
+| Parts | `jobs`, `save-state`, `assistant` (Phase 6), and `cursors`, the whole well of cursors, every group in it ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) | One each |
 | The app's actions | Only actions that belong to no tool, pressed or toggled, to which the registry gives an icon: Guides, Open…, Open Folder…, Settings…, Full Screen, Zoom to 100%, Zoom to Fit, Jobs (`show-jobs`), Next Photo and Previous Photo; Cull, Before and After, Clipping Warnings and Show in Folder as their actions are built. Import… is here until the Import tool, which then declares it | One each |
 | Tools' actions | A tool's own items, which it declares (Tools' items, below): a processing tool's `tool-<tool>-<action>`, generated from its own actions as decision 91 built them, or a utility's registry action, as History's `undo`; the item's id is the action's | One each |
 | Spacing | `space`, 16 points; `flexible-space`, sharing what is left | Any number; the overflow removes fixed spaces as it narrows |
 
 - **Never placeable:** hold actions (H), focus moves (F6), the members of a set (the backgrounds, the workspaces), and the platform's own items.
 - **No separator line:** groups are told apart by space alone.
-- **Parts' ids are their own.** A test fails if a part's id is a registry action's id, as `menu-button` is not the `menu` action.
+- **Parts' ids are their own.** A test fails if a part's id is a registry action's id.
 
 **Tools' items.** An action that belongs to a tool is offered for the toolbar by that tool, in its definition, so a tool's buttons travel with it, a third-party tool's included; only actions that belong to no tool are the app's.
 
@@ -73,12 +74,11 @@ The app's own, with the icons the registry gives them: `import` (`import`, until
 
 | Hidden | What still holds |
 | --- | --- |
-| The menu button | F10, Alt alone on Windows and Alt with an access key still open the menus, hung from the toolbar's start; View › Panels and the toolbar menu gain Show Menu Button, so the keys restore it |
 | The save state | A failed write still shows its warning and Not saved at the toolbar's end; the message over the photo, the live region and the quit alert are unchanged |
 | The jobs | The spinner shows while a failed job is left; View › Jobs and Ctrl+Shift+J still work |
 | The assistant | It shows whenever an assistant is connected |
 | The cursors | Every cursor keeps its action and key, and its work its tool's own button; the cursor chosen stays chosen |
-| Everything | The toolbar is all empty area and still moves the window |
+| Everything | The toolbar is all empty area, the menu button apart, and still moves the window |
 
 **Moving the window.** These are empty areas: they move the window and take a double-click, as the Toolbar's empty areas do (39):
 
@@ -90,16 +90,15 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 ### The toolbar menu
 
-**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, the caption buttons and the menu button apart, on every platform, as does Shift+F10 or the Menu key on a focused item, the menu button's included. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
+**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, the caption buttons apart, and the menu button while the Toolbar is the title bar, on every platform, as does Shift+F10 or the Menu key on a focused item or on the menu button, which opens it with no Hide, as on empty space. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
 
 1. Hide "Undo", on an item;
-2. Show Menu Button, while the menu button is hidden;
-3. a separator;
-4. Toolbar Labels, checked while on;
-5. Customise Toolbar…, drawn disabled until its window is built, its tip "Customise Toolbar comes in a later version";
-6. Reset Toolbar, the registry's `reset-toolbar`, with no default key: it takes the `toolbar` list out of the workspace's file, so the Toolbar follows each build's default again, a hidden item back. It is enabled only while the file holds a list, drawn disabled otherwise and, saying why, while `--conf` sets the workspace, as Workspace ▸ is. It asks for no confirmation: only the Toolbar's order is lost, and the default is what most people have.
+2. a separator;
+3. Toolbar Labels, checked while on;
+4. Customise Toolbar…, drawn disabled until its window is built, its tip "Customise Toolbar comes in a later version";
+5. Reset Toolbar, the registry's `reset-toolbar`, with no default key: it takes the `toolbar` list out of the workspace's file, so the Toolbar follows each build's default again, a hidden item back. It is enabled only while the file holds a list, drawn disabled otherwise and, saying why, while `--conf` sets the workspace, as Workspace ▸ is. It asks for no confirmation: only the Toolbar's order is lost, and the default is what most people have.
 
-**Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens while the menu button is hidden. Show Menu Button is there on Windows and Linux only, the Mac never showing the menu button. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
+**Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens on Windows and Linux, and the system's Ctrl+F2 reaches in the Mac's menu bar. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
 
 **The system's window menu** is no longer on a right-click on the toolbar's empty space on Windows and Linux. It stays on the system's own key, Alt+Space on Windows and GNOME, and on a right-click on the menu button while the toolbar is the title bar, as on a title bar's icon; X11 still has none, and the Mac's conventions are unchanged.
 
@@ -124,9 +123,9 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
   ```toml
   # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
   version = 1
-  toolbar = ["menu-button", "import", "export", "reset", "undo", "redo",
-             "flexible-space", "cursors", "jobs", "save-state", "flexible-space",
-             "guides", "space", "copy-edit", "apply-edit"]
+  toolbar = ["import", "export", "reset", "undo", "redo", "flexible-space",
+             "cursors", "jobs", "save-state", "flexible-space", "guides", "space",
+             "copy-edit", "apply-edit"]
 
   [[tabs]]
   id = "photos"
@@ -155,7 +154,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 4. Undo and Redo go into ».
 
 - » lists its items in the toolbar's order, with their keys, check marks and disabled states. It matches the Tools panel's ».
-- **Never folded:** the parts placed, the cursors' well among them, », the caption buttons and 24 points of empty area, counted on both sides of the well together.
+- **Never folded:** the menu button, the parts placed, the cursors' well among them, », the caption buttons and 24 points of empty area, counted on both sides of the well together.
 - **When even those do not fit,** at a large interface size, the window's minimum width grows to their width, so the bar never overlaps itself or the caption buttons and keeps its 24 points to move the window.
 - A test checks at 500 points, in every language, both platforms' defaults and a list with every part placed.
 
@@ -185,15 +184,16 @@ The toolbar is measured every frame at the current scale and language, and gives
 
 ### Keys and scripts
 
-- **F6** into the toolbar lands on its first control: by default the menu button on Windows and Linux and the first action that can run on the Mac, Import… where it can. With nothing focusable it skips the region.
-- **The menu button, shown, never folds,** in either of its drawings.
+- **F6** into the toolbar lands on its first control: the menu button on Windows and Linux, and on the Mac by default the first action that can run, Import… where it can. With nothing focusable it skips the region.
+- **The menu button never folds,** in either of its drawings.
 - **Scripts** see nothing new: an item sends the command its action sends.
 
 ## Options considered
 
 - **A fixed Toolbar, as built.** No room for a person's own actions or a tool's.
 - **A palette inside the main window,** from which items are dragged onto the toolbar. Drags on a title bar compete with moving the window, and it is a second mode of the main window. A dedicated window is one place, and it can wait while the file serves.
-- **F6 landing on the toolbar itself when nothing in it is focusable,** with Shift+F10 there opening the toolbar menu. A focus stop with no control is a new kind of stop for one case; Show Menu Button in View › Panels uses the route F10 already keeps.
+- **F6 landing on the toolbar itself when nothing in it is focusable,** with Shift+F10 there opening the toolbar menu. A focus stop with no control is a new kind of stop for one case; View › Panels holds the toolbar menu's items on the route F10 already keeps.
+- **The menu button an item of the list,** moved or hidden as the others are, with Show Menu Button to put it back. On Windows and Linux it is the one way to the menus by the pointer, so hiding it is never what a person wants, and a guard and an action to restore it would serve that one case alone.
 - **A limit on fixed spaces.** A number would be arbitrary and still depend on the window's width; removing them as the bar narrows fits any number.
 - **Keeping the system's window menu on a right-click on empty space.** The toolbar menu would then open only on items, so a toolbar with every item hidden could never be reached from it, and one gesture would mean two things on one bar. The system's key keeps its menu.
 - **One toolbar for the app, or one per layout.** A toolbar suits a task as a workspace's tabs do (83). A layout is what the Viewer shows, not a task.
@@ -219,7 +219,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **Decision 39:**
   - a right-click on the Toolbar's empty areas opens the toolbar menu on every platform, and the system's window menu stays on the system's own key and on a right-click on the menu button;
   - `Toolbar` reports the right-click with what is under it;
-  - the menu button may be hidden, never folds while shown, and F6 lands on the toolbar's first control.
+  - the menu button is fixed at the Toolbar's start, no item of the list, and never folds, and F6 lands on the toolbar's first control.
 - **Decision 91:** the Toolbar is an app-only place, `Toolbar`, holding the toolbar menu.
 - **Decisions 83 and 96:** a workspace also holds its `toolbar` list, in its file.
 - **Decision 36:** a registry action that belongs to no tool may carry an icon, which makes it a candidate, and its message a `.toolbar` word; the themes have a size for the labelled Toolbar, `toolbar_labelled`.
@@ -231,7 +231,7 @@ The toolbar is measured every frame at the current scale and language, and gives
   - the guards;
   - the toolbar menu, with Reset Toolbar, `reset-toolbar`, and `layout::Move::ResetToolbar`;
   - `toolbar.labels` in the settings schema;
-  - Show Menu Button in View › Panels on Windows and Linux, and Reset Toolbar there on every platform;
+  - Reset Toolbar in View › Panels on every platform;
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the declared actions and the icon names, and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
