@@ -126,6 +126,53 @@ pub fn write_metadata(path: &Path, bytes: &[u8]) -> io::Result<(Written, Option<
     Ok((written, metadata))
 }
 
+/// [`write`](fn@write), the file replaced only where `still` says it may be, asked just
+/// before each try of the rename, once the bytes are in the temporary, flushed and synced:
+/// so a caller's check that the file is as it read it, made before the write, is made again
+/// as late as it can be. `Ok(None)` where it says no, nothing replaced and the temporary
+/// removed; its error likewise. No portable rename replaces a file only where it is still as
+/// it was, so another program's write between the last check and the rename is replaced
+/// all the same: the window is narrowed to that, never closed. A file that holds `bytes`
+/// already is left as it is, [`Written::Unchanged`], with no check.
+pub fn write_if(
+    path: &Path,
+    bytes: &[u8],
+    mut still: impl FnMut() -> io::Result<bool>,
+) -> io::Result<Option<Written>> {
+    let written = write_with(
+        path,
+        bytes,
+        Retry::platform(),
+        |file, bytes| file.write_all(bytes),
+        |temp, path| match still() {
+            Ok(true) => temp.persist(path),
+            Ok(false) => Err(PersistError {
+                error: io::Error::other(Refused),
+                file: temp,
+            }),
+            Err(error) => Err(PersistError { error, file: temp }),
+        },
+    );
+    match written {
+        Ok((written, _)) => Ok(Some(written)),
+        Err(error) if error.get_ref().is_some_and(|inner| inner.is::<Refused>()) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// What [`write_if`]'s rename fails with where its check says no, never a refusal that passes,
+/// so it is not tried again.
+#[derive(Debug)]
+struct Refused;
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the file changed before it was replaced")
+    }
+}
+
+impl std::error::Error for Refused {}
+
 /// [`write_with`] as [`write`](fn@write) does it: the bytes written whole, the rename
 /// tried again as the platform needs.
 fn write_file(path: &Path, bytes: &[u8]) -> io::Result<(Written, Option<File>)> {
@@ -439,6 +486,42 @@ mod tests {
             io::ErrorKind::ReadOnlyFilesystem
         );
         assert_eq!(fs::read(&path).unwrap(), b"the old edit");
+        assert_eq!(names(folder.path()), ["IMG.ARW.apxmp"]);
+    }
+
+    /// The check runs once the temporary holds the bytes, just before the rename: a file
+    /// another program changed after a caller first looked, by the time of the check, is
+    /// left as that program wrote it, with no temporary; one still as read is replaced.
+    #[test]
+    fn a_file_changed_before_the_rename_is_not_replaced() {
+        let folder = tempfile::tempdir().expect("a folder");
+        let path = folder.path().join("IMG.ARW.apxmp");
+        fs::write(&path, b"as read").unwrap();
+        let read = fs::read(&path).unwrap();
+        let mut checked = 0;
+        let written = write_if(&path, b"ours", || {
+            checked += 1;
+            // Another program's write, after the temporary is written.
+            assert_eq!(names(folder.path()).len(), 2, "the temporary is there");
+            fs::write(&path, b"theirs")?;
+            Ok(fs::read(&path)? == read)
+        });
+        assert_eq!(written.unwrap(), None);
+        assert_eq!(checked, 1);
+        assert_eq!(fs::read(&path).unwrap(), b"theirs");
+        assert_eq!(names(folder.path()), ["IMG.ARW.apxmp"]);
+
+        // Still as read: replaced.
+        let read = fs::read(&path).unwrap();
+        let written = write_if(&path, b"ours", || Ok(fs::read(&path)? == read));
+        assert_eq!(written.unwrap(), Some(Written::Replaced));
+        assert_eq!(fs::read(&path).unwrap(), b"ours");
+        assert_eq!(names(folder.path()), ["IMG.ARW.apxmp"]);
+
+        // A check that fails is the write's error, the file as it was.
+        let written = write_if(&path, b"new", || Err(io::ErrorKind::NotFound.into()));
+        assert_eq!(written.unwrap_err().kind(), io::ErrorKind::NotFound);
+        assert_eq!(fs::read(&path).unwrap(), b"ours");
         assert_eq!(names(folder.path()), ["IMG.ARW.apxmp"]);
     }
 

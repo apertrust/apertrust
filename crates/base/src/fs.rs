@@ -22,7 +22,8 @@
 //!
 //! - [`write()`] replaces a file with new bytes: written, flushed, synced and renamed, not
 //!   at all when the file already holds them, with nothing left behind and the old file
-//!   untouched on an error;
+//!   untouched on an error; [`write_if`] the same, replacing it only where the caller's
+//!   check, asked just before the rename, still holds;
 //! - [`create`] makes the hidden temporary (`.~NAME.XXXXXX.tmp`, `NAME` cut to fit a file
 //!   system's 255 bytes), for a writer that fills the file itself, as the export's does;
 //!   [`is_temporary_name`] tells such a name, and [`remove_if_stale`] removes those a
@@ -39,7 +40,7 @@ mod temporary;
 mod write;
 
 pub use temporary::{STALE_AFTER, create, is_temporary_name, remove_if_stale};
-pub use write::{Retry, Written, persist_retrying, write, write_metadata};
+pub use write::{Retry, Written, persist_retrying, write, write_if, write_metadata};
 
 /// `path` as `tempfile` must be given it to reach any length: on Windows absolute, with
 /// `\\?\` before it, since `tempfile` hands its paths to Windows as they are, where a path

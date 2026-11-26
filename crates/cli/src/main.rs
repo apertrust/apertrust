@@ -1033,18 +1033,19 @@ fn stamp(path: &Path) -> Result<Stamp> {
     sidecar::FileStamp::read(path).with_context(|| format!("reading {}", path.display()))
 }
 
-/// Runs `write` where the file at `path` still has the stamp `read`, as it was read: whether
-/// it wrote, `false` where another program changed the file meanwhile, and an error, writing
-/// nothing, where a file is there that cannot be read.
-fn write_if_unchanged(
-    path: &Path,
-    read: Stamp,
-    write: impl FnOnce() -> Result<()>,
-) -> Result<bool> {
+/// Writes `bytes` to the file at `path` through the safe write where it still has the stamp
+/// `read`, as it was read, and again just before the rename
+/// ([`apertrust_base::fs::write_if`]): whether it wrote, `false` where another program
+/// changed the file meanwhile, and an error, writing nothing, where a file is there that
+/// cannot be read.
+fn write_if_unchanged(path: &Path, read: Stamp, bytes: &[u8]) -> Result<bool> {
     if stamp(path)? != read {
         return Ok(false);
     }
-    write().map(|()| true)
+    let still = || -> std::io::Result<bool> { Ok(sidecar::FileStamp::read(path)? == read) };
+    let written = apertrust_base::fs::write_if(path, bytes, still)
+        .with_context(|| format!("writing {}", path.display()))?;
+    Ok(written.is_some())
 }
 
 /// Writes `log`, with its copy's clock vector `clocks`, into `file`, the sidecar beside
@@ -1063,10 +1064,8 @@ fn write_history(
         file.fingerprint = Some(fingerprint);
     }
     let build = apertrust_base::program!().version;
-    write_if_unchanged(&path, read, || {
-        sidecar::write_log(&path, &file, log, clocks, (operations, tools), build)
-            .with_context(|| format!("writing {}", path.display()))
-    })
+    let xml = sidecar::log_xml(&file, log, clocks, (operations, tools), build);
+    write_if_unchanged(&path, read, xml.as_bytes())
 }
 
 /// One try of [`edit`](fn@edit): the edit the change leaves, or `None` where the file
@@ -3210,11 +3209,11 @@ mod tests {
         std::fs::write(&path, "read").unwrap();
         let read = stamp(&path).unwrap();
         std::fs::write(&path, "another program's").unwrap();
-        let written = write_if_unchanged(&path, read, || unreachable!("no write"));
+        let written = write_if_unchanged(&path, read, b"ours");
         assert!(!written.unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "another program's");
         let read = stamp(&path).unwrap();
-        let written = write_if_unchanged(&path, read, || Ok(std::fs::write(&path, "ours")?));
+        let written = write_if_unchanged(&path, read, b"ours");
         assert!(written.unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "ours");
         // Another program's bytes of the same size, the modified time set back as it was.
@@ -3224,7 +3223,7 @@ mod tests {
         let file = std::fs::File::options().write(true).open(&path).unwrap();
         file.set_modified(modified).unwrap();
         drop(file);
-        let written = write_if_unchanged(&path, read, || unreachable!("no write"));
+        let written = write_if_unchanged(&path, read, b"ours");
         assert!(!written.unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "them");
         // No file as it was read, then one that is there but cannot be read, here a folder
@@ -3233,7 +3232,7 @@ mod tests {
         let read = stamp(&path).unwrap();
         assert_eq!(read, None);
         std::fs::create_dir(&path).unwrap();
-        let written = write_if_unchanged(&path, read, || unreachable!("no write"));
+        let written = write_if_unchanged(&path, read, b"ours");
         assert!(written.is_err());
         assert!(path.is_dir());
         std::fs::remove_dir_all(&directory).unwrap();

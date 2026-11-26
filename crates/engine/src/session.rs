@@ -2492,8 +2492,10 @@ fn done(shared: &(Mutex<Writes>, Condvar), path: &Path, count: usize) {
 /// Writes a photo that is not live over its sidecar as read (decision 109), and answers how
 /// it ended: dropped where its file's generation rose since it was handed over, as its photo
 /// opened; else written through the safe write only where the file still has the stamp
-/// read, its size, modified time and hash, as `apertrust-cli edit` writes. No file is read,
-/// looked at or written while a lock is held.
+/// read, its size, modified time and hash, as `apertrust-cli edit` writes, the stamp read
+/// again just before the rename ([`apertrust_base::fs::write_if`]), so another program's
+/// write can slip in only between that and the rename. No file is read, looked at or
+/// written while a lock is held.
 fn write_over(over: WriteOver, shared: &(Mutex<Writes>, Condvar), files: &Mutex<Files>) {
     let WriteOver {
         path,
@@ -2504,18 +2506,21 @@ fn write_over(over: WriteOver, shared: &(Mutex<Writes>, Condvar), files: &Mutex<
     } = over;
     let name = sidecar::file_name(&path);
     let current = (files.lock().unwrap_or_else(PoisonError::into_inner)).generation(&path);
+    let still = || -> io::Result<bool> { Ok(sidecar::FileStamp::read(&path)? == read) };
+    let changed = || {
+        tracing::debug!(target: "pipe", "{name} changed since it was read: not written");
+        Over::Changed
+    };
     let over = if generation < current {
         tracing::debug!(target: "pipe", "{name}: a write handed over before its photo opened, dropped");
         Over::Dropped
     } else {
-        match sidecar::FileStamp::read(&path) {
+        match still() {
             Err(error) => Over::Failed(error),
-            Ok(now) if now != read => {
-                tracing::debug!(target: "pipe", "{name} changed since it was read: not written");
-                Over::Changed
-            }
-            Ok(_) => match apertrust_base::fs::write_metadata(&path, xml.as_bytes()) {
-                Ok(_) => Over::Written,
+            Ok(false) => changed(),
+            Ok(true) => match apertrust_base::fs::write_if(&path, xml.as_bytes(), still) {
+                Ok(Some(_)) => Over::Written,
+                Ok(None) => changed(),
                 Err(error) => Over::Failed(error),
             },
         }
