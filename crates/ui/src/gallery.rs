@@ -28,9 +28,9 @@ use crate::components::{
     About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CaptionStyle, CellPicture,
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
-    Customising, EndItem, Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldsRow,
-    FileManager, FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job,
-    JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker,
+    Customising, EndItem, Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldWell,
+    FieldsRow, FileManager, FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton,
+    Job, JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker,
     MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
     Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup,
     Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, RowField, SaveState,
@@ -91,6 +91,12 @@ impl Gallery {
     /// Exposure at its minimum, its default and its maximum, and a row they drag.
     pub fn show_markers(&mut self, ui: &mut Ui) {
         slider_markers(ui, &mut self.demo);
+    }
+
+    /// Draws the Field row section alone, at `width` points, as the snapshot tests
+    /// photograph it.
+    pub fn show_field_wells(&mut self, ui: &mut Ui, width: f32) {
+        field_wells(ui, width);
     }
 
     /// Draws the On-photo overlays section alone, as the snapshot tests photograph it.
@@ -258,6 +264,12 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Fact list");
         fact_lists(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Field row");
+        for width in [296.0, 240.0] {
+            field_wells(ui, width);
+            ui.add_space(t.spacing.s);
+        }
         ui.add_space(t.spacing.l);
         heading(ui, "Tag");
         tags(ui, &t);
@@ -845,6 +857,63 @@ fn fact_lists(ui: &mut Ui, t: &Theme) {
         });
         ui.add_space(t.spacing.s);
     }
+}
+
+/// Field rows (decision 110), `width` points wide: a value at rest, one cut at three lines,
+/// an empty one, a copy's name with its place after it, a pull-down, a disabled one and one
+/// whose write failed, its warning button at its end. Each edits as the app's.
+fn field_wells(ui: &mut Ui, width: f32) {
+    const COPYRIGHT: [(&str, &str); 3] = [
+        ("", "Unknown"),
+        ("True", "Copyrighted"),
+        ("False", "Public domain"),
+    ];
+    let failed = || {
+        vec![
+            Entry::Item(Item::new("reason", "The disk is full").enabled(false)),
+            Entry::Item(Item::new("try-again", "Try Again")),
+        ]
+    };
+    ui.push_id(("field rows", width as u32), |ui| {
+        ui.allocate_ui(vec2(width, 0.0), |ui| {
+            ui.set_width(width);
+            let column = FactList::column(ui, ["Description", "Copyright status"]);
+            let base = ui.scope_id();
+            let id = |name: &str| base.with(name);
+            let rows = [
+                ("Title", "Morning market, Alfama"),
+                (
+                    "Description",
+                    "Fish stalls before the crowd, the light coming in low over the river, \
+                     the gulls already about, the first trams climbing towards the castle.",
+                ),
+                ("Notes", ""),
+            ];
+            for (label, text) in rows {
+                FieldWell::new(id(label), label, text, column)
+                    .lines(label != "Title")
+                    .show(ui);
+            }
+            FieldWell::new(id("Copy"), "Copy", "Black and white", column)
+                .after("2 of 3")
+                .show(ui);
+            FieldWell::new(id("Copyright status"), "Copyright status", "True", column)
+                .choice(&COPYRIGHT)
+                .show(ui);
+            FieldWell::new(id("Creator"), "Creator", "Ana Sousa", column)
+                .enabled(false)
+                .tip("Editing several photos comes in a later version")
+                .show(ui);
+            FieldWell::new(
+                id("Copyright notice"),
+                "Copyright notice",
+                "© 2026 Ana Sousa",
+                column,
+            )
+            .warning("Copyright notice was not saved", failed())
+            .show(ui);
+        });
+    });
 }
 
 /// The cursors' well (decision 104; `docs/cursors.md`, The well): Phase 2's Select, Pan and

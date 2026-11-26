@@ -184,6 +184,9 @@ pub struct Colors {
     /// Value fields, choice lists and other wells.
     #[serde(with = "hex")]
     pub sunken: Color32,
+    /// A field row's well under the pointer (decision 110): a step from `sunken`.
+    #[serde(with = "hex")]
+    pub sunken_hover: Color32,
     /// Around the photo in Edit and Compare. Neutral grey only, so it never tints how a
     /// colour is judged.
     #[serde(with = "hex")]
@@ -1112,6 +1115,7 @@ impl Theme {
             ("raised", c.raised),
             ("scrim", c.scrim),
             ("sunken", c.sunken),
+            ("sunken_hover", c.sunken_hover),
             ("photo_surround", c.photo_surround),
             ("surround_text", c.surround_text),
             ("surround_text_on_light", c.surround_text_on_light),

@@ -3461,7 +3461,7 @@ Eleven collapsible groups, after EXIF's directories and IPTC Core's panels, each
   - An empty field is an empty well, with no hint text. A field with fixed values is a pull-down in the same well.
 - **A field's states:**
   - under the pointer, the well a step lighter (`sunken_hover`) and the I-beam;
-  - editing, the editing outline inside the well's edge, the one line a field draws;
+  - editing, the caret alone, with no border, as a value field, the focus ring where Tab gave it the focus;
   - Different, the word in `text_secondary`, with a ⌄ at the well's end;
   - disabled, with its reason in the tooltip;
   - a write failed, the value kept as typed and a warning button at the well's end.
