@@ -16,21 +16,26 @@
 
 //! A boolean's row, one line (`docs/gui.md`, Switches and boolean rows): the short label at
 //! the content's start, a photo's value after it in `text_secondary`, and a quiet
-//! [`Switch`](super::Switch) at the row's end, its right edge where a slider's value and a
-//! choice's chevron end. The whole row is the target, with the `hover` band a choice row
-//! has, and the focus ring goes round the whole row, as a choice row's does. Screen readers hear a `Switch` with its checked state, named by the full name and
-//! the value; its promise is the tooltip.
+//! [`Switch`](super::Switch) at the end of the boolean's plate, its right edge where a
+//! slider's value and a choice's chevron end. The plate is the target, with the `hover`
+//! band a choice row has, and the focus ring goes round the plate, as a choice row's does.
+//! Screen readers hear a `Switch` with its checked state, named by the full name and the
+//! value; its promise is the tooltip.
 //!
 //! The value follows the label a small gap (`spacing.xs`) apart, no brackets, never cut:
 //! "Compensate camera exposure −⅔ EV". The label is cut with … before it, and the words
 //! end a group's gap (`spacing.m`) before the switch.
 //!
-//! End items (decision 107), as a line row's, sit before the switch, `spacing.xs` from it
-//! and from each other, in reading and Tab order after the row: a press on one is its own,
-//! never the row's toggle, and the words end a group's gap before the first.
+//! Without end items the plate is the whole row. With them (decision 107) the boolean and
+//! its end items are two controls on one line: the end items sit at the line's end, as a
+//! line row's, `spacing.xs` apart, with their own hover, and the boolean's plate ends a
+//! group's gap before the first, as a line row's start does. They come after the boolean
+//! in reading and Tab order.
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{Align, Color32, FontId, Layout, Rect, Role, Ui, UiBuilder, WidgetInfo, pos2, vec2};
+use egui::{
+    Align, Color32, FontId, Layout, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2,
+};
 
 use super::focus_ring_centred;
 use super::line_row::{EndAction, EndItem, end_width, show_end};
@@ -88,8 +93,8 @@ impl<'a> ToggleRow<'a> {
         self
     }
 
-    /// End items before the switch, left to right (decision 107): each enabled or not as
-    /// it says, whatever the row's own state.
+    /// End items after the switch, at the row's end, left to right (decision 107): each
+    /// enabled or not as it says, whatever the row's own state.
     pub fn end(mut self, items: Vec<EndItem<'a>>) -> Self {
         self.end = items;
         self
@@ -106,27 +111,34 @@ impl<'a> ToggleRow<'a> {
         let t = theme(ui.ctx());
         let enabled = self.enabled && ui.is_enabled();
         let size = vec2(ui.available_width(), t.sizes.panel_line);
-        let (row, mut response) = allocate(ui, size, enabled);
-        // Where the switch sits: its right edge a field's inset from the row's end.
+        let items = std::mem::take(&mut self.end);
+        // The boolean's plate: the whole line, or, with end items at the line's end as a
+        // line row's, what is left a group's gap before them, as a line row's start is.
+        let (plate, mut response, ends) = if items.is_empty() {
+            let (plate, response) = allocate(ui, size, enabled);
+            (plate, response, None)
+        } else {
+            let (line, _) = ui.allocate_exact_size(size, Sense::hover());
+            let width = end_width(ui, &items);
+            let ends = Rect::from_min_max(pos2(line.right() - width, line.top()), line.max);
+            let space = Rect::from_min_max(
+                line.min,
+                pos2((ends.left() - t.spacing.m).max(line.left()), line.bottom()),
+            );
+            let mut inside = ui.new_child(UiBuilder::new().max_rect(space));
+            let (plate, response) = allocate(&mut inside, space.size(), enabled);
+            (plate, response, Some(ends))
+        };
+        // Where the switch sits: its right edge a field's inset from the plate's end.
         let track = egui::Rect::from_center_size(
             pos2(
-                row.right() - super::field_inset(&t) - t.sizes.switch_width / 2.0,
-                row.center().y,
+                plate.right() - super::field_inset(&t) - t.sizes.switch_width / 2.0,
+                plate.center().y,
             ),
             vec2(t.sizes.switch_width, t.sizes.switch_height),
         );
-        // The end items before the switch, `spacing.xs` from it.
-        let items = std::mem::take(&mut self.end);
-        let ends = (!items.is_empty()).then(|| {
-            let width = end_width(ui, &items);
-            let right = track.left() - t.spacing.xs;
-            Rect::from_min_max(pos2(right - width, row.top()), pos2(right, row.bottom()))
-        });
-        // A press on the end items is theirs, even on one disabled, which takes none.
-        let on_ends = (response.interact_pointer_pos())
-            .is_some_and(|at| ends.is_some_and(|ends| ends.contains(at)));
         let mut on = self.on;
-        if response.clicked() && !on_ends {
+        if response.clicked() {
             on = !on;
             response.mark_changed();
         }
@@ -145,10 +157,9 @@ impl<'a> ToggleRow<'a> {
             );
             ui.painter().layout_job(job)
         });
-        let words_end = ends.map_or(track.left(), |ends| ends.left());
-        // The words end a group's gap before the switch, or the first end item; the value
-        // is never cut, the label before it is, with …
-        let room = (words_end - t.spacing.m - row.left()).max(0.0);
+        // The words end a group's gap before the switch; the value is never cut, the label
+        // before it is, with …
+        let room = (track.left() - t.spacing.m - plate.left()).max(0.0);
         let room = room - value.as_ref().map_or(0.0, |v| v.size().x);
         let label = ui.painter().layout_job(super::truncated(
             self.label,
@@ -157,26 +168,26 @@ impl<'a> ToggleRow<'a> {
             Color32::PLACEHOLDER,
         ));
         let cut = label.elided;
-        if ui.is_rect_visible(row) {
+        if ui.is_rect_visible(plate) {
             let painter = &undimmed_painter(ui);
-            // The band a choice row has, under the whole row.
+            // The band a choice row has, under the whole plate.
             if enabled && response.hovered() {
                 painter.rect_filled(
-                    row.expand2(vec2(t.spacing.xs, 0.0)),
+                    plate.expand2(vec2(t.spacing.xs, 0.0)),
                     t.shape.radius,
                     t.colors.hover,
                 );
             }
             let touch = Touch::of(ui.ctx(), &response, enabled, None);
-            let mut x = row.left();
-            let middle = row.center().y;
+            let mut x = plate.left();
+            let middle = plate.center().y;
             let end = x + label.size().x;
             painter.galley(pos2(x, middle - label.size().y / 2.0), label, text);
             x = end;
             if let Some(value) = value {
                 painter.galley(pos2(x, middle - value.size().y / 2.0), value, secondary);
             }
-            // The ring goes round the whole row, as a choice row's does, not the track.
+            // The ring goes round the whole plate, as a choice row's does, not the track.
             switch::paint(
                 painter,
                 track,
@@ -189,7 +200,7 @@ impl<'a> ToggleRow<'a> {
                 &t,
             );
             if touch.focused {
-                focus_ring_centred(painter, row.expand2(vec2(t.spacing.xs, 0.0)), &t);
+                focus_ring_centred(painter, plate.expand2(vec2(t.spacing.xs, 0.0)), &t);
             }
         }
         // Heard whole, with its value, as a switch with its state.
@@ -212,7 +223,7 @@ impl<'a> ToggleRow<'a> {
             response.on_hover_text(&tip).on_disabled_hover_text(&tip)
         };
         let toggled = (response.changed() && on != self.on).then_some(on);
-        // Drawn after the row, so a press on one is its own.
+        // Drawn after the boolean, in reading and Tab order.
         let pressed = ends.and_then(|ends| {
             let mut inside = ui.new_child(
                 UiBuilder::new()

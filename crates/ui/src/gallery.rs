@@ -861,7 +861,7 @@ fn cursor_wells(ui: &mut Ui, t: &Theme, demo: &mut CursorsDemo) {
 /// exposure; a control's reset label with icon buttons, as Orientation's; a readout with
 /// its swatch and a picker, as Colour calibration's CCT; a label with a text button; a
 /// label with a menu button, as AgX's Reset primaries; and a toggle with a text button
-/// before its switch, as AgX's Reverse all and Set from above.
+/// after its switch, as AgX's Reverse all and Set from above.
 fn line_rows(ui: &mut Ui, t: &Theme, reverse_all: &mut bool) {
     ui.push_id("line rows", |ui| {
         ui.set_width(296.0);
@@ -956,7 +956,7 @@ fn line_rows(ui: &mut Ui, t: &Theme, reverse_all: &mut bool) {
         RichText::new(
             "One 24-point line: a label, a control's reset label or a readout, then the end \
              items, pickers, 18-point icon buttons, text buttons and menu buttons, 4 points \
-             apart; a toggle draws them before its switch.",
+             apart; a toggle draws them after its switch.",
         )
         .color(t.colors.text_secondary),
     );
