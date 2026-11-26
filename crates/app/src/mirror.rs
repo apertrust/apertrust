@@ -52,8 +52,9 @@ use std::time::{Duration, Instant};
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ActionState, BatchEvent, ControlState, ControlValue, CoordinateState, Event, ExportPreview,
-    Frame, History, OpenPreview, Photo, PresetState, PreviewSource, ReadoutState, Selection,
-    SelectionCommand, SessionError, ToolState, Values, ViewState, WarningState,
+    Frame, History, OpenPreview, Photo, PresetState, PreviewSource, Rating, RatingState,
+    ReadoutState, Selection, SelectionCommand, SessionError, ToolState, Values, ViewState,
+    WarningState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -195,6 +196,9 @@ pub struct Mirror {
     /// session, as it last told them, the latest by its `through`: none before it tells any.
     /// Not a photo's: another photo keeps it.
     pub view: Option<ViewState>,
+    /// The open photo's rating (decision 110), as the session last told it, the latest by
+    /// its `through`; none before it tells one.
+    pub rating: Option<RatingState>,
     /// The orientation the session last reported for the photo, its frames', whatever change
     /// of Orientation is still pending, which `values` shows at once: what the zoom's
     /// retained centre turns with (`docs/gui.md`, The zoom's centre).
@@ -256,6 +260,7 @@ impl Mirror {
             selection: Selection::default(),
             selected: HashSet::new(),
             view: None,
+            rating: None,
             orientation: crate::zoom::Orientation::default(),
             asked: Vec::new(),
             previous: None,
@@ -298,6 +303,16 @@ impl Mirror {
     /// Previous Selection is under way.
     pub fn takes_batches(&self) -> bool {
         matches!(self.shown, Shown::Photo { .. }) && self.previous.is_none()
+    }
+
+    /// The open photo's rating where it takes one (decision 110): open, not for viewing only,
+    /// and the session has told it; none else, and the rating's actions rest.
+    pub fn rateable(&self) -> Option<Rating> {
+        let PhotoState::Open(photo) = &self.photo else {
+            return None;
+        };
+        let state = self.rating.as_ref()?;
+        (photo.view_only.is_none() && state.photo == photo.path).then_some(state.rating)
     }
 
     /// Whether Reset would change the photo: its edit holds anything, or the history's end
@@ -727,9 +742,16 @@ impl Mirror {
                     self.view = Some(state);
                 }
             }
-            // The open photo's rating, and a photo rated: the app shows none until it rates
-            // (decision 110).
-            Event::Rating(_) | Event::Rated { .. } => {}
+            // The open photo's rating, the latest by its `through`, or another photo's; a cell's
+            // follows `Rated` in the folder.
+            Event::Rating(state) => {
+                let newer =
+                    |kept: &RatingState| kept.photo != state.photo || state.through >= kept.through;
+                if self.rating.as_ref().is_none_or(newer) {
+                    self.rating = Some(state);
+                }
+            }
+            Event::Rated { .. } => {}
             // The open photo's history, the latest by its `through`, which Undo and Redo
             // name; one numbered lower arrived late.
             Event::History(history) => {

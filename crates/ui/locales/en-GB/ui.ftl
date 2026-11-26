@@ -751,6 +751,10 @@ caption-label-yellow = Yellow label
 caption-label-green = Green label
 caption-label-blue = Blue label
 caption-label-purple = Purple label
+# A control's tooltip with its key, $action what it does and $key its key: "Rate 3 stars
+# (3)". While several photos are selected it rates the active one alone, saying so first.
+caption-tip = { $action } ({ $key })
+caption-this-photo = { $action }, this photo only
 # The Browser's edge towards the photo, which resizes it, for screen readers, and its
 # value: how many rows of thumbnails it shows.
 browser-height = Browser height
@@ -1324,6 +1328,35 @@ action-next-photo = Next photo
     .toolbar = Next
 action-previous-photo = Previous photo
     .toolbar = Previous
+# The rating's actions (decision 110), on the active photo, in Photo › Rating and Colour
+# Label: no stars to five, the reject, each colour label turned on or off, and every label
+# off. Edit › Undo names a rating's change by them ("Undo 3 stars").
+action-rating-0 = No stars
+    .toolbar = No stars
+action-rating-1 = 1 star
+    .toolbar = 1 star
+action-rating-2 = 2 stars
+    .toolbar = 2 stars
+action-rating-3 = 3 stars
+    .toolbar = 3 stars
+action-rating-4 = 4 stars
+    .toolbar = 4 stars
+action-rating-5 = 5 stars
+    .toolbar = 5 stars
+action-reject = Reject
+    .toolbar = Reject
+action-label-red = Red label
+    .toolbar = Red
+action-label-yellow = Yellow label
+    .toolbar = Yellow
+action-label-green = Green label
+    .toolbar = Green
+action-label-blue = Blue label
+    .toolbar = Blue
+action-label-purple = Purple label
+    .toolbar = Purple
+action-label-clear = Clear labels
+    .toolbar = No labels
 action-zoom-in = Zoom in
 action-zoom-out = Zoom out
 action-zoom-fit = Zoom to fit
@@ -1452,6 +1485,9 @@ menu-thumbnail-size = Thumbnail Size
 menu-background = Background
 menu-guides = Guides
 menu-guides-flip = Flip
+# Submenus of Photo: the rating's stars and Reject, and the colour labels.
+menu-rating = Rating
+menu-colour-label = Colour Label
 menu-browser-position = Browser Position
 menu-tools-panel-position = Tools Panel Position
 # A submenu of File, and its item for a recent whose name another shares: with the
@@ -1513,6 +1549,9 @@ history-go-to-step = Go to Step
 history-compress = Compress History
 history-truncate = Truncate History
 history-discard = Discard History
+# A reject cleared, as Undo and Redo name it; the rest of the rating's changes take their
+# action's name.
+history-unreject = Clear reject
 # A tool's preset applied, $name its name, and its Default settings.
 history-preset = Preset { $name }
 # A style's steps, its Clear's, $style its name, and the step that keeps the styles applied

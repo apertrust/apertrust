@@ -75,6 +75,7 @@ mod paths;
 mod pickers;
 mod popups;
 mod presets;
+mod rating;
 mod recents;
 mod recovery;
 mod restart;
@@ -118,10 +119,10 @@ use apertrust_engine::view::{FramePlace, Placement};
 use apertrust_tools::{PickerKind, ProcessingTool, ToolDefinition};
 use apertrust_ui::components::{
     ActivityAction, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
-    CaptionStyle, CellMenu, CellRating, FindBar, FindBarAction, Jobs, Margin, Marker,
-    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
-    PickerAction, Placed, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle,
-    Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, ToolsPanelPosition, ViewMarks, ViewerBar,
+    CaptionStyle, CellMenu, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle,
+    PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction,
+    Placed, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
+    ToolbarAction, ToolbarButton, ToolbarEntry, ToolsPanelPosition, ViewMarks, ViewerBar,
     ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
@@ -1578,6 +1579,9 @@ struct App {
     /// photo, whose new selection's first photo opens once the session tells it
     /// ([`selection::open_first`]).
     opening_first: Option<selection::Waiting>,
+    /// A rating a click on another cell's first line asked of its photo, sent once that
+    /// photo has opened, the session rating the active photo alone (`rating`).
+    rating_pending: Option<rating::Pending>,
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
@@ -2095,6 +2099,8 @@ struct Shell {
     /// Next Photo or Previous Photo ran (`next` false), for the app to open the photo it
     /// reaches.
     step: Option<bool>,
+    /// A rating's action ran, for the app to send on the active photo's rating.
+    rate: Option<rating::Rate>,
     /// The Export tool's settings, as it left them (`export.*`).
     export: export::Values,
     /// The tools' settings, as their rows and picks left them (`tools.*`).
@@ -2263,6 +2269,7 @@ impl Shell {
             references: pickers::ReferencePhotos::new(),
             export_again: false,
             step: None,
+            rate: None,
             export: settings.export.clone(),
             tool_settings: settings.tool_settings.clone(),
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
@@ -3534,6 +3541,8 @@ impl Shell {
             text: Focus::of(ctx) == Focus::Text,
             // The app's, from the mirror ([`App::shell_state`]).
             select: actions::Selectable::default(),
+            // The app's, from the mirror ([`App::shell_state`]).
+            rating: None,
             next: false,
             previous: false,
             // One photo until the catalogue.
@@ -4182,6 +4191,7 @@ impl Shell {
             Intent::Export => self.reveal(export::ID),
             Intent::ExportAgain => self.export_again = true,
             Intent::Step { next } => self.step = Some(next),
+            Intent::Rate(rate) => self.rate = Some(rate),
             Intent::DiscardHistory => self.discard_history = true,
             Intent::CreateStyle => self.create_style = true,
             Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
@@ -4853,6 +4863,7 @@ impl App {
             reopening: None,
             remembered: Remembered::default(),
             opening_first: None,
+            rating_pending: None,
             start: start::Window::new(false, settings.scale),
             window_min: WindowMin::default(),
             extent_before: None,
@@ -5457,6 +5468,17 @@ impl App {
         selection::open_first(&mut self.opening_first, &mut self.mirror, &mut |command| {
             session.send(command)
         });
+        // A cell's rating of a photo that was not the active one, once it is open and takes
+        // a rating: never one open for viewing only.
+        let opened = match &self.mirror.photo {
+            PhotoState::Open(photo) if self.mirror.rateable().is_some() => {
+                Some(photo.path.as_path())
+            }
+            _ => None,
+        };
+        if let Some(command) = rating::Pending::take(&mut self.rating_pending, opened) {
+            session.send(command);
+        }
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
@@ -6223,6 +6245,7 @@ impl App {
             select: selection::selectable(&self.mirror),
             next: selection::stepped(true, &self.mirror).is_some(),
             previous: selection::stepped(false, &self.mirror).is_some(),
+            rating: self.mirror.rateable(),
             ..state
         }
     }
@@ -6378,6 +6401,12 @@ impl App {
                 let session = &self.session;
                 let send = &mut |command| session.send(command);
                 selection::step(next, &mut self.mirror, send);
+            }
+            // Which way a toggle goes follows the active photo (decision 37).
+            if let Some(rate) = self.shell.rate.take()
+                && let Some(rating) = self.mirror.rateable()
+            {
+                self.session.send(rating::command(rate.change(rating)));
             }
             if std::mem::take(&mut self.shell.discard_history) {
                 self.discard_history(ctx);
@@ -6748,7 +6777,7 @@ impl App {
         // shorter side must cover the square.
         let side = browser.thumbnails.side() * if browser.square_thumbnails { 1.5 } else { 1.0 };
         let size = thumbnails::size_for(side, ui.pixels_per_point());
-        let (picked, asked, bar, menu, space) = {
+        let (picked, asked, bar, menu, space, rated) = {
             let mirror = &self.mirror;
             let textures = &self.thumbnails;
             let listing = match &mirror.folder.folder {
@@ -6769,7 +6798,6 @@ impl App {
                 selected: path(i).is_some_and(|path| mirror.is_selected(&path)),
                 ..cell_thumb(&mirror.folder, textures, order[i], size)
             };
-            // What a caption's first line reports waits for the ratings, as they do.
             let mut panel = Browser::new(order.len(), active, thumb)
                 .sort(browser.sort)
                 .size(browser.thumbnails)
@@ -6792,14 +6820,34 @@ impl App {
             // cell's menu opens its photo first unless it is the active one (decision 91).
             let menu = output.menu;
             let opens = (menu.as_ref()).and_then(|menu| made_active(menu.photo, active));
+            // A cell's first line rates that cell's photo (decision 110): the change worked
+            // out from its own rating, a photo not the active one opened first.
+            let rated = output.cell.map(|(i, action)| {
+                let rating = photos[order[i]].rating;
+                let change = rating::Rate::of_cell(action, rating).change(rating);
+                (i, path(i), change)
+            });
+            let opens = opens.or(rated
+                .as_ref()
+                .filter(|(i, ..)| Some(*i) != active)
+                .map(|(i, ..)| *i));
             let picked = (output.action.is_some() || opens.is_some()).then(|| {
                 let paths: Vec<PathBuf> = (0..order.len()).filter_map(path).collect();
                 (output.action, opens, paths, listing.is_none())
             });
             let shown = order.get(output.shown).unwrap_or_default();
             let asked = (self.thumbnails_asked).command(&mirror.folder, shown, size);
-            (picked, asked, output.bar, menu, output.space_menu)
+            (picked, asked, output.bar, menu, output.space_menu, rated)
         };
+        if let Some((i, Some(photo), change)) = rated {
+            if self.mirror.folder.active_shown() == Some(i) {
+                if self.mirror.rateable().is_some() {
+                    self.session.send(rating::command(change));
+                }
+            } else {
+                self.rating_pending = Some(rating::Pending { photo, change });
+            }
+        }
         if let Some(asked) = asked {
             self.session.send(Command::Library(asked));
         }
@@ -7219,13 +7267,22 @@ impl App {
                 details.push('\n');
                 details.push_str(&view_only_notice(&words, view_only));
             }
-            // The active photo's, with a single photo shown: no ring, its name SemiBold.
-            // The centre (reject, rating and labels) waits for the library's ratings.
-            PhotoCaption::new(&file_name(&photo.path))
+            // The active photo's, with a single photo shown: no ring, its name SemiBold; its
+            // centre the photo's rating, which a photo open for viewing only shows unset.
+            let rating = self.mirror.rateable();
+            let several = self.mirror.selected_count() > 1;
+            let tips = rating::tips(&self.shell.keymap, ui.ctx().os(), &words, several);
+            let shown = PhotoCaption::new(&file_name(&photo.path))
                 .view_only(photo.view_only.is_some())
                 .exposure(&values)
                 .details(&details)
+                .rating(rating.map(rating::cell))
+                .tips(&tips)
                 .show(ui, placed.caption);
+            if let (Some(action), Some(rating)) = (shown.action, rating) {
+                let change = rating::Rate::of_cell(action, rating).change(rating);
+                self.session.send(rating::command(change));
+            }
         }
         // The picker on takes the photo, whichever door turned it on; Select's and Pan's
         // drags are the pan's ([`pan_photo`]).
@@ -8978,9 +9035,7 @@ fn cell_thumb<'a>(
         selected: false,
         picture: textures.picture(&key, size),
         no_preview: (folder.thumbnail(&key, size)).is_some_and(|kept| kept.image.is_none()),
-        // The library keeps no ratings or labels yet (Phase 3): every photo shows as
-        // unrated and unlabelled.
-        rating: Some(CellRating::default()),
+        rating: Some(rating::cell(photo.rating)),
     }
 }
 
@@ -20557,13 +20612,13 @@ mod tests {
             ..resting
         };
         for id in [
+            // Rating, then File name in its place.
+            ActionId::SORT[3],
             ActionId::SORT[1],
             ActionId::SORT_DESCENDING,
             ActionId::THUMBNAILS[3],
             // The browser bar's Labels, which turns the captions off.
             ActionId::SHOW_LABELS,
-            // Not built: Rating changes nothing.
-            ActionId::SORT[3],
         ] {
             shell.run(id, &shown, &ctx, &[]);
         }
@@ -22840,6 +22895,8 @@ mod tests {
         anything_open: bool,
         /// The photo's history, as the app's mirror holds it: what Undo and Redo would do.
         history: Option<apertrust_engine::session::History>,
+        /// The active photo's rating where it takes one, as the app's mirror gives it.
+        rating: Option<apertrust_engine::session::Rating>,
         /// Every action the keys asked for that could run.
         pressed: Vec<ActionId>,
         /// The hold actions held in the last frame.
@@ -23209,6 +23266,7 @@ mod tests {
                     edited: false,
                     anything_open: false,
                     history: None,
+                    rating: None,
                     pressed: Vec::new(),
                     held: Vec::new(),
                     chosen: Vec::new(),
@@ -23268,6 +23326,7 @@ mod tests {
                 opened: self.anything_open,
                 undo: history.is_some_and(|h| h.undo.is_some()),
                 redo: history.is_some_and(|h| h.redo.is_some()),
+                rating: self.rating,
                 ..self.shell.state(ctx, self.photo, self.edited)
             };
             // The open dialog asking and an alert up, as `App::asking_modal`.
@@ -26583,6 +26642,61 @@ mod tests {
             },
             modifiers,
         );
+    }
+
+    /// The rating's keys (decision 110) on the active photo, here rejected with 2 stars
+    /// and the red label: 3 rates it 3 stars; R and a label go the way the photo lacks
+    /// them, R and F1 off, F4 on. With no photo that takes a rating they rest, and with a
+    /// slider focused its digits are the slider's, F1 still the label's.
+    #[test]
+    fn the_rating_keys_rate_the_active_photo_and_a_focused_slider_keeps_the_digits() {
+        use apertrust_engine::session::{Rating, RatingChange};
+        let rated = Rating {
+            stars: 2,
+            rejected: true,
+            labels: 0b1,
+        };
+        // Each pressed and let go, so a second press is no repeat.
+        let change = |harness: &mut Harness<'_, Bench>, key: Key| {
+            press(harness, Modifiers::NONE, key, key);
+            harness.event(egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: false,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            });
+            harness.run();
+            let rate = harness.state_mut().shell.rate.take();
+            rate.map(|rate| rate.change(rated))
+        };
+        let mut harness = bench(OperatingSystem::Windows);
+        harness.state_mut().rating = Some(rated);
+        harness.run();
+        assert_eq!(
+            change(&mut harness, Key::Num3),
+            Some(RatingChange::Stars(3))
+        );
+        assert_eq!(
+            change(&mut harness, Key::Num0),
+            Some(RatingChange::Stars(0))
+        );
+        let unrejected = Some(RatingChange::Rejected(false));
+        assert_eq!(change(&mut harness, Key::R), unrejected);
+        let red_off = Some(RatingChange::Label {
+            label: 0,
+            on: false,
+        });
+        assert_eq!(change(&mut harness, Key::F1), red_off);
+        let blue_on = Some(RatingChange::Label { label: 3, on: true });
+        assert_eq!(change(&mut harness, Key::F4), blue_on);
+        harness.state_mut().rating = None;
+        assert_eq!(change(&mut harness, Key::Num3), None);
+        harness.state_mut().rating = Some(rated);
+        (harness.get_by_role_and_label(Role::Slider, "Brightness")).focus();
+        harness.run();
+        assert_eq!(change(&mut harness, Key::Num3), None);
+        assert_eq!(change(&mut harness, Key::F1), red_off);
     }
 
     #[test]

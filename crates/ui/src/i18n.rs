@@ -1200,6 +1200,8 @@ mod tests {
                 args.set("said", "Warm film applied to 11 of 12 photos");
                 args.set("why", "view-only");
                 args.set("more", 0);
+                // The caption's tooltips: what a control does, with its key.
+                args.set("action", "Rate 3 stars");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());
