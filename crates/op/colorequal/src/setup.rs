@@ -631,7 +631,8 @@ fn blur(buffer: usize, grid: [u32; 2], channels: u32, sigma: f32, whole: [u32; 2
 /// Experiment (#702), temporary: which line passes `prepare` plans, from
 /// `APERTRUST_SPIKE_LINES`: `single` (one buffer a pass, main's), `staged` (single,
 /// float2 rows staged through workgroup memory), `staged-narrow` (staged, the columns
-/// in workgroups of 32), `fused` (the triples' columns and rows fused), and
+/// in workgroups of 32), `fused` (the triples' columns and rows fused), `fusedcols`
+/// (the triples' columns fused, every row single), and
 /// `staged-fusedcols`, the default (the triples' columns fused, every float2 row
 /// staged).
 fn spike_lines() -> String {
@@ -697,7 +698,7 @@ fn blur3(
     };
     let [a, b, c] = buffers;
     let [ta, tb, tc] = temps;
-    if mode == "staged-fusedcols" {
+    if mode == "staged-fusedcols" || mode == "fusedcols" {
         let columns = pass(
             "blur_columns2x3",
             PassKind::Reduction,
