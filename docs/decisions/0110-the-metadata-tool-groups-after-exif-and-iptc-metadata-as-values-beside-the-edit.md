@@ -77,7 +77,7 @@ The design is drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn3
 
 ### Rating, reject and colour labels
 
-**They are global actions, the app's own as darktable's, owned by no tool** (`rating-0` to `rating-5`, `reject` and the label actions; [gui.md](../gui.md#the-caption-under-the-photo)). Their keys, the caption under the photo, the Photo menu, a thumbnail's right-click menu and the Toolbar all call them. Basic's Rating and Colour labels rows call the same actions: one more way to them, not their owner. With several photos selected, Rating reads Different with its ⌄ list of ratings and counts, and a label's dot is filled where every photo has it and ringed where some do; a click on a star or a dot does what the action's key does, a label following the active photo ([gui.md](../gui.md#selection-and-the-active-photo)).
+**They are global actions, the app's own as darktable's, owned by no tool** (`rating-0` to `rating-5`, `reject` and the label actions; [gui.md](../gui.md#the-caption-under-the-photo)). Their keys, the caption under the photo, the Browser's cells, the Photo menu and a thumbnail's right-click menu all call them; the Toolbar offers none of them. Basic's Rating and Colour labels rows call the same actions: one more way to them, not their owner. With several photos selected, Rating reads Different with its ⌄ list of ratings and counts, and a label's dot is filled where every photo has it and ringed where some do; a click on a star or a dot does what the action's key does, a label following the active photo ([gui.md](../gui.md#selection-and-the-active-photo)).
 
 ### Presets
 

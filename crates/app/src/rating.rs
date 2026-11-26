@@ -16,7 +16,7 @@
 
 //! The rating's global actions (decision 110; `docs/gui.md`, The caption under the photo):
 //! the stars, the reject and the colour labels, owned by no tool, which the keys, the
-//! caption, the Browser's cells, the menus and the Toolbar all send as one `Command::Rate`.
+//! caption, the Browser's cells and the menus all send as one `Command::Rate`.
 //!
 //! The session takes the value, never a toggle, so the app works out which way a toggle
 //! goes from the photo it is clicked on, or for a key or a menu from the active photo
