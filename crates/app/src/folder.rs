@@ -60,7 +60,7 @@ use std::time::UNIX_EPOCH;
 
 use apertrust_engine::jobs::{JobEvent, JobId, State};
 use apertrust_engine::session::library::{self, DateTime, Photo, Thumbnail};
-use apertrust_engine::session::{Event, LibraryEvent};
+use apertrust_engine::session::{Event, LibraryEvent, Rating};
 use apertrust_ui::components::{Sort, SortKey};
 
 /// What is open.
@@ -436,15 +436,7 @@ impl FolderState {
     /// photo is open for viewing only; once it opens editable, its history repaired as
     /// Discard History repairs it, its values say.
     pub fn edited(&mut self, path: &Path, edited: bool, editable: bool) {
-        let photo = match &mut self.folder {
-            Folder::Open(listing) => listing.position(path).map(|i| &mut listing.photos[i]),
-            Folder::Alone { paths, photos, .. } => {
-                let at = paths.iter().position(|alone| same(alone, path));
-                at.map(|i| &mut photos[i])
-            }
-            _ => None,
-        };
-        let Some(photo) = photo else {
+        let Some(photo) = self.photo_mut(path) else {
             return;
         };
         let now = if edited {
@@ -459,6 +451,30 @@ impl FolderState {
         };
         if follows && photo.edit != now {
             photo.edit = now;
+            self.reorder();
+        }
+    }
+
+    /// The photo at `path`, of the folder's listing or the photos alone.
+    fn photo_mut(&mut self, path: &Path) -> Option<&mut Photo> {
+        match &mut self.folder {
+            Folder::Open(listing) => listing.position(path).map(|i| &mut listing.photos[i]),
+            Folder::Alone { paths, photos, .. } => {
+                let at = paths.iter().position(|alone| same(alone, path));
+                at.map(|i| &mut photos[i])
+            }
+            _ => None,
+        }
+    }
+
+    /// The photo at `path` is rated `rating` now, as the session's `Rated` says (decision
+    /// 110): its cell shows it and the Rating sort moves it.
+    pub fn rated(&mut self, path: &Path, rating: Rating) {
+        if let Some(photo) = self.photo_mut(path)
+            && photo.rating != rating
+        {
+            photo.rating = rating;
+            self.generation += 1;
             self.reorder();
         }
     }
@@ -564,6 +580,10 @@ impl FolderState {
             Event::Library(event) if event.open() == self.latest => self.library(event),
             Event::Job { event, command } => {
                 self.job_event(event, *command);
+                None
+            }
+            Event::Rated { photo, rating } => {
+                self.rated(photo, *rating);
                 None
             }
             _ => None,
@@ -779,7 +799,8 @@ pub(crate) fn same(alone: &Path, photo: &Path) -> bool {
 /// times once they are known, else their files' modified times stand in (`docs/gui.md`, The
 /// browser bar). Descending reverses the key, never the ties: photos equal by it stay in
 /// shooting order, then the file browser's order of their names, and photos with no time
-/// come last whichever way. Rating has no ratings to sort by yet, so only its ties order.
+/// come last whichever way. Rating puts rejected photos first, then those with no stars,
+/// then one to five (decision 110).
 pub fn sorted(photos: &[Photo], taken: Option<&[Option<DateTime>]>, sort: Sort) -> Vec<usize> {
     let when: Vec<Option<u128>> = match taken {
         Some(times) => times.iter().map(|time| time.map(clock)).collect(),
@@ -809,6 +830,11 @@ pub fn sorted(photos: &[Photo], taken: Option<&[Option<DateTime>]>, sort: Sort) 
             order
         }
     };
+    // Rejected, then no stars, then one to five.
+    let rank = |photo: &Photo| match photo.rating {
+        Rating { rejected: true, .. } => 0,
+        Rating { stars, .. } => 1 + stars,
+    };
     let mut order: Vec<usize> = (0..photos.len()).collect();
     order.sort_by(|&a, &b| {
         let (pa, pb) = (&photos[a], &photos[b]);
@@ -819,7 +845,7 @@ pub fn sorted(photos: &[Photo], taken: Option<&[Option<DateTime>]>, sort: Sort) 
             },
             SortKey::FileName => direction(library::browser_order(&pa.name, &pb.name)),
             SortKey::Edited => direction(edited(pa).cmp(&edited(pb))),
-            SortKey::Rating => Ordering::Equal,
+            SortKey::Rating => direction(rank(pa).cmp(&rank(pb))),
         };
         key.then_with(|| by_time(a, b))
             .then_with(|| library::browser_order(&pa.name, &pb.name))
@@ -1638,7 +1664,7 @@ mod tests {
                 "img_1.ARW"
             ]
         );
-        // No ratings yet: the ties' order alone, whichever way.
+        // Unrated alike: the ties' order alone, whichever way.
         let shooting = [
             "IMG_2.ARW",
             "IMG_3.ARW",
@@ -1648,6 +1674,36 @@ mod tests {
         ];
         assert_eq!(order(by(SortKey::Rating, false)), shooting);
         assert_eq!(order(by(SortKey::Rating, true)), shooting);
+    }
+
+    /// Sort › Rating: rejected first, its stars beneath it counting for nothing, then no
+    /// stars, then one to five; ties in shooting order, descending the reverse of the key.
+    #[test]
+    fn the_rating_sort_puts_rejected_first_then_no_stars_then_one_to_five() {
+        let rated = |name: &str, stars: u8, rejected: bool| Photo {
+            rating: Rating {
+                stars,
+                rejected,
+                labels: 0,
+            },
+            ..photo(name, EditState::None)
+        };
+        let photos = [
+            rated("A.ARW", 5, false),
+            rated("B.ARW", 0, false),
+            rated("C.ARW", 4, true),
+            rated("D.ARW", 2, false),
+            rated("E.ARW", 0, false),
+        ];
+        let order = |sort| names(&photos, &sorted(&photos, None, sort));
+        assert_eq!(
+            order(by(SortKey::Rating, false)),
+            ["C.ARW", "B.ARW", "E.ARW", "D.ARW", "A.ARW"]
+        );
+        assert_eq!(
+            order(by(SortKey::Rating, true)),
+            ["A.ARW", "D.ARW", "B.ARW", "E.ARW", "C.ARW"]
+        );
     }
 
     #[test]

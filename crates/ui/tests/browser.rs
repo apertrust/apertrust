@@ -236,8 +236,7 @@ fn sort_s_menu_checks_the_key_and_the_direction_and_reports_a_choice() {
     assert_eq!(line(&harness, "Capture time"), (true, Some(Toggled::True)));
     assert_eq!(line(&harness, "File name"), (true, Some(Toggled::False)));
     assert_eq!(line(&harness, "Edited"), (true, Some(Toggled::False)));
-    // Rating waits for the ratings.
-    assert_eq!(line(&harness, "Rating"), (false, Some(Toggled::False)));
+    assert_eq!(line(&harness, "Rating"), (true, Some(Toggled::False)));
     assert_eq!(line(&harness, "Ascending"), (true, Some(Toggled::True)));
     assert_eq!(line(&harness, "Descending"), (true, Some(Toggled::False)));
     harness

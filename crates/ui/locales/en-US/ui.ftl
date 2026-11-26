@@ -57,6 +57,7 @@ about-licence = License
 
 ## The menus' titles
 
+menu-colour-label = Color Label
 menu-minimise = Minimize
 
 ## The scopes

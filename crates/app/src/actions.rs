@@ -62,6 +62,7 @@ use apertrust_ui::guides::{Guide, GuideFlip};
 use apertrust_ui::{Background, Icon, Translator};
 use eframe::egui::{self, Key, Modifiers, os::OperatingSystem};
 
+use crate::rating::Rate;
 use crate::zoom::{Direction, Scale, ZoomStep};
 
 /// An action's id, stable so that settings can keep the keys a user gives it.
@@ -237,6 +238,26 @@ impl ActionId {
     pub const CURSOR_SELECT: ActionId = ActionId("cursor-select");
     pub const CURSOR_PAN: ActionId = ActionId("cursor-pan");
     pub const NEXT_PHOTO: ActionId = ActionId("next-photo");
+    /// The rating's global actions (decision 110), owned by no tool, on the active photo
+    /// until the batch (decision 109): no stars to five, the reject, each colour label,
+    /// red to purple, and Clear Labels (`rating`).
+    pub const RATING: [ActionId; 6] = [
+        ActionId("rating-0"),
+        ActionId("rating-1"),
+        ActionId("rating-2"),
+        ActionId("rating-3"),
+        ActionId("rating-4"),
+        ActionId("rating-5"),
+    ];
+    pub const REJECT: ActionId = ActionId("reject");
+    pub const LABEL: [ActionId; 5] = [
+        ActionId("label-red"),
+        ActionId("label-yellow"),
+        ActionId("label-green"),
+        ActionId("label-blue"),
+        ActionId("label-purple"),
+    ];
+    pub const LABEL_CLEAR: ActionId = ActionId("label-clear");
     pub const PREVIOUS_PHOTO: ActionId = ActionId("previous-photo");
     /// The photo's zoom, View's items and the viewer bar's zoom menu's: in, out, Fit and
     /// 100%.
@@ -401,6 +422,8 @@ pub enum Intent {
     Step {
         next: bool,
     },
+    /// A rating's action on the active photo (`rating`).
+    Rate(Rate),
     /// Discard History, asked first unless the setting says not to (`alerts`).
     DiscardHistory,
     /// Create a Style…'s dialog, over the tools the active photo's edit touches (`styles`).
@@ -616,6 +639,9 @@ pub struct State {
     pub text: bool,
     /// What the Select menu's items would change, from the mirror (`selection::selectable`).
     pub select: Selectable,
+    /// The active photo's rating where it can be rated (decision 110): open, not for
+    /// viewing only; none else, and the rating's actions rest.
+    pub rating: Option<apertrust_engine::session::Rating>,
     /// Whether Next Photo, and Previous Photo, have a photo to go to (`selection::stepped`).
     pub next: bool,
     pub previous: bool,
@@ -873,6 +899,7 @@ impl Action {
             Emit::Intent(Intent::Guides) => Some(state.guides),
             Emit::Intent(Intent::GuideType(guide)) => Some(state.guide == guide),
             Emit::Intent(Intent::GuideFlip(flip)) => Some(state.guide_flip == flip),
+            Emit::Intent(Intent::Rate(rate)) => state.rating.and_then(|r| rate.checked(r)),
             _ => None,
         }
     }
@@ -1022,6 +1049,25 @@ fn no_modal_dialog(state: &State) -> bool {
 /// acts on it or its photo: not while a dialog's own window has the focus.
 fn on_main_window(state: &State) -> bool {
     !state.dialog_window
+}
+
+/// Whether the rating's actions can run: a photo is open that takes a rating, not for
+/// viewing only, on the main window, with no modal dialog over it (decision 110).
+fn rateable(state: &State) -> bool {
+    state.rating.is_some() && on_main_window(state) && !state.modal
+}
+
+/// A rating's action, `rate`, of scope App, on its default `keys` (decision 110).
+const fn rate(id: ActionId, message: &'static str, keys: &'static [Binding], rate: Rate) -> Action {
+    Action {
+        id,
+        message,
+        keys,
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: rateable,
+        emits: Emit::Intent(Intent::Rate(rate)),
+    }
 }
 
 /// Whether the browser bar's menus can be used: the Browser shows photos, on the main
@@ -1185,7 +1231,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 161] = [
+pub static ACTIONS: [Action; 174] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1999,6 +2045,87 @@ pub static ACTIONS: [Action; 161] = [
         available: |s| s.next && on_main_window(s) && !s.modal,
         emits: Emit::Intent(Intent::Step { next: true }),
     },
+    rate(
+        ActionId::RATING[0],
+        "action-rating-0",
+        &[plain(Key::Num0)],
+        Rate::Stars(0),
+    ),
+    rate(
+        ActionId::RATING[1],
+        "action-rating-1",
+        &[plain(Key::Num1)],
+        Rate::Stars(1),
+    ),
+    rate(
+        ActionId::RATING[2],
+        "action-rating-2",
+        &[plain(Key::Num2)],
+        Rate::Stars(2),
+    ),
+    rate(
+        ActionId::RATING[3],
+        "action-rating-3",
+        &[plain(Key::Num3)],
+        Rate::Stars(3),
+    ),
+    rate(
+        ActionId::RATING[4],
+        "action-rating-4",
+        &[plain(Key::Num4)],
+        Rate::Stars(4),
+    ),
+    rate(
+        ActionId::RATING[5],
+        "action-rating-5",
+        &[plain(Key::Num5)],
+        Rate::Stars(5),
+    ),
+    rate(
+        ActionId::REJECT,
+        "action-reject",
+        &[plain(Key::R)],
+        Rate::Reject,
+    ),
+    rate(
+        ActionId::LABEL[0],
+        "action-label-red",
+        &[plain(Key::F1)],
+        Rate::Label(0),
+    ),
+    rate(
+        ActionId::LABEL[1],
+        "action-label-yellow",
+        &[plain(Key::F2)],
+        Rate::Label(1),
+    ),
+    rate(
+        ActionId::LABEL[2],
+        "action-label-green",
+        &[plain(Key::F3)],
+        Rate::Label(2),
+    ),
+    rate(
+        ActionId::LABEL[3],
+        "action-label-blue",
+        &[plain(Key::F4)],
+        Rate::Label(3),
+    ),
+    rate(
+        ActionId::LABEL[4],
+        "action-label-purple",
+        &[plain(Key::F5)],
+        Rate::Label(4),
+    ),
+    Action {
+        id: ActionId::LABEL_CLEAR,
+        message: "action-label-clear",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: rateable,
+        emits: Emit::Intent(Intent::Rate(Rate::ClearLabels)),
+    },
     Action {
         id: ActionId::PREVIOUS_PHOTO,
         message: "action-previous-photo",
@@ -2211,15 +2338,12 @@ pub static ACTIONS: [Action; 161] = [
         BrowserBarAction::Sort(SortKey::Edited),
         browser_shown,
     ),
-    Action {
-        id: ActionId::SORT[3],
-        message: "action-sort-rating",
-        keys: &[],
-        scope: Scope::App,
-        trigger: Trigger::Press,
-        available: never,
-        emits: Emit::Later,
-    },
+    browser_bar(
+        ActionId::SORT[3],
+        "action-sort-rating",
+        BrowserBarAction::Sort(SortKey::Rating),
+        browser_shown,
+    ),
     browser_bar(
         ActionId::SORT_ASCENDING,
         "action-sort-ascending",
@@ -2407,7 +2531,7 @@ pub static ACTIONS: [Action; 161] = [
 /// the order the Toolbar's set lists them. An action that belongs to a tool takes the icon
 /// its tool offers it with (`ToolDefinition::toolbar`); Import… is here until the Import
 /// tool offers it.
-pub const ICONS: [(ActionId, Icon); 11] = [
+pub const ICONS: [(ActionId, Icon); 24] = [
     (ActionId::IMPORT, Icon::Import),
     (ActionId::GUIDES, Icon::Guides),
     (ActionId::OPEN, Icon::Photo),
@@ -2419,6 +2543,19 @@ pub const ICONS: [(ActionId, Icon); 11] = [
     (ActionId::SHOW_JOBS, Icon::Process),
     (ActionId::NEXT_PHOTO, Icon::Chevron),
     (ActionId::PREVIOUS_PHOTO, Icon::Back),
+    (ActionId::RATING[0], Icon::Star),
+    (ActionId::RATING[1], Icon::Star),
+    (ActionId::RATING[2], Icon::Star),
+    (ActionId::RATING[3], Icon::Star),
+    (ActionId::RATING[4], Icon::Star),
+    (ActionId::RATING[5], Icon::Star),
+    (ActionId::REJECT, Icon::Reject),
+    (ActionId::LABEL[0], Icon::Label),
+    (ActionId::LABEL[1], Icon::Label),
+    (ActionId::LABEL[2], Icon::Label),
+    (ActionId::LABEL[3], Icon::Label),
+    (ActionId::LABEL[4], Icon::Label),
+    (ActionId::LABEL_CLEAR, Icon::Label),
 ];
 
 /// The action `id`, if the registry has it: one of [`ACTIONS`], a tool's
@@ -3029,6 +3166,11 @@ pub enum Focus {
     None,
     /// A button, a slider, a tab: it keeps the keys that move and press.
     Control,
+    /// A slider, which keeps a control's keys and those that start a typed value: a digit,
+    /// a minus sign and the decimal separators, so the rating's digits rest while it has the
+    /// focus and typing "50" never rates the photo (decision 42; `docs/gui.md`, The caption
+    /// under the photo).
+    Slider,
     /// A text field: it keeps every key that types or edits.
     Text,
 }
@@ -3040,6 +3182,8 @@ impl Focus {
         let focused = ctx.memory(|m| m.focused());
         if ctx.text_edit_focused() {
             Focus::Text
+        } else if apertrust_ui::components::takes_digits(ctx) {
+            Focus::Slider
         } else if focused.is_some_and(|id| id != crate::zoom::photo_view_id()) {
             Focus::Control
         } else {
@@ -3100,6 +3244,10 @@ impl Focus {
             Focus::None => false,
             Focus::Control if arrow && finer => true,
             Focus::Control => !command && CONTROL.contains(&key),
+            Focus::Slider => {
+                let starts = is_digit(key) || matches!(key, Key::Minus | Key::Period | Key::Comma);
+                Focus::Control.keeps(key, modifiers) || (!command && starts)
+            }
             Focus::Text if command => TEXT.contains(&key),
             // F6 and F11 still work while typing.
             Focus::Text => !is_function_key(key),
@@ -3531,6 +3679,7 @@ pub(crate) mod tests {
         State {
             view: View::Edit,
             photo: true,
+            rating: Some(Default::default()),
             waiting: false,
             editable: true,
             tool_actions: u64::MAX,
@@ -3795,12 +3944,62 @@ pub(crate) mod tests {
         }
     }
 
+    /// The rating's actions (decision 110) are checked from the active photo's rating, as
+    /// the menus show them: its stars, the reject while set, each label while on; Clear
+    /// Labels never. With no photo that takes a rating, or a modal dialog up, they rest.
+    #[test]
+    fn the_rating_s_actions_are_checked_from_the_active_photo_and_rest_without_one() {
+        let mut state = everything();
+        state.rating = Some(apertrust_engine::session::Rating {
+            stars: 3,
+            rejected: true,
+            labels: 0b1_0001,
+        });
+        let checked = |id: ActionId, state: &State| action(id).expect("registered").checked(state);
+        let stars: Vec<_> = ActionId::RATING
+            .iter()
+            .map(|id| checked(*id, &state))
+            .collect();
+        let (on, off) = (Some(true), Some(false));
+        assert_eq!(stars, [off, off, off, on, off, off]);
+        assert_eq!(checked(ActionId::REJECT, &state), on);
+        let labels: Vec<_> = ActionId::LABEL
+            .iter()
+            .map(|id| checked(*id, &state))
+            .collect();
+        assert_eq!(labels, [on, off, off, off, on]);
+        assert_eq!(checked(ActionId::LABEL_CLEAR, &state), None);
+        let every = || {
+            ActionId::RATING
+                .iter()
+                .chain(&ActionId::LABEL)
+                .chain(&[ActionId::REJECT])
+        };
+        for id in every() {
+            assert!(action(*id).expect("registered").enabled(&state), "{id:?}");
+        }
+        for rests in [
+            State {
+                rating: None,
+                ..state
+            },
+            State {
+                modal: true,
+                ..state
+            },
+        ] {
+            for id in every() {
+                assert!(!action(*id).expect("registered").enabled(&rests), "{id:?}");
+            }
+        }
+    }
+
+    #[test]
     /// Each workspace has its action, `workspace-<id>` (decision 96): the built-in ones
     /// always, Default then darktable, named by their messages; a person's own made once,
     /// the first time it is asked for, as the app asks as it starts. None has a default key;
     /// each chooses its workspace, checked while it is the one shown, on the main window
     /// with no modal dialog over it.
-    #[test]
     fn each_workspace_has_its_action_made_once() {
         let made: Vec<&str> = workspace_actions().iter().map(|a| a.id.0).collect();
         assert_eq!(made[..2], ["workspace-default", "workspace-essentials"]);

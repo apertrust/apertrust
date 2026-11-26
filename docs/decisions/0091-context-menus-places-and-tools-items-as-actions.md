@@ -76,7 +76,7 @@ A tool's section already has its own buttons: reset, presets and options (⋯). 
 3. A test fails on two items with the same `(section, order)` in one menu, whoever declares them. It builds each menu as it would show: the photo's and a thumbnail's, with every tool's and utility's items for the place, and each tool's and utility's ⋯, the app's items with that one's own. Two tools may use the same `(section, order)` in their own ⋯, which never show together.
 4. In the photo's and a thumbnail's menus, an item whose action cannot run on the target is hidden, as macOS's context menus hide what does not apply, whatever stops it. One that waits only for the photo to become live, as a photo just made active does, is shown disabled, since it runs in a moment. ⋯ is a pull-down from a button, not a context menu, and keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip, as Move Tool to Tab ▸ draws the tab a tool is in (83, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)).
 5. A submenu goes one level deep. The photo's and a thumbnail's menus show no keys, as macOS's context menus show none.
-6. A test holds the photo's menu and a thumbnail's, with every item of every tool shown, to at most 16 items, a submenu's children each counted. An item that would pass that needs a decision.
+6. A test holds the photo's menu and a thumbnail's, with every item of every tool shown, to at most 16 items, a submenu counting as one, its own children held to eight (`MOST_IN_SUBMENU`). An item that would pass that needs a decision.
 7. An item added to the photo's or a thumbnail's menu is something people see, so its tool's page lists it.
 
 **What an item acts on**, `Target`:

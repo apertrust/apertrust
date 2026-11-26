@@ -787,14 +787,14 @@ The selection's items, a menu of their own named after darktable's select tool, 
 | Rotate Left, Rotate Right | `rotate-left`, `rotate-right` | — | New, Phase 3, through Crop's orientation |
 | Flip Horizontal, Flip Vertical | `flip-horizontal`, `flip-vertical` | — | New, Phase 3, through Crop's flip |
 | — | | | |
-| Rating → None, 1 to 5 stars, the rating checked; —; Reject, checked while set | `rating-0` to `rating-5`, `reject` | 0 to 5; R ([the caption](#the-caption-under-the-photo)) | New, Phase 3 |
-| Colour Label → Red, Yellow, Green, Blue, Purple, each checked while on | `label-red` to `label-purple` | F1 to F5 | New, Phase 3 |
+| Rating → No Stars, 1 to 5 Stars, the rating checked; —; Reject, checked while set | `rating-0` to `rating-5`, `reject` | 0 to 5; R ([the caption](#the-caption-under-the-photo)) | Built, on the active photo |
+| Colour Label → Red, Yellow, Green, Blue, Purple Label, each checked while on; —; Clear Labels | `label-red` to `label-purple`, `label-clear` | F1 to F5 | Built, on the active photo |
 | — | | | |
 | Match a Photo… | `match-photo` | — | New, with Match's interface (Phase 6) |
 | New Variant | `new-variant` | — | New, with variants (no phase yet) |
 
 - **Auto is generated** from the tool definitions that have it (decision 28): Rotate and perspective; darktable's white balance and color calibration have none, their pickers taking its place (decision 27), and Exposure has none, its automatic mode its one automatic way (decision 88). It acts on the layer being edited. The tool header has no Auto button, so this menu is where a tool's Auto will be.
-- **Rating and Colour Label** act on every selected photo, as their keys do (decision 37); their check marks show the active photo's, which also decides which way Reject and a label turn ([Selection and the active photo](#selection-and-the-active-photo)). **Next Photo** and **Previous Photo** move through the selection when several are selected.
+- **Rating and Colour Label** act on every selected photo, as their keys do (decision 37), built on the active photo alone until the batch; their check marks show the active photo's, which also decides which way Reject and a label turn ([Selection and the active photo](#selection-and-the-active-photo)). **Next Photo** and **Previous Photo** move through the selection when several are selected.
 - **Rotate and Flip** send Orientation's tool commands (decision 2), so a script sends the same. They have no default keys: the usual Ctrl+[ and Ctrl+] need AltGr or Option on German and French keyboards.
 
 #### Layer
@@ -828,7 +828,7 @@ Phase 4: the menu appears with Layers, and its keys are set with their design. I
 | Slideshow | `slideshow` | — | New, with the slideshow; no phase yet (decision 37) |
 | — | | | |
 | Search Photos… | `grid-search` | Ctrl+F, kept for it and unassigned until it is built; Find Tool… has Ctrl+Shift+F (decision 96) | Planned: in the menu bar alone, with no button on the browser bar |
-| Sort By → Capture Time, File Name, Edited, Rating, the one in use checked; —; Ascending, Descending, one checked | `sort-capture-time`, `sort-file-name`, `sort-edited`, `sort-rating`, `sort-ascending`, `sort-descending` | — | New, Phase 2, with the browser bar; Rating in Phase 3 |
+| Sort By → Capture Time, File Name, Edited, Rating, the one in use checked; —; Ascending, Descending, one checked | `sort-capture-time`, `sort-file-name`, `sort-edited`, `sort-rating`, `sort-ascending`, `sort-descending` | — | New, Phase 2, with the browser bar; Rating with the ratings, built |
 | Thumbnail Size → Small, Medium, Large, Extra Large, the one in use checked | `thumbnails-small`, `thumbnails-medium`, `thumbnails-large`, `thumbnails-extra-large` | — | New, Phase 2, with the browser bar |
 | Show Labels, checked while the thumbnails show their captions | `show-labels` | — | Built, also in the browser bar's options menu |
 | Browser Position → Left, Right, Bottom, the one in use checked | `browser-position-left`, `browser-position-right`, `browser-position-bottom` | — | New, Phase 2, with the browser bar's options menu |
@@ -1196,8 +1196,8 @@ Decision 91; its first slice is built. A right-click menu opens only in a named 
 
 | Place | Tools' items | The app's items | When |
 | --- | --- | --- | --- |
-| The photo | Yes, at most two a tool; History's Reset first, Orientation ▸ | Export…; Background ▸ ([The background](#the-background)) | Built |
-| A thumbnail, in the Browser or a cell in Photo | Yes, at most two a tool; History's Reset first | Export…; Show in Folder once built | Built in the Browser; Photo's cells planned |
+| The photo | Yes, at most two a tool; History's Reset first, Orientation ▸ | Rating ▸ and Colour Label ▸ ([the caption](#the-caption-under-the-photo)); Export…; Background ▸ ([The background](#the-background)) | Built |
+| A thumbnail, in the Browser or a cell in Photo | Yes, at most two a tool; History's Reset first | Rating ▸ and Colour Label ▸; Export…; Show in Folder once built | Built in the Browser; Photo's cells planned |
 | A tool's ⋯ (`Options`), its own section only | Yes, at most four | Reset, Copy Settings and Paste Settings (with Copy and Apply Parts, Phase 3) in `EDIT`; the layout's items, Pin Tool or Unpin Tool, Move Tool Up and Move Tool Down, Move Tool to Tab ▸ and Remove Tool, or Show Tool in Tab ▸ alone for a hidden tool ([Moving, pinning and floating sections](#moving-pinning-and-floating-sections)), in `LAYOUT`; then Help, last ([Help and the Apertrust Guide](#help-and-the-apertrust-guide)) | Built: Reset where the tool has ↺, Copy Settings and Paste Settings on a processing tool, drawn disabled until built (`APP_ITEMS`); the layout's items (decision 96), added by the app after the tool's own (`menus::layout_items`); Help planned (decision 97) |
 | The surround (`Surround`) | No | View › Background's items | Built |
 | The browser bar | No | Show Labels, Position ▸; Help, last, planned (decision 97) | Built |
@@ -1244,7 +1244,7 @@ A place opens to tools' items only by a decision of its own, which adds it to `a
 3. A test fails on two items with the same `(section, order)` in one menu, built as it shows: the photo's and a thumbnail's with every tool's items, and each tool's and utility's ⋯ with the app's items and its own. Two tools may share a `(section, order)` in their own ⋯.
 4. In the photo's and a thumbnail's menus an item whose action cannot run on the target is hidden, whatever stops it; one that waits only for the photo to become live, as while the photo open is still opening, is shown disabled. ⋯, a pull-down from a button, keeps the pull-down's rule: an item that cannot run is drawn disabled with its tip.
 5. A submenu goes one level deep, and the photo's and a thumbnail's menus show no keys.
-6. A test holds the photo's and a thumbnail's menus, every item of every tool shown, to at most 16 items, a submenu's children each counted; an item past that needs a decision.
+6. A test holds the photo's and a thumbnail's menus, every item of every tool shown, to at most 16 items, a submenu counting as one, its own children held to eight (`MOST_IN_SUBMENU`); an item past that needs a decision.
 7. An item a tool adds to either menu is listed on its tool's page.
 
 **The target:**
@@ -3725,7 +3725,7 @@ Phase 2, each one pull request usable on its own, after the engine's part of dec
 
 The row under the photo has three zones: the file name at its start, the photo's rating controls in its middle, which the person sets there, and the exposure at its end. With a single photo shown it is that photo's and part of its block, one line under the photo as wide as it, never wrapped ([The photo frame](#the-photo-frame)). Only with several frames (Phase 3) does a line at the Viewer's foot hold the active photo's name and the count.
 
-**Built:** the line with the file name in SemiBold (it is the active photo's), its copy number when the photo has one (none yet, until virtual copies) and the view-only mark, the centre empty, and the exposure values at its end. The controls and their keys wait for Phase 3 and the ratings' storage, and the centre stays empty until then.
+**Built:** the line with the file name in SemiBold (it is the active photo's), its copy number when the photo has one (none yet, until virtual copies) and the view-only mark, the exposure values at its end, and in its centre the controls below with their looks, tooltips, keys, focus and narrowing, on the active photo alone (`PhotoCaption::rating`, `crates/app/src/rating.rs`). A photo open for viewing only shows the centre empty. With several photos selected the tooltips say they act on this photo alone ("Rate 3 stars, this photo only (3)") until the batch, which brings the counts below.
 
 - **The controls** are a reject toggle; five stars, where a click on the nth sets n and a click on the current one clears the rating to 0; and five colour labels, red, yellow, green, blue and purple, each turned on and off on its own, as darktable's are.
 - **Layout.**
@@ -3805,9 +3805,9 @@ How it selects and what screen readers hear of its thumbnails are in [Selection 
   - **The first line,** from its start to its end: the **reject** mark (Lucide's `circle-x`), outlined in `text_disabled` at rest and in `error` while the photo is rejected, the stars then dimmed; the **rating**, five stars, filled for each point and outlined for the rest, those up to the one under the pointer lit; and the **colour labels** as one circle at its end: filled by one label, split into equal segments for several, in darktable's order (red, yellow, green, blue, purple) clockwise from the top, an empty ring for none, in the theme's `label_red` to `label_purple`. All three are 12 points.
   - **The second line:** the file name on one line, centred, cut in its middle when too long as the caption under the photo cuts it, keeping its extension; the active photo's in `text_strong`, the others' in `text`.
   - **Its clicks,** each reported with the photo as a cell action: a star rates the photo so many stars; the reject mark turns its reject on or off; the circle opens the list of the five labels through the popup service (AppKit's menu on the Mac), each checked while on, with darktable's keys F1 to F5 shown, and Clear labels after a separator. The circle is outlined under the pointer, never while its list is open. A click there never opens the photo.
-  - **Until the library keeps ratings** (Phase 3), the app draws every photo's first line unrated, not rejected and unlabelled; the gallery draws it with sample values. What its clicks report changes nothing until the ratings come.
+  - **Built:** each cell shows its photo's rating, reject and labels as the listing read them, from its `.apxmp` or darktable's `.xmp`, and follows the session's `Rated`. A click acts on that cell's photo: the active photo's at once; another's opens it first, as a click on its picture does, then rates it once it is open, never one that opens for viewing only (`rating::Pending`). The selection's batch follows.
 - **What picks the photo:** a click, Ctrl-click, Shift-click or double-click on its picture, its No preview yet plate, or its name's box until the picture comes ([Selection and the active photo](#selection-and-the-active-photo), The pointer). The square round a fitted picture, and the caption outside its first line and its name, are empty space, where a click selects nothing ([Selection and the active photo](#selection-and-the-active-photo), The pointer); a click elsewhere on the first line than its three marks, or on the name, does nothing. The cell stays one element: a right-click anywhere on it, or a Control-click on the Mac, asks for its photo's menu, and its focus and keys are the whole cell's.
-- **Screen readers** hear the name as the list item's name and No preview yet, the marks, the rating (or that it is rejected) and the labels in its description, whatever the toggle shows; the first line's stars, reject and circle are buttons inside it, the stars on while within the rating, the reject on while rejected, the circle with a menu and the labels set as its value. They take no Tab stops: the keys rate from Phase 3.
+- **Screen readers** hear the name as the list item's name and No preview yet, the marks, the rating (or that it is rejected) and the labels in its description, whatever the toggle shows; the first line's stars, reject and circle are buttons inside it, the stars on while within the rating, the reject on while rejected, the circle with a menu and the labels set as its value. They take no Tab stops: the keys rate the active photo.
 - **Kept:** whether labels show is `browser.labels` ([The browser bar](#the-browser-bar)), and square thumbnails `browser.square_thumbnails`.
 
 #### Its layout
@@ -3873,7 +3873,7 @@ Two icon buttons, **Sort** at its start and **Zoom** at its end, and between the
   - At a side, a row as tall as the viewer bar, with the viewer bar's 2-point separator under it, so the two lines meet, Sort at its left end and Zoom at its right. It never folds: the narrowest column, one Small cell, still holds both.
   - The two buttons are the viewer bar's 28-point `IconButton`s, Sort then Zoom: the bar is at the panel's start, the left in a left-to-right language, mirrored in a right-to-left one.
 - **Sort** opens a menu through the popup service (decision 40; native on the Mac), with the same items as View › Sort By:
-  - the key, one checked: Capture Time, File Name, Edited, and Rating, drawn disabled until the ratings come in Phase 3; a separator; Ascending and Descending, one checked. Capture time ascending, oldest first, is the default;
+  - the key, one checked: Capture Time, File Name, Edited, and Rating; a separator; Ascending and Descending, one checked. Capture time ascending, oldest first, is the default;
   - Capture time is the camera's time of the shot, read from each raw's EXIF; until it is known, a photo sorts by its file's modified time. File name follows the file browser's order, digits compared as numbers, so IMG_2 comes before IMG_10. Edited puts the photos without an edit first and the edited ones after, one open for viewing only among them; the open photo moves, and its cell's pencil shows, as soon as the session reports its values with an edit or without one. Rating puts rejected photos first, then no stars, then 1 to 5;
   - Descending reverses the key, not the ties: photos equal by it stay in shooting order, then file name, whichever way, so the edited photos keep the order they were taken in. Photos with no capture time come last, by file name, either way;
   - the button's icon shows the direction (`sort-ascending`, `sort-descending`); its tooltip and its value for screen readers name the order: "Sort: capture time, ascending";
@@ -3924,7 +3924,7 @@ Two icon buttons, **Sort** at its start and **Zoom** at its end, and between the
 - **Search Photos** (Ctrl+F) is planned, in the menu bar alone ([View](#view)): searching the folder or album by file name, then from Phase 5 by metadata. The browser bar has no button for it.
 - **When:**
   - Phase 2, step 9, with the Browser: the browser bar; Sort by capture time, file name and Edited; Zoom; the count; the options menu's Show Labels and Position; their View items.
-  - Phase 3: Sort by Rating, with the ratings.
+  - Phase 3: Sort by Rating, with the ratings (built).
   - Phase 5, with the saved index: any further sort key the index makes cheap, if one is asked for.
 
 ## Tool panels from definitions
@@ -4786,14 +4786,14 @@ Ctrl means Cmd on macOS.
 | View | Guides (`guides`): darktable's guide lines over the photo, on or off; the type and its flip in View › Guides ▸ | G, darktable's key | Built (decision 92, [Guides](#guides)), with a photo live |
 | View | Find a tool (`find-tool`), the Tools panel's search | Ctrl+Shift+F, from a value field too, which does not keep it | Built, decision 96's step 6: in ⋮, and in the tab bar's menu with step 5 ([Finding a tool](#finding-a-tool)) |
 | View | Search the Browser by file name | Ctrl+F, from a value field too, which does not keep it; unassigned until it is built (decision 96) | Planned: View › Search Photos… alone ([The browser bar](#the-browser-bar)) |
-| View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort and Zoom, its options menu's Show Labels and Position, and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating in Phase 3 |
+| View | The Browser's sort and its direction; the thumbnails' size; their captions; the panel's position | None by default: the browser bar's Sort and Zoom, its options menu's Show Labels and Position, and View's items; Ctrl+= and Ctrl+− stay the photo's | Phase 2, with the browser bar; Sort by Rating with the ratings, built |
 | View | Select every photo, or none | Ctrl+A, Ctrl+Shift+A | Built: Select's Select All and Select None; Ctrl+A is a focused field's own |
 | View | Invert the selection | Ctrl+Shift+I, since darktable's Ctrl+I is Import's | Built: Select's Invert Selection |
 | View | Select the photos with no edit | None, as darktable's select untouched has none | Built: Select's Select Unedited |
 | View | Previous Selection | Ctrl+Shift+D (decision 90) | Built: Select's Previous Selection. darktable gives this key to "duplicate virgin", New Virtual Copy from Original here, which gets another key when virtual copies are designed |
-| View | Rate the selected photos: no stars, or 1 to 5 | 0 to 5, on the number row and the keypad, as darktable's | Not built: Phase 3, with ratings ([the caption](#the-caption-under-the-photo)); on every selected photo (decision 37) |
-| View | Reject, or clear it | R | Not built, as above |
-| View | Colour labels red, yellow, green, blue and purple, each on or off | F1 to F5 | Not built, as above |
+| View | Rate the selected photos: no stars, or 1 to 5 | 0 to 5, on the number row and the keypad, as darktable's | Built on the active photo ([the caption](#the-caption-under-the-photo)); on every selected photo with the batch (decision 37) |
+| View | Reject, or clear it | R | Built, as above |
+| View | Colour labels red, yellow, green, blue and purple, each on or off | F1 to F5 | Built, as above |
 | View | Print… | Ctrl+P | Not declared yet: with the Print sheet, after Phase 5 |
 | View | Slideshow | None: S stays free for a tool | Not declared yet: no phase |
 

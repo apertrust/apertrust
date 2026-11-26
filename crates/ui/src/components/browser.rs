@@ -97,7 +97,7 @@ pub enum SortKey {
     FileName,
     /// Photos without an edit first, then those with one.
     Edited,
-    /// Rejected photos first, then no stars, then 1 to 5; not built until the ratings.
+    /// Rejected photos first, then no stars, then 1 to 5.
     Rating,
 }
 
@@ -354,8 +354,7 @@ impl BrowserBarAction {
             .find(|action| action.id() == id)
     }
 
-    /// Its menu item: its action's words, checked while it is what the panel holds. Rating
-    /// is drawn disabled until the ratings come.
+    /// Its menu item: its action's words, checked while it is what the panel holds.
     fn item<'a, F: Fn(usize) -> Thumb<'a>>(self, ui: &Ui, panel: &Browser<'a, F>) -> Entry {
         let on = match self {
             BrowserBarAction::Sort(key) => panel.sort.key == key,
@@ -365,10 +364,7 @@ impl BrowserBarAction {
             BrowserBarAction::Labels => panel.labels,
         };
         let words = tr(ui.ctx(), &format!("action-{}", self.id()));
-        Item::new(self.id(), words)
-            .checked(on)
-            .enabled(self != BrowserBarAction::Sort(SortKey::Rating))
-            .into()
+        Item::new(self.id(), words).checked(on).into()
     }
 }
 

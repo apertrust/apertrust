@@ -300,6 +300,43 @@ pub static BACKGROUND: Menu = Menu {
     ]],
 };
 
+/// Photo › Rating (decision 110): no stars to five, the rating checked, then Reject,
+/// checked while set; the photo's and a thumbnail's menus hold it too ([`APP_ITEMS`]).
+pub static RATING: Menu = Menu {
+    title: "menu-rating",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[
+        &[
+            item(ActionId::RATING[0]),
+            item(ActionId::RATING[1]),
+            item(ActionId::RATING[2]),
+            item(ActionId::RATING[3]),
+            item(ActionId::RATING[4]),
+            item(ActionId::RATING[5]),
+        ],
+        &[item(ActionId::REJECT)],
+    ],
+};
+
+/// Photo › Colour Label (decision 110): the five, each checked while on, then Clear Labels;
+/// the photo's and a thumbnail's menus hold it too ([`APP_ITEMS`]).
+pub static COLOUR_LABEL: Menu = Menu {
+    title: "menu-colour-label",
+    role: Role::Plain,
+    on: Platforms::All,
+    groups: &[
+        &[
+            item(ActionId::LABEL[0]),
+            item(ActionId::LABEL[1]),
+            item(ActionId::LABEL[2]),
+            item(ActionId::LABEL[3]),
+            item(ActionId::LABEL[4]),
+        ],
+        &[item(ActionId::LABEL_CLEAR)],
+    ],
+};
+
 /// darktable's guide types, the one in use checked (decision 92).
 const GUIDE_TYPES: &[Entry] = &[
     item(ActionId::GUIDE_TYPES[0]),
@@ -533,7 +570,10 @@ pub static MENUS: [Menu; 8] = [
         title: "menu-photo",
         role: Role::Plain,
         on: Platforms::All,
-        groups: &[&[item(ActionId::NEXT_PHOTO), item(ActionId::PREVIOUS_PHOTO)]],
+        groups: &[
+            &[item(ActionId::NEXT_PHOTO), item(ActionId::PREVIOUS_PHOTO)],
+            &[Entry::Submenu(&RATING), Entry::Submenu(&COLOUR_LABEL)],
+        ],
     },
     // The selection's (decision 37), darktable's select tool. Select All is an editing
     // item all the same, acting on a focused text field ([`edits_the_field`]).
@@ -1106,14 +1146,76 @@ pub fn tab_bar(ctx: &egui::Context, add: popup::Entry, anchor: Rect) -> popup::R
     popup::Request::pull_down(anchor, name, vec![add])
 }
 
+/// Rating ▸'s actions in the photo's and a thumbnail's menus, as Photo › Rating holds them.
+const RATING_ACTIONS: [&str; 7] = [
+    ActionId::RATING[0].0,
+    ActionId::RATING[1].0,
+    ActionId::RATING[2].0,
+    ActionId::RATING[3].0,
+    ActionId::RATING[4].0,
+    ActionId::RATING[5].0,
+    ActionId::REJECT.0,
+];
+
+/// Colour Label ▸'s actions there, as Photo › Colour Label holds them.
+const LABEL_ACTIONS: [&str; 6] = [
+    ActionId::LABEL[0].0,
+    ActionId::LABEL[1].0,
+    ActionId::LABEL[2].0,
+    ActionId::LABEL[3].0,
+    ActionId::LABEL[4].0,
+    ActionId::LABEL_CLEAR.0,
+];
+
+/// A rating's submenu at `place`, in Edit's section at `order` (decision 110), below a tool's
+/// 200: the app's own global actions.
+const fn rating_item(
+    place: apertrust_tools::Place,
+    order: u32,
+    actions: &'static [&'static str],
+    title: &'static str,
+) -> MenuItem {
+    MenuItem {
+        place,
+        section: Section::EDIT,
+        order,
+        entry: MenuEntry::Submenu { title, actions },
+    }
+}
+
 /// The app's items in the places open to tools' (decision 91), declared as the tools'
-/// are: the photo's Export… and Background ▸, View › Background's items as a submenu, a
+/// are: the photo's and a thumbnail's Rating ▸ and Colour Label ▸ (decision 110), the
+/// photo's Export… and Background ▸, View › Background's items as a submenu, a
 /// thumbnail's Export…, and in a tool's ⋯ Reset, Copy Settings and Paste Settings, first,
 /// as far as they apply to its tool ([`applies`]), each in Edit's section below order 200,
 /// where a tool's own start. Copy Edit and Apply Edit join the photo's Edit section once
 /// built, Show in Finder and Show in Folder once built; the photo's and a thumbnail's
 /// Reset is History's. The app's are held to no other section's rule.
-pub static APP_ITEMS: [MenuItem; 6] = [
+pub static APP_ITEMS: [MenuItem; 10] = [
+    rating_item(
+        apertrust_tools::Place::Photo,
+        150,
+        &RATING_ACTIONS,
+        RATING.title,
+    ),
+    rating_item(
+        apertrust_tools::Place::Photo,
+        160,
+        &LABEL_ACTIONS,
+        COLOUR_LABEL.title,
+    ),
+    rating_item(
+        apertrust_tools::Place::Thumbnail,
+        150,
+        &RATING_ACTIONS,
+        RATING.title,
+    ),
+    rating_item(
+        apertrust_tools::Place::Thumbnail,
+        160,
+        &LABEL_ACTIONS,
+        COLOUR_LABEL.title,
+    ),
     MenuItem {
         place: apertrust_tools::Place::Photo,
         section: Section::EXPORT,
@@ -2333,6 +2435,7 @@ mod tests {
         State {
             view: View::Edit,
             photo: true,
+            rating: Some(Default::default()),
             waiting: false,
             editable: true,
             tool_actions: u64::MAX,
@@ -3916,6 +4019,8 @@ mod tests {
             ids,
             [
                 "reset",
+                "menu-rating",
+                "menu-colour-label",
                 "redo",
                 "-",
                 "export",
@@ -4037,8 +4142,10 @@ mod tests {
         let line = |id: &str, enabled| (id.to_string(), enabled, false);
         let sep = || line("-", true);
         let bg = || line("menu-background", true);
+        // No rating, so its submenus show only while the photo opens, their items disabled.
         let one = State {
             photos: 1,
+            rating: None,
             ..everything()
         };
         let cannot = State {
@@ -4088,6 +4195,9 @@ mod tests {
                 photo,
                 &waiting,
                 vec![
+                    line("menu-rating", true),
+                    line("menu-colour-label", true),
+                    sep(),
                     line("export", false),
                     sep(),
                     bg(),
@@ -4121,6 +4231,9 @@ mod tests {
                 Target::Selection,
                 &waiting,
                 vec![
+                    line("menu-rating", true),
+                    line("menu-colour-label", true),
+                    sep(),
                     line("export", false),
                     sep(),
                     line("undo", false),
@@ -4216,6 +4329,8 @@ mod tests {
             words(&menu),
             [
                 "Reset",
+                "Rating ▸",
+                "Colour Label ▸",
                 "-",
                 "Export…",
                 "-",
@@ -4243,11 +4358,12 @@ mod tests {
                 "tool-flip-flip_vertically"
             ]
         );
-        // On a photo open for viewing only, neither Reset nor Orientation's buttons can
-        // run, and they go, its submenu with them.
+        // On a photo open for viewing only, neither Reset, the rating nor Orientation's
+        // buttons can run, and they go, their submenus with them.
         let viewing = State {
             editable: false,
             view_only: true,
+            rating: None,
             ..one
         };
         let menu = open(Open::Photo, photo, &viewing);
@@ -4261,7 +4377,10 @@ mod tests {
         assert_eq!(words(&menu), ["Export…", "-", "Background ▸"]);
         let menu = open(Open::Thumbnail, Target::Selection, &one);
         assert_eq!(menu.name, "Thumbnail");
-        assert_eq!(words(&menu), ["Reset", "-", "Export…"]);
+        assert_eq!(
+            words(&menu),
+            ["Reset", "Rating ▸", "Colour Label ▸", "-", "Export…"]
+        );
         // Several selected: a thumbnail's acts on them, and Reset on one alone; the photo's
         // on the active photo, as Edit › Reset does.
         let several = State {
@@ -4270,7 +4389,10 @@ mod tests {
             ..one
         };
         let menu = open(Open::Thumbnail, Target::Selection, &several);
-        assert_eq!(words(&menu), ["Export 2 Photos…"]);
+        assert_eq!(
+            words(&menu),
+            ["Rating ▸", "Colour Label ▸", "-", "Export 2 Photos…"]
+        );
         let menu = open(Open::Photo, photo, &several);
         assert_eq!(words(&menu)[0], "Reset");
         // Nothing to reset: hidden.
@@ -4279,10 +4401,9 @@ mod tests {
             ..one
         };
         let menu = open(Open::Photo, photo, &unedited);
-        assert_eq!(
-            words(&menu),
-            ["Export…", "-", "Background ▸", "Orientation ▸"]
-        );
+        let rating = ["Rating ▸", "Colour Label ▸", "-"];
+        let rest = ["Export…", "-", "Background ▸", "Orientation ▸"];
+        assert_eq!(words(&menu), [&rating[..], &rest[..]].concat());
     }
 
     /// One line of a menu as a test reads it: its words, whether enabled, its check mark,
@@ -4434,8 +4555,8 @@ mod tests {
     }
 
     /// Decision 91's cap: the photo's and a thumbnail's menus, with every item every tool
-    /// and utility adds there shown, hold at most 16 items, a submenu's each counted. An
-    /// item past it needs a decision.
+    /// and utility adds there shown, hold at most 16 items, a submenu one, its own children
+    /// held by `MOST_IN_SUBMENU`. An item past it needs a decision.
     #[test]
     fn the_photo_s_and_a_thumbnail_s_menus_hold_at_most_16_items() {
         for (place, target) in [
@@ -4449,8 +4570,13 @@ mod tests {
         ] {
             let tools = definitions();
             let added = added(place, &target, &tools, apertrust_tools::utility::UTILITIES);
+            // The app's own submenus within the submenu's cap, as a tool's are checked.
+            let most = apertrust_tools::MOST_IN_SUBMENU;
+            for item in app_items(place, &target) {
+                assert!(item.actions.len() <= most, "{place:?}: {item:?}");
+            }
             let all = app_items(place, &target).into_iter().chain(added);
-            let count: usize = all.map(|item| item.actions.len()).sum();
+            let count = all.count();
             assert!(count <= 16, "{place:?} holds {count} items");
         }
     }
