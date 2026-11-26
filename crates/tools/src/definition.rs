@@ -711,7 +711,7 @@ pub enum Row {
     /// A boolean control.
     Toggle {
         control: &'static str,
-        /// Its end items, before the switch (decision 107), as AgX's Reverse all takes Set
+        /// Its end items, after the switch (decision 107), as AgX's Reverse all takes Set
         /// from above.
         end: &'static [End],
     },
@@ -4406,7 +4406,7 @@ mod tests {
 
     /// A line of any shape is drawn (decision 107): pickers, icon or text actions, after
     /// no start, a label, a control or a readout, ported or not, and a toggle takes end
-    /// items before its switch.
+    /// items after its switch.
     #[test]
     fn a_line_and_a_toggle_take_end_items_of_any_shape() {
         const CCT: ReadoutDef = ReadoutDef {
@@ -4455,7 +4455,7 @@ mod tests {
             }
             assert_eq!(picking(&[LEVEL], &rows), Ok(()), "{rows:?}");
         }
-        // A toggle with a text action before its switch, its fine tuning's.
+        // A toggle with a text action after its switch, its fine tuning's.
         const FINE: Row = Row::Group(Group {
             id: "fine_tuning",
             kind: GroupKind::Collapsible,

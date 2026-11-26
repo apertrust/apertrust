@@ -26,7 +26,7 @@
 //!   Tab order, `spacing.xs` apart: a picker's button, an icon button 18 by 18 with no
 //!   plate, a text button, or a menu button, an icon button opening a pull-down of the
 //!   popup service's and reported expanded while it is open. A boolean's row draws the
-//!   same items before its switch ([`super::ToggleRow::end`]).
+//!   same items after its switch, at its end ([`super::ToggleRow::end`]).
 //!
 //! The start is cut first, with …, never an end item.
 

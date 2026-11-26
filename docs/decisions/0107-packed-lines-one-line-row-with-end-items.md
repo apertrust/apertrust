@@ -27,7 +27,7 @@ A definition has five shapes for these today: `Row::Pickers`, `Row::Buttons`, `R
    - `readout` is a text and a swatch the tool computes from its values, in the label's place, as Colour calibration's CCT is (`ReadoutDef`).
    - `end` is the row's end items.
 
-   A slider's `Quad` becomes its `end`: one item, since darktable's quad is one. A choice, a toggle or a setting may take a few. The end items are drawn where a row's buttons go today, before the value, the option or the switch. A line with no start and no readout whose one item is a text `Action` draws it at the start, where `Row::Action`'s button is today.
+   A slider's `Quad` becomes its `end`: one item, since darktable's quad is one. A choice, a toggle or a setting may take a few. The end items are drawn where a row's buttons go today, before the value or the option, and after a toggle's switch, at the row's end. A line with no start and no readout whose one item is a text `Action` draws it at the start, where `Row::Action`'s button is today.
 
    This lands first, in a change of its own with no change of behaviour, before any new kind of end item: every page reads as it does now.
 2. **End items, a closed list** (`End`):

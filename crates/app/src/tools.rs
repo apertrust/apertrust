@@ -3248,7 +3248,7 @@ fn choice_row(
     }
 }
 
-/// A boolean's row, with its end items before its switch (decision 107).
+/// A boolean's row, with its end items after its switch (decision 107).
 fn toggle_row(
     ui: &mut egui::Ui,
     page: &Page,
