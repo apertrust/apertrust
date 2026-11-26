@@ -1077,9 +1077,12 @@ impl UtilityTool for Metadata {
             // At the row's end, where a fact's end item sits.
             Widget::MetadataMap => {
                 let tip = words.text("metadata-map-later");
-                ui.add_space(theme(ui.ctx()).spacing.xs);
+                let t = theme(ui.ctx());
+                ui.add_space(t.spacing.xs);
+                // One button high: a layout of its own would take every point left below.
+                let line = egui::vec2(ui.available_width(), t.sizes.control);
                 let end = egui::Layout::right_to_left(egui::Align::Center);
-                ui.with_layout(end, |ui| {
+                ui.allocate_ui_with_layout(line, end, |ui| {
                     parts::Button::new(&words.text("metadata-map"))
                         .enabled(false)
                         .tip(&tip)
