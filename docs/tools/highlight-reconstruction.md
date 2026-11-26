@@ -72,7 +72,7 @@ A script sends `SetControl { tool: "highlights", control: "clip", value: 0.95 }`
 
 Their methods are not ported, so these controls are not either (`Control::unported`). Each takes only darktable's default, a value refused otherwise, and their rows never show, since their methods cannot be chosen. The operation's schema holds only the method and the threshold, which inpaint opposed reads. The other parameters come with their methods (decision 51), and the tool owns them then.
 
-**On a photo that is not a colour raw** every control is unavailable, drawn disabled: an image that is not a raw runs no raw stage, and on a monochrome raw darktable shows a "not applicable" page in place of the controls (`reload_defaults`, `gui_init`), the operation refusing it.
+**On a photo that is not a colour raw** every control is unavailable, drawn disabled: an image that is not a raw runs no raw stage until the tool's RGB pass comes with the images other than raws, then lists clip highlights alone as darktable's does (decision 111, planned), and on a monochrome raw darktable shows a "not applicable" page in place of the controls (`reload_defaults`, `gui_init`), the operation refusing it.
 
 **Not shown:** darktable's showmask buttons beside Clipping threshold, Combine, Candidating and Strength. They show the clipped highlights or the segments in false colours and store nothing, and wait for the renderer's quad, a `View` end item of decision 107 ([Gaps](#gaps)).
 

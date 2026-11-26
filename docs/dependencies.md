@@ -79,6 +79,28 @@ The app reads and writes XMP and tags (decision 50). It needs EXIF reading, make
 
 **Not used:** exiftool-rs, ExifTool's Perl run by an interpreter in Rust that compiles in PCRE2 and zlib; Adobe's XMP Toolkit and rexiv2, both C++; xmpkit, young, with one maintainer and unproven conformance; typst's `xmp_writer`, which only writes; RDF/XML crates such as oxrdfxml, which give triples without XMP's order, languages or canonical form.
 
+### Images other than raws, planned
+
+Decision 111: Apertrust opens the images darktable reads, each through a Rust decoder in `apertrust-raw`, added with its tier and checked with `cargo deny check` then. The versions are those current on crates.io when the decision was recorded.
+
+| Tier | Format | Crate | Licence | Note |
+| --- | --- | --- | --- | --- |
+| 1 | JPEG | jpeg-decoder 0.3.2 or zune-jpeg 0.5.15 | MIT OR Apache-2.0; MIT OR Apache-2.0 OR Zlib | Both in the tree already (the export's tests; `image` through rawler and eframe); the one nearer libjpeg-turbo's decode, darktable's, is taken. EXIF and XMP through rawler's `formats::jfif` |
+| 1 | ICC profiles | moxcms | BSD-3-Clause OR Apache-2.0 | Decision 26's, already in the tree through `image`; added directly with the display colour's first part |
+| 2 | TIFF | tiff 0.11.3 | MIT | In the tree through `image` |
+| 2 | PNG | png 0.18.1 | MIT OR Apache-2.0 | Already a dependency |
+| 3 | WebP | image-webp 0.2.4 | MIT OR Apache-2.0 | |
+| 3 | JPEG XL | jxl-oxide 0.12.6 | MIT OR Apache-2.0 | In the tree through rawler |
+| 3 | AVIF | rav1d 1.1.0, avif-parse 2.1.0 | BSD-2-Clause; MPL-2.0 | rav1d with its `asm` feature off, so no assembler or C toolchain builds it; libavif's YUV to RGB conversion ported |
+| 4 | OpenEXR | exr 1.74.3 | BSD-3-Clause | No unsafe code |
+| 5 | JPEG 2000 | hayro-jpeg2000 0.5.0 | Apache-2.0 OR MIT | |
+| 5 | GIF | gif 0.14.2 | MIT OR Apache-2.0 | |
+
+Radiance HDR, PFM, binary PNM, QOI and BMP are read by Apertrust's own code, ports of darktable's loaders where it has one.
+
+- **HEIF and HEIC,** tier 6, choose their decoder after a spike comparing the pure-Rust `heic` crate with libheif on phones' photos: `heic`, AGPL-3.0-only (or a commercial licence), which `deny.toml` does not allow yet; the platform's decoders, which differ by platform, with none on Linux; libheif with libde265, which would need an exception to decision 5; or none (decision 111).
+- **Not used:** GraphicsMagick, ImageMagick and libvips (C, darktable's catch-all for formats no photographer's workflow needs); the `image` crate as the one decoder (its AVIF is dav1d, C); libjpeg-turbo, libtiff, libpng, libwebp, libjxl, libavif, OpenJPEG and OpenEXR, darktable's, all C or C++.
+
 ### The system clipboard: arboard and smithay-clipboard
 
 Copy and paste reach the system clipboard through eframe's `clipboard` feature, which brings egui-winit's arboard and, on Wayland, smithay-clipboard, both Rust, over the platform's own clipboard and, on Linux, libwayland and the X11 libraries loaded at run time.

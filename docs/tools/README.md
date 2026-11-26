@@ -223,9 +223,9 @@ A parameter with no editing meaning and no darktable widget is fixed at darktabl
 AgX now, Sigmoid and Filmic RGB as they come, each a tool of its own, as in darktable, in the Adjust tab after Exposure (decision 38).
 
 - A setting chooses the tone mapper for new photos and which tool the Adjust tab shows.
-- Each edit names its tone mapper's tool and keeps it; an edit that names none is AgX's. Exactly one tone mapper operation is planned.
+- Each edit names its tone mapper's tool and keeps it; an edit that names none is AgX's. At most one tone mapper operation is planned, while its tool is on: always on a raw, on an image that is not a raw once touched (decision 111).
 - A photo using another tone mapper shows that tool, with a note. Switching an existing photo is an explicit action, one undo step.
-- The background has exactly one tone mapper, its parameters global. Planned with layers: a layer may choose its own tone mapper, any of the three, which replaces the background's within its mask, never stacked on it, so a pixel is tone-mapped once; darktable's masked tone-mapper instances import onto such layers (decision 33).
+- The background has one tone mapper, its parameters global. Planned with layers: a layer may choose its own tone mapper, any of the three, which replaces the background's within its mask, never stacked on it, so a pixel is tone-mapped once; darktable's masked tone-mapper instances import onto such layers (decision 33).
 
 ### Owners by operation
 

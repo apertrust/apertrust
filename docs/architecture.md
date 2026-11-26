@@ -1,6 +1,6 @@
 # Apertrust: Architecture
 
-Apertrust is a free, non-destructive, cross-platform raw photo editor. It aims for measured image quality, controls that keep to what they say, and help in reaching the look you want. [principles.md](principles.md) says what that means for photographers (decision 1).
+Apertrust is a free, non-destructive, cross-platform raw photo editor that will also open JPEG, TIFF and other common image files (planned, decision 111). It aims for measured image quality, controls that keep to what they say, and help in reaching the look you want. [principles.md](principles.md) says what that means for photographers (decision 1).
 
 Technically it is:
 
@@ -129,7 +129,7 @@ The server is a library crate the CLI runs, not a program of its own; `apertrust
 | `apertrust-op-<id>` | One operation each, in `crates/op/<id>`: Slang source, generated WGSL, `prepare`, manifest, schema, provenance | Phase 1 |
 | `apertrust-operations` | The explicit list of built-in operations | Phase 1 |
 | `apertrust-color` | Shared colour maths and numerical helpers: Slang for kernels, Rust for setups | Phase 1 |
-| `apertrust-raw` | Raw decoding with rawler, wrapped in Apertrust's own types | Phase 0 |
+| `apertrust-raw` | Raw decoding with rawler, wrapped in Apertrust's own types; planned, the other images' Rust decoders (decision 111) | Phase 0 |
 | `apertrust-base` | What every program sets up as it starts: logging and the banner, the version, folders, settings, the safe write, jobs and, planned, the disk cache (decision 76), each behind a feature ([settings.md](settings.md#where-it-lives)) | Phase 2 |
 | `apertrust-export` | What an export writes and where, with no GPU: the export settings, darktable's size computation and variables, the file-on-disk rules, the JPEG and PNG writers (decision 56) | Phase 2 |
 | `apertrust-display` | The window's platform code where wgpu and winit stop: display colour ([gui.md](gui.md#display-colour)), the window frame (decision 39), the Mac's native popup menus (decision 40), dialogs and alerts (decision 41), Windows' named pipe and Linux's peer credentials for the single-instance hand-off (decision 89) and, planned, the assistants' channel beside it (decision 108); an FFI crate allowed `unsafe` | Phase 0 |

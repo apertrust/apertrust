@@ -131,6 +131,16 @@ A folder open, the main way in; built first, and partly built.
 - Import… (planned, decision 85) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it ([Import in folder mode](#import-in-folder-mode)).
 - The CLI works on folders this way too: `library scan` built, `import` planned ([The CLI](#the-cli)).
 
+### Images other than raws
+
+Decision 111, planned, JPEG first, then the decision's later tiers. An image that is not a raw is a photo as a raw is, wherever a raw is one: in folder mode, one photo, the Browser and `library scan`.
+
+- **Listed** by the extensions of the formats the app opens, in any case; opened by its magic number first, as darktable's loaders are, so a JPEG named otherwise still opens.
+- **Its sidecar** is beside it by its whole name, `photo.jpg.apxmp` (`sidecar::path_for`), its edit, ratings, labels, keywords and metadata there as a raw's; its EXIF and XMP read as a raw's, a JPEG's through rawler's `formats::jfif`, which skips the APP13 segment, so a JPEG's IPTC-IIM needs a reader of its own (planned).
+- **A raw and its JPEG** become one photo with step 17's groups by base name, which this does not replace. Until step 17, a JPEG with a raw of the same base name beside it is left out of the Browser and the folder's photos, as darktable's collapsed group shows one photo, and counted apart; a JPEG alone is a photo. Opened by a route that names it, File › Open… or Open With, it opens as one photo.
+- **Its thumbnail** is the image itself ([Thumbnails](#thumbnails)).
+- **Import** lists and copies non-raws with its slice 20b (decision 85).
+
 ### Include subfolders
 
 Planned, Phase 3, the library's step 19b. **Include subfolders** shows the open folder's photos with its subfolders', from [the tree's walk](#the-trees-walk), the index in memory over the whole tree.
@@ -617,6 +627,7 @@ Decision 53. `crates/library/src/listing.rs`. `Listing::start(folder, options)` 
 | Entry | What the listing does |
 | --- | --- |
 | A raw, by `apertrust_raw::extensions()` in any case | Listed as a `Photo` with its name and `FileStat` (size and modified time, following links), and its sidecar's, where it has one |
+| Planned (decision 111): an image that is not a raw, by the extensions of the formats built | Listed as a `Photo`, as a raw is, and counted apart from the raws; until step 17, a JPEG beside a raw of the same base name is counted, not listed |
 | `NAME.apxmp`, the raw's whole name plus `sidecar::SUFFIX` | The raw's sidecar, matched byte for byte for now; with no raw, an `Orphan` |
 | A subfolder, or a link to one | Its name alone, never descended into |
 | A name starting with a dot | Skipped and counted as hidden, except a stale temporary (below) |
@@ -926,6 +937,7 @@ In progress: step 6. Built: the camera's embedded pictures, read in memory, thro
 
 The decided design (decisions 53 and 57):
 
+- **An image that is not a raw** (decision 111, planned) is its own embedded picture: the image itself, scaled to the size asked and turned upright, where the rule below would show a raw's embedded picture, and a render above that level, as darktable's `_init_8` does for a `.jpg`. darktable takes exiv2's small EXIF thumbnail for any other extension, a `.jpeg` among them; Apertrust takes the image itself for them too.
 - **The camera's embedded JPEG first,** shown unmarked, as darktable does, then Apertrust's own render, a still of the engine's viewport pipe. The engine renders the thumbnails and the library keeps them. A cheaper path of Apertrust's own (the raw stage, then the mosaic averaged per thumbnail pixel) is a performance idea to measure later.
 - **The cache** (decision 76), the library's files in every mode, the cache's limited kind `thumbnails/`: one file per photo, virtual copy and size (128, 256, 512 or 1024), a JPEG of quality 90 through the export's JPEG encoder, chroma halved across (4:2:2), holding the edit's hash and the render version (the operations' and the pipeline's), or the embedded picture's mark, replaced whole by a newer one; a reader finding another version renders again, showing the stale picture meanwhile. Its limit, Unlimited, eviction and clearing are [cache.md](cache.md)'s.
 - **The live photo's render,** of its saved edit at 1024 pixels and averaged to the smaller sizes, after the edit settles and as the photo stops being live, from its live pipe. Once Apertrust has rendered a photo live, its render is the photo's thumbnail at every size, whatever the setting: a photo shown at least 300 ms and never edited, and one brought back to the defaults by a reset, Discard History…, or Undo, Redo or Go To landing at Original, keeps the render of the defaults, recorded as made from the live photo (`ops::Origin::Opened`) for the raw as it was then. A photo never edited and flicked past sooner keeps what Raw thumbnails from shows, so flipping through photos renders none of them beside the next one's open. How it is made is [engine.md](engine.md#rendered-thumbnails-of-the-live-photo)'s, its version [cache.md](cache.md#thumbnails)'s.

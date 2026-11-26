@@ -479,7 +479,7 @@ The golden-image harness against darktable-cli (decision 61). AGENTS.md lists it
 
 ## apertrust-raw
 
-Raw decoding with rawler (decision 23). Its one dependency of ours is `apertrust-base`, no feature, for `wire`: `Error::Read`'s `io::Error`, since `Error` and `Exif`, which the session protocol carries, derive serde (decision 108).
+Raw decoding with rawler (decision 23), and, planned, the decoders of the images other than raws Apertrust opens, in a module of their own, `image`, JPEG first, each image's samples, ICC profile or cICP, EXIF and XMP (decision 111; [dependencies.md](dependencies.md#images-other-than-raws-planned)). Its one dependency of ours is `apertrust-base`, no feature, for `wire`: `Error::Read`'s `io::Error`, since `Error` and `Exif`, which the session protocol carries, derive serde (decision 108).
 
 **Decoding:**
 
