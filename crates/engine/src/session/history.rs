@@ -150,7 +150,8 @@ pub(super) struct PhotoHistory {
 }
 
 /// What the sidecar holds of the log as the session last read it or the writer last wrote
-/// it: its steps, by id and clock, and its copy's clock vector. A newer file is compared
+/// it: its steps, by id and clock, its copy's clock vector and its styles applied. A newer
+/// file is compared
 /// with it, not with the session's own vector, which this machine's other programs, as
 /// `apertrust-cli edit`, share (`docs/history.md`, Behaviour).
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -161,6 +162,9 @@ pub(super) struct Base {
     pub(super) end: Option<StepId>,
     /// The steps applied, up to the end.
     pub(super) applied: HashSet<(StepId, Clock)>,
+    /// The styles applied at its end (decision 106), which a Compress not yet saved, whose
+    /// log holds no list before its own list-only step, is replayed from.
+    pub(super) styles: Vec<AppliedStyle>,
 }
 
 impl Base {
@@ -175,6 +179,7 @@ impl Base {
             applied: (log.steps()[..log.end()].iter())
                 .map(|step| (step.id, step.clock))
                 .collect(),
+            styles: log.styles().to_vec(),
         }
     }
 
@@ -518,6 +523,9 @@ impl PhotoHistory {
         // just before the first step of the change being laid that set it.
         let mut rebuilt = log.styles().to_vec();
         let mut set: BTreeMap<String, ToolValues> = BTreeMap::new();
+        // And each tool's state in the joined log just before the last step laid that set
+        // it, which a Compress's list replays from, as its log keeps a tool's last step alone.
+        let mut last: BTreeMap<String, ToolValues> = BTreeMap::new();
         let mut change = None;
         // Whether the change being laid has laid its Reset: the tools it sets after it are
         // at their reset state just before.
@@ -532,6 +540,11 @@ impl PhotoHistory {
             if step.source == StepSource::Default {
                 continue;
             }
+            // Compress's list-only step: the compressed log holds no list before it, so it
+            // replays what it differs by from the list the base holds.
+            let compressed = step.change == Change::None
+                && step.source == StepSource::Style
+                && step.note == Some(Note::styles_applied());
             let mut step = step.clone();
             if log.position(step.id).is_some() {
                 step.id = log.new_id();
@@ -550,6 +563,7 @@ impl PhotoHistory {
                         false => joined.tools.get(tool).cloned().unwrap_or_default(),
                     };
                     set.entry(tool.clone()).or_insert_with(state);
+                    last.insert(tool.clone(), state());
                 }
             }
             // Every Reset laid empties the list, whether or not it stores one; a step that
@@ -564,9 +578,12 @@ impl PhotoHistory {
                 }
                 (_, Some(after)) => {
                     let stepped = set.keys().cloned().collect();
-                    let before = self.log.styles_at(at);
+                    let (before, laid) = match compressed {
+                        true => (&base.styles[..], &last),
+                        false => (self.log.styles_at(at), &set),
+                    };
                     let joined = |tool: &str| {
-                        (set.get(tool).cloned())
+                        (laid.get(tool).cloned())
                             .unwrap_or_else(|| joined.tools.get(tool).cloned().unwrap_or_default())
                     };
                     let applied = matches!(&step.note,
@@ -575,6 +592,10 @@ impl PhotoHistory {
                     step.styles = Some(rebuilt.clone());
                 }
                 (_, None) => {}
+            }
+            // A Compress's list that leaves the list empty, as it was, holds nothing to lay.
+            if compressed && !had && rebuilt.is_empty() {
+                continue;
             }
             log.add(step);
             laid = true;
