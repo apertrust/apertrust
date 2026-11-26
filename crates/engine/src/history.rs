@@ -469,14 +469,14 @@ pub fn on_top(list: &[AppliedStyle], style: AppliedStyle) -> Vec<AppliedStyle> {
 /// on it that changed the session's list from `before` to `after` (decision 106, A newer
 /// file taken in): each style cleared taken out where `rebuilt` holds it, and each style
 /// added or moved to the top put at the top, in `after`'s order, any item of the same style
-/// taken out first ([`AppliedStyle::is`]), with the session's after states. It is applied
-/// again over the item `rebuilt` holds of the same style, by [`AppliedStyle::applied`]'s
-/// rule: a tool it `set`, as the steps of
-/// its change show or as its item differs from the one before, takes its state in the
-/// joined log just before the step that set it, `joined`, or the earlier item's state
-/// before it where it still held that item's after; a tool an earlier application set keeps
-/// the earlier item's state before it, else the session's; and the earlier item's tools it
-/// does not set stay, as they were.
+/// taken out first ([`AppliedStyle::is`]). It is applied again over the item `rebuilt`
+/// holds of the same style, by [`AppliedStyle::applied`]'s rule: a tool it `set`, as the
+/// steps of its change show or as its item differs from the one before, takes the session's
+/// after state, and its state in the joined log just before the step that set it, `joined`,
+/// or the earlier item's state before it where it still held that item's after; a tool it
+/// did not set keeps the earlier item's whole state, before and after it, as the newer file
+/// left it, else the session's; and the earlier item's tools it does not set stay, as they
+/// were.
 pub(crate) fn replay(
     rebuilt: &mut Vec<AppliedStyle>,
     (before, after): (&[AppliedStyle], &[AppliedStyle]),
@@ -512,15 +512,16 @@ pub(crate) fn replay(
                 let kept = (earlier.iter())
                     .flat_map(|earlier| &earlier.tools)
                     .find(|kept| kept.tool == tool.tool);
-                let before = match (set, kept) {
-                    (true, _) => joined(&tool.tool),
-                    (false, Some(kept)) => kept.before.clone(),
-                    (false, None) => tool.before.clone(),
-                };
-                StyleTool {
-                    tool: tool.tool.clone(),
-                    before,
-                    after: tool.after.clone(),
+                match (set, kept) {
+                    (true, _) => StyleTool {
+                        tool: tool.tool.clone(),
+                        before: joined(&tool.tool),
+                        after: tool.after.clone(),
+                    },
+                    // Not set here: the earlier item's whole record, its after the one the
+                    // newer file left, which may have applied the style again since.
+                    (false, Some(kept)) => kept.clone(),
+                    (false, None) => tool.clone(),
                 }
             })
             .collect();
