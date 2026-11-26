@@ -91,6 +91,7 @@ pre-commit run --hook-stage manual --all-files   # every check, tools/clippy.sh 
 pre-commit run ui-strings --all-files      # an English literal in interface code, tools/check-ui-strings.sh (CI)
 pre-commit run windows-paths --all-files   # a platform cfg missing from .github/windows-paths.txt (CI)
 tools/check-windows-paths.sh --changed REVS   # the files a diff changes that the list covers
+pre-commit run build-script-cfgs --all-files   # a build script's platform #[cfg], unmarked, that clippy elsewhere never sees
 tools/credits.sh [--check]                 # CREDITS.md from Cargo.lock; --check fails when stale (CI)
 tools/package.sh [--finder-layout] [--nightly] # this platform's packages into target/package/<target>/out;
                                            # --nightly: Apertrust Nightly's, as the nightly builds are
