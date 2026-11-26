@@ -785,9 +785,10 @@ impl Engine {
     }
 
     /// [`Command::UndoBatch`]: the remembered batch `batch` taken back on each of its
-    /// photos still on it, the active one by its own Undo where that would take it back and
-    /// it is not open for viewing only, the others by an `undo-batch` job; one the session
-    /// does not remember refused.
+    /// photos still on it, the active one, once live, by its own Undo where that would take
+    /// it back and it is not open for viewing only, the others by an `undo-batch` job, an
+    /// active photo still opening among them, routed once live; one the session does not
+    /// remember refused.
     pub(super) fn undo_batch(
         &mut self,
         batch: BatchId,
@@ -799,7 +800,9 @@ impl Engine {
         else {
             return Err(SessionError::UnknownBatch { batch });
         };
-        let active = self.open.as_ref().map(|open| open.sidecar.clone());
+        // Still opening, it is the job's: no command on the edit is taken before it is live.
+        let live = self.open.as_ref().filter(|_| self.opening.is_none());
+        let active = live.map(|open| open.sidecar.clone());
         let on_active = (active.as_deref()).is_some_and(|active| {
             let state = pending.state();
             (state.changed.iter()).any(|photo| sidecar::path_for(photo) == active)
