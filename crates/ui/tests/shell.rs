@@ -1614,7 +1614,7 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
     );
     assert_eq!(*harness.state(), vec![ToolbarAction::MoveWindow]);
     // A right-click on it, between its faces too, asks for the toolbar menu on the well,
-    // the list's eighth entry (decision 92).
+    // the list's seventh entry (decision 92).
     for at in [between, select.center()] {
         harness.state_mut().clear();
         right_click(&mut harness, at);
@@ -1622,7 +1622,7 @@ fn the_cursors_well_is_the_toolbar_s_and_never_moves_the_window() {
             [ToolbarAction::ContextMenu(menu)] => menu,
             ref other => panic!("{other:?}"),
         };
-        assert_eq!(menu.entry, Some(7));
+        assert_eq!(menu.entry, Some(6));
     }
 }
 
@@ -1706,12 +1706,12 @@ fn a_right_click_anywhere_asks_for_the_toolbar_menu_with_what_is_under_it() {
         right_click(&mut harness, empty);
         assert_eq!(menus_asked(&harness), vec![(None, empty, None)], "{on}");
         harness.state_mut().clear();
-        // The list's places, the menu button first.
+        // The list's places.
         let buttons = [
-            ("Import…", 1),
-            ("Reset", 3),
-            ("Undo", 4),
-            ("Apply edit", 12),
+            ("Import…", 0),
+            ("Reset", 2),
+            ("Undo", 3),
+            ("Apply edit", 11),
         ];
         for (name, _) in buttons {
             let control = harness.get_by_label(name).rect().center();
@@ -1744,7 +1744,7 @@ fn the_menu_keys_on_a_focused_button_ask_for_the_toolbar_menu_on_it() {
         let asked = menus_asked(&harness);
         assert_eq!(asked.len(), 1, "{key:?}");
         let (entry, at, opener) = asked[0];
-        assert_eq!((entry, at), (Some(4), under), "{key:?}");
+        assert_eq!((entry, at), (Some(3), under), "{key:?}");
         let opener = opener.map(|id| id.accesskit_id());
         assert_eq!(
             opener,
@@ -1789,7 +1789,7 @@ fn a_control_click_on_the_mac_asks_for_the_toolbar_menu() {
         });
     }
     harness.run();
-    assert_eq!(menus_asked(&harness), vec![(Some(3), reset, None)]);
+    assert_eq!(menus_asked(&harness), vec![(Some(2), reset, None)]);
 }
 
 /// The title bar with the window's caption buttons in `style`, with labels or without,
@@ -2107,10 +2107,10 @@ fn listed_on(
 
 /// Decision 92: a right-click on the menu button asks for the window's menu, never the
 /// toolbar menu; a right-click beside it, and Shift+F10 or the Menu key on it, still ask for
-/// the toolbar menu.
+/// the toolbar menu, on no entry, as the menu button is none.
 #[test]
 fn a_right_click_on_the_menu_button_asks_for_the_window_s_menu() {
-    let mut harness = listed(vec![ToolbarEntry::MenuButton, settings()]);
+    let mut harness = listed(vec![settings()]);
     harness.run();
     let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
     right_click_listed(&mut harness, menu.center());
@@ -2130,10 +2130,7 @@ fn a_right_click_on_the_menu_button_asks_for_the_window_s_menu() {
         assert!(
             matches!(
                 harness.state().actions[..],
-                [ToolbarAction::ContextMenu(ToolbarMenu {
-                    entry: Some(0),
-                    ..
-                })]
+                [ToolbarAction::ContextMenu(ToolbarMenu { entry: None, .. })]
             ),
             "{key:?}: {:?}",
             harness.state().actions
@@ -2161,6 +2158,8 @@ fn settings() -> ToolbarEntry {
     ToolbarEntry::Button(ToolbarButton::new("settings", Icon::Settings, "Settings…"))
 }
 
+/// The menu button first, where the menus are drawn here, then the entries in their order
+/// (decision 92).
 #[test]
 fn the_toolbar_draws_its_entries_in_their_order() {
     let mut harness = listed(vec![
@@ -2168,19 +2167,19 @@ fn the_toolbar_draws_its_entries_in_their_order() {
         settings(),
         ToolbarEntry::Cursors,
         ToolbarEntry::FlexibleSpace,
-        ToolbarEntry::MenuButton,
     ]);
     harness.state_mut().saved = SaveState::Failed("disk full");
     harness.run();
     let bar = harness.get_by_role(Role::Toolbar).rect();
     let rect = |name: &str| harness.get_by_label(name).rect();
     let well = harness.get_by_role(Role::RadioGroup).rect();
-    // The save warning first, Settings… after it, the well a group's gap, 16 points, on;
-    // the menu button alone at the end.
+    // The menu button at the start, the save warning after it, Settings… after that, the
+    // well a group's gap, 16 points, on.
+    let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    assert_eq!(menu.left(), bar.left() + 8.0);
+    assert!(menu.right() < rect("Not saved").left());
     assert!(rect("Not saved").right() < rect("Settings…").left());
     assert_eq!(well.left() - rect("Settings…").right(), 16.0);
-    let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
-    assert_eq!(bar.right() - menu.right(), 8.0);
     harness.get_by_label("Settings…").click();
     harness.run();
     assert_eq!(harness.state().actions, [ToolbarAction::Button("settings")]);
@@ -2247,12 +2246,12 @@ fn a_tool_s_items_fold_before_the_app_s_own() {
 }
 
 /// With no flexible space in the list, » still stands at the panel's end, the buttons left
-/// standing from its start (decision 92).
+/// standing from its start, after the menu button (decision 92).
 #[test]
 fn with_no_flexible_space_more_stands_at_the_end() {
     let ids = ["import", "export", "reset", "undo", "redo", "guides"];
     let buttons = ids.map(|id| ToolbarEntry::Button(ToolbarButton::new(id, Icon::Settings, id)));
-    let mut harness = listed_on(buttons.to_vec(), 200.0, egui::os::OperatingSystem::Nix);
+    let mut harness = listed_on(buttons.to_vec(), 250.0, egui::os::OperatingSystem::Nix);
     harness.run();
     let bar = harness.get_by_role(Role::Toolbar).rect();
     let more = harness.get_by_label("More actions").rect();
@@ -2262,30 +2261,25 @@ fn with_no_flexible_space_more_stands_at_the_end() {
         .map(|node| node.rect())
         .collect();
     assert_eq!(shown.len(), 3, "{shown:?}");
-    assert_eq!(shown[0].left(), bar.left() + 8.0);
+    let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    assert_eq!(menu.left(), bar.left() + 8.0);
+    assert!(shown[0].left() > menu.right(), "{menu:?}, {shown:?}");
     assert!(shown.iter().all(|rect| rect.right() < more.left() - 30.0));
 }
 
-/// With no menu button listed, the menus hang from the panel's start, where it would
-/// stand, so F10 and Alt still open them (decision 92).
+/// The menu button is no entry of the list (decision 92): where the menus are drawn here
+/// it stands at the panel's start before every entry, once, and the menus hang from it.
 #[test]
-fn with_no_menu_button_the_menus_hang_from_the_toolbar_s_start() {
+fn the_menu_button_stands_first_with_no_entry_for_it() {
     let mut harness = listed(vec![settings()]);
     harness.run();
-    assert!(
-        harness
-            .query_by_role_and_label(Role::Button, "Menu")
-            .is_none()
-    );
+    let menus = harness.query_all_by_role_and_label(Role::Button, "Menu");
+    assert_eq!(menus.count(), 1);
     let bar = harness.get_by_role(Role::Toolbar).rect();
-    let anchor = Toolbar::menu_anchor(&harness.ctx).expect("an anchor");
-    assert_eq!(anchor.left(), bar.left() + 8.0);
-    assert_eq!(anchor.center().y, bar.center().y);
-    // Settings… stands where the menu button would have.
-    assert_eq!(
-        harness.get_by_label("Settings…").rect().left(),
-        anchor.left()
-    );
+    let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    assert_eq!(menu.left(), bar.left() + 8.0);
+    assert_eq!(Toolbar::menu_anchor(&harness.ctx), Some(menu));
+    assert!(menu.right() < harness.get_by_label("Settings…").rect().left());
 }
 
 /// With no save state listed, a failed write still shows its warning at the panel's end,
@@ -2440,14 +2434,15 @@ fn a_control_click_on_more_or_a_chevron_opens_its_own_menu_alone() {
     }
 }
 
-/// With nothing listed, the whole panel is empty area: it takes a double-click and a drag
-/// moves the window (decision 92).
+/// With nothing listed, the whole panel but the menu button is empty area: it takes a
+/// double-click and a drag moves the window (decision 92).
 #[test]
 fn an_empty_toolbar_is_all_empty_area() {
     let mut harness = listed(Vec::new());
     harness.run();
     let bar = harness.get_by_role(Role::Toolbar).rect();
-    for at in [bar.left() + 12.0, bar.center().x, bar.right() - 12.0] {
+    let menu = harness.get_by_role_and_label(Role::Button, "Menu").rect();
+    for at in [menu.right() + 12.0, bar.center().x, bar.right() - 12.0] {
         let point = egui::pos2(at, bar.center().y);
         harness.state_mut().actions.clear();
         harness.run_steps(30);

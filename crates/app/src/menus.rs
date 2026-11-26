@@ -478,15 +478,13 @@ static BROWSER_POSITION: Menu = Menu {
     ]],
 };
 
-/// View › Panels: the Toolbar's Show Menu Button, on Windows and Linux while the menu
-/// button is hidden, Toolbar Labels, Customise Toolbar… and Reset Toolbar, which the
-/// toolbar menu holds too (decision 92).
+/// View › Panels: the Toolbar's Toolbar Labels, Customise Toolbar… and Reset Toolbar,
+/// which the toolbar menu holds too (decision 92).
 static PANELS: Menu = Menu {
     title: "menu-panels",
     role: Role::Plain,
     on: Platforms::All,
     groups: &[&[
-        Entry::Action(ActionId::SHOW_MENU_BUTTON, Platforms::NotMac),
         item(ActionId::TOOLBAR_LABELS),
         item(ActionId::CUSTOMISE_TOOLBAR),
         item(ActionId::RESET_TOOLBAR),
@@ -1528,12 +1526,12 @@ fn browser_items(
 }
 
 /// The toolbar menu (decision 92), on a right-click anywhere on the Toolbar: Hide "Undo"
-/// where it opened on an item, `state.toolbar_item`, named by its words; Show Menu Button
-/// while the menu button is hidden, on Windows and Linux; a line; then Toolbar Labels,
-/// checked while on, Customise Toolbar…, drawn disabled with its tip until its window is
-/// built, and Reset Toolbar, enabled while the workspace's file holds a list. The first two
-/// show only where they can run. Each item is its registry action's; none shows its keys,
-/// as context menus show none.
+/// where it opened on an item, `state.toolbar_item`, named by its words, and only where it
+/// can run, then a line; then Toolbar Labels, checked while on, Customise Toolbar…, drawn
+/// disabled with its tip until its window is built, and Reset Toolbar, enabled while the
+/// workspace's file holds a list. The menu button is no item, so on it the menu has no
+/// Hide. Each item is its registry action's; none shows its keys, as context menus show
+/// none.
 fn toolbar_items(
     keymap: &Keymap,
     state: &State,
@@ -1555,8 +1553,7 @@ fn toolbar_items(
         let text = tr.text_with("toolbar-menu-hide", Some(&args));
         Some(popup::Item { text, ..hide })
     });
-    let show = item(ActionId::SHOW_MENU_BUTTON).filter(|_| os != OperatingSystem::Mac);
-    let mut entries: Vec<popup::Entry> = (hide.into_iter().chain(show))
+    let mut entries: Vec<popup::Entry> = (hide.into_iter())
         .filter(|item| item.enabled)
         .map(Into::into)
         .collect();
@@ -1754,8 +1751,6 @@ fn drawn(
         }
         for entry in group {
             match entry {
-                // Only while the menu button is hidden (decision 92).
-                Entry::Action(ActionId::SHOW_MENU_BUTTON, _) if !state.menu_button_hidden => {}
                 Entry::Action(id, _) => {
                     entries.extend(action_item(*id, keymap, state, steps, os, tr).map(Into::into));
                 }
@@ -2384,10 +2379,6 @@ mod tests {
     /// the window with its caption's close button (`docs/gui.md`, Windows and Linux).
     const MAC_ONLY: [ActionId; 1] = [ActionId::CLOSE_WINDOW];
 
-    /// The actions only Windows' and Linux's menus hold: Show Menu Button, since the Mac
-    /// never shows the menu button (decision 92).
-    const NOT_MAC: [ActionId; 1] = [ActionId::SHOW_MENU_BUTTON];
-
     /// The actions `menu` holds on `os`, its submenus' included, in order.
     fn placed_in(menu: &'static Menu, os: OperatingSystem, ids: &mut Vec<ActionId>) {
         for entry in groups(menu, os).into_iter().flatten() {
@@ -2479,7 +2470,6 @@ mod tests {
             full_screen: false,
             toolbar_labels: true,
             toolbar_item: None,
-            menu_button_hidden: true,
             toolbar_kept: true,
             panel_tab: 0,
             workspace: actions::workspace(crate::layout::DEFAULT),
@@ -2521,8 +2511,7 @@ mod tests {
             for action in &ACTIONS {
                 let placed = ids.contains(&action.id);
                 let off_mac = os != OperatingSystem::Mac && MAC_ONLY.contains(&action.id);
-                let on_mac = os == OperatingSystem::Mac && NOT_MAC.contains(&action.id);
-                let left_out = LEFT_OUT.contains(&action.id) || off_mac || on_mac;
+                let left_out = LEFT_OUT.contains(&action.id) || off_mac;
                 assert!(placed != left_out, "{os:?}: {}", action.id.0);
             }
         }
@@ -4823,7 +4812,6 @@ mod tests {
         let mut state = everything();
         state.guide = Guide::Perspective;
         state.guide_flip = GuideFlip::Both;
-        state.menu_button_hidden = false;
         for os in PLATFORMS {
             let menu = toolbar_menu(Some("guides"), &state, os);
             assert_eq!(menu.name, "Guides");
@@ -4897,8 +4885,7 @@ mod tests {
     }
 
     /// Decision 92: the toolbar menu, named Toolbar, holds Hide "X" on an item with words,
-    /// named by them; Show Menu Button while the menu button is hidden, on Windows and Linux
-    /// alone; a line; Toolbar Labels, checked while the labels are on; Customise Toolbar…,
+    /// named by them, then a line; Toolbar Labels, checked while the labels are on; Customise Toolbar…,
     /// drawn disabled with its tip until its window is built; and Reset Toolbar, enabled
     /// while the workspace's file holds a list. None shows keys.
     #[test]
@@ -4937,26 +4924,21 @@ mod tests {
                 toolbar_labels: labels,
                 ..everything()
             };
-            // On Undo, the menu button hidden, on Linux: every item.
+            // On Undo, on Linux: every item.
             let menu = toolbar_menu(Some("undo"), &state, OperatingSystem::Nix);
             assert_eq!(menu.name, "Toolbar");
             let mut all = vec![
                 line("toolbar-hide", "Hide “Undo”", true, None, &None),
-                line("show-menu-button", "Show menu button", true, None, &None),
                 line("-", "", false, None, &None),
             ];
             all.extend(rest(labels));
             assert_eq!(toolbar_lines(&menu), all);
-            // On the empty areas, the menu button shown: the two last alone.
-            let shown = State {
-                menu_button_hidden: false,
-                ..state
-            };
-            let menu = toolbar_menu(None, &shown, OperatingSystem::Windows);
+            // On the empty areas, as on the menu button, no item: the three last alone.
+            let menu = toolbar_menu(None, &state, OperatingSystem::Windows);
             assert_eq!(toolbar_lines(&menu), rest(labels));
         }
-        // On the Mac never Show Menu Button; a tool's item named by its words; an item with
-        // none, as the save state, has no Hide.
+        // On the Mac, a tool's item named by its words; an item with none, as the save
+        // state, has no Hide.
         let state = everything();
         let mac = toolbar_menu(Some("tool-flip-rotate_cw"), &state, OperatingSystem::Mac);
         let lines = toolbar_lines(&mac);
@@ -4974,8 +4956,7 @@ mod tests {
         assert_eq!(lines[0].1, "Hide “Rotate 90° clockwise”");
         let save = toolbar_menu(Some("save-state"), &state, OperatingSystem::Mac);
         assert_eq!(toolbar_lines(&save), rest(state.toolbar_labels));
-        // Under a modal dialog nothing runs: Hide and Show Menu Button go, and Toolbar
-        // Labels rests.
+        // Under a modal dialog nothing runs: Hide goes, and Toolbar Labels rests.
         let modal = State {
             modal: true,
             ..everything()
@@ -5022,11 +5003,10 @@ mod tests {
         }
     }
 
-    /// Decision 92: View › Panels, in View on every platform, holds the toolbar menu's Show
-    /// Menu Button, on Windows and Linux while the menu button is hidden, Toolbar Labels,
-    /// checked from the state, Customise Toolbar…, disabled with its tip, and Reset
-    /// Toolbar, so each is reached without a right-click (decision 91), F10 opening it with
-    /// no menu button.
+    /// Decision 92: View › Panels, in View on every platform, holds the toolbar menu's
+    /// Toolbar Labels, checked from the state, Customise Toolbar…, disabled with its tip,
+    /// and Reset Toolbar, so each is reached without a right-click (decision 91), and no
+    /// Show Menu Button, since nothing hides the menu button.
     #[test]
     fn view_panels_holds_the_toolbar_menu_s_items() {
         let ctx = egui::Context::default();
@@ -5042,38 +5022,31 @@ mod tests {
                 "{os:?}"
             );
             let keymap = Keymap::defaults(os);
-            for hidden in [true, false] {
-                let state = State {
-                    toolbar_labels: false,
-                    menu_button_hidden: hidden,
-                    ..everything()
-                };
-                let steps = Steps::default();
-                let panels = drawn(&PANELS, os, &keymap, &state, Lists::default(), &steps, &tr);
-                assert_eq!(panels.text, "Panels");
-                let lines: Vec<(String, bool, Option<bool>, Option<String>)> =
-                    (panels.entries.iter())
-                        .map(|entry| match entry {
-                            popup::Entry::Item(item) => (
-                                item.id.clone(),
-                                item.enabled,
-                                item.checked,
-                                item.tip.clone(),
-                            ),
-                            other => panic!("{other:?}"),
-                        })
-                        .collect();
-                let later = Some("Customise Toolbar comes in a later version".to_owned());
-                let mut expected = vec![
-                    ("toolbar-labels".into(), true, Some(false), None),
-                    ("customise-toolbar".into(), false, None, later),
-                    ("reset-toolbar".into(), true, None, None),
-                ];
-                if hidden && os != OperatingSystem::Mac {
-                    expected.insert(0, ("show-menu-button".into(), true, None, None));
-                }
-                assert_eq!(lines, expected, "{os:?}, hidden {hidden}");
-            }
+            let state = State {
+                toolbar_labels: false,
+                ..everything()
+            };
+            let steps = Steps::default();
+            let panels = drawn(&PANELS, os, &keymap, &state, Lists::default(), &steps, &tr);
+            assert_eq!(panels.text, "Panels");
+            let lines: Vec<(String, bool, Option<bool>, Option<String>)> = (panels.entries.iter())
+                .map(|entry| match entry {
+                    popup::Entry::Item(item) => (
+                        item.id.clone(),
+                        item.enabled,
+                        item.checked,
+                        item.tip.clone(),
+                    ),
+                    other => panic!("{other:?}"),
+                })
+                .collect();
+            let later = Some("Customise Toolbar comes in a later version".to_owned());
+            let expected = vec![
+                ("toolbar-labels".into(), true, Some(false), None),
+                ("customise-toolbar".into(), false, None, later),
+                ("reset-toolbar".into(), true, None, None),
+            ];
+            assert_eq!(lines, expected, "{os:?}");
         }
     }
 

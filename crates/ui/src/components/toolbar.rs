@@ -14,14 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Toolbar (`docs/gui.md`, The Toolbar): a list of entries drawn in order (decision 92;
-//! [`ToolbarEntry`], [`Toolbar::entries`]), which the app works out from the workspace's
-//! list, so it knows parts and buttons only as plain data: the menu button, drawn where
-//! the app draws the menus, Windows and Linux ([`Toolbar::menu_button`], decision 39), as
-//! the app's icon with a caret or as ☰ ([`MenuButtonStyle`]); buttons that run actions
-//! ([`ToolbarButton`]); fixed and flexible spaces; the cursors' well
-//! ([`Toolbar::cursors`]); the jobs spinner ([`Toolbar::jobs`]); and the edit's save state
-//! ([`SaveState`]), which shows only when a save goes wrong. Its buttons show their words
+//! The Toolbar (`docs/gui.md`, The Toolbar): the menu button, drawn first where the app
+//! draws the menus, Windows and Linux ([`Toolbar::menu_button`], decision 39), as the app's
+//! icon with a caret or as ☰ ([`MenuButtonStyle`]), no entry of the list; then a list of
+//! entries drawn in order (decision 92; [`ToolbarEntry`], [`Toolbar::entries`]), which the
+//! app works out from the workspace's list, so it knows parts and buttons only as plain
+//! data: buttons that run actions ([`ToolbarButton`]); fixed and flexible spaces; the
+//! cursors' well ([`Toolbar::cursors`]); the jobs spinner ([`Toolbar::jobs`]); and the
+//! edit's save state ([`SaveState`]), which shows only when a save goes wrong. Its buttons show their words
 //! under their icons while labels are on ([`Toolbar::labels`]), in a taller panel
 //! ([`Toolbar::height`]), the rest centred in it. The entries before the first
 //! flexible space stand at the start, those after the last at the end, and those between
@@ -34,11 +34,10 @@
 //! always keeping empty panel to move the window by; it records how wide that leaves it
 //! at least, for the app to keep the window so wide ([`Toolbar::least_width`]).
 //!
-//! **Guards** (decision 92): with no menu button in the list, the menus hang from the
-//! Toolbar's start ([`Toolbar::menu_anchor`]); with no save state, a failed write still
-//! shows its warning at the end, and its live region stays; with no jobs, the spinner
-//! still shows at the end while a failed job is left. With no entries at all, the whole
-//! panel is empty area.
+//! **Guards** (decision 92): with no save state, a failed write still shows its warning at
+//! the end, and its live region stays; with no jobs, the spinner still shows at the end
+//! while a failed job is left. With no entries at all, the whole panel but the menu button
+//! is empty area.
 //!
 //! **The toolbar menu** (decision 92): a right-click anywhere on the panel, on an entry or
 //! its empty areas, title bar or not, but the caption buttons and, on the title bar, the
@@ -123,9 +122,9 @@ pub enum ToolbarAction {
 /// build it: on which entry, where it hangs from, and the control the focus goes back to.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ToolbarMenu {
-    /// The entry it was asked on, by its place in [`Toolbar::entries`]: a button, the menu
-    /// button, the cursors' well, the spinner or the save state. None on the empty areas
-    /// and ».
+    /// The entry it was asked on, by its place in [`Toolbar::entries`]: a button, the
+    /// cursors' well, the spinner or the save state. None on the empty areas, », and the
+    /// menu button, which is no entry.
     pub entry: Option<usize>,
     /// Where it hangs from, in points: the pointer, or under the button from the keys.
     pub at: Pos2,
@@ -134,13 +133,11 @@ pub struct ToolbarMenu {
     pub opener: Option<Id>,
 }
 
-/// One entry of the Toolbar's list (decision 92), drawn in the list's order. Each part
+/// One entry of the Toolbar's list (decision 92), drawn in the list's order, after the
+/// menu button where it is drawn ([`Toolbar::menu_button`]), which is no entry. Each part
 /// and button is meant to be listed once; the spaces any number of times.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ToolbarEntry {
-    /// The menu button, drawn only where the app draws the menus
-    /// ([`Toolbar::menu_button`]).
-    MenuButton,
     /// A button that runs an action.
     Button(ToolbarButton),
     /// 16 points (`spacing.xl`) between its neighbours, in place of the usual gap; drawn
@@ -456,7 +453,7 @@ fn action_icon(icon: Icon) -> f32 {
 
 /// How far the panel gives way to its width (decision 92; `docs/gui.md`, The Toolbar,
 /// Narrowing): the overflow's steps, taken in this order, one at a time
-/// ([`Toolbar::steps`]). The parts never fold, the menu button among them.
+/// ([`Toolbar::steps`]). The parts never fold, nor the menu button.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Fold {
     /// The fixed spaces narrow to 8 points.
@@ -498,8 +495,8 @@ impl<'a> Toolbar<'a> {
     }
 
     /// Gives the focus to the first of `entries`, by their places in the list, that it draws
-    /// able to take it: an enabled button not under », the menu button or the spinner. None
-    /// by default; the app asks for it for one frame, as after Hide from the keys.
+    /// able to take it: an enabled button not under », the cursors' well or the spinner.
+    /// None by default; the app asks for it for one frame, as after Hide from the keys.
     pub fn focus(mut self, entries: Vec<usize>) -> Self {
         self.focus = entries;
         self
@@ -535,12 +532,12 @@ impl<'a> Toolbar<'a> {
     }
 
     /// Says the app draws the menus here, where the system has no menu bar: on Windows and
-    /// Linux (decision 39). The menu button, [`ToolbarEntry::MenuButton`], is drawn only
-    /// then, as [`Toolbar::menu_button_style`] says. It never folds. Pressed, or given ↓,
-    /// it reports [`ToolbarAction::Menu`] for the app to open the menus as the popup
-    /// [`Toolbar::menu_popup`]; it is drawn on while that popup hangs from it, and a press
-    /// then closes it. With no menu button in the list, the menus hang from the panel's
-    /// start ([`Toolbar::menu_anchor`]). Off by default.
+    /// Linux (decision 39). The menu button is drawn only then, first, before every entry,
+    /// as [`Toolbar::menu_button_style`] says; it is no entry of the list (decision 92),
+    /// and it never folds. Pressed, or given ↓, it reports [`ToolbarAction::Menu`] for the
+    /// app to open the menus as the popup [`Toolbar::menu_popup`], hung from it
+    /// ([`Toolbar::menu_anchor`]); it is drawn on while that popup hangs from it, and a
+    /// press then closes it. Off by default.
     pub fn menu_button(mut self, on: bool) -> Self {
         self.menu = on;
         self
@@ -559,9 +556,8 @@ impl<'a> Toolbar<'a> {
         Id::unique("apertrust-ui toolbar menu")
     }
 
-    /// Where the menus hang from as last drawn: the menu button's rectangle, or where the
-    /// app draws the menus with no menu button listed, the place one would take at the
-    /// panel's start; None before a Toolbar has drawn either.
+    /// Where the menus hang from as last drawn: the menu button's rectangle; None before a
+    /// Toolbar has drawn one.
     pub fn menu_anchor(ctx: &egui::Context) -> Option<Rect> {
         ctx.data(|d| d.get_temp(menu_anchor_id()))
     }
@@ -726,14 +722,15 @@ impl<'a> Toolbar<'a> {
             .collect()
     }
 
-    /// What the panel draws at `fold`, `well` the cursors' well given, in order: the
-    /// entries that show, a fixed space only between two of them with no flexible space
-    /// between, and », where any button is under it, last, after whatever is drawn.
+    /// What the panel draws at `fold`, `well` the cursors' well given, in order: the menu
+    /// button first where the menus are drawn here, the entries that show, a fixed space
+    /// only between two of them with no flexible space between, and », where any button is
+    /// under it, last, after whatever is drawn.
     fn arrange(&self, fold: Fold, well: bool) -> Vec<Drawn<'_>> {
         let folded = self.folded(fold);
-        let shown = (self.entries.iter().zip(&folded)).filter_map(|(entry, folded)| match entry {
+        let menu = self.menu.then_some(Drawn::Menu);
+        let listed = (self.entries.iter().zip(&folded)).filter_map(|(entry, folded)| match entry {
             _ if *folded => None,
-            ToolbarEntry::MenuButton => self.menu.then_some(Drawn::Menu),
             ToolbarEntry::Button(button) => Some(Drawn::Button(button)),
             ToolbarEntry::Space => Some(Drawn::Space),
             ToolbarEntry::FlexibleSpace => Some(Drawn::Flexible),
@@ -741,7 +738,7 @@ impl<'a> Toolbar<'a> {
             ToolbarEntry::Jobs => self.jobs.is_some().then_some(Drawn::Jobs),
             ToolbarEntry::SaveState => Some(Drawn::Save),
         });
-        let shown: Vec<Drawn> = shown.collect();
+        let shown: Vec<Drawn> = menu.into_iter().chain(listed).collect();
         let item = |d: &&Drawn| !matches!(d, Drawn::Space);
         let within = |d: &&Drawn| **d != Drawn::Flexible;
         let mut drawn: Vec<Drawn> = Vec::new();
@@ -946,12 +943,12 @@ impl<'a> Toolbar<'a> {
             |x: f32, w: f32| Rect::from_min_max(pos2(x, inner.top()), pos2(x + w, inner.bottom()));
 
         // Where each entry drawn stands, by its place in the list, for the toolbar menu
-        // asked for on it; and the menu asked for from the keys on a focused button.
+        // asked for on it; and the menu asked for from the keys on a focused button. The
+        // menu button has none: it is no entry.
         let entry_of = |d: Drawn| {
             (self.entries.iter()).position(|entry| match (d, entry) {
                 (Drawn::Button(drawn), ToolbarEntry::Button(listed)) => drawn.id == listed.id,
-                (Drawn::Menu, ToolbarEntry::MenuButton)
-                | (Drawn::Cursors, ToolbarEntry::Cursors)
+                (Drawn::Cursors, ToolbarEntry::Cursors)
                 | (Drawn::Jobs, ToolbarEntry::Jobs)
                 | (Drawn::Save, ToolbarEntry::SaveState) => true,
                 _ => false,
@@ -961,13 +958,13 @@ impl<'a> Toolbar<'a> {
         let mut keyed = None;
         // The entries drawn that can take the focus, by their places in the list.
         let mut focusable: Vec<(Option<usize>, Id)> = Vec::new();
-        let mut menu_drawn = false;
+        let mut menu_rect = None;
         let mut well_rect = None;
         let mut more_rect = None;
         let mut more_at = None;
         for (d, x, w) in placed {
             let rect = room(x, w);
-            if let Drawn::Menu | Drawn::Button(_) = d {
+            if let Drawn::Button(_) = d {
                 items.push((entry_of(d), rect));
             }
             let builder = |salt: &str| UiBuilder::new().id_salt(salt).max_rect(rect);
@@ -975,7 +972,7 @@ impl<'a> Toolbar<'a> {
             let right = |salt: &str| builder(salt).layout(Layout::right_to_left(Align::Center));
             match d {
                 Drawn::Menu => {
-                    menu_drawn = true;
+                    menu_rect = Some(rect);
                     ui.scope_builder(left("menu button"), |ui| {
                         let (button, press) =
                             menu_button(ui, self.menu_style, keys(ToolbarAction::Menu));
@@ -1194,16 +1191,6 @@ impl<'a> Toolbar<'a> {
                 action = Some(ToolbarAction::Button(id));
             }
         }
-        // With the menus drawn here and no menu button listed, they hang from where it
-        // would stand, at the panel's start.
-        if self.menu && !menu_drawn {
-            let start = Rect::from_min_size(
-                pos2(inner.min.x, bar.center().y - BUTTON / 2.0),
-                vec2(self.menu_style.width(), BUTTON),
-            );
-            ctx.data_mut(|d| d.insert_temp(menu_anchor_id(), start));
-        }
-
         // At the very end: the window's caption buttons, after everything else in the focus
         // order too, each in its own place, the panel round them empty.
         let mut captions = Vec::new();
@@ -1249,7 +1236,6 @@ impl<'a> Toolbar<'a> {
         // own menus that click opens.
         // Where the panel is the title bar, a right-click on the menu button is the window's
         // menu, as on a title bar's icon; its keys still ask for the toolbar menu.
-        let menu_button = (self.entries.iter()).position(|e| *e == ToolbarEntry::MenuButton);
         let mut window_menu = false;
         let menu = keyed.or_else(|| {
             let (at, control) = menu_click(ui, bar)?;
@@ -1258,12 +1244,12 @@ impl<'a> Toolbar<'a> {
             if caption || (control && (owns(more_rect) || owns(well_rect))) {
                 return None;
             }
-            let entry = items.iter().find(|(_, rect)| rect.contains(at));
-            let entry = entry.and_then(|(entry, _)| *entry);
-            if self.title_bar && !control && entry.is_some() && entry == menu_button {
+            if self.title_bar && !control && owns(menu_rect) {
                 window_menu = true;
                 return None;
             }
+            let entry = items.iter().find(|(_, rect)| rect.contains(at));
+            let entry = entry.and_then(|(entry, _)| *entry);
             Some(ToolbarMenu {
                 entry,
                 at,
