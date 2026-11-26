@@ -86,10 +86,10 @@ impl FieldRecord {
         let mut put = false;
         for (change, set) in &mut self.changes {
             let (left, value) = match back {
-                true => (change.after, change.before),
-                false => (change.before, change.after),
+                true => (&change.after, change.before.clone()),
+                false => (&change.before, change.after.clone()),
             };
-            if library_fields::value(entries, &change.field) != left {
+            if library_fields::value(entries, &change.field).as_ref() != left.as_ref() {
                 continue;
             }
             library_fields::set(entries, &change.field, value, clock);
@@ -123,6 +123,7 @@ pub(super) fn first_mut(file: &mut Edits) -> &mut Vec<FieldEntry> {
             id: FIRST_COPY.to_owned(),
             number: "0".to_owned(),
             name: String::new(),
+            name_clock: None,
             end: String::new(),
             clocks: Vec::new(),
             fields: Vec::new(),

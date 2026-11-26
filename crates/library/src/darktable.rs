@@ -17,16 +17,26 @@
 //! What darktable's own sidecar, `<photo>.xmp`, says of a photo's fields (decisions 51 and
 //! 110): read while the photo has no `.apxmp`, and copied into it the first time Apertrust
 //! writes one, never written. Built: the rating, the reject and the colour labels, read as
-//! darktable reads them (`src/common/exif.cc:639-676` at the reference release).
+//! darktable reads them (`src/common/exif.cc:639-676` at the reference release), and its
+//! metadata fields (`src/common/database.c:3235-3241`): the title, description, creator,
+//! publisher and rights, its notes into Apertrust's own, and its version name, the copy's
+//! name.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::fields::{self, DARKTABLE_NAMESPACE, FieldEntry, FieldValue, XMP_NAMESPACE};
-use crate::xmp::Xmp;
+use crate::fields::{
+    self, DARKTABLE_NAMESPACE, DC_NAMESPACE, FieldEntry, FieldKind, FieldValue, XMP_NAMESPACE,
+};
+use crate::xmp::{DEFAULT_LANGUAGE, Node, Value, Xmp};
 
 /// What darktable's sidecar's name adds to its photo's.
 pub const SUFFIX: &str = ".xmp";
+
+/// The namespace of darktable's notes, which darktable keeps in another editor's
+/// namespace (`Xmp.acdsee.notes`, `src/common/database.c:3241`), as Exiv2 registers its
+/// prefix.
+pub const NOTES_NAMESPACE: &str = "http://ns.acdsee.com/iptc/1.0/";
 
 /// darktable's sidecar beside `photo`, its first version's: the photo's whole name, then
 /// `.xmp`.
@@ -37,10 +47,12 @@ pub fn path_for(photo: &Path) -> PathBuf {
 }
 
 /// The fields a darktable sidecar holds, each with no clock: the clock of the write that
-/// copies them into the `.apxmp` is theirs.
+/// copies them into the `.apxmp` is theirs; and its version name, the copy's name, empty for
+/// none.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DarktableFields {
     pub fields: Vec<FieldEntry>,
+    pub name: String,
 }
 
 /// The fields of the darktable sidecar beside `photo`: `None` where there is none, or where
@@ -69,13 +81,28 @@ pub(crate) fn parse_bytes(path: &Path, bytes: &[u8]) -> Option<DarktableFields> 
     }
 }
 
+/// darktable's metadata fields by their properties, as Apertrust keeps each: its own
+/// namespace's and local name, then the field it is read into.
+const METADATA: [(&str, &str, &str); 6] = [
+    (DC_NAMESPACE, "title", "dc:title"),
+    (DC_NAMESPACE, "description", "dc:description"),
+    (DC_NAMESPACE, "creator", "dc:creator"),
+    (DC_NAMESPACE, "publisher", "dc:publisher"),
+    (DC_NAMESPACE, "rights", "dc:rights"),
+    (NOTES_NAMESPACE, "notes", "apertrust:notes"),
+];
+
 /// The fields of a darktable sidecar's XMP, as darktable reads them:
 ///
 /// - `xmp:Rating`, 0 to 5 stars, or −1 for a reject, which keeps no stars; any other number
 ///   is no rating, as is none, where darktable gives its import's initial rating;
 /// - `xmp:Label`, where set, one label by its name, Red to Purple, and nothing for another
 ///   name; else `darktable:colorlabels`, an `rdf:Seq` of darktable's numbers, 0 red to 4
-///   purple, a number it does not know left out.
+///   purple, a number it does not know left out;
+/// - its metadata fields (`METADATA`) as Exiv2 writes them for it, a language
+///   alternative, a list or text, each read into its field's kind,
+///   one holding nothing left out;
+/// - `darktable:version_name`, the copy's name.
 pub fn parse(xml: &str) -> Result<DarktableFields, crate::xmp::Error> {
     let xmp = Xmp::parse(xml)?;
     let mut read = Vec::new();
@@ -112,6 +139,57 @@ pub fn parse(xml: &str) -> Result<DarktableFields, crate::xmp::Error> {
             FieldValue::Labels(labels),
         ));
     }
+    for (namespace, local, property) in METADATA {
+        let Some(def) = fields::field(property) else {
+            continue;
+        };
+        if let Some(value) =
+            (xmp.get(namespace, local)).and_then(|node| metadata_value(node, def.kind))
+        {
+            read.push(FieldEntry::unclocked(property, value));
+        }
+    }
     read.sort_by(|a, b| a.field.cmp(&b.field));
-    Ok(DarktableFields { fields: read })
+    let name = (xmp.get(DARKTABLE_NAMESPACE, "version_name"))
+        .and_then(Node::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_owned();
+    Ok(DarktableFields { fields: read, name })
+}
+
+/// One of darktable's metadata fields as `node` holds it, read into a field of `kind`, as
+/// darktable reads its text from any form (`pos->toString()`): a language alternative's
+/// items with their languages, `x-default` first, or text as the `x-default` item; a list's
+/// items, or text as its one item; text, or an alternative's or a list's first item. Each
+/// text trimmed, as darktable trims what it sets; `None` where nothing is left.
+fn metadata_value(node: &Node, kind: FieldKind) -> Option<FieldValue> {
+    let texts: Vec<(Option<&str>, &str)> = match &node.value {
+        Value::Simple(text) => vec![(None, text.as_str())],
+        Value::Array(_, items) => (items.iter())
+            .filter_map(|item| Some((item.lang(), item.as_str()?)))
+            .collect(),
+        _ => Vec::new(),
+    };
+    let texts: Vec<(Option<&str>, &str)> = (texts.into_iter())
+        .map(|(lang, text)| (lang, text.trim()))
+        .filter(|(_, text)| !text.is_empty())
+        .collect();
+    let first = texts.first()?.1.to_owned();
+    Some(match kind {
+        FieldKind::LangAlt => {
+            let mut items: Vec<(String, String)> = (texts.iter())
+                .map(|(lang, text)| {
+                    let lang = lang.unwrap_or(DEFAULT_LANGUAGE);
+                    (lang.to_owned(), (*text).to_owned())
+                })
+                .collect();
+            items.sort_by_key(|(lang, _)| lang != DEFAULT_LANGUAGE);
+            FieldValue::LangAlt(items)
+        }
+        FieldKind::Seq | FieldKind::Bag => {
+            FieldValue::List(texts.iter().map(|(_, text)| (*text).to_owned()).collect())
+        }
+        _ => FieldValue::Text(first),
+    })
 }

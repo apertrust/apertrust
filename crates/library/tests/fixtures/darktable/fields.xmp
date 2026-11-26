@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="XMP Core 4.4.0-Exiv2">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/"
+    xmlns:acdsee="http://ns.acdsee.com/iptc/1.0/"
+    xmlns:darktable="http://darktable.sf.net/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmp:Rating="2"
+   xmpMM:DerivedFrom="IMG_0001.CR2"
+   xmpMM:PreservedFileName="IMG_0001.CR2"
+   acdsee:notes="Try a warmer crop"
+   darktable:version_name="Black and white"
+   darktable:xmp_version="5"
+   darktable:raw_params="0"
+   darktable:auto_presets_applied="1"
+   darktable:history_end="0"
+   darktable:iop_order_version="2">
+   <darktable:history>
+    <rdf:Seq/>
+   </darktable:history>
+   <dc:creator>
+    <rdf:Seq>
+     <rdf:li>Ana Sousa</rdf:li>
+    </rdf:Seq>
+   </dc:creator>
+   <dc:publisher>
+    <rdf:Bag>
+     <rdf:li>Ana Sousa Studio</rdf:li>
+    </rdf:Bag>
+   </dc:publisher>
+   <dc:title>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Morning market, Alfama</rdf:li>
+    </rdf:Alt>
+   </dc:title>
+   <dc:description>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Fish stalls before the crowd,
+the light coming in low over the river.</rdf:li>
+    </rdf:Alt>
+   </dc:description>
+   <dc:rights>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">© 2026 Ana Sousa</rdf:li>
+    </rdf:Alt>
+   </dc:rights>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>

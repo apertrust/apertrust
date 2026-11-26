@@ -263,6 +263,7 @@ fn a_rating_is_read_from_the_apxmp_else_from_darktable_s_xmp() {
         id: sidecar::FIRST_COPY.to_owned(),
         number: "0".to_owned(),
         name: String::new(),
+        name_clock: None,
         end: String::new(),
         clocks: Vec::new(),
         fields: Vec::new(),

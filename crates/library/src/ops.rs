@@ -898,11 +898,11 @@ pub fn unaltered_facts(version: &[u8], stamp: &RawStamp) -> Option<(RawFacts, Or
 pub const UNALTERED: [u8; 32] = [0; 32];
 
 /// The edit hash of a sidecar's `bytes`, which a rendered thumbnail's version holds
-/// ([`rendered_version`]): the BLAKE3 hash of the file written with each copy's fields and
-/// clock vector left out, its edit alone, so a rating (decision 110), which changes both,
-/// changes no thumbnail; [`UNALTERED`] for a file holding no step, a photo only rated or
-/// not, which renders as one with no sidecar; the hash of the bytes for one that is no
-/// `.apxmp`.
+/// ([`rendered_version`]): the BLAKE3 hash of the file written with each copy's fields, name
+/// and clock vector left out, its edit alone, so a rating or a field (decision 110), which
+/// change them, change no thumbnail; [`UNALTERED`] for a file holding no step, a photo only
+/// rated, titled or not, which renders as one with no sidecar; the hash of the bytes for one
+/// that is no `.apxmp`.
 pub fn edit_hash(bytes: &[u8]) -> [u8; 32] {
     let parsed = (std::str::from_utf8(bytes).ok())
         .and_then(|text| crate::sidecar::Edits::parse(text, 0).ok());
@@ -914,6 +914,8 @@ pub fn edit_hash(bytes: &[u8]) -> [u8; 32] {
     }
     for copy in &mut edits.copies {
         copy.fields.clear();
+        copy.name.clear();
+        copy.name_clock = None;
         copy.clocks.clear();
     }
     crate::index::hash(edits.to_xml().as_bytes())
@@ -1760,6 +1762,7 @@ mod tests {
             id: FIRST_COPY.to_owned(),
             number: "0".to_owned(),
             name: String::new(),
+            name_clock: None,
             end: String::new(),
             clocks: Vec::new(),
             fields: Vec::new(),
@@ -1787,11 +1790,14 @@ mod tests {
         let plain = edits.to_xml();
         assert_ne!(edit_hash(plain.as_bytes()), UNALTERED);
         assert_eq!(edit_hash(b"no apxmp"), crate::index::hash(b"no apxmp"));
-        // A rating changes the fields and the clock vector, neither of which counts.
+        // A rating changes the fields and the clock vector, neither of which counts, nor
+        // does a title or the copy's name.
         rate(&mut edits);
-        edits.copies[0]
-            .clocks
-            .push(Clock::at(2, None, MachineId::UNKNOWN));
+        let copy = &mut edits.copies[0];
+        copy.clocks.push(Clock::at(2, None, MachineId::UNKNOWN));
+        let title = Some(FieldValue::Text("Warm".to_owned()));
+        fields::set_in(copy, fields::COPY_NAME, title.clone(), clock);
+        fields::set_in(copy, "apertrust:notes", title, clock);
         assert_eq!(
             edit_hash(edits.to_xml().as_bytes()),
             edit_hash(plain.as_bytes())

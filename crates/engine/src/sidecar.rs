@@ -233,7 +233,7 @@ pub fn to_xml(
 }
 
 /// The XMP of `log` as `build` writes it, version 2, the build recorded in `x:xmptk`:
-/// `file`'s photo, fingerprint and copies as read, its first copy's fields among them, but
+/// `file`'s photo, fingerprint and copies as read, its first copy's fields and name among them, but
 /// the first copy's log, end and clock vector, which are `log`'s and `clocks`; for a file with no copy, the first copy,
 /// [`FIRST_COPY`]. Each step's entries in its order, each written as version 1 writes it.
 pub fn log_xml(
@@ -248,6 +248,7 @@ pub fn log_xml(
         id: first.map_or_else(|| FIRST_COPY.to_owned(), |copy| copy.id.clone()),
         number: first.map_or_else(|| "0".to_owned(), |copy| copy.number.clone()),
         name: first.map(|copy| copy.name.clone()).unwrap_or_default(),
+        name_clock: first.and_then(|copy| copy.name_clock),
         end: (log.steps()[..log.end()].last()).map_or_else(String::new, |step| step.id.to_string()),
         clocks: clocks.to_vec(),
         fields: first.map(|copy| copy.fields.clone()).unwrap_or_default(),

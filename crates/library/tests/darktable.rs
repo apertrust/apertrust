@@ -96,3 +96,49 @@ fn a_label_darktable_does_not_know_and_a_rating_past_five_are_none() {
         }
     );
 }
+
+/// darktable's metadata fields, each read into its field as the photo's own with no clock,
+/// its notes into Apertrust's and its version name as the copy's name.
+#[test]
+fn darktable_s_metadata_fields_read_as_the_photo_s_own() {
+    use apertrust_library::fields::{FieldValue, value};
+
+    let read = read("fields.xmp").expect("it reads");
+    assert!(read.fields.iter().all(|field| field.clock.is_none()));
+    let alt = |text: &str| FieldValue::LangAlt(vec![("x-default".to_owned(), text.to_owned())]);
+    let list = |text: &str| FieldValue::List(vec![text.to_owned()]);
+    let cases = [
+        ("dc:title", alt("Morning market, Alfama")),
+        (
+            "dc:description",
+            alt("Fish stalls before the crowd,\nthe light coming in low over the river."),
+        ),
+        ("dc:creator", list("Ana Sousa")),
+        ("dc:publisher", list("Ana Sousa Studio")),
+        ("dc:rights", alt("© 2026 Ana Sousa")),
+        (
+            "apertrust:notes",
+            FieldValue::Text("Try a warmer crop".to_owned()),
+        ),
+        ("xmp:Rating", FieldValue::Stars(2)),
+    ];
+    for (field, expected) in &cases {
+        assert_eq!(
+            value(&read.fields, field).as_ref(),
+            Some(expected),
+            "{field}"
+        );
+    }
+    assert_eq!(read.fields.len(), cases.len());
+    assert_eq!(read.name, "Black and white");
+    // darktable's own sidecar from its integration tests, as darktable wrote it.
+    let xml = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/xmp/darktable-highlight-opposed.xmp"),
+    )
+    .unwrap();
+    let written = darktable::parse(&xml).unwrap();
+    assert_eq!(value(&written.fields, "dc:title"), Some(alt("t")));
+    assert_eq!(value(&written.fields, "dc:creator"), Some(list("O")));
+    assert_eq!(written.name, "");
+}
