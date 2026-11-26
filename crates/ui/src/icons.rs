@@ -147,6 +147,9 @@ pub enum Icon {
     /// darktable's camera: AgX's Read exposure, which reads the exposure the camera and
     /// the Exposure tool give.
     Camera,
+    /// A swatch book: the mark of each style applied to the active photo, in the Styles
+    /// tool.
+    SwatchBook,
     /// The Tools panel's tabs (decision 38): the Default workspace's Adjust, Detail and Raw;
     /// darktable's four module groups, base, color, correct and effect, in darktable's
     /// shapes and one colour, for a workspace's tabs to name, Correct and Effect also the
@@ -249,7 +252,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 124] = [
+    pub const ALL: [Icon; 125] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -306,6 +309,7 @@ impl Icon {
         Icon::FlipVertical,
         Icon::PrimariesMenu,
         Icon::Camera,
+        Icon::SwatchBook,
         Icon::Adjust,
         Icon::Detail,
         Icon::Raw,
@@ -541,6 +545,7 @@ impl Icon {
             ),
             Icon::PrimariesMenu => derived!("primaries-menu", "list-restart", 14.0),
             Icon::Camera => derived!("camera", "camera", 14.0),
+            Icon::SwatchBook => derived!("swatch-book", "swatch-book", 12.0),
             Icon::Adjust => derived!("adjust", "settings-2", 22.0),
             Icon::Detail => own!("detail", 22.0),
             Icon::Raw => derived!("raw", "camera", 22.0),
