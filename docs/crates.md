@@ -322,7 +322,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 
 ## apertrust-cli
 
-The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `import` (with the library's step 20a, decision 85), `batch` and `serve` are planned; MCP is a program of its own, `apertrust-mcp` (decision 108). AGENTS.md's Commands list shows how to run each.
+The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `import` (with the library's step 20a1, its other flags with 20a2, decision 85), `batch` and `serve` are planned; MCP is a program of its own, `apertrust-mcp` (decision 108). AGENTS.md's Commands list shows how to run each.
 
 ### Options for every command
 

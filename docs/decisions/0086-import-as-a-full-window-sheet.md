@@ -6,13 +6,13 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 
 ## Decision
 
-**Import… opens a sheet:** full-window inside the main window, below the Toolbar, drawn with the design system's components on `panel`, the same on every platform, never one of AppKit's sheets. A sheet bar across its top, the Browser's grid with check boxes, a column holding one tool, Import, beside the grid, and a footer; its content is [0085](0085-import-in-folder-mode.md)'s. The frame is general, so Print may take it when it is designed. Planned: built in the order below.
+**Import… opens a sheet:** full-window inside the main window, below the Toolbar, drawn with the design system's components on `panel`, the same on every platform, never one of AppKit's sheets. A sheet bar across its top, the Browser's grid with check boxes, a column holding one tool, Import, beside the grid, and a footer; its content is [0085](0085-import-in-folder-mode.md)'s. The frame is general, so Print may take it when it is designed. Planned: built with Import's first slice, in the order below.
 
 ### The regions
 
 | Region | Where and how big | Holds |
 | --- | --- | --- |
-| **The sheet bar** | Across the whole sheet, as tall as the viewer bar, its 2-point separator under it | The heading, the sheet's name and its source ("Import · EOS_DIGITAL") in 16-point Medium, then its counts in `text_secondary`; the Select buttons; Checked only; Sort; Zoom; the hint "Hold W to look closer" |
+| **The sheet bar** | Across the whole sheet, as tall as the viewer bar, its 2-point separator under it | The heading, the sheet's name and its source ("Import · EOS_DIGITAL") in 16-point Medium, then its counts in `text_secondary`; the Select buttons; Checked only; Sort; Zoom; the hint "Hold W to look closer", with the larger look |
 | **The grid** | The rest of the sheet's width, between the bar and the footer | The Browser's grid component, its cells, Sort, Zoom and keys, with check boxes as its choosing, and day headings |
 | **The column** | 440 points by default, resizable at its edge from 296 to 600, and to no more than half the sheet where that leaves more than 296: 296 is the floor, below a 592-point sheet too; kept (`import.column_width`) | The Import tool, scrolling with the quiet scroll bar in its end margin |
 | **The footer** | 52 points across the sheet, a hairline above | A Help button at its start, as Settings' footer has, opening the topic `import` ([0097](0097-help-topics-and-the-apertrust-guide.md)); the summary on two lines; Keep open, Close and the primary button at its end |
@@ -40,7 +40,7 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 - **Every row that sets something is a tool setting's row** (`Row::Setting`'s look), beside action rows: choices Blended, darktable's combobox as a tool draws it ([0042](0042-numbers-shown-typed-and-stored.md)); a boolean a toggle (`ToggleRow`), where darktable has a combobox of No and Yes; no kept marker on any row, sliders included; no history step, a change being a setting written at once, Undo in a field undoing typing only; a slider reset as a tool's, by a double-click on its label or track or Delete; a row or an option not built drawn disabled, saying why in its tooltip, never hidden ([0030](0030-controls-as-darktables.md)).
 - **No free text in the tool:** no note rows. What the session says about a row is its tooltip and its accessible description; a disabled row's reason is its tooltip; a problem is a **warning button** at the row's end, the warning sign in `warning`, or `error` where it stops the job, its tooltip saying what is wrong and its menu holding the fix.
 - **The rows the tool panel lacks** are drawn in its language from its parts, each added to the design system with gallery snapshots, shared with the Export tool ([0090](0090-export-as-a-photos-tab-tool.md)): a slider row with no kept marker, its place left empty; the path row, the label, `PathField` stretching with darktable's variable list, a ⌄ of choices where the row has one and the folder `IconButton` at the end, in the Import tool its label on a line of its own above the field; the warning button; field rows, a label and a value field or a 180-point text field at the end; the size row, two or three 54-point value fields with ×, the unit, @ and dpi; an indented toggle, 20 points in.
-- **Its states:** a group not built is drawn disabled and closed, "Comes in a later version" in its tooltip; a problem outlines its field and shows its warning button, and a closed group with a problem opens and scrolls into view once, as the problem appears.
+- **Its states:** a group or a row not built is drawn disabled, a group closed, "Comes in a later version" in its tooltip; a problem shows its warning button, and one that stops the job turns its field's text `error`, with no outline round the field, which is drawn by its fill alone as every field; a closed group with a problem opens and scrolls into view once, as the problem appears.
 
 ### Where a tool belongs
 
@@ -65,9 +65,10 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 
 ### Keys, modality and screen readers
 
-- **The sheet opens** with the keyboard focus on the grid's active cell and no focus ring until a key is pressed; with a card as its source, in Import name with its text selected ([0085](0085-import-in-folder-mode.md)).
+- **The sheet opens** with the keyboard focus on the grid's active cell and no focus ring until a key is pressed; with a card as its source, in Import name with its text selected, unless Import name is disabled, when it stays on the grid's active cell ([0085](0085-import-in-folder-mode.md)).
 - **Return presses the primary button** wherever no text field is being typed in, no list is open and no button, choice or slider has the focus: a focused button, Close among them, presses itself, and a choice or slider opens its list or fine-control popup; a focused cell included; Ctrl+Return (Cmd+Return) from anywhere but an open list. Neither does anything while it is disabled.
-- **Esc,** Cmd+. and Cmd+W close the innermost thing first (a list, the variable list, a field being typed in), then the sheet, keeping its settings and dropping its checks.
+- **Return in Import name,** a one-line text field, commits it and presses the primary button while it is enabled, so a card's import is the name typed and Return. In a path field, Folder, Subfolder or File name, Return commits the field, or takes the variable chosen in its open list, and presses nothing.
+- **Esc,** Cmd+. and Cmd+W close the innermost thing first (a list, the variable list, a field being typed in), then the sheet, keeping its settings and dropping its checks, as Close does.
 - **In the grid:** the Browser's keys, the arrows, Home and End moving the focus and the sheet's active photo; Space checks; Shift+Space sets a run; Shift with the arrows checks the cells passed; Ctrl+A and Ctrl+Shift+A are Select all and Select none; W held is the larger look. **F6** and Shift+F6 move between three regions: the bar and the grid, the column, the footer. The rows' keys are a tool panel's.
 - **Modality:** while the sheet is open the view's keys and the Toolbar's actions rest, drawn at rest, and the menus that act on the view are disabled; the jobs spinner and View › Jobs stay live. One sheet at a time, and no dialog opens over one but the alerts it asks, which are the main window's. Closing the window closes the sheet first.
 - **Screen readers:** the sheet is a region named by its heading under a dialog-role node; the grid a list named by its source and counts ("EOS_DIGITAL, 412 photos, 209 checked"), each day heading a group named by its day, each cell named by its file, its check box "Import DSCF1033.RAF", its mark in its description; the larger look announced by the photo's name, time and check; the Import tool as a tool in the Tools panel, each row's tooltip its description; a problem announced once, assertively, and the count politely, at most every 0.5 s.
@@ -75,9 +76,9 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 ### The build
 
 1. **The setting rows,** in `apertrust-ui`, each in the gallery with snapshots, shared with the Export tool, the warning button and the path row's ⌄ among them.
-2. **The sheet frame:** `Sheet` in `apertrust-ui` with its regions, the Browser's grid with check boxes as its choosing, the mark slot and day headings, `Checks`, the column drawing the Import tool from its definition with the place and its test, the footer, the keys and the app's modality.
-3. **Import's first slice** on the frame.
-4. **The rest:** presets, Import's later slices, the larger look.
+2. **The sheet frame, with Import's first slice** ([0085](0085-import-in-folder-mode.md)'s 20a1): `Sheet` in `apertrust-ui` with its regions, the Browser's grid with check boxes as its choosing and the mark slot, `Checks`, the column drawing the Import tool from its definition with the place and its test, the footer with Help, Close and the primary button, the keys and the app's modality.
+3. **With 20a2:** day headings, Checked only, Sort, Zoom and Keep open.
+4. **The rest:** presets (20c), the larger look (20b), Import's later slices.
 
 ## Options considered
 
@@ -91,6 +92,9 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 - **The column always at the window's start,** the left in a left-to-right language: the grid jumps to the other side from the Browser as a sheet opens, and the column ends far from the primary button. Moving the Tools panel to the left gives that picture in every sheet.
 - **Keep open as a row of the tool:** a setting of the sheet's, not of the copy.
 - **Cancel to dismiss:** it reads as cancelling the job a press started; nothing in the sheet is undone.
+- **Return in Import name only committing it,** Ctrl+Return the one key that imports from there: a card's import would end on a key nobody guesses, and a screen-reader user typing the name and pressing Return would hear nothing happen. **Return pressing Import from a path field too:** Return there takes a variable from its list.
+- **A field outlined in `error` for its problem:** a line on a control drawn by its fill alone, the editing outline the one line a field draws; the warning button carries the problem, and the field's text says which.
+- **The checks kept** for the same card while it stays in, this run, restored at the next opening: possible later ([gui.md](../gui.md#open-questions)); for now Close and Esc drop them.
 - **The window's selection model for what goes:** a plain click selects one alone, dropping hundreds of chosen photos.
 - **The column the Tools panel's width at opening:** at 320 points the default paths are cut in their rows, Folder's showing none of the part that varies, and the Polish print size row of the shared rows needs 407.
 - **Return or a double-click for the larger look:** the sheet opens on a cell, so the one-key import would be lost; W held is darktable's key for the same look.
@@ -98,7 +102,7 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 
 ## Consequences
 
-- `apertrust-ui` gains the setting rows, the warning button, `Sheet`, the check-box choosing, the mark slot and day headings on the Browser's grid, and `Checks`; the app gains the sheet's modality and the Import tool's declaration.
+- `apertrust-ui` gains the setting rows, the warning button, `Sheet`, the check-box choosing, the mark slot and day headings on the Browser's grid, and `Checks`; `TextField` and `PathField` draw a problem's field with its text in `error` for the Import tool, where their built error outline serves the Export tool; the app gains the sheet's modality and the Import tool's declaration.
 - `ToolDefinition` gains the place, the Tools panel or the Import sheet, and the test of places runs over every tool ([0093](0093-one-tool-model-processing-tools-and-utility-tools.md)); [0004](0004-tools-for-people-operations-for-algorithms.md) counts Import as a tool, and [0083](0083-the-side-panels-layout-dragged-and-floating.md)'s layout takes only the Tools panel's tools.
 - [0037](0037-one-view-the-photos-tab.md) and [0041](0041-dialogs-as-native-modal-windows.md) list Import and Print as full-window sheets; an alert a sheet asks is the main window's. Whether Print takes this frame is settled when Print is designed.
 - The settings schema gains the sheet's own settings with owner `app`: `import.column_width`, `import.keep_open` and `import.thumbnails` (the grid's Zoom, Medium by default).
