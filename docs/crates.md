@@ -310,6 +310,15 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - The outbox calls `wake` once per burst, through a flag that `events()` clears as it drains with one loop of `try_recv`. Nothing is sent once the handle drops.
 - Each send and drain is logged under `-d event` (`signal` an alias), and a count per kind each second under `-d verbose`.
 
+### The protocol on the wire
+
+`Command`, `Event` and every type they carry derive serde's `Serialize` and `Deserialize`, with no feature, in decision 59's JSON shape (decision 108, 108.1; [session-protocol.md](session-protocol.md#where-it-lives)):
+
+- An enum with data is tagged adjacently, `type` and `data`; a unit-only enum is its variant's name; names as in the code; no `deny_unknown_fields`.
+- `Event::Frame` is skipped, its GPU buffer having no data form, and so are the tests' own commands. Step and batch ids are 16 lowercase hex digits; the scopes' `gpu_ms` NaN is `null`; `ComputeError`'s wgpu errors go through serde's remote definitions in `compute.rs`.
+- The `&'static str` ids read through `apertrust_base::wire` ([Wire](#wire)).
+- `session/tests/protocol.rs` round-trips a sample of every command and event through JSON (`every_command_round_trips_through_json`, `every_event_round_trips_through_json`), and `the_json_is_tagged_by_type` checks the shape where it is decided. An exhaustive match per enum of commands or events gives each variant's index, so a new variant fails the test until it has a sample; `every_command` is the next issue's sample too. `history.rs`'s `a_step_id_is_sixteen_hex_digits`.
+
 ### Planned
 
 - **A style on every selected photo** (decision 109, #373; `session/batch.rs`): built, `ApplyStyle`'s `photos`, one batch drawn and the wall clock read once; the active photo, where named, changed at once by `apply_edit` with the batch's id (`Engine::batching`); the others by one `apply-style` job on `UserForeground`, cancellable and `quiet`, one at a time, the engine thread starting the next as one ends (`Engine::start_batches`, `Inbox::BatchEnded`), so a batch waiting holds no job's worker, its worker reading each photo's metadata (`RawFile::metadata`, a photo not `listing::is_local` skipped) and its sidecar through the writer (`Reads`), applying `style_log` and handing the XML to the engine thread (`Inbox::Route`), which applies it there where the photo is open and live (`Engine::reach`), tells the job to read again where it is opening, and else hands it to `Writer::write_over`, read again on `Over::Changed` twice more; an earlier batch still to reach the active photo applied to it before a later command on its edit (`Engine::catch_up`); each skip named (`Skip`); `Event::Batch`'s `Changed` and `Ended`. Undo across the batch's photos: the latest 64 batches remembered (`Engine::remembered`); Undo or Redo on the active photo that moves over one (`PhotoHistory::batch_moving`) moves it on its other photos by an `undo-batch` job, quiet and cancellable, routed as `apply-style`'s, each photo's end moved by Undo's or Redo's fallback (`moved_log`), a photo whose end moved since skipped (`Skip::ChangedSince`), a batch whose job still runs cancelled first; `UndoBatch { batch }` from any photo, `UnknownBatch` for one not remembered; `Move::Steps::photos` ([history.md](history.md#a-batch-on-several-photos)).
@@ -319,7 +328,7 @@ The session's events (decision 59, [docs/events.md](events.md)):
 - **Exports** (decisions 56 and 57): rayon in the encoding, and a long tile split into steps.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md)): the spaces other than the operation's own; stored samples and `Event::Samples`; a pick's change of source Auto, with history.
 - **Events** (decision 59): `Event::Notice`; the remote protocol's queue, coalescing, `Sync` and versioning.
-- **The protocol for agents** (decision 108; [session-protocol.md](session-protocol.md#agents)). Planned now: `Command`, `Event` and what they carry serializable with serde, every command and event to JSON and back in a test, `Frame`'s GPU buffer excepted (108.1); `Command::access()`, returning `Access`, each command's class through an exhaustive match beside `on_edit`: `View`, `EditOpenPhoto`, `Photos`, `Export` or `Organise`, or `Person` for the commands never granted to an agent (108.2). With MCP (Phase 6): each command's `ClientId`, per-client facts, `Render`, `Step`'s `seen`, `Picker(Once)`'s source and note, and the refusals `GestureUnderway`, `Stale`, `NotOwnChange`, `NoAccess` and `PickerInUse`.
+- **The protocol for agents** (decision 108; [session-protocol.md](session-protocol.md#agents)). Built: the types serializable (108.1, [The protocol on the wire](#the-protocol-on-the-wire)). Planned now: `Command::access()`, returning `Access`, each command's class through an exhaustive match beside `on_edit`: `View`, `EditOpenPhoto`, `Photos`, `Export` or `Organise`, or `Person` for the commands never granted to an agent (108.2). With MCP (Phase 6): each command's `ClientId`, per-client facts, `Render`, `Step`'s `seen`, `Picker(Once)`'s source and note, and the refusals `GestureUnderway`, `Stale`, `NotOwnChange`, `NoAccess` and `PickerInUse`.
 - **The cache** (decision 76): rendered thumbnails for photos other than the live one; eviction paused by an export; with the library's step 23, `CacheCommand::Remove { index }`, a `cache-clear` job, and each kept index in `Event::Cache`; later wgpu's pipeline cache on Vulkan as the kind `pipelines`, if measured worthwhile.
 
 ## apertrust-cli
@@ -468,7 +477,7 @@ The golden-image harness against darktable-cli (decision 61). AGENTS.md lists it
 
 ## apertrust-raw
 
-Raw decoding with rawler (decision 23).
+Raw decoding with rawler (decision 23). Its one dependency of ours is `apertrust-base`, no feature, for `wire`: `Error::Read`'s `io::Error`, since `Error` and `Exif`, which the session protocol carries, derive serde (decision 108).
 
 **Decoding:**
 
@@ -1232,7 +1241,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 | `fs` | the safe write | the export and the library |
 | `jobs` | darktable's control jobs | the engine; the library is to |
 | `cache` | the disk cache, `UnusedAfter`, `CacheCommand` and `CacheEvent` among it; turns on `fs` | the engine, the app and the CLI; the library is to |
-| (none) | `settings` | |
+| (none) | `settings`, `wire` | |
 
 ### Logging
 
@@ -1329,6 +1338,14 @@ The cache's `Cache::remove(kind, slot)` removes one limited entry and adjusts th
 - The engine's export reports its whole row through them, and the app's mirror folds them into its rows; Try again is the session's `RetryJob` (decision 72).
 - Tested with a counting job.
 
+### Wire
+
+`wire`, behind no feature (decision 108): serde helpers for the session protocol's types, which several crates' types need. Its jobs' and the cache's commands and events derive serde too, a cache kind as its id ([apertrust-engine, The protocol on the wire](#the-protocol-on-the-wire)).
+
+- `id`, with `id::option`, `id::vec` and `id::pairs`: a `&'static str` id read from text by interning it, each distinct text leaked once into a process-wide set, at most `MAX_IDS` (4096) of at most `MAX_ID_LEN` (256) bytes, past which reading fails. `Id`, an alias of `&'static str`, is how such a field is written where it is the id alone or an `Option` of it, since serde's derive takes any field written `&str` as borrowed from the input.
+- `io_error`: an `io::Error` as `{"kind", "message"}`, read back as `io::Error::new`; `error_kind`: an `io::ErrorKind` by its name, read against every stable kind of the pinned toolchain (`error_kind::KINDS`), any other as `Other`; `nan_as_null`: an `f64` NaN by design as `null`; `system_time` (and `system_time::option`): a `SystemTime` as signed seconds and nanoseconds from 1970, a time before it too; `finite`: a command's `f32`, `[f32; N]` or curve points, refused where one reads as infinite (`1e39`). An `Option` read through a helper is marked `default`, so one left out is `None`.
+- Tested with serde_json, a dev-dependency: the interning's limits on a set of its own, every kind, NaN, times before 1970 and numbers past an `f32`.
+
 ### Planned
 
 **The cache folder and the cache,** with thumbnails (decisions 43 and 76; [cache.md](cache.md)):
@@ -1337,7 +1354,7 @@ The cache's `Cache::remove(kind, slot)` removes one limited entry and adjusts th
 
 ## apertrust-plugin
 
-The operation interface.
+The operation interface. Its one dependency of ours is `apertrust-base`, no feature, for `wire`, which reads its errors' ids: the image context and the errors the session protocol carries derive serde (decision 108).
 
 - **The `Operation` trait**, its manifest, parameter schema and values (numbers, whole numbers, choices, booleans), and image formats.
 - **Camera metadata**, with the camera's identity (`make`, `model`, `alias` and `iso`, as darktable's, decision 24), `lens_correction`, darktable's four lens correction types as darktable stores them (decision 25), and `embedded_matrix`, whether the camera's matrix is a DNG's own, darktable's embedded matrix, rather than the decoder's camera table's, its standard matrix.
