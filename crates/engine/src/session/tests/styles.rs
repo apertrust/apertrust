@@ -713,8 +713,8 @@ fn a_replace_laid_on_a_newer_file_keeps_the_reset_state_before() {
     remove(&path);
 }
 
-/// A style replayed on a newer file holding an item of its name is applied again over that
-/// item: the item's tools this application does not set stay.
+/// A style replayed on a newer file holding an item of the same style is applied again over
+/// that item: the item's tools this application does not set stay.
 #[test]
 fn a_style_replayed_keeps_the_earlier_item_s_other_tools() {
     let path = scratch("styles-newer-extra");
@@ -866,6 +866,38 @@ fn a_built_in_style_applied_again_in_another_language_moves_to_the_top() {
     assert_eq!(styles(&driven)[0].file, "Ломо.apstyle");
     assert!(edit(&driven).tool("grain").is_none());
     assert!(edit(&driven).tool("vignette").is_some());
+    remove(&path);
+}
+
+/// A person's style and a built-in of one name, applied in turn, are two items, each applied
+/// again over its own (decision 109): saved, the photo reopens editable with both listed.
+#[test]
+fn a_person_s_style_and_a_built_in_of_one_name_are_two_items() {
+    let path = scratch("styles-one-name");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&path);
+    driven.run([append("Lomo", &[soften(30.0)])]);
+    driven.run([built_in("Lomo", "lomo", &[grain(40.0)])]);
+    let events = driven.run([append("Lomo", &[soften(50.0)])]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert_eq!(listed(&events), ["Lomo", "Lomo"]);
+    let files: Vec<String> = styles(&driven).into_iter().map(|s| s.file).collect();
+    assert_eq!(files, ["Lomo.apstyle", "builtin:lomo"]);
+    // Applied again over its own item: Soften's state before it the person's style's first.
+    assert_eq!(
+        tool_of(&styles(&driven)[0], "soften").before,
+        ToolValues::new()
+    );
+    driven.writes();
+    let opened = driven.open(&path);
+    let photo = (opened.iter())
+        .find_map(|event| match event {
+            Event::Opened(photo) => Some(photo),
+            _ => None,
+        })
+        .unwrap();
+    assert!(photo.view_only.is_none(), "{:?}", photo.view_only);
+    assert_eq!(listed(&opened), ["Lomo", "Lomo"]);
     remove(&path);
 }
 
