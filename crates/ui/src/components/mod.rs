@@ -112,8 +112,8 @@ pub use line_row::{EndAction, EndItem, LineAction, LineRow, LineStart};
 pub use marker::{Marker, marker, set_marker};
 pub use patches::{Patch, Patches};
 pub use photo_frame::{
-    CAPTION_GAP, CAPTION_HEIGHT, CaptionFit, CaptionMark, CaptionName, Margin, PhotoCaption,
-    PhotoFrame, Placed, middle_cut,
+    CAPTION_GAP, CAPTION_HEIGHT, CaptionCentre, CaptionFit, CaptionMark, CaptionName,
+    CaptionOutput, CaptionTips, Margin, PhotoCaption, PhotoFrame, Placed, middle_cut,
 };
 pub use picker::{PickerAction, PickerButton, PickerMarks, PickerPlace};
 pub use plate::ButtonState;
@@ -122,7 +122,7 @@ pub use readout_row::ReadoutRow;
 pub use reference_row::{Reference, ReferenceAction, ReferenceRow};
 pub use section::{Section, SectionAction, SectionOutput, section_body, section_list};
 pub use segmented::Segmented;
-pub use slider::{Mark, Quad, SliderAction, SliderRow, Track};
+pub use slider::{Mark, Quad, SliderAction, SliderRow, Track, takes_digits};
 pub use swatches::{Swatch, SwatchFill, Swatches};
 pub use switch::Switch;
 pub use tabs::Tabs;

@@ -3745,7 +3745,7 @@ The row under the photo has three zones: the file name at its start, the photo's
 
   - The label circles always show their colour: off a ring in it, on filled with it, so on and off differ by fill, not by colour. On the light theme's mid-grey surround each circle keeps a thin neutral outer ring as well, so it stays visible whatever its colour.
   - The five colours are tokens of each theme (`label_red` to `label_purple`), checked at 3:1 against the photo surround, the outer ring counting where there is one. They are told apart by their fixed order and their names as well as their colours, for colour-blind users.
-  - The light theme's surround is mid grey (#777777), where `text_secondary` (1.85:1) and `error` (1.43:1) fail 3:1. So the stars' and Reject's outlines and the set Reject take surround tokens of their own there (a `surround_text_secondary` beside `surround_text`), which the theme check holds to 3:1. The dark and high-contrast themes pass with the tokens above.
+  - The light theme's surround is mid grey (#777777), where `text_secondary` (1.85:1) and `error` (1.43:1) fail 3:1. So the stars' and Reject's outlines take a surround token of their own, `surround_text_secondary`, in every theme (`#2B2B2B` in the light theme, `#D9D9D9` in the grey one, whose `text_secondary` reads 2.85:1 there, `text_secondary`'s value in the dark and high-contrast ones), which the theme check holds to 3:1 against `photo_surround`; the set Reject takes `error` where it reads 3:1 on the surround, else the surround's text.
   - While the photo is rejected its stars stay set and are drawn dimmed: a reject keeps the rating under it, as darktable's does, and clearing the reject brings it back.
 - **What a click does:** the nth star sets the rating to n and clears a reject; the current rating's star sets 0; Reject toggles; a label toggles itself only. Each takes effect at once and is saved with the photo as its current value, never a step of its history: History never lists it, and Undo takes it back in the order made with the edit's changes (decision 110).
 - **With several photos selected,** the keys act on every one of them (decision 37), and so do the caption's controls, since a key and its control never disagree. The controls show the active photo's values; their tooltips then say how many they act on ("Rate 12 photos 3 stars (3)", "Reject 12 photos (R)"). The active photo's state decides which way a toggle goes. The change is one batch, which one Undo takes back on all of them, and a notice says so: "3 stars on 12 photos · Undo" ([Selection and the active photo](#selection-and-the-active-photo)).
@@ -3762,8 +3762,8 @@ The row under the photo has three zones: the file name at its start, the photo's
   1. the exposure values go from the last: ISO, then focal length, aperture and shutter;
   2. the status mark's word becomes its icon ("View only" a lock);
   3. the edited mark goes (not built);
-  4. the labels fold into the dots of those on, which is read only (not built);
-  5. the stars fold into one star and the number, with ⊗ before it while rejected, read only (not built);
+  4. the labels fold into the dots of those on, which is read only;
+  5. the stars fold into one star and the number, with ⊗ before it while rejected, read only;
   6. the file name is cut in its middle, keeping its extension and copy number ("R00…76.DNG [2]"), down to nine characters;
   7. the file name goes.
 

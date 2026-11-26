@@ -46,6 +46,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `eye-off`, `eye-off-filled` | Lucide's `eye-off`: the Tools panel's Hidden tab (decision 96) |
 | `star`, `star-filled` | Lucide's `star` |
 | `reject` | Lucide's `circle-x` |
+| `label` | Lucide's `circle`, from Feather: the colour labels' actions on the Toolbar |
 | `rotate-left`, `rotate-right` | Lucide's `rotate-ccw-square` and `rotate-cw-square` |
 | `flip-horizontal`, `flip-vertical` | Lucide's `triangles-centerline-dashed-vertical` and `triangles-centerline-dashed-horizontal` |
 | `primaries-menu` | Lucide's `list-restart`: AgX's Reset primaries menu (decision 107) |

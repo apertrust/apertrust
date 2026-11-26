@@ -35,17 +35,21 @@
 //! room round it.
 //!
 //! **The caption** ([`PhotoCaption`]) is one line, never wrapped: the file name with its
-//! marks at the start, the centre for the reject, the rating and the colour labels (those
-//! are not stored yet, so it is empty), the exposure values at the end. It drops parts as
-//! the photo narrows ([`fit`]).
+//! marks at the start, the centre for the reject, the rating and the colour labels, which
+//! the person sets there ([`PhotoCaption::rating`], reported as a [`CellAction`]), the
+//! exposure values at the end. It drops parts as the photo narrows ([`fit`]), folding the
+//! labels into dots and the stars into one star and the number before the name is cut.
 
 use egui::{
-    FontFamily, FontId, Painter, Rect, Response, Role, Sense, Ui, Vec2, WidgetInfo,
-    emath::GuiRounding as _, pos2, vec2,
+    Color32, FontFamily, FontId, Key, Painter, Pos2, Rect, Response, Role, Sense, Stroke, Ui, Vec2,
+    WidgetInfo, emath::GuiRounding as _, pos2, vec2,
 };
 
-use crate::theme::Theme;
-use crate::{Icon, fonts, theme, tr};
+use super::focus_ring;
+use super::grid_cell::{CellAction, CellRating, ColourLabel};
+use crate::i18n::Args;
+use crate::theme::{Theme, contrast};
+use crate::{Icon, fonts, theme, tr, translator};
 
 /// The caption's height, in points.
 pub const CAPTION_HEIGHT: f32 = 20.0;
@@ -53,6 +57,17 @@ pub const CAPTION_HEIGHT: f32 = 20.0;
 pub const CAPTION_GAP: f32 = 4.0;
 /// The least stem of a file name, in characters, that the caption still shows cut.
 const LEAST_STEM: usize = 5;
+/// The hit target of Reject and of each star, in points, with no gap between them.
+const TARGET: f32 = 20.0;
+/// The hit target of each colour label.
+const LABEL_TARGET: f32 = 18.0;
+/// A label's circle's radius, and the stroke of its ring while it is off.
+const LABEL_RADIUS: f32 = 5.5;
+/// A folded label's dot's diameter, and the space between two.
+const DOT: f32 = 8.0;
+const DOT_GAP: f32 = 3.0;
+/// The least contrast a label's colour, or a control's outline, needs on the surround.
+const CONTROL: f32 = 3.0;
 
 /// The margin round a block.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -134,8 +149,9 @@ pub struct Widths {
     pub mark_icon: f32,
     /// Each exposure value, in the order they drop from the last.
     pub exposure: Vec<f32>,
-    /// The centre's width (reject, rating and labels); 0 while it is empty.
-    pub centre: f32,
+    /// The centre's width (reject, rating and labels) whole, with the labels folded into
+    /// dots, and with the stars folded too ([`CaptionCentre`]); 0 while it is empty.
+    pub centre: [f32; 3],
     /// The gap between the exposure values and between a name and its mark.
     pub gap: f32,
     /// The least gap between the start, the centre and the end.
@@ -158,12 +174,35 @@ pub enum CaptionMark {
     Icon,
 }
 
+/// How the centre is shown (`docs/gui.md`, The caption under the photo, Narrowing).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptionCentre {
+    /// Reject, the five stars and the five labels, each a control.
+    Whole,
+    /// The labels folded into the dots of those on, read only.
+    Labels,
+    /// The stars folded too, into one star and the number, ⊗ before it while rejected,
+    /// read only.
+    Folded,
+}
+
+impl CaptionCentre {
+    fn index(self) -> usize {
+        match self {
+            CaptionCentre::Whole => 0,
+            CaptionCentre::Labels => 1,
+            CaptionCentre::Folded => 2,
+        }
+    }
+}
+
 /// What a caption shows at a width: the parts that survived.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaptionFit {
     /// How many exposure values, from the first.
     pub exposure: usize,
     pub mark: CaptionMark,
+    pub centre: CaptionCentre,
     pub name: CaptionName,
 }
 
@@ -196,8 +235,9 @@ impl Widths {
     /// and the end share the line.
     fn needed(&self, step: CaptionFit) -> f32 {
         let (start, end) = (self.start_width(step), self.exposure_width(step.exposure));
-        if self.centre > 0.0 {
-            2.0 * start.max(end) + self.centre + 2.0 * self.apart
+        let centre = self.centre[step.centre.index()];
+        if centre > 0.0 {
+            2.0 * start.max(end) + centre + 2.0 * self.apart
         } else if start > 0.0 && end > 0.0 {
             start + end + self.apart
         } else {
@@ -208,33 +248,30 @@ impl Widths {
 
 /// What a caption of `available` points shows, dropping parts in the spec's order, one
 /// step at a time: the exposure values from the last (ISO, then focal length, aperture and
-/// shutter), the mark's word for its icon, then the name cut in its middle, then the name.
-/// The rating and the labels, when the caption has them, are folded before the name is
-/// cut and never go.
+/// shutter), the mark's word for its icon, the labels folded into dots, the stars into one
+/// star and the number, then the name cut in its middle, then the name. The folded rating
+/// and labels never go: they are what culling looks at.
 pub fn fit(widths: &Widths, available: f32) -> CaptionFit {
+    let step = |mark, centre, name| CaptionFit {
+        exposure: 0,
+        mark,
+        centre,
+        name,
+    };
     let steps = (0..=widths.exposure.len())
         .rev()
         .map(|exposure| CaptionFit {
             exposure,
             mark: CaptionMark::Word,
+            centre: CaptionCentre::Whole,
             name: CaptionName::Whole,
         })
         .chain([
-            CaptionFit {
-                exposure: 0,
-                mark: CaptionMark::Icon,
-                name: CaptionName::Whole,
-            },
-            CaptionFit {
-                exposure: 0,
-                mark: CaptionMark::Icon,
-                name: CaptionName::Cut,
-            },
-            CaptionFit {
-                exposure: 0,
-                mark: CaptionMark::Icon,
-                name: CaptionName::Gone,
-            },
+            step(CaptionMark::Icon, CaptionCentre::Whole, CaptionName::Whole),
+            step(CaptionMark::Icon, CaptionCentre::Labels, CaptionName::Whole),
+            step(CaptionMark::Icon, CaptionCentre::Folded, CaptionName::Whole),
+            step(CaptionMark::Icon, CaptionCentre::Folded, CaptionName::Cut),
+            step(CaptionMark::Icon, CaptionCentre::Folded, CaptionName::Gone),
         ]);
     let mut last = None;
     for step in steps {
@@ -283,6 +320,54 @@ pub(super) fn cut(stem: &str, tail: &str, chars: usize) -> String {
     format!("{first}…{last}{tail}")
 }
 
+/// The tooltips of the caption's controls, which name what a click does and its key
+/// (`docs/gui.md`, The caption under the photo): the caller's, who knows the keys and how
+/// many photos the action takes; [`CaptionTips::plain`] has the words alone.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CaptionTips {
+    /// Reject's while the photo is not rejected, and while it is.
+    pub reject: String,
+    pub unreject: String,
+    /// The nth star's, which rates n.
+    pub stars: [String; 5],
+    /// The current rating's star's, which clears it.
+    pub clear: String,
+    /// Each label's, in darktable's order.
+    pub labels: [String; 5],
+}
+
+impl CaptionTips {
+    /// The words alone, with no key.
+    pub fn plain(ctx: &egui::Context) -> Self {
+        Self::plain_with(&translator(ctx))
+    }
+
+    /// The words alone in `words`' language.
+    pub fn plain_with(words: &crate::Translator) -> Self {
+        let stars = std::array::from_fn(|i| {
+            let mut args = Args::new();
+            args.set("count", i + 1);
+            words.text_with("grid-cell-rate", Some(&args))
+        });
+        let labels =
+            ColourLabel::ALL.map(|label| words.text(&format!("caption-label-{}", label.id())));
+        CaptionTips {
+            reject: words.text("caption-reject"),
+            unreject: words.text("caption-unreject"),
+            stars,
+            clear: words.text("caption-clear-rating"),
+            labels,
+        }
+    }
+}
+
+/// What a caption reported: its response, the whole line's, and what the user did on its
+/// centre's controls.
+pub struct CaptionOutput {
+    pub response: Response,
+    pub action: Option<CellAction>,
+}
+
 /// A photo's caption: one line under it, as wide as the photo.
 pub struct PhotoCaption<'a> {
     name: &'a str,
@@ -290,6 +375,8 @@ pub struct PhotoCaption<'a> {
     view_only: bool,
     exposure: &'a [String],
     details: &'a str,
+    rating: Option<CellRating>,
+    tips: Option<&'a CaptionTips>,
 }
 
 impl<'a> PhotoCaption<'a> {
@@ -301,7 +388,22 @@ impl<'a> PhotoCaption<'a> {
             view_only: false,
             exposure: &[],
             details: "",
+            rating: None,
+            tips: None,
         }
+    }
+
+    /// The photo's rating, reject and labels, which its centre shows and sets; `None`
+    /// leaves the centre empty.
+    pub fn rating(mut self, rating: Option<CellRating>) -> Self {
+        self.rating = rating;
+        self
+    }
+
+    /// Its controls' tooltips; [`CaptionTips::plain`] where none are given.
+    pub fn tips(mut self, tips: &'a CaptionTips) -> Self {
+        self.tips = Some(tips);
+        self
     }
 
     /// The virtual copy's number, where the photo is one of several.
@@ -380,7 +482,10 @@ impl<'a> PhotoCaption<'a> {
                 .iter()
                 .map(|text| width_of(text, &value_font))
                 .collect(),
-            centre: 0.0,
+            centre: self.rating.map_or([0.0; 3], |rating| {
+                let number = width_of(&rating.stars.to_string(), &value_font);
+                centre_widths(t, rating, number)
+            }),
             gap: t.spacing.m,
             apart: t.spacing.l,
         }
@@ -394,7 +499,7 @@ impl<'a> PhotoCaption<'a> {
     }
 
     /// Draws the caption in `rect`, a line [`PhotoFrame::place`] gave.
-    pub fn show(self, ui: &mut Ui, rect: Rect) -> Response {
+    pub fn show(self, ui: &mut Ui, rect: Rect) -> CaptionOutput {
         let t = theme(ui.ctx());
         let color = t.colors.text_on_surround();
         let (name_font, value_font) = Self::fonts(&t);
@@ -481,18 +586,366 @@ impl<'a> PhotoCaption<'a> {
         if self.view_only {
             said.push(word);
         }
+        if let Some(rating) = self.rating {
+            said.extend(rating_words(ui.ctx(), rating));
+        }
         said.extend(self.exposure.iter().cloned());
         let said = said.join(", ");
-        let response = ui.interact(rect, ui.make_persistent_id("photo caption"), Sense::hover());
+        let id = ui.make_persistent_id("photo caption");
+        let response = ui.interact(rect, id, Sense::hover());
         response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &said));
         if !self.details.is_empty() {
             ui.ctx()
                 .accesskit_node_builder(response.id, |node| node.set_description(self.details));
         }
-        if self.details.is_empty() {
+        let response = if self.details.is_empty() {
             response.on_hover_text(said)
         } else {
             response.on_hover_text(format!("{said}\n{}", self.details))
+        };
+        // The centre, over the line, so its controls take the pointer.
+        let plain;
+        let tips = match self.tips {
+            Some(tips) => tips,
+            None => {
+                plain = CaptionTips::plain(ui.ctx());
+                &plain
+            }
+        };
+        let width = widths.centre[shown.centre.index()];
+        let action = self.rating.and_then(|rating| {
+            let line = Rect::from_center_size(rect.center(), vec2(width, rect.height()));
+            let centre = Centre {
+                id,
+                line,
+                rating,
+                tips,
+            };
+            match shown.centre {
+                CaptionCentre::Folded => {
+                    centre.folded(&painter, &t, &value_font);
+                    None
+                }
+                folding => centre.controls(ui, &painter, &t, folding == CaptionCentre::Labels),
+            }
+        });
+        CaptionOutput { response, action }
+    }
+}
+
+/// What screen readers and the tooltip say of `rating`: its stars, whether it is rejected
+/// and its labels.
+fn rating_words(ctx: &egui::Context, rating: CellRating) -> Vec<String> {
+    let words = translator(ctx);
+    let mut args = Args::new();
+    args.set("count", rating.stars);
+    let mut said = vec![words.text_with("grid-cell-rating", Some(&args))];
+    if rating.rejected {
+        said.push(words.text("grid-cell-rejected"));
+    }
+    if !rating.labels.is_empty() {
+        let names: Vec<String> = (rating.labels.iter())
+            .map(|label| words.text(&format!("colour-label-{}", label.id())))
+            .collect();
+        let mut args = Args::new();
+        args.set("labels", names.join(", "));
+        said.push(words.text_with("grid-cell-labels", Some(&args)));
+    }
+    said
+}
+
+/// The centre's widths: whole, its labels folded, and its stars folded too, `number` the
+/// stars' number's width.
+fn centre_widths(t: &Theme, rating: CellRating, number: f32) -> [f32; 3] {
+    let on = rating.labels.iter().count() as f32;
+    let dots = if on > 0.0 {
+        t.spacing.m + on * DOT + (on - 1.0) * DOT_GAP
+    } else {
+        0.0
+    };
+    let icon = Icon::Star.size();
+    let reject = if rating.rejected {
+        icon + t.spacing.xs
+    } else {
+        0.0
+    };
+    [
+        6.0 * TARGET + t.spacing.m + 5.0 * LABEL_TARGET,
+        6.0 * TARGET + dots,
+        reject + icon + t.spacing.xs + number + dots,
+    ]
+}
+
+/// The colour a set Reject is drawn in on the surround: `error`, or where that reads under
+/// 3:1 there, as on the light theme's mid grey, the surround's text.
+fn reject_colour(t: &Theme) -> Color32 {
+    let c = &t.colors;
+    if contrast(c.error, c.photo_surround) >= CONTROL {
+        c.error
+    } else {
+        c.text_on_surround()
+    }
+}
+
+/// A set Reject: a disc with its × cut out in the surround.
+fn paint_rejected(painter: &Painter, t: &Theme, centre: Pos2, radius: f32) {
+    painter.circle_filled(centre, radius, reject_colour(t));
+    let arm = radius * 0.45;
+    let stroke = Stroke::new(1.5, t.colors.photo_surround);
+    for (from, to) in [
+        (vec2(-arm, -arm), vec2(arm, arm)),
+        (vec2(arm, -arm), vec2(-arm, arm)),
+    ] {
+        painter.line_segment([centre + from, centre + to], stroke);
+    }
+}
+
+/// A label's circle at `centre`: a ring in its colour while off, filled while on, half
+/// filled under the pointer as a preview of the change; with a thin neutral ring round it
+/// where its colour reads under 3:1 on the surround.
+fn paint_label(
+    painter: &Painter,
+    t: &Theme,
+    centre: Pos2,
+    colour: Color32,
+    on: bool,
+    hovered: bool,
+    radius: f32,
+) {
+    if contrast(colour, t.colors.photo_surround) < CONTROL {
+        painter.circle_stroke(
+            centre,
+            radius + 1.5,
+            Stroke::new(1.0, t.colors.surround_text_secondary),
+        );
+    }
+    if hovered {
+        painter.circle_filled(centre, radius, colour.gamma_multiply(0.5));
+    } else if on {
+        painter.circle_filled(centre, radius, colour);
+    }
+    if !on || hovered {
+        painter.circle_stroke(centre, radius - 0.75, Stroke::new(1.5, colour));
+    }
+}
+
+/// The centre being drawn: the caption's id, its line, the rating and the tooltips.
+struct Centre<'a> {
+    id: egui::Id,
+    line: Rect,
+    rating: CellRating,
+    tips: &'a CaptionTips,
+}
+
+impl Centre<'_> {
+    /// Reject, the five stars and the labels, each a control, or with `folded` the labels'
+    /// dots in place of their controls: what was clicked or set.
+    fn controls(
+        &self,
+        ui: &mut Ui,
+        painter: &Painter,
+        t: &Theme,
+        folded: bool,
+    ) -> Option<CellAction> {
+        let ctx = ui.ctx().clone();
+        let words = translator(&ctx);
+        let (rating, line) = (self.rating, self.line);
+        let target = |x: f32, side: f32| {
+            Rect::from_center_size(pos2(x + side / 2.0, line.center().y), vec2(side, side))
+        };
+        let mut action = None;
+        let secondary = t.colors.surround_text_secondary;
+
+        // Reject: outlined at rest, in the reject's colour under the pointer; set, a disc.
+        let reject = target(line.left(), TARGET);
+        let pressed = ui.interact(reject, self.id.with("reject"), Sense::click());
+        if rating.rejected {
+            paint_rejected(painter, t, reject.center(), 6.5);
+        } else {
+            let colour = if pressed.hovered() {
+                reject_colour(t)
+            } else {
+                secondary
+            };
+            let icon = Icon::Reject.size();
+            Icon::Reject.paint(
+                painter,
+                Rect::from_center_size(reject.center(), vec2(icon, icon)),
+                colour,
+            );
+        }
+        let name = words.text("caption-reject");
+        pressed.widget_info(|| WidgetInfo::selected(Role::Button, true, rating.rejected, &name));
+        if pressed.has_focus() {
+            focus_ring(painter, reject, t);
+        }
+        let tip = if rating.rejected {
+            &self.tips.unreject
+        } else {
+            &self.tips.reject
+        };
+        if pressed.clicked() {
+            action = Some(CellAction::ToggleReject);
+        }
+        pressed.on_hover_text(tip);
+
+        // The stars: one Tab stop, a radio group; ← and → move and set, Space or Enter
+        // on the checked one clears it, as a click does.
+        let stars = Rect::from_min_size(
+            pos2(reject.right(), reject.top()),
+            vec2(5.0 * TARGET, TARGET),
+        );
+        let group = ui.interact(stars, self.id.with("stars"), Sense::FOCUSABLE);
+        let rating_name = words.text("caption-rating");
+        group.widget_info(|| WidgetInfo::labeled(Role::RadioGroup, true, &rating_name));
+        if group.has_focus() {
+            focus_ring(painter, stars, t);
+            let (right, left, press) = ui.input(|input| {
+                (
+                    input.key_pressed(Key::ArrowRight),
+                    input.key_pressed(Key::ArrowLeft),
+                    input.key_pressed(Key::Space) || input.key_pressed(Key::Enter),
+                )
+            });
+            // An arrow only where it moves: the current star again would clear the rating.
+            let moved = if right && rating.stars < 5 {
+                Some(rating.stars + 1)
+            } else if left && rating.stars > 1 {
+                Some(rating.stars - 1)
+            } else if press && rating.stars > 0 {
+                Some(rating.stars)
+            } else {
+                None
+            };
+            action = moved.map(CellAction::Rate).or(action);
+        }
+        let rects: Vec<Rect> = (0..5)
+            .map(|i| target(stars.left() + i as f32 * TARGET, TARGET))
+            .collect();
+        let responses: Vec<Response> = (rects.iter().enumerate())
+            .map(|(i, rect)| ui.interact(*rect, self.id.with(("star", i)), Sense::CLICK))
+            .collect();
+        let hovered = responses.iter().position(Response::hovered);
+        // Over the current rating's star the stars preview empty, as its click clears it.
+        let preview = hovered.map(|h| {
+            if h as u8 + 1 == rating.stars {
+                0
+            } else {
+                h as u8 + 1
+            }
+        });
+        let icon = Icon::Star.size();
+        for (i, (rect, star)) in rects.iter().zip(responses).enumerate() {
+            let points = i as u8 + 1;
+            let (filled, colour) = match preview {
+                Some(lit) => (points <= lit, secondary),
+                None => (points <= rating.stars, t.colors.text_on_surround()),
+            };
+            // A reject keeps the stars, dimmed beneath it.
+            let colour = if rating.rejected && preview.is_none() {
+                colour.gamma_multiply(0.5)
+            } else if filled {
+                colour
+            } else {
+                secondary
+            };
+            let glyph = if filled { Icon::StarFilled } else { Icon::Star };
+            glyph.paint(
+                painter,
+                Rect::from_center_size(rect.center(), vec2(icon, icon)),
+                colour,
+            );
+            let mut args = Args::new();
+            args.set("count", points);
+            let name = words.text_with("grid-cell-rating", Some(&args));
+            let checked = points == rating.stars;
+            star.widget_info(|| WidgetInfo::selected(Role::RadioButton, true, checked, &name));
+            if star.clicked() {
+                action = Some(CellAction::Rate(points));
+            }
+            let tip = if checked {
+                &self.tips.clear
+            } else {
+                &self.tips.stars[i]
+            };
+            star.on_hover_text(tip);
+        }
+
+        // The labels: each a toggle, or folded, the dots of those on.
+        let start = stars.right() + t.spacing.m;
+        if folded {
+            self.dots(painter, t, start);
+            return action;
+        }
+        for (i, label) in ColourLabel::ALL.into_iter().enumerate() {
+            let rect = target(start + i as f32 * LABEL_TARGET, LABEL_TARGET);
+            let button = ui.interact(rect, self.id.with(("label", i)), Sense::click());
+            let on = rating.labels.contains(label);
+            paint_label(
+                painter,
+                t,
+                rect.center(),
+                label.colour(t),
+                on,
+                button.hovered(),
+                LABEL_RADIUS,
+            );
+            let name = words.text(&format!("caption-label-{}", label.id()));
+            button.widget_info(|| WidgetInfo::selected(Role::Button, true, on, &name));
+            if button.has_focus() {
+                focus_ring(painter, rect, t);
+            }
+            if button.clicked() {
+                action = Some(CellAction::ToggleLabel(label));
+            }
+            button.on_hover_text(&self.tips.labels[i]);
+        }
+        action
+    }
+
+    /// The labels on as dots from `x`, read only.
+    fn dots(&self, painter: &Painter, t: &Theme, x: f32) {
+        let y = self.line.center().y;
+        for (i, label) in self.rating.labels.iter().enumerate() {
+            let centre = pos2(x + i as f32 * (DOT + DOT_GAP) + DOT / 2.0, y);
+            paint_label(painter, t, centre, label.colour(t), true, false, DOT / 2.0);
+        }
+    }
+
+    /// The rating folded, read only: ⊗ while rejected, one star and the number, then the
+    /// labels' dots.
+    fn folded(&self, painter: &Painter, t: &Theme, font: &FontId) {
+        let (rating, line) = (self.rating, self.line);
+        let colour = t.colors.text_on_surround();
+        let icon = Icon::Star.size();
+        let y = line.center().y;
+        let mut x = line.left();
+        if rating.rejected {
+            paint_rejected(painter, t, pos2(x + icon / 2.0, y), icon / 2.0);
+            x += icon + t.spacing.xs;
+        }
+        let glyph = if rating.stars > 0 {
+            Icon::StarFilled
+        } else {
+            Icon::Star
+        };
+        let dimmed = if rating.rejected {
+            colour.gamma_multiply(0.5)
+        } else {
+            colour
+        };
+        glyph.paint(
+            painter,
+            Rect::from_center_size(pos2(x + icon / 2.0, y), vec2(icon, icon)),
+            dimmed,
+        );
+        x += icon + t.spacing.xs;
+        let galley = painter.layout_no_wrap(rating.stars.to_string(), font.clone(), dimmed);
+        let width = galley.size().x;
+        painter.galley(pos2(x, y - galley.size().y / 2.0), galley, dimmed);
+        x += width;
+        if !rating.labels.is_empty() {
+            self.dots(painter, t, x + t.spacing.m);
         }
     }
 }
@@ -602,7 +1055,7 @@ mod tests {
             mark_word: 60.0,
             mark_icon: 12.0,
             exposure: vec![40.0, 30.0, 40.0, 40.0],
-            centre: 0.0,
+            centre: [0.0; 3],
             gap: 8.0,
             apart: 12.0,
         }
@@ -618,6 +1071,7 @@ mod tests {
             CaptionFit {
                 exposure: 4,
                 mark: CaptionMark::Word,
+                centre: CaptionCentre::Whole,
                 name: CaptionName::Whole
             }
         );
@@ -666,15 +1120,45 @@ mod tests {
     #[test]
     fn a_centre_stays_centred_so_the_wider_side_counts_twice() {
         let w = Widths {
-            centre: 80.0,
+            centre: [80.0, 60.0, 30.0],
             ..widths()
         };
         let all = CaptionFit {
             exposure: 4,
             mark: CaptionMark::Word,
+            centre: CaptionCentre::Whole,
             name: CaptionName::Whole,
         };
         assert_eq!(w.needed(all), 2.0 * 174.0 + 80.0 + 24.0);
+    }
+
+    /// With a rating, once the exposure has gone and the mark is its icon, the labels fold,
+    /// then the stars, and only then is the name cut; the folded centre never goes.
+    #[test]
+    fn a_rated_caption_folds_its_labels_then_its_stars_before_the_name() {
+        let w = Widths {
+            centre: [218.0, 140.0, 40.0],
+            ..widths()
+        };
+        let mut order = Vec::new();
+        for available in (0..800).rev() {
+            let step = fit(&w, available as f32);
+            if order.last() != Some(&(step.centre, step.name)) && step.exposure == 0 {
+                order.push((step.centre, step.name));
+            }
+        }
+        assert_eq!(
+            order,
+            [
+                (CaptionCentre::Whole, CaptionName::Whole),
+                (CaptionCentre::Labels, CaptionName::Whole),
+                (CaptionCentre::Folded, CaptionName::Whole),
+                (CaptionCentre::Folded, CaptionName::Cut),
+                (CaptionCentre::Folded, CaptionName::Gone),
+            ]
+        );
+        // Whole with the exposure: twice the wider side, the centre and the gaps.
+        assert_eq!(fit(&w, 2.0 * 174.0 + 218.0 + 24.0).exposure, 4);
     }
 
     /// The cut measured in a font: whole where it fits, else cut in its middle to fit, the

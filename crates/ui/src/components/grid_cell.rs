@@ -122,7 +122,7 @@ impl ColourLabel {
     }
 
     /// Its colour in the theme.
-    fn colour(self, t: &Theme) -> Color32 {
+    pub(super) fn colour(self, t: &Theme) -> Color32 {
         let c = &t.colors;
         match self {
             ColourLabel::Red => c.label_red,

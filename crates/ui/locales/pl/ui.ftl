@@ -569,6 +569,15 @@ colour-label-yellow = Żółty
 colour-label-green = Zielony
 colour-label-blue = Niebieski
 colour-label-purple = Fioletowy
+caption-reject = Odrzuć
+caption-unreject = Cofnij odrzucenie
+caption-rating = Ocena
+caption-clear-rating = Usuń ocenę
+caption-label-red = Czerwona etykieta
+caption-label-yellow = Żółta etykieta
+caption-label-green = Zielona etykieta
+caption-label-blue = Niebieska etykieta
+caption-label-purple = Fioletowa etykieta
 browser-height = Wysokość przeglądarki
 grid-rows =
     { $count ->

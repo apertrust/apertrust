@@ -740,6 +740,17 @@ colour-label-yellow = Yellow
 colour-label-green = Green
 colour-label-blue = Blue
 colour-label-purple = Purple
+# The caption under the photo's controls: Reject's name and its tooltip while set, the
+# stars' group, the current star's tooltip, and each label's name.
+caption-reject = Reject
+caption-unreject = Clear reject
+caption-rating = Rating
+caption-clear-rating = Clear the rating
+caption-label-red = Red label
+caption-label-yellow = Yellow label
+caption-label-green = Green label
+caption-label-blue = Blue label
+caption-label-purple = Purple label
 # The Browser's edge towards the photo, which resizes it, for screen readers, and its
 # value: how many rows of thumbnails it shows.
 browser-height = Browser height

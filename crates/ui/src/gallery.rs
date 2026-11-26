@@ -3518,10 +3518,20 @@ fn shell(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
     let placed = frame.place(vec2(width, width / 1.5), ui.pixels_per_point());
     ui.painter().rect_filled(placed.photo, 0.0, t.colors.sunken);
     let exposure = ["1/250 s", "f/8", "35 mm", "ISO 100"].map(str::to_owned);
-    PhotoCaption::new("IMG_2041.ARW")
+    // Its centre: three stars and two labels, which a click reports.
+    let rating = CellRating {
+        stars: 3,
+        rejected: false,
+        labels: ColourLabels::of([ColourLabel::Red, ColourLabel::Blue]),
+    };
+    let caption = PhotoCaption::new("IMG_2041.ARW")
         .view_only(true)
         .exposure(&exposure)
+        .rating(Some(rating))
         .show(ui, placed.caption);
+    if let Some(action) = caption.action {
+        demo.last = format!("Caption: {action:?}");
+    }
     let names: Vec<String> = (0..40)
         .map(|i| format!("IMG_{:04}.ARW", 2036 + i))
         .collect();

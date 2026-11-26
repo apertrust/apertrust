@@ -80,6 +80,20 @@ use super::{
 };
 use crate::{Icon, Theme, theme, translator};
 
+/// Where a focused slider notes its id, so a digit typed on it starts a value and the
+/// app's digits rest ([`takes_digits`]).
+const TAKES_DIGITS: &str = "slider-takes-digits";
+
+/// Whether the widget with the focus in `ctx` is a slider, which takes a digit, a minus
+/// sign or the decimal separator as the start of a typed value: the app's rating keys rest
+/// then, so typing "50" never rates the photo (`docs/gui.md`, The caption under the photo).
+/// Read before the frame's widgets, as the app's keys are, from the last frame's.
+pub fn takes_digits(ctx: &egui::Context) -> bool {
+    let focused = ctx.memory(|m| m.focused());
+    focused.is_some()
+        && ctx.data(|d| d.get_temp::<egui::Id>(egui::Id::unique(TAKES_DIGITS))) == focused
+}
+
 /// The track's look.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Track {
@@ -429,6 +443,8 @@ impl<'a> SliderRow<'a> {
                 }
             }
             if ui.memory(|m| m.has_focus(id)) {
+                // A digit typed here starts a value, never the app's rating key.
+                ui.data_mut(|d| d.insert_temp(egui::Id::unique(TAKES_DIGITS), id));
                 ui.memory_mut(|m| {
                     m.set_focus_lock_filter(
                         id,

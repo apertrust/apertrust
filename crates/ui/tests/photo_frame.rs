@@ -19,10 +19,11 @@
 //! at three widths, in a wide slot and a narrow one.
 
 use apertrust_ui::components::{
-    CaptionFit, CaptionMark, CaptionName, Margin, PhotoCaption, PhotoFrame,
+    CaptionCentre, CaptionFit, CaptionMark, CaptionName, CaptionTips, CellAction, CellRating,
+    ColourLabel, ColourLabels, Margin, PhotoCaption, PhotoFrame,
 };
 use apertrust_ui::{Builtin, Theme};
-use egui::accesskit::Role;
+use egui::accesskit::{Role, Toggled};
 use egui::{Color32, Rect, Sense, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
@@ -61,6 +62,7 @@ fn a_caption_drops_its_parts_as_the_photo_narrows() {
         CaptionFit {
             exposure: 4,
             mark: CaptionMark::Word,
+            centre: CaptionCentre::Whole,
             name: CaptionName::Whole
         }
     );
@@ -135,7 +137,8 @@ fn framed(width: f32, margin: Margin) -> Harness<'static> {
                 .view_only(true)
                 .exposure(&exposure)
                 .details("Leica Q3 · 9 520 × 6 336")
-                .show(ui, placed.caption);
+                .show(ui, placed.caption)
+                .response;
             // Whatever the caption dropped, it keeps its width as the photo's.
             assert_eq!(response.rect, placed.caption);
             let _ = ui.allocate_rect(slot, Sense::hover());
@@ -184,4 +187,144 @@ fn the_frame_in_a_narrow_slot() {
 #[test]
 fn the_frame_with_proof_margin() {
     photographed("photo-frame-proof-margin", 420.0, Margin::Proof(0.1));
+}
+
+/// Three stars, the red and blue labels.
+fn three_stars() -> CellRating {
+    CellRating {
+        stars: 3,
+        rejected: false,
+        labels: ColourLabels::of([ColourLabel::Red, ColourLabel::Blue]),
+    }
+}
+
+/// A caption line `width` points wide on the photo's surround, in `theme`, rated `rating`,
+/// its centre's last action kept as the harness's state.
+fn rated(theme: Builtin, width: f32, rating: CellRating) -> Harness<'static, Option<CellAction>> {
+    Harness::builder()
+        .with_size(vec2(width, 32.0))
+        .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(theme)))
+        .build_ui_state(
+            move |ui, action: &mut Option<CellAction>| {
+                let surround = apertrust_ui::theme(ui.ctx()).colors.photo_surround;
+                let whole = Rect::from_min_size(pos2(0.0, 0.0), vec2(width, 32.0));
+                ui.painter().rect_filled(whole, 0.0, surround);
+                let exposure = values();
+                let tips = CaptionTips::plain(ui.ctx());
+                let line = Rect::from_min_size(pos2(0.0, 6.0), vec2(width, 20.0));
+                let shown = PhotoCaption::new("IMG_2041.ARW")
+                    .exposure(&exposure)
+                    .rating(Some(rating))
+                    .tips(&tips)
+                    .show(ui, line);
+                if shown.action.is_some() {
+                    *action = shown.action;
+                }
+            },
+            None,
+        )
+}
+
+/// A star, Reject and a label each report their action; a click changes nothing shown,
+/// the caller sends the command.
+#[test]
+fn the_caption_s_controls_report_what_was_clicked() {
+    let clicks = [
+        (Role::RadioButton, "4 stars", CellAction::Rate(4)),
+        (Role::RadioButton, "3 stars", CellAction::Rate(3)),
+        (Role::Button, "Reject", CellAction::ToggleReject),
+        (
+            Role::Button,
+            "Green label",
+            CellAction::ToggleLabel(ColourLabel::Green),
+        ),
+    ];
+    for (role, label, wanted) in clicks {
+        let mut harness = rated(Builtin::Dark, 640.0, three_stars());
+        harness.run();
+        harness.get_by_role_and_label(role, label).click();
+        harness.run();
+        assert_eq!(*harness.state(), Some(wanted), "{label}");
+    }
+    // The rating's star is the checked one; a set label is pressed.
+    let harness = rated(Builtin::Dark, 640.0, three_stars());
+    let checked = |label: &str| {
+        let star = harness.get_by_role_and_label(Role::RadioButton, label);
+        star.accesskit_node().toggled()
+    };
+    assert_eq!(checked("3 stars"), Some(Toggled::True));
+    assert_eq!(checked("4 stars"), Some(Toggled::False));
+}
+
+/// The stars are one Tab stop after Reject, a radio group: → rates one more, ← one fewer,
+/// and Space on the checked one clears it, as its click does; at five stars → and at one
+/// ← do nothing, never clearing the rating.
+#[test]
+fn the_stars_are_one_tab_stop_moved_by_the_arrows() {
+    let stars = |stars| CellRating {
+        stars,
+        ..three_stars()
+    };
+    for (rating, key, wanted) in [
+        (3, egui::Key::ArrowRight, Some(CellAction::Rate(4))),
+        (3, egui::Key::ArrowLeft, Some(CellAction::Rate(2))),
+        (3, egui::Key::Space, Some(CellAction::Rate(3))),
+        (5, egui::Key::ArrowRight, None),
+        (1, egui::Key::ArrowLeft, None),
+    ] {
+        let mut harness = rated(Builtin::Dark, 640.0, stars(rating));
+        harness.run();
+        harness.key_press(egui::Key::Tab);
+        harness.key_press(egui::Key::Tab);
+        harness.run();
+        let group = harness.get_by_role_and_label(Role::RadioGroup, "Rating");
+        assert!(group.accesskit_node().is_focused(), "{key:?}");
+        harness.key_press(key);
+        harness.run();
+        assert_eq!(*harness.state(), wanted, "{rating} {key:?}");
+    }
+}
+
+/// Narrow, the labels fold into dots and then the stars into one star and the number,
+/// read only; screen readers still hear the rating.
+#[test]
+fn a_narrow_caption_folds_its_rating_and_still_says_it() {
+    let mut harness = rated(Builtin::Dark, 150.0, three_stars());
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::RadioGroup, "Rating")
+            .is_none()
+    );
+    harness.get_by_role_and_label(
+        Role::Label,
+        "IMG_2041.ARW, 3 stars, Colour labels: Red, Blue, 1/250 s, f/8, 35 mm, ISO 200",
+    );
+}
+
+/// The caption's centre photographed on `theme` and on the light theme: three stars and
+/// two labels at rest, rejected, under the pointer, and folded.
+#[test]
+fn the_caption_s_centre_in_each_state() {
+    let rejected = CellRating {
+        rejected: true,
+        ..three_stars()
+    };
+    let mut results = egui_kittest::SnapshotResults::new();
+    for (theme, name) in [(Builtin::Dark, "dark"), (Builtin::Light, "light")] {
+        let mut harness = rated(theme, 640.0, three_stars());
+        harness.run();
+        results.add(harness.try_snapshot(format!("photo-caption-rated-{name}")));
+        let star = harness.get_by_role_and_label(Role::RadioButton, "5 stars");
+        let at = star.rect().center();
+        harness.hover_at(at);
+        harness.run();
+        results.add(harness.try_snapshot(format!("photo-caption-hover-{name}")));
+        let mut harness = rated(theme, 640.0, rejected);
+        harness.run();
+        results.add(harness.try_snapshot(format!("photo-caption-rejected-{name}")));
+        let mut harness = rated(theme, 200.0, rejected);
+        harness.run();
+        results.add(harness.try_snapshot(format!("photo-caption-folded-{name}")));
+    }
 }

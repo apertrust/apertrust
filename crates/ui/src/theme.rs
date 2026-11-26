@@ -195,6 +195,13 @@ pub struct Colors {
     /// Text on a light surround, from Medium up ([`Background`]).
     #[serde(with = "hex")]
     pub surround_text_on_light: Color32,
+    /// The lesser marks on the surround, `text_secondary`'s place there: the caption's
+    /// stars and Reject outlined while off, a star's preview, the ring round a label whose
+    /// colour reads under 3:1 on it (`docs/gui.md`, The caption under the photo). Held to
+    /// 3:1 against `photo_surround`, which the light themes' mid grey fails with
+    /// `text_secondary`.
+    #[serde(with = "hex")]
+    pub surround_text_secondary: Color32,
     #[serde(with = "hex")]
     pub text: Color32,
     /// Text that stands out from `text`: the active photo's name under its thumbnail; an
@@ -790,6 +797,13 @@ impl Theme {
                 c.photo_surround,
                 TEXT,
             ),
+            (
+                "surround_text_secondary",
+                c.surround_text_secondary,
+                "photo_surround",
+                c.photo_surround,
+                CONTROL,
+            ),
             ("accent_text", c.accent_text, "panel", c.panel, TEXT),
             // The cursors' well: the chosen cursor's icon on its track.
             ("accent_text", c.accent_text, "sunken", c.sunken, CONTROL),
@@ -1099,6 +1113,7 @@ impl Theme {
             ("photo_surround", c.photo_surround),
             ("surround_text", c.surround_text),
             ("surround_text_on_light", c.surround_text_on_light),
+            ("surround_text_secondary", c.surround_text_secondary),
             ("text", c.text),
             ("text_strong", c.text_strong),
             ("text_secondary", c.text_secondary),

@@ -129,6 +129,8 @@ pub enum Icon {
     Star,
     /// A crossed circle: a photo's reject mark, under its thumbnail.
     Reject,
+    /// A circle: a colour label, the rating's label actions on the Toolbar (decision 110).
+    Label,
     /// darktable's orientation buttons: a square's corner with an arrow turning
     /// anticlockwise and clockwise, so as not to be read as Reset's circular arrow, and two
     /// triangles mirrored across a vertical and a horizontal line.
@@ -240,7 +242,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 120] = [
+    pub const ALL: [Icon; 121] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -288,6 +290,7 @@ impl Icon {
         Icon::EyeOff,
         Icon::Star,
         Icon::Reject,
+        Icon::Label,
         Icon::RotateLeft,
         Icon::RotateRight,
         Icon::FlipHorizontal,
@@ -511,6 +514,7 @@ impl Icon {
             Icon::EyeOff => derived!("eye-off", "eye-off", 22.0),
             Icon::Star => derived!("star", "star", 12.0),
             Icon::Reject => derived!("reject", "circle-x", 12.0),
+            Icon::Label => derived!("label", "circle", 12.0),
             Icon::RotateLeft => derived!("rotate-left", "rotate-ccw-square", 14.0),
             Icon::RotateRight => derived!("rotate-right", "rotate-cw-square", 14.0),
             Icon::FlipHorizontal => derived!(
