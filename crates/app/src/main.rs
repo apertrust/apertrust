@@ -1579,9 +1579,6 @@ struct App {
     /// photo, whose new selection's first photo opens once the session tells it
     /// ([`selection::open_first`]).
     opening_first: Option<selection::Waiting>,
-    /// A rating a click on another cell's first line asked of its photo, sent once that
-    /// photo has opened, the session rating the active photo alone (`rating`).
-    rating_pending: Option<rating::Pending>,
     /// The main window as the start window, with nothing open (`docs/gui.md`, The start
     /// window).
     start: start::Window,
@@ -4863,7 +4860,6 @@ impl App {
             reopening: None,
             remembered: Remembered::default(),
             opening_first: None,
-            rating_pending: None,
             start: start::Window::new(false, settings.scale),
             window_min: WindowMin::default(),
             extent_before: None,
@@ -5468,17 +5464,6 @@ impl App {
         selection::open_first(&mut self.opening_first, &mut self.mirror, &mut |command| {
             session.send(command)
         });
-        // A cell's rating of a photo that was not the active one, once it is open and takes
-        // a rating: never one open for viewing only.
-        let opened = match &self.mirror.photo {
-            PhotoState::Open(photo) if self.mirror.rateable().is_some() => {
-                Some(photo.path.as_path())
-            }
-            _ => None,
-        };
-        if let Some(command) = rating::Pending::take(&mut self.rating_pending, opened) {
-            session.send(command);
-        }
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
@@ -5974,7 +5959,7 @@ impl App {
                     if self.mirror.selection_pending()
                         || !self.mirror.takes_edits()
                             && !(self.mirror.takes_batches()
-                                && selection::styled(&self.mirror).len() > 1) => {}
+                                && selection::batched(&self.mirror).len() > 1) => {}
                 Action::Clear { .. } if !self.mirror.takes_edits() => {}
                 Action::Apply(file) => {
                     let listed = self.shell.styles.listed.iter().flatten();
@@ -5985,7 +5970,7 @@ impl App {
                     if let Some(mut command) = styles::tool::apply(&style, mode, applied) {
                         // Every selected photo, as one batch (decision 109).
                         if let Command::ApplyStyle { photos, .. } = &mut command {
-                            *photos = selection::styled(&self.mirror);
+                            *photos = selection::batched(&self.mirror);
                         }
                         self.send_edit(command);
                         if let Some(said) = styles::tool::left_out(&style, &translator(ctx)) {
@@ -6402,11 +6387,14 @@ impl App {
                 let send = &mut |command| session.send(command);
                 selection::step(next, &mut self.mirror, send);
             }
-            // Which way a toggle goes follows the active photo (decision 37).
+            // On every selected photo, which way a toggle goes following the active photo
+            // (decision 37).
             if let Some(rate) = self.shell.rate.take()
                 && let Some(rating) = self.mirror.rateable()
             {
-                self.session.send(rating::command(rate.change(rating)));
+                let photos = selection::batched(&self.mirror);
+                self.session
+                    .send(rating::command(rate.change(rating), photos));
             }
             if std::mem::take(&mut self.shell.discard_history) {
                 self.discard_history(ctx);
@@ -6569,7 +6557,7 @@ impl App {
         };
         // With several selected, a style is applied to all of them, the active photo open
         // for viewing only among them skipped and named (decision 109).
-        let styled = selection::styled(&self.mirror).len();
+        let styled = selection::batched(&self.mirror).len();
         let takes = (self.mirror.takes_edits(), self.mirror.takes_batches());
         let mut styles_tool = styles::tool::StylesTool {
             listed: self.shell.styles.listed.as_deref().unwrap_or_default(),
@@ -6820,17 +6808,14 @@ impl App {
             // cell's menu opens its photo first unless it is the active one (decision 91).
             let menu = output.menu;
             let opens = (menu.as_ref()).and_then(|menu| made_active(menu.photo, active));
-            // A cell's first line rates that cell's photo (decision 110): the change worked
-            // out from its own rating, a photo not the active one opened first.
+            // A cell's first line rates the selection where the cell is one of several
+            // selected (decision 37), else that cell's photo alone, from its own rating, as a
+            // batch of one where it is not the active photo, never opening it (decision 110).
+            let several = mirror.selected_count() > 1;
             let rated = output.cell.map(|(i, action)| {
-                let rating = photos[order[i]].rating;
-                let change = rating::Rate::of_cell(action, rating).change(rating);
-                (i, path(i), change)
+                let in_selection = several && path(i).is_some_and(|p| mirror.is_selected(&p));
+                (i, path(i), action, photos[order[i]].rating, in_selection)
             });
-            let opens = opens.or(rated
-                .as_ref()
-                .filter(|(i, ..)| Some(*i) != active)
-                .map(|(i, ..)| *i));
             let picked = (output.action.is_some() || opens.is_some()).then(|| {
                 let paths: Vec<PathBuf> = (0..order.len()).filter_map(path).collect();
                 (output.action, opens, paths, listing.is_none())
@@ -6839,13 +6824,17 @@ impl App {
             let asked = (self.thumbnails_asked).command(&mirror.folder, shown, size);
             (picked, asked, output.bar, menu, output.space_menu, rated)
         };
-        if let Some((i, Some(photo), change)) = rated {
-            if self.mirror.folder.active_shown() == Some(i) {
-                if self.mirror.rateable().is_some() {
-                    self.session.send(rating::command(change));
-                }
-            } else {
-                self.rating_pending = Some(rating::Pending { photo, change });
+        if let Some((i, Some(photo), action, own, in_selection)) = rated {
+            let cell = rating::Cell {
+                action,
+                photo,
+                own,
+                active: self.mirror.folder.active_shown() == Some(i),
+                in_selection,
+            };
+            let batched = selection::batched(&self.mirror);
+            if let Some(command) = rating::cell_command(cell, self.mirror.rateable(), batched) {
+                self.session.send(command);
             }
         }
         if let Some(asked) = asked {
@@ -7270,8 +7259,9 @@ impl App {
             // The active photo's, with a single photo shown: no ring, its name SemiBold; its
             // centre the photo's rating, which a photo open for viewing only shows unset.
             let rating = self.mirror.rateable();
-            let several = self.mirror.selected_count() > 1;
-            let tips = rating::tips(&self.shell.keymap, ui.ctx().os(), &words, several);
+            // With several selected, on all of them (decision 37).
+            let batched = selection::batched(&self.mirror);
+            let tips = rating::tips(&self.shell.keymap, ui.ctx().os(), &words, batched.len());
             let shown = PhotoCaption::new(&file_name(&photo.path))
                 .view_only(photo.view_only.is_some())
                 .exposure(&values)
@@ -7281,7 +7271,7 @@ impl App {
                 .show(ui, placed.caption);
             if let (Some(action), Some(rating)) = (shown.action, rating) {
                 let change = rating::Rate::of_cell(action, rating).change(rating);
-                self.session.send(rating::command(change));
+                self.session.send(rating::command(change, batched));
             }
         }
         // The picker on takes the photo, whichever door turned it on; Select's and Pan's

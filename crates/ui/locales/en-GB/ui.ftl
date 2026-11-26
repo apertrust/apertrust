@@ -258,6 +258,13 @@ batch-applied =
        *[other] { $style } applied to { $count } photos
     }
 batch-applied-some = { $style } applied to { $changed } of { $count } photos
+# A rating on several photos (decision 110): $style is its name, "3 stars on 12 photos".
+batch-rated =
+    { $count ->
+        [one] { $style } on { $count } photo
+       *[other] { $style } on { $count } photos
+    }
+batch-rated-some = { $style } on { $changed } of { $count } photos
 batch-taken-back =
     { $count ->
         [one] { $style } taken back on { $count } photo
@@ -526,6 +533,26 @@ job-redo-batch-outcome =
         [one] { $style } put back on { $changed } of { $count } photo
        *[other] { $style } put back on { $changed } of { $count } photos
     }
+# A rating on several photos, and its Undo and Redo on the batch's other photos
+# (decision 110).
+job-rate = Rating { photo-count }
+job-rate-outcome =
+    { $count ->
+        [one] Rated { $changed } of { $count } photo
+       *[other] Rated { $changed } of { $count } photos
+    }
+job-undo-rate = Taking back a rating on { photo-count }
+job-redo-rate = Putting back a rating on { photo-count }
+job-undo-rate-outcome =
+    { $count ->
+        [one] Rating taken back on { $changed } of { $count } photo
+       *[other] Rating taken back on { $changed } of { $count } photos
+    }
+job-redo-rate-outcome =
+    { $count ->
+        [one] Rating put back on { $changed } of { $count } photo
+       *[other] Rating put back on { $changed } of { $count } photos
+    }
 
 ## What an export job reports of itself for its row. $number is the photo under way,
 ## from 1, and 0 before the first; $total the photos; $storage where they go, "disk" for
@@ -752,9 +779,13 @@ caption-label-green = Green label
 caption-label-blue = Blue label
 caption-label-purple = Purple label
 # A control's tooltip with its key, $action what it does and $key its key: "Rate 3 stars
-# (3)". While several photos are selected it rates the active one alone, saying so first.
+# (3)". While several photos are selected it rates them all, saying how many first.
 caption-tip = { $action } ({ $key })
-caption-this-photo = { $action }, this photo only
+caption-photos =
+    { $count ->
+        [one] { $action } on { $count } photo
+       *[other] { $action } on { $count } photos
+    }
 # The Browser's edge towards the photo, which resizes it, for screen readers, and its
 # value: how many rows of thumbnails it shows.
 browser-height = Browser height

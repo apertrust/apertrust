@@ -1188,8 +1188,10 @@ impl PhotoHistory {
         self.undone.clear();
         self.merge = None;
         self.changed = true;
+        // A batch on several photos is its own record, so its Undo takes back no other.
         let merges = |top: &FieldRecord, began: Instant| {
-            top.change.same_kind(&record.change) && at < began + MERGE_WITHIN
+            let alone = top.batch.is_none() && record.batch.is_none();
+            alone && top.change.same_kind(&record.change) && at < began + MERGE_WITHIN
         };
         if let (Some(Record::Field(top)), Some(began)) = (self.done.last_mut(), self.field_merge)
             && merges(top, began)
@@ -1267,9 +1269,25 @@ impl PhotoHistory {
         self.batch_moving(redo) == Some(batch)
     }
 
+    /// The newest record of the batch `batch` setting the photo's fields, done or undone,
+    /// as a batch on several photos reached it live and keeps it for the photo's other
+    /// moves.
+    pub(super) fn field_record(&self, batch: BatchId) -> Option<FieldRecord> {
+        let mut records = self.done.iter().rev().chain(self.undone.iter().rev());
+        records.find_map(|record| match record {
+            Record::Field(record) if record.batch == Some(batch) => Some(record.clone()),
+            _ => None,
+        })
+    }
+
     /// The batch whose steps Undo, or Redo where `redo`, would move over now, where they
-    /// are in one.
+    /// are in one: a rating's record's batch where that is the next record.
     pub(super) fn batch_moving(&self, redo: bool) -> Option<BatchId> {
+        // A rating's record, by the batch it holds (decision 110).
+        let records = if redo { &self.undone } else { &self.done };
+        if let Some(Record::Field(record)) = records.last() {
+            return record.batch;
+        }
         let Some(Move::Steps { first, count, .. }) = self.next(!redo) else {
             return None;
         };
@@ -1792,7 +1810,7 @@ impl Engine {
         // A remembered batch on several photos names how many (decision 109).
         let moves = [&mut fact.undo, &mut fact.redo].into_iter().zip(moving);
         for ((moved, batch), redo) in moves.zip([false, true]) {
-            if let Some(Move::Steps { photos, .. }) = moved {
+            if let Some(Move::Steps { photos, .. } | Move::Field { photos, .. }) = moved {
                 *photos = batch
                     .and_then(|batch| self.batch_photos(batch, redo))
                     .unwrap_or(1);

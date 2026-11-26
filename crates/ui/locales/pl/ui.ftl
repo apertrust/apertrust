@@ -182,6 +182,14 @@ batch-applied =
        *[other] Zastosowano „{ $style }” do { $count } zdjęcia
     }
 batch-applied-some = Zastosowano „{ $style }” do { $changed } z { $count } zdjęć
+batch-rated =
+    { $count ->
+        [one] { $style } na { $count } zdjęciu
+        [few] { $style } na { $count } zdjęciach
+        [many] { $style } na { $count } zdjęciach
+       *[other] { $style } na { $count } zdjęcia
+    }
+batch-rated-some = { $style } na { $changed } z { $count } zdjęć
 batch-taken-back =
     { $count ->
         [one] Cofnięto „{ $style }” na { $count } zdjęciu
@@ -411,6 +419,30 @@ job-redo-batch-outcome =
         [many] Przywrócono „{ $style }” na { $changed } z { $count } zdjęć
        *[other] Przywrócono „{ $style }” na { $changed } z { $count } zdjęcia
     }
+job-rate = Ocenianie · { photo-count }
+job-rate-outcome =
+    { $count ->
+        [one] Oceniono { $changed } z { $count } zdjęcia
+        [few] Oceniono { $changed } z { $count } zdjęć
+        [many] Oceniono { $changed } z { $count } zdjęć
+       *[other] Oceniono { $changed } z { $count } zdjęcia
+    }
+job-undo-rate = Cofanie oceny · { photo-count }
+job-redo-rate = Przywracanie oceny · { photo-count }
+job-undo-rate-outcome =
+    { $count ->
+        [one] Cofnięto ocenę na { $changed } z { $count } zdjęcia
+        [few] Cofnięto ocenę na { $changed } z { $count } zdjęć
+        [many] Cofnięto ocenę na { $changed } z { $count } zdjęć
+       *[other] Cofnięto ocenę na { $changed } z { $count } zdjęcia
+    }
+job-redo-rate-outcome =
+    { $count ->
+        [one] Przywrócono ocenę na { $changed } z { $count } zdjęcia
+        [few] Przywrócono ocenę na { $changed } z { $count } zdjęć
+        [many] Przywrócono ocenę na { $changed } z { $count } zdjęć
+       *[other] Przywrócono ocenę na { $changed } z { $count } zdjęcia
+    }
 
 job-export-photo =
     Eksportowanie { $number } / { $total } do { $storage ->
@@ -579,7 +611,13 @@ caption-label-green = Zielona etykieta
 caption-label-blue = Niebieska etykieta
 caption-label-purple = Fioletowa etykieta
 caption-tip = { $action } ({ $key })
-caption-this-photo = { $action }, tylko to zdjęcie
+caption-photos =
+    { $count ->
+        [one] { $action } · { $count } zdjęcie
+        [few] { $action } · { $count } zdjęcia
+        [many] { $action } · { $count } zdjęć
+       *[other] { $action } · { $count } zdjęcia
+    }
 browser-height = Wysokość przeglądarki
 grid-rows =
     { $count ->

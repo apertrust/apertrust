@@ -2370,7 +2370,17 @@ fn named(
         Move::Truncate => Some(tr.text("history-truncate")),
         Move::DiscardHistory => Some(tr.text("history-discard")),
         // A rating's change, never a step: its action's name (decision 110).
-        Move::Field { change, .. } => Some(crate::rating::undo_words(change, tr)),
+        Move::Field { change, photos } => {
+            let named = crate::rating::undo_words(change, tr);
+            // A batch on several photos (decision 109): "3 stars on 12 Photos".
+            if photos < 2 {
+                return Some(named);
+            }
+            let mut args = Args::new();
+            args.set("step", named.as_str());
+            args.set("count", photos as f64);
+            Some(tr.text_with("history-on-photos", Some(&args)))
+        }
         Move::Steps {
             first,
             count,

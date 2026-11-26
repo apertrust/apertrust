@@ -175,7 +175,7 @@ use crate::sidecar;
 pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_entry, tool_values};
 pub use crate::view::{FramePlace, Placement, View, ViewScale};
 pub use apertrust_library::Rating;
-pub use batch::{BatchAction, BatchEvent, Skip};
+pub use batch::{BatchAction, BatchEvent, Batched, Skip};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
 pub(crate) use open::Load;
@@ -310,12 +310,16 @@ pub enum Command {
     Redo,
     /// Sets the rating, the reject or a colour label of `photos` (decision 110), each the
     /// photo's current value with its clock in its `.apxmp`, never a history step:
-    /// `change` is the value given, never a toggle. `photos` empty for the active photo;
-    /// one naming another photo is refused ([`SessionError::NotActive`]) until the batch of
-    /// decision 109 writes the others. Undo takes it back, a quick repeat of one key
-    /// merged; refused on a photo open for viewing only, allowed before it is live. No
+    /// `change` is the value given, never a toggle. `photos` empty, or naming the active
+    /// photo alone, for the active photo: Undo takes it back, a quick repeat of one key
+    /// merged; refused on a photo open for viewing only, allowed before it is live. Naming
+    /// another, one batch on every photo named (decision 109): the active photo at once,
+    /// skipped and named where it is open for viewing only, the others by a `rate` job
+    /// reading no raw, `Event::Batch` telling each and the end, `UndoBatch` or Undo on the
+    /// active photo taking it back on all; refused whole while the active photo opens. No
     /// command on the edit: it ends no gesture and sends no `Values`, but `Rating` and
-    /// `Rated` where it changed the rating, and `History` for Undo's words.
+    /// `Rated` where it changed the rating, `Rated` for each other photo as its write
+    /// lands, and `History` for Undo's words.
     Rate {
         photos: Vec<PathBuf>,
         change: RatingChange,
@@ -1501,10 +1505,6 @@ pub enum SessionError {
     /// The engine thread has ended, so nothing more will render.
     #[error("the engine stopped")]
     Stopped,
-    /// A [`Command::Rate`] naming a photo other than the active one: several photos come
-    /// with the batch (decision 109).
-    #[error("{} is not the active photo: only the active photo can be rated", photo.display())]
-    NotActive { photo: PathBuf },
     /// A [`Command::Rate`] with no photo open or opening.
     #[error("no photo is open")]
     NoPhoto,
@@ -3922,7 +3922,7 @@ impl Engine {
                         mode,
                         tools,
                     };
-                    let applied = self.apply_style_to(style, photos, &mut events);
+                    let applied = self.batch_to(batch::Change::Style(style), photos, &mut events);
                     render |= caught.render;
                     save |= caught.save;
                     applied.map(|effect| {
@@ -3978,10 +3978,29 @@ impl Engine {
                     }
                 }
                 Command::Cache(command) => self.cache(command, &mut events),
-                Command::Rate { photos, change } => self.rate(&photos, change, at).map(|()| {
-                    rated = true;
-                    save = true;
-                }),
+                Command::Rate { photos, change } => {
+                    // Earlier batches still to come on the active photo first, in the
+                    // order sent (decision 109).
+                    let caught = self.catch_up(&mut events);
+                    render |= caught.render;
+                    save |= caught.save;
+                    let active = |photo: &PathBuf| {
+                        (self.open.as_ref())
+                            .is_some_and(|open| sidecar::path_for(photo) == open.sidecar)
+                    };
+                    let rated_now = match photos.iter().all(active) {
+                        true => self.rate(change, at).map(|_| Effect {
+                            save: true,
+                            ..Effect::default()
+                        }),
+                        false => self.batch_to(batch::Change::Rate(change), photos, &mut events),
+                    };
+                    rated_now.map(|effect| {
+                        rated = true;
+                        render |= effect.render;
+                        save |= effect.save;
+                    })
+                }
                 #[cfg(test)]
                 Command::HoldExport(hold) => {
                     self.export_hold = Some(hold);

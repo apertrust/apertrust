@@ -1040,7 +1040,7 @@ fn with_several_selected_a_view_only_photo_leaves_the_tree_enabled() {
 /// offers Undo while the batch stands.
 #[test]
 fn a_batch_s_notice_says_what_it_did_and_offers_undo() {
-    use apertrust_engine::session::{BatchAction, BatchEvent, BatchId, Skip};
+    use apertrust_engine::session::{BatchAction, BatchEvent, BatchId, Batched, Skip};
     let words = Translator::new(Locale::EnGb);
     let photos: Vec<PathBuf> = (40..52)
         .map(|n| PathBuf::from(format!("/p/IMG_20{n}.ARW")))
@@ -1049,7 +1049,7 @@ fn a_batch_s_notice_says_what_it_did_and_offers_undo() {
         command: 3,
         batch: BatchId(9),
         action,
-        style: "Warm film".to_owned(),
+        what: Batched::Style("Warm film".to_owned()),
         named: 12,
         changed: changed.to_vec(),
         skipped,
@@ -1102,7 +1102,7 @@ fn a_batch_s_notice_says_what_it_did_and_offers_undo() {
         command: 4,
         batch: BatchId(10),
         action: BatchAction::Applied,
-        style: "Warm film".to_owned(),
+        what: Batched::Style("Warm film".to_owned()),
         named: 200,
         changed: many,
         skipped: Vec::new(),
@@ -1116,7 +1116,7 @@ fn a_batch_s_notice_says_what_it_did_and_offers_undo() {
         command: 5,
         batch: BatchId(11),
         action: BatchAction::Applied,
-        style: "Warm film".to_owned(),
+        what: Batched::Style("Warm film".to_owned()),
         named: 2,
         changed: Vec::new(),
         skipped: Vec::new(),
@@ -1125,6 +1125,37 @@ fn a_batch_s_notice_says_what_it_did_and_offers_undo() {
     let (said, undo) = batch_notice(&none, &words).unwrap();
     assert_eq!(said, "Warm film applied to 0 of 2 photos; cancelled");
     assert_eq!(undo, None);
+}
+
+/// A rating's batch names itself by its action's words (decision 110): "3 stars on 12
+/// photos", and taken back as a style's is.
+#[test]
+fn a_rating_s_batch_notice_names_the_rating() {
+    use apertrust_engine::session::{BatchAction, BatchEvent, BatchId, Batched, RatingChange};
+    let words = Translator::new(Locale::EnGb);
+    let photos: Vec<PathBuf> = (0..12)
+        .map(|n| PathBuf::from(format!("/p/{n}.ARW")))
+        .collect();
+    let ended = |action, changed: &[PathBuf]| BatchEvent::Ended {
+        command: 3,
+        batch: BatchId(9),
+        action,
+        what: Batched::Rating(RatingChange::Stars(3)),
+        named: 12,
+        changed: changed.to_vec(),
+        skipped: Vec::new(),
+        cancelled: false,
+    };
+    let rated = batch_notice(&ended(BatchAction::Applied, &photos), &words);
+    let said = "3 stars on 12 photos".to_owned();
+    assert_eq!(rated, Some((said, Some(BatchId(9)))));
+    let (said, _) = batch_notice(&ended(BatchAction::Applied, &photos[..11]), &words).unwrap();
+    assert_eq!(said, "3 stars on 11 of 12 photos");
+    let back = batch_notice(&ended(BatchAction::TakenBack, &photos), &words);
+    assert_eq!(
+        back,
+        Some(("3 stars taken back on 12 photos".to_owned(), None))
+    );
 }
 
 /// The batch's notice over the photo: its words, a polite status to screen readers, and

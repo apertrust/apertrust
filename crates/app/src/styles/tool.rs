@@ -42,7 +42,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use apertrust_engine::session::{
-    BatchAction, BatchEvent, BatchId, Command, Skip, StyleMode, StyleState, tool_values,
+    BatchAction, BatchEvent, BatchId, Batched, Command, Skip, StyleMode, StyleState, tool_values,
 };
 use apertrust_engine::sidecar::Parked;
 use apertrust_library::listing::browser_order;
@@ -240,7 +240,7 @@ pub fn batch_notice(event: &BatchEvent, words: &Translator) -> Option<(String, O
     let BatchEvent::Ended {
         batch,
         action,
-        style,
+        what,
         named,
         changed,
         skipped,
@@ -250,7 +250,13 @@ pub fn batch_notice(event: &BatchEvent, words: &Translator) -> Option<(String, O
     else {
         return None;
     };
+    // A style by its name, a rating by its action's (decision 110): "3 stars on 12 photos".
+    let (style, rating) = match what {
+        Batched::Style(name) => (name.clone(), false),
+        Batched::Rating(change) => (crate::rating::undo_words(*change, words), true),
+    };
     let (message, undo) = match action {
+        BatchAction::Applied if rating => ("batch-rated", Some(*batch)),
         BatchAction::Applied => ("batch-applied", Some(*batch)),
         BatchAction::TakenBack => ("batch-taken-back", None),
         BatchAction::PutBack => ("batch-put-back", Some(*batch)),
