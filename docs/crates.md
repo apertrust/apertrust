@@ -1463,7 +1463,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 - Behind the `testing` feature, for the other crates' tests:
   - `testing::Sample`: its method lists camera only on a photo that records a bias; its coarseness is unavailable unless its size is coarse and its grain on (decision 30), and reaches up to 100 % plus the bias, the worked example of a range that follows other controls; its three pickers, `brightness` on a quad and `spread` and `show` on a row of pickers, read the channel shown, the last reading and the keys held, one only showing;
   - `testing::Faulty`; `testing::Twin`, two lossless views of two controls; `testing::Pushing`, a follow write its change's clamp would rewrite; and `testing::Defaultless`, whose defaults panic.
-- `tests/corpus/mod.rs` gives Exposure's and Colour balance RGB's tests the corpus, and `tests/switched/mod.rs` gives the switched tools' tests their rows' edits: off, on at darktable's defaults, and an edit version 1 saved, read through the sidecar.
+- `tests/corpus/mod.rs` gives Exposure's and Colour balance RGB's tests the corpus, and `tests/switched/mod.rs` gives the switched tools' tests their rows' edits: off, on at darktable's defaults, and an edit version 1 saved, read through the sidecar; and `switched::Rows`, the bodies of rows 0 to 3 that RGB primaries', Haze removal's, Colour balance RGB's, the Tone equalizer's and Grain's tables have the same way, each tool's tests calling it under their own names.
 - `RETIRED`: the ids of the tools Apertrust has retired, whose values an edit loses with a warning without opening the photo for viewing only, as a tool neither built in nor retired does (decision 43). It is empty until RGB curve replaces the Tone curve.
 
 ### The built tools

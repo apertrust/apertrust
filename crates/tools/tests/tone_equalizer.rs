@@ -40,12 +40,8 @@ mod common;
 mod corpus;
 mod switched;
 
-use std::path::PathBuf;
-
-use apertrust_engine::compute::GpuImage;
 use apertrust_engine::edit::{self, Edit};
-use apertrust_engine::export::{BUDGET, Tiling, export};
-use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
+use apertrust_engine::pipeline::{Instance, Pipe};
 use apertrust_operations::OPERATIONS;
 use apertrust_operations::toneequal::{self, Geometry, ToneEqual};
 use apertrust_plugin::{ImageContext, Operation, Value};
@@ -55,11 +51,8 @@ use apertrust_tools::tone_equalizer::{
 use apertrust_tools::{ControlValue, TOOLS};
 use golden::synthetic;
 
-use common::{
-    BEFORE_THE_WORKING_SPACE, Bench, Jump, Picture, Rendered, exact, gpu, id, jump, small_raw,
-    sweep,
-};
-use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, decoded, each_corpus_raw, export_bench};
+use common::{Bench, Picture, id, jump, sweep};
+use switched::{Frame, Rows};
 
 const TONE_EQUALIZER: &str = "toneequal";
 
@@ -76,16 +69,11 @@ fn saturation(index: usize) -> f32 {
     synthetic::SATURATIONS[(index / synthetic::HUES) % synthetic::SATURATIONS.len()]
 }
 
-/// What every row reads but Q1's correction: the frame, colorout's output, from exposure
-/// on for a synthetic image.
-#[derive(Debug, Clone, Copy)]
-struct Frame;
-
-impl common::Measure for Frame {
-    fn keep(self, instances: &mut Vec<Instance<'static>>, synthetic: bool) {
-        instances.retain(|i| !(synthetic && BEFORE_THE_WORKING_SPACE.contains(&id(i))));
-    }
-}
+/// The rows every switched tool's table has the same way ([`switched::Rows`]).
+const ROWS: Rows = Rows {
+    tool: &ToneEqualizer,
+    letter: "Q",
+};
 
 /// The image leaving the operations up to `last`, from exposure on: Q1's correction is
 /// the tone equalizer's output over exposure's.
@@ -100,77 +88,11 @@ impl common::Measure for Through {
     }
 }
 
-fn value_of(control: &str, value: f32) -> ControlValue {
-    if control == METHOD || control == DETAILS {
-        ControlValue::Choice(value as u32)
-    } else {
-        ControlValue::Number(value)
-    }
-}
-
-/// An edit with these controls set, in this order.
-fn edit_of(set: &[(&str, f32)]) -> Edit {
-    let mut edit = Edit::default();
-    for &(control, value) in set {
-        edit.set_control(
-            &ToneEqualizer,
-            control,
-            value_of(control, value),
-            &common::photo(),
-        )
-        .unwrap();
-    }
-    edit
-}
-
-impl Bench {
-    /// The tool on at darktable's defaults: the tone equalizer planned at the
-    /// operation's defaults, darktable's new instance (rows Q1 and Q2).
-    fn on_at_defaults(&self, measure: impl common::Measure) -> Vec<Instance<'static>> {
-        self.instances(
-            &switched::on_at_defaults(&ToneEqualizer, &self.image),
-            measure,
-        )
-    }
-
-    fn set(&mut self, set: &[(&str, f32)]) -> Rendered {
-        self.edit(&edit_of(set), Frame)
-    }
-}
-
 // Q0: off.
-
-/// Q0 on one pipeline, as the session renders: no edit, then the tone equalizer joining
-/// the plan, on at darktable's defaults, and leaving it, then each edit that leaves the
-/// tool off, every frame as the first.
-fn q0_holds(bench: &mut Bench) {
-    let none = bench.edit(&Edit::default(), Frame);
-    let joined = bench.on_at_defaults(Frame);
-    bench.render(&joined);
-    for edit in switched::off(&ToneEqualizer) {
-        assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
-            "Q0 on {:?}",
-            bench.pipe
-        );
-    }
-}
 
 #[test]
 fn q0_off_renders_as_no_edit() {
-    for pipe in [
-        Pipe::Export,
-        Pipe::Viewport {
-            width: 40,
-            height: 30,
-        },
-    ] {
-        let (mosaic, image) = small_raw(-0.67);
-        q0_holds(&mut Bench::mosaic(&mosaic, image, pipe));
-    }
-    for (picture, image) in [ramp(), sweep(-0.67)] {
-        q0_holds(&mut Bench::picture(&picture, image, Pipe::Export));
-    }
+    ROWS.off_renders_as_no_edit(ramp());
 }
 
 // Q1: the first step, on at darktable's defaults, measured and reported without a bound
@@ -197,7 +119,10 @@ fn q1_the_first_step_is_measured() {
     let (picture, image) = ramp();
     let mut bench = Bench::picture(&picture, image, Pipe::Export);
     let input = bench.edit(&Edit::default(), Through("exposure"));
-    let output = bench.on_at_defaults(Through(TONE_EQUALIZER));
+    let output = bench.instances(
+        &switched::on_at_defaults(&ToneEqualizer, &bench.image),
+        Through(TONE_EQUALIZER),
+    );
     let output = bench.render(&output);
     let gains: Vec<f64> = input
         .pixels
@@ -228,7 +153,7 @@ fn q1_the_first_step_is_measured() {
 
     let jumps = |bench: &mut Bench| {
         let untouched = bench.edit(&Edit::default(), Frame);
-        let first = bench.on_at_defaults(Frame);
+        let first = ROWS.on_at_defaults(bench);
         let first = bench.render(&first);
         let of = |limit: f32| jump(&untouched.pixels, &first.pixels, |i| saturation(i) <= limit);
         [of(f32::INFINITY), of(1.0), of(0.8)]
@@ -250,58 +175,18 @@ fn q1_the_first_step_is_measured() {
     }
 }
 
-/// An export of `instances`, tiled when the raw does not fit.
-fn export_of(instances: &[Instance], image: &ImageContext, input: &GpuImage) -> Vec<[f32; 4]> {
-    let tiling = Tiling::Auto { budget: BUDGET };
-    pollster::block_on(export(gpu(), instances, image, input.clone(), tiling))
-        .unwrap()
-        .pixels
-}
-
-/// The first step's jump on an export of `image`.
-fn first_step_on(image: &ImageContext, input: &GpuImage) -> Jump {
-    let bench = export_bench(image.clone(), input.clone());
-    let before = export_of(&bench.instances(&Edit::default(), Frame), image, input);
-    let after = export_of(&bench.on_at_defaults(Frame), image, input);
-    jump(&before, &after, |_| true)
-}
-
-/// Q1 on darktable's chart, `mire1.cr2`, the golden cases' input.
+/// Q1 on darktable's chart, `mire1.cr2`.
 #[test]
 #[ignore = "needs darktable's integration images (APERTRUST_TEST_IMAGES)"]
 fn q1_on_the_chart() {
-    let dir = PathBuf::from(
-        std::env::var_os("APERTRUST_TEST_IMAGES")
-            .expect("APERTRUST_TEST_IMAGES names darktable's integration images"),
-    );
-    let (_, image, input) = decoded(&dir.join("mire1.cr2"));
-    let step = first_step_on(&image, &input);
-    println!("Q1 on the chart: {step}");
-    assert!(step.mean.is_finite() && step.max.is_finite(), "{step}");
+    ROWS.first_step_on_the_chart();
 }
 
 /// Q1 on every corpus raw the pipeline takes.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn q1_on_the_corpus() {
-    let mut jumps = Vec::new();
-    each_corpus_raw(|name, image, input| {
-        let step = first_step_on(&image, &input);
-        println!("{name}: {step}");
-        assert!(
-            step.mean.is_finite() && step.max.is_finite(),
-            "{name}: {step}"
-        );
-        jumps.push(step);
-    });
-    let worst_mean = jumps.iter().map(|j| j.mean).fold(0.0, f64::max);
-    let worst_max = jumps.iter().map(|j| j.max).fold(0.0, f64::max);
-    let worst_share = jumps.iter().map(Jump::share_over_one).fold(0.0, f64::max);
-    println!(
-        "Q1 on {} raws: mean at most {worst_mean:.4}, max at most {worst_max:.3}, at most {:.3}% over 1.0",
-        jumps.len(),
-        100.0 * worst_share
-    );
+    ROWS.first_step_on_the_corpus();
 }
 
 // Q2: each control moved, then reset.
@@ -327,50 +212,9 @@ const MOVES: [&[(&str, f32)]; 7] = [
     ],
 ];
 
-/// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
-/// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// the tone equalizer joins with each move and leaves with each tool's reset.
-fn q2_holds(bench: &mut Bench) {
-    let none = bench.edit(&Edit::default(), Frame);
-    let on = bench.on_at_defaults(Frame);
-    let on = bench.render(&on);
-    for set in MOVES {
-        let mut edit = edit_of(set);
-        let moved = bench.edit(&edit, Frame);
-        assert!(!exact(&none, &moved), "{set:?} changes the frame");
-        for (control, _) in set {
-            edit.reset_control(&ToneEqualizer, control).unwrap();
-        }
-        assert!(
-            edit.is_on(&ToneEqualizer),
-            "{set:?}, reset control by control"
-        );
-        assert!(
-            exact(&on, &bench.edit(&edit, Frame)),
-            "{set:?}, reset control by control"
-        );
-        let mut edit = edit_of(set);
-        bench.edit(&edit, Frame);
-        edit.reset_tool(&ToneEqualizer);
-        assert_eq!(edit, Edit::default());
-        assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the tool reset"
-        );
-    }
-}
-
 #[test]
 fn q2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
-    let (picture, image) = ramp();
-    q2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
-    let (mosaic, image) = small_raw(-0.67);
-    let viewport = Pipe::Viewport {
-        width: 40,
-        height: 30,
-    };
-    q2_holds(&mut Bench::mosaic(&mosaic, image, viewport));
+    ROWS.moved_and_reset(&MOVES);
 }
 
 // Q3: the order controls were set in.
@@ -380,64 +224,23 @@ const PAIRS: [[(&str, f32); 2]; 2] = [
     [(DETAILS, 0.0), (METHOD, 5.0)],
 ];
 
-/// One pipeline sets `first`, then both; another sets `second`, then both: the two
-/// frames are the same, byte for byte.
-fn q3_holds(new: impl Fn() -> Bench, [first, second]: [(&str, f32); 2]) {
-    let mut one = new();
-    one.set(&[first]);
-    let one = one.set(&[first, second]);
-    let mut other = new();
-    other.set(&[second]);
-    let other = other.set(&[second, first]);
-    assert!(exact(&one, &other), "Q3 with {first:?} and {second:?}");
-}
-
 #[test]
 fn q3_controls_render_the_same_whichever_came_first() {
-    let (picture, image) = sweep(-0.67);
-    for pair in PAIRS {
-        q3_holds(
-            || Bench::picture(&picture, image.clone(), Pipe::Export),
-            pair,
-        );
-    }
+    ROWS.order(&PAIRS, ramp());
 }
 
 /// Q2 and Q3 on the 90D, through the viewport's frame and the export's.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn q2_and_q3_on_the_corpus() {
-    for pipe in [CORPUS_VIEWPORT, Pipe::Export] {
-        q2_holds(&mut corpus_bench(NINETY_D, pipe));
-        for pair in PAIRS {
-            q3_holds(|| corpus_bench(NINETY_D, pipe), pair);
-        }
-    }
+    ROWS.moved_and_order_on_the_corpus(&MOVES, &PAIRS);
 }
 
-/// Q0 on every corpus raw: the tool off, untouched or kept, plans the very instances
-/// and cache keys no edit does, so the same frame.
+/// Q0 on every corpus raw.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn q0_on_the_corpus() {
-    let mut raws = 0;
-    each_corpus_raw(|name, image, input| {
-        let bench = export_bench(image.clone(), input.clone());
-        let keys = |instances: &[Instance]| -> Vec<(&str, u64)> {
-            pipeline::plan(instances, &image, input.desc(), Pipe::Export, &Limits::NONE)
-                .unwrap()
-                .operations
-                .iter()
-                .map(|op| (op.id, op.key))
-                .collect()
-        };
-        let none = keys(&bench.instances(&Edit::default(), Frame));
-        for edit in switched::off(&ToneEqualizer) {
-            assert_eq!(keys(&bench.instances(&edit, Frame)), none, "Q0 on {name}");
-        }
-        raws += 1;
-    });
-    println!("Q0 holds on {raws} raws");
+    ROWS.off_on_the_corpus();
 }
 
 // Q4: darktable's golden cases.
@@ -590,7 +393,7 @@ fn q7_version_1_s_edits_bind_what_they_bound() {
         let edit = switched::version_1(TONE_EQUALIZER, saved);
         assert!(edit.is_on(&ToneEqualizer), "{saved:?}");
         let params = switched::bound(&edit, TONE_EQUALIZER, &image).expect("planned");
-        let then = switched::bound(&edit_of(values), TONE_EQUALIZER, &image).unwrap();
+        let then = switched::bound(&ROWS.edit_of(values), TONE_EQUALIZER, &image).unwrap();
         assert_eq!(params, then, "{saved:?}");
         assert!(params.iter().next().is_some(), "{saved:?}");
     }

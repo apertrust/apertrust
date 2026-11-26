@@ -39,23 +39,16 @@ mod common;
 mod corpus;
 mod switched;
 
-use std::path::PathBuf;
-
-use apertrust_engine::compute::GpuImage;
 use apertrust_engine::edit::{self, Edit};
-use apertrust_engine::export::{BUDGET, Tiling, export};
-use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
+use apertrust_engine::pipeline::Pipe;
 use apertrust_operations::OPERATIONS;
 use apertrust_operations::hazeremoval::{self, Settings};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation, Value};
 use apertrust_tools::haze_removal::{DISTANCE, HazeRemoval, STRENGTH};
 use apertrust_tools::{ControlValue, TOOLS};
 
-use common::{
-    BEFORE_THE_WORKING_SPACE, Bench, Jump, Picture, Rendered, exact, gpu, id, jump, small_raw,
-    sweep,
-};
-use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, decoded, each_corpus_raw, export_bench};
+use common::{Bench, Picture, id, jump, sweep};
+use switched::{Frame, Rows};
 
 const HAZEREMOVAL: &str = "hazeremoval";
 
@@ -66,103 +59,24 @@ fn ramp() -> (Picture, ImageContext) {
     common::ramp(&[0.18], -0.67)
 }
 
-/// What every row reads: the frame, colorout's output, from haze removal on for a
-/// synthetic image.
-#[derive(Debug, Clone, Copy)]
-struct Frame;
-
-impl common::Measure for Frame {
-    fn keep(self, instances: &mut Vec<Instance<'static>>, synthetic: bool) {
-        instances.retain(|i| !(synthetic && BEFORE_THE_WORKING_SPACE.contains(&id(i))));
-    }
-}
-
-/// An edit with these controls set, in this order.
-fn edit_of(set: &[(&str, f32)]) -> Edit {
-    let mut edit = Edit::default();
-    for &(control, value) in set {
-        edit.set_control(
-            &HazeRemoval,
-            control,
-            ControlValue::Number(value),
-            &common::photo(),
-        )
-        .unwrap();
-    }
-    edit
-}
-
-impl Bench {
-    /// The tool on at darktable's defaults, a strength and a distance of 0.2: haze
-    /// removal planned at the operation's defaults, darktable's new instance (rows Z1 and
-    /// Z2).
-    fn on_at_defaults(&self) -> Vec<Instance<'static>> {
-        self.instances(&switched::on_at_defaults(&HazeRemoval, &self.image), Frame)
-    }
-
-    fn set(&mut self, set: &[(&str, f32)]) -> Rendered {
-        self.edit(&edit_of(set), Frame)
-    }
-}
+/// The rows every switched tool's table has the same way ([`switched::Rows`]).
+const ROWS: Rows = Rows {
+    tool: &HazeRemoval,
+    letter: "Z",
+};
 
 // Z0: off.
 
-/// Z0 on one pipeline, as the session renders: no edit, then haze removal joining the
-/// plan, on at darktable's defaults, and leaving it, then each edit that leaves the
-/// tool off, every frame as the first.
-fn z0_holds(bench: &mut Bench) {
-    let none = bench.edit(&Edit::default(), Frame);
-    let joined = bench.on_at_defaults();
-    bench.render(&joined);
-    for edit in switched::off(&HazeRemoval) {
-        assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
-            "Z0 on {:?}",
-            bench.pipe
-        );
-    }
-}
-
 #[test]
 fn z0_off_renders_as_no_edit() {
-    for pipe in [
-        Pipe::Export,
-        Pipe::Viewport {
-            width: 40,
-            height: 30,
-        },
-    ] {
-        let (mosaic, image) = small_raw(-0.67);
-        z0_holds(&mut Bench::mosaic(&mosaic, image, pipe));
-    }
-    for (picture, image) in [ramp(), sweep(-0.67)] {
-        z0_holds(&mut Bench::picture(&picture, image, Pipe::Export));
-    }
+    ROWS.off_renders_as_no_edit(ramp());
 }
 
-/// Z0 on every corpus raw: the tool off, untouched or kept, plans the very instances
-/// and cache keys no edit does, so the same frame.
+/// Z0 on every corpus raw.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn z0_on_the_corpus() {
-    let mut raws = 0;
-    each_corpus_raw(|name, image, input| {
-        let bench = export_bench(image.clone(), input.clone());
-        let keys = |instances: &[Instance]| -> Vec<(&str, u64)> {
-            pipeline::plan(instances, &image, input.desc(), Pipe::Export, &Limits::NONE)
-                .unwrap()
-                .operations
-                .iter()
-                .map(|op| (op.id, op.key))
-                .collect()
-        };
-        let none = keys(&bench.instances(&Edit::default(), Frame));
-        for edit in switched::off(&HazeRemoval) {
-            assert_eq!(keys(&bench.instances(&edit, Frame)), none, "Z0 on {name}");
-        }
-        raws += 1;
-    });
-    println!("Z0 holds on {raws} raws");
+    ROWS.off_on_the_corpus();
 }
 
 // Z1: the first step, on at darktable's defaults, measured and reported without a bound
@@ -175,7 +89,7 @@ fn z1_the_first_step_is_measured() {
     for (what, (picture, image)) in [("on the ramp", ramp()), ("on the sweep", sweep(-0.67))] {
         let mut bench = Bench::picture(&picture, image, Pipe::Export);
         let untouched = bench.edit(&Edit::default(), Frame);
-        let first = bench.on_at_defaults();
+        let first = ROWS.on_at_defaults(&bench);
         let first = bench.render(&first);
         let step = jump(&untouched.pixels, &first.pixels, |_| true);
         let moved = untouched
@@ -196,58 +110,18 @@ fn z1_the_first_step_is_measured() {
     }
 }
 
-/// An export of `instances`, tiled when the raw does not fit.
-fn export_of(instances: &[Instance], image: &ImageContext, input: &GpuImage) -> Vec<[f32; 4]> {
-    let tiling = Tiling::Auto { budget: BUDGET };
-    pollster::block_on(export(gpu(), instances, image, input.clone(), tiling))
-        .unwrap()
-        .pixels
-}
-
-/// The first step's jump on an export of `image`.
-fn first_step_on(image: &ImageContext, input: &GpuImage) -> Jump {
-    let bench = export_bench(image.clone(), input.clone());
-    let before = export_of(&bench.instances(&Edit::default(), Frame), image, input);
-    let after = export_of(&bench.on_at_defaults(), image, input);
-    jump(&before, &after, |_| true)
-}
-
-/// Z1 on darktable's chart, `mire1.cr2`, the golden cases' input.
+/// Z1 on darktable's chart, `mire1.cr2`.
 #[test]
 #[ignore = "needs darktable's integration images (APERTRUST_TEST_IMAGES)"]
 fn z1_on_the_chart() {
-    let dir = PathBuf::from(
-        std::env::var_os("APERTRUST_TEST_IMAGES")
-            .expect("APERTRUST_TEST_IMAGES names darktable's integration images"),
-    );
-    let (_, image, input) = decoded(&dir.join("mire1.cr2"));
-    let step = first_step_on(&image, &input);
-    println!("Z1 on the chart: {step}");
-    assert!(step.mean.is_finite() && step.max.is_finite(), "{step}");
+    ROWS.first_step_on_the_chart();
 }
 
 /// Z1 on every corpus raw the pipeline takes.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn z1_on_the_corpus() {
-    let mut jumps = Vec::new();
-    each_corpus_raw(|name, image, input| {
-        let step = first_step_on(&image, &input);
-        println!("{name}: {step}");
-        assert!(
-            step.mean.is_finite() && step.max.is_finite(),
-            "{name}: {step}"
-        );
-        jumps.push(step);
-    });
-    let worst_mean = jumps.iter().map(|j| j.mean).fold(0.0, f64::max);
-    let worst_max = jumps.iter().map(|j| j.max).fold(0.0, f64::max);
-    let worst_share = jumps.iter().map(Jump::share_over_one).fold(0.0, f64::max);
-    println!(
-        "Z1 on {} raws: mean at most {worst_mean:.4}, max at most {worst_max:.3}, at most {:.3}% over 1.0",
-        jumps.len(),
-        100.0 * worst_share
-    );
+    ROWS.first_step_on_the_corpus();
 }
 
 // Z2: each control moved, then reset.
@@ -264,50 +138,9 @@ const MOVES: [&[(&str, f32)]; 6] = [
     &[(STRENGTH, 0.9), (DISTANCE, 0.8)],
 ];
 
-/// Each move, then reset by `ResetControl` (a double-click or Delete), control by
-/// control, which leaves the tool on at darktable's defaults, and by `ResetTool` (the
-/// header's reset), which turns it off, as no edit; on the bench's one pipeline, which
-/// haze removal joins with each move and leaves with each tool's reset.
-fn z2_holds(bench: &mut Bench) {
-    let none = bench.edit(&Edit::default(), Frame);
-    let on = bench.on_at_defaults();
-    let on = bench.render(&on);
-    for set in MOVES {
-        let mut edit = edit_of(set);
-        let moved = bench.edit(&edit, Frame);
-        assert!(!exact(&none, &moved), "{set:?} changes the frame");
-        for (control, _) in set {
-            edit.reset_control(&HazeRemoval, control).unwrap();
-        }
-        assert!(
-            edit.is_on(&HazeRemoval),
-            "{set:?}, reset control by control"
-        );
-        assert!(
-            exact(&on, &bench.edit(&edit, Frame)),
-            "{set:?}, reset control by control"
-        );
-        let mut edit = edit_of(set);
-        bench.edit(&edit, Frame);
-        edit.reset_tool(&HazeRemoval);
-        assert_eq!(edit, Edit::default());
-        assert!(
-            exact(&none, &bench.edit(&edit, Frame)),
-            "{set:?}, the tool reset"
-        );
-    }
-}
-
 #[test]
 fn z2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
-    let (picture, image) = sweep(-0.67);
-    z2_holds(&mut Bench::picture(&picture, image, Pipe::Export));
-    let (mosaic, image) = small_raw(-0.67);
-    let viewport = Pipe::Viewport {
-        width: 40,
-        height: 30,
-    };
-    z2_holds(&mut Bench::mosaic(&mosaic, image, viewport));
+    ROWS.moved_and_reset(&MOVES);
 }
 
 // Z3: the order controls were set in.
@@ -317,39 +150,16 @@ const PAIRS: [[(&str, f32); 2]; 2] = [
     [(STRENGTH, -0.4), (DISTANCE, 0.1)],
 ];
 
-/// One pipeline sets `first`, then both; another sets `second`, then both: the two
-/// frames are the same, byte for byte.
-fn z3_holds(new: impl Fn() -> Bench, [first, second]: [(&str, f32); 2]) {
-    let mut one = new();
-    one.set(&[first]);
-    let one = one.set(&[first, second]);
-    let mut other = new();
-    other.set(&[second]);
-    let other = other.set(&[second, first]);
-    assert!(exact(&one, &other), "Z3 with {first:?} and {second:?}");
-}
-
 #[test]
 fn z3_controls_render_the_same_whichever_came_first() {
-    let (picture, image) = sweep(-0.67);
-    for pair in PAIRS {
-        z3_holds(
-            || Bench::picture(&picture, image.clone(), Pipe::Export),
-            pair,
-        );
-    }
+    ROWS.order(&PAIRS, sweep(-0.67));
 }
 
 /// Z2 and Z3 on the 90D, through the viewport's frame and the export's.
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn z2_and_z3_on_the_corpus() {
-    for pipe in [CORPUS_VIEWPORT, Pipe::Export] {
-        z2_holds(&mut corpus_bench(NINETY_D, pipe));
-        for pair in PAIRS {
-            z3_holds(|| corpus_bench(NINETY_D, pipe), pair);
-        }
-    }
+    ROWS.moved_and_order_on_the_corpus(&MOVES, &PAIRS);
 }
 
 // Z4: darktable's golden cases.
