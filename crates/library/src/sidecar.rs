@@ -74,6 +74,7 @@ use std::fmt;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::xmp::{self, ArrayKind, Name, Namespace, Node, Property, Xmp};
@@ -103,9 +104,11 @@ pub use copies::{
 /// What `x:xmptk` says before the build.
 pub(crate) const TOOLKIT: &str = "Apertrust ";
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum SidecarError {
     #[error(transparent)]
+    #[serde(with = "apertrust_base::wire::io_error")]
     Io(#[from] io::Error),
     #[error("not XMP: {0}")]
     Xml(#[from] xmp::Error),
@@ -119,7 +122,8 @@ pub enum SidecarError {
 /// What tells an edit a newer Apertrust wrote (decision 43): something it holds that
 /// this build would lose by saving it. Never a comparison of builds' versions, which
 /// development builds on different branches do not order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Newer {
     /// A file version above [`COPIES_VERSION`], read as [`COPIES_VERSION`] lays it out.
     Version(u32),
@@ -221,7 +225,7 @@ impl fmt::Display for Newer {
 /// An edit this build opens for viewing only (decisions 43 and 48): one a newer Apertrust
 /// wrote, or one part of whose history this build cannot read. It renders what it reads,
 /// refuses every change and never writes the file, so nothing the file holds is lost.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
 #[error("the edit {} wrote {reason}: open for viewing only", writer(build))]
 pub struct ViewOnly {
     /// The build that wrote it, as the file records it; `None` where it records none.
@@ -230,7 +234,8 @@ pub struct ViewOnly {
 }
 
 /// Why an edit opens for viewing only: the first thing that tells it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Reason {
     /// What a newer Apertrust wrote.
     Newer(Newer),

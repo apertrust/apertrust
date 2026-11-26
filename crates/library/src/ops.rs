@@ -43,6 +43,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_raw::DateTime;
 use apertrust_raw::{Exif, RawFile, RawImage};
+use serde::{Deserialize, Serialize};
 
 use crate::fields::Rating;
 use crate::index::{Index, READERS, Sidecar};
@@ -55,7 +56,8 @@ pub use crate::walk::WalkedFolder;
 pub const CHUNK: usize = 256;
 
 /// What the library opens.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Source {
     /// A folder, in folder mode (decision 47): its photos, not its subfolders'.
     Folder(PathBuf),
@@ -66,7 +68,8 @@ pub enum Source {
 }
 
 /// What a client asks of the library.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum LibraryCommand {
     /// Opens a folder, or photos alone, in place of what is open, whose reading stops.
     /// Opening either opens no photo.
@@ -96,7 +99,8 @@ pub enum LibraryCommand {
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum LibraryEvent {
     /// The folder was listed and its sidecars read: its name, the last part of its path,
     /// and the path as asked for.
@@ -193,7 +197,7 @@ impl LibraryEvent {
 
 /// A thumbnail's picture: 8-bit RGBA, rows top to bottom, four bytes a pixel, upright, its
 /// pixels shared so that the event's copies cost nothing.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Thumbnail {
     pub width: u32,
     pub height: u32,
@@ -210,7 +214,7 @@ impl fmt::Debug for Thumbnail {
 /// The facts of one photo the Metadata tool describes (decision 110): what one parse of
 /// its metadata gives ([`apertrust_raw::RawFile::metadata`]), read when a summary needs
 /// them, never with the folder's capture times, which read the EXIF alone.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Shot {
     /// Its EXIF; every field unread where it cannot be read.
     pub exif: Exif,
@@ -268,13 +272,14 @@ impl Shot {
 }
 
 /// A photo of the open folder.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Photo {
     /// The raw's file name.
     pub name: String,
     /// The raw's size in bytes.
     pub size: u64,
     /// The raw's modified time, `None` where the system gives none.
+    #[serde(default, with = "apertrust_base::wire::system_time::option")]
     pub modified: Option<SystemTime>,
     pub edit: EditState,
     /// Its rating, stars, reject and colour labels: its `.apxmp`'s first copy's, else
@@ -283,7 +288,8 @@ pub struct Photo {
 }
 
 /// What a photo's sidecar says of its edit.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum EditState {
     /// No edit: no sidecar, or one with nothing in it.
     None,
@@ -925,7 +931,7 @@ pub fn rendered_unaltered(version: &[u8]) -> bool {
 /// Thumbnails), the engine's setting `library.raw_thumbnails_from`: from which size a photo
 /// with no edit shows a render of its raw rather than the camera's embedded picture. Each
 /// size is one of darktable's thumbnail levels, `dt_mipmap_size_t` ([`LEVELS`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum RawThumbnails {
     Always,
     Small,

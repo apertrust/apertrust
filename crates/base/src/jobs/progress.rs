@@ -30,7 +30,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use serde::{Deserialize, Serialize};
+
 use super::{JobId, Queue, State};
+use crate::wire::Id;
 
 /// `PROGRESS_UPDATE_INTERVAL` of darktable's `src/control/jobs/control_jobs.c`, 0.5 s: a
 /// job's progress, title, detail or destination goes out at most this often, each on its
@@ -39,7 +42,7 @@ pub const INTERVAL: Duration = Duration::from_millis(500);
 
 /// A message for the person, as an id and named arguments that the client translates
 /// with Fluent (`job-…` ids, decision 36), never English from base (difference J4).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
     pub arguments: Vec<(String, Argument)>,
@@ -71,7 +74,8 @@ impl Message {
 /// A [`Message`]'s argument: a number, which the client formats in its language, with at
 /// least so many decimals where it says, text as it is, or a path, which the client shows
 /// as its platform does.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Argument {
     Number(f64),
     /// A number written with at least `at_least` decimals, as a size's "1.0 MB".
@@ -122,7 +126,7 @@ impl From<PathBuf> for Argument {
 /// A job's progress: `done` items of `total`, where the job knows it, in place of
 /// darktable's fraction (difference J18). A bar fills at `done / total`, `done` clamped to
 /// `total`, and is indeterminate with no total.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Progress {
     pub done: u64,
     pub total: Option<u64>,
@@ -139,7 +143,8 @@ impl Progress {
 
 /// Where a job's results go: the row's "To …" line, a file's folder, and what Show in
 /// Finder reveals, a file selected in its folder.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Destination {
     Folder(PathBuf),
     File(PathBuf),
@@ -150,7 +155,7 @@ pub enum Destination {
 /// write; and `reason`, the error in plain words, for the log and a client with no words
 /// for the code. A panic in a job's body is cause [`Failure::PANICKED`], its text the
 /// reason.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Failure {
     pub cause: String,
     pub item: Option<PathBuf>,
@@ -186,7 +191,8 @@ impl Failure {
 }
 
 /// What a job can do once it has ended, which its `Ended` carries.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Offer {
     /// Try it again, on `items` items: for an export, the photos that failed and those not
     /// reached.
@@ -196,7 +202,8 @@ pub enum Offer {
 /// What the control tells its observer of a job with a progress, darktable's proxy as
 /// plain events (difference J3): everything its row shows (decision 72). A job without a
 /// progress, as darktable's, is not shown and sends none.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum JobEvent {
     /// The job was added, darktable's `added`, so it shows while it waits: its kind, its
     /// queue (`None` for [`Control::run_now`](super::Control::run_now)), its title,
@@ -205,7 +212,8 @@ pub enum JobEvent {
     /// 0; and the ended job it tries again.
     Added {
         job: JobId,
-        kind: &'static str,
+        #[serde(deserialize_with = "crate::wire::id")]
+        kind: Id,
         queue: Option<Queue>,
         title: Message,
         cancellable: bool,
@@ -245,6 +253,7 @@ pub enum JobEvent {
         state: State,
         outcome: Option<Message>,
         failure: Option<Failure>,
+        #[serde(with = "crate::wire::system_time")]
         at: SystemTime,
         offers: Vec<Offer>,
     },

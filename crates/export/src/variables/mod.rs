@@ -36,6 +36,8 @@
 
 use std::ops::Range;
 
+use apertrust_base::wire::Id;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod expand;
@@ -121,7 +123,8 @@ enum Replace {
 
 /// What stops a pattern (D8), at its place in the text, in bytes: where darktable
 /// expands an unknown variable to nothing and leaves a variable it cannot close as it is.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum PatternError {
     /// `$(NAME` where no variable is named NAME, with the nearest name, if one is near.
     #[error(
@@ -134,7 +137,8 @@ pub enum PatternError {
         name: String,
         /// The name's place, to replace by the suggestion.
         at: Range<usize>,
-        suggestion: Option<&'static str>,
+        #[serde(default, deserialize_with = "apertrust_base::wire::id::option")]
+        suggestion: Option<Id>,
     },
     /// A variable that is not closed: no `expected`, `)` or the `/` or `]` it takes, at
     /// `at`, where the pattern ends or something else comes.
@@ -171,9 +175,10 @@ fn shown(text: &str) -> String {
 
 /// A variable that expands to nothing in Apertrust, as a pattern names it, and why
 /// (D7).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Unavailable {
-    pub name: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub name: Id,
     pub why: NotHere,
 }
 

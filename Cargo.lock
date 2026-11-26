@@ -387,6 +387,7 @@ dependencies = [
  "jpeg-decoder",
  "jpeg-encoder",
  "png",
+ "serde",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
@@ -424,6 +425,7 @@ dependencies = [
  "getrandom 0.4.3",
  "machine-uid",
  "quick-xml 0.42.0",
+ "serde",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
@@ -651,6 +653,8 @@ dependencies = [
 name = "apertrust-plugin"
 version = "0.0.0"
 dependencies = [
+ "apertrust-base",
+ "serde",
  "thiserror 2.0.21",
 ]
 
@@ -658,7 +662,9 @@ dependencies = [
 name = "apertrust-raw"
 version = "0.0.0"
 dependencies = [
+ "apertrust-base",
  "rawler",
+ "serde",
  "thiserror 2.0.21",
  "toml 1.2.1+spec-1.1.0",
  "tracing",
@@ -677,6 +683,7 @@ dependencies = [
  "apertrust-raw",
  "apertrust-ui",
  "pollster",
+ "serde",
  "thiserror 2.0.21",
 ]
 

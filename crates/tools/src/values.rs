@@ -19,21 +19,26 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::definition::Published;
 
 /// One control's value.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ControlValue {
+    #[serde(deserialize_with = "apertrust_base::wire::finite")]
     Number(f32),
     /// One of the control's options, by index; edits save it by the option's id.
     Choice(u32),
     Bool(bool),
     /// A curve's points, `[x, y]` from left to right.
+    #[serde(deserialize_with = "apertrust_base::wire::finite")]
     Points(Vec<[f32; 2]>),
 }
 
 /// What the marker beside a control says (principle 7).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Mark {
     /// The user set it, or kept it at its default: Auto and Match leave it alone.
     Kept,
@@ -50,7 +55,7 @@ pub enum Mark {
 /// [`Self::enabled`] holds: off, it holds no value, only marks, and renders nothing; on,
 /// it renders with darktable's defaults for the controls it holds no value for. A tool
 /// that is not switched never sets it.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ToolValues {
     values: BTreeMap<String, ControlValue>,
     marks: BTreeMap<String, Mark>,

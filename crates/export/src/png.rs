@@ -26,6 +26,7 @@ use std::io::Write;
 use ::png::{BitDepth as PngDepth, ColorType, DeflateCompression, Encoder, chunk};
 use apertrust_base::settings::Choice;
 use flate2::write::ZlibEncoder;
+use serde::{Deserialize, Serialize};
 
 use crate::{Error, Image, profile, quantise};
 
@@ -33,7 +34,7 @@ use crate::{Error, Image, profile, quantise};
 pub const LARGEST: u32 = 2_147_483_647;
 
 /// darktable's PNG options, with its defaults.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Options {
     pub bit_depth: BitDepth,
     /// zlib's level, 0 to 9; darktable's 5.
@@ -50,7 +51,7 @@ impl Default for Options {
 }
 
 /// Bits a channel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BitDepth {
     #[default]
     Eight,

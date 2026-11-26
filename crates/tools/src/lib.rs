@@ -73,7 +73,9 @@ pub mod white_balance;
 
 use std::collections::BTreeMap;
 
+use apertrust_base::wire::Id;
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
+use serde::{Deserialize, Serialize};
 
 pub use definition::{
     ActionEnd, ButtonIcon, ChoiceStyle, Computed, Control, ControlError, ControlKind, Coordinate,
@@ -518,7 +520,7 @@ pub enum Moment<'a> {
 /// A value of the photo's for a row's label ([`ProcessingTool::label_value`], decision 88):
 /// plain data, which a client writes with its unit, `unit-<unit>-value`, in the language's
 /// number format.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LabelValue {
     pub value: f32,
     pub unit: Unit,
@@ -526,7 +528,8 @@ pub struct LabelValue {
 }
 
 /// How a [`LabelValue`]'s number is written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ValueFormat {
     /// As a camera writes its exposure bias, in thirds: "−⅔", "+1⅓", "+½", "0"; with
     /// one decimal, signed, where it is no third and no half: "+0.7", and whole where it
@@ -589,10 +592,12 @@ impl LabelValue {
 
 /// One operation parameter's value: what a binding sets, and what the session reports
 /// for the parameters no tool owns.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Setting {
-    pub operation: &'static str,
-    pub param: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub operation: Id,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub param: Id,
     pub value: Value,
 }
 

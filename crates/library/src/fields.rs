@@ -41,6 +41,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::clock::{self, Clock};
 use crate::sidecar::{NAMESPACE, Problem};
 use crate::xmp::{ArrayKind, Name, Node, Property, Value};
@@ -244,7 +246,7 @@ pub fn join(ours: &[FieldEntry], theirs: &[FieldEntry]) -> Vec<FieldEntry> {
 
 /// A photo's rating as the Browser and the caption show it: its stars, kept under a
 /// reject, whether it is rejected, and its colour labels, a bit each, bit 0 red.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Rating {
     pub stars: u8,
     pub rejected: bool,
@@ -279,7 +281,8 @@ impl Rating {
 
 /// A change of a photo's rating (decision 110), the value given, never a toggle, so a
 /// script's command means one thing; a client works out which way a toggle goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum RatingChange {
     /// So many stars, 0 to 5, and the reject taken back, as a star's click does.
     Stars(u8),

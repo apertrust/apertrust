@@ -22,6 +22,8 @@ apertrust-base.workspace = true
 # profile; White balance's maths later.
 apertrust-color.workspace = true
 apertrust-plugin.workspace = true
+# The values, pickers' readings and errors the session protocol carries (decision 108).
+serde.workspace = true
 thiserror.workspace = true
 
 [build-dependencies]

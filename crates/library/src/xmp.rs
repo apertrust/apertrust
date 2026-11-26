@@ -73,6 +73,7 @@ mod write;
 #[cfg(test)]
 mod tests;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub use model::{
@@ -81,7 +82,7 @@ pub use model::{
 };
 
 /// A packet that cannot be read, with the line it fails on (the first line is 1).
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
 #[error("line {line}: {message}")]
 pub struct Error {
     line: usize,

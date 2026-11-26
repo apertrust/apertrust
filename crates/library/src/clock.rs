@@ -37,6 +37,7 @@ use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use chrono::{DateTime, SecondsFormat};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[cfg(test)]
@@ -64,7 +65,7 @@ const MACHINE_CONTEXT: &str = "apertrust.org 2026 machine id";
 
 /// A hybrid logical clock: UTC milliseconds, a counter and the machine that made it
 /// (decision 47). Ordered by `when`, then `counter`, then `machine`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Clock {
     /// Milliseconds since 1970-01-01T00:00:00Z, at most [`MAX_WHEN`].
     pub when: u64,
@@ -195,7 +196,8 @@ pub fn wall_clock() -> u64 {
 }
 
 /// A field of a clock that could not be read.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ClockError {
     #[error("not an XMP Date with a time and a time zone, from 1970 to 9999: {0:?}")]
     When(String),
@@ -209,7 +211,7 @@ pub enum ClockError {
 /// (decision 47), so two accounts on one computer are two machines. It is worked out
 /// each time Apertrust starts and never stored in the user data folder, so a copied user
 /// data folder never makes two computers one machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct MachineId(u32);
 
 impl MachineId {

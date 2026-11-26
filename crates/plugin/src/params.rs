@@ -20,6 +20,9 @@
 
 use std::collections::BTreeMap;
 
+use apertrust_base::wire::Id;
+use serde::{Deserialize, Serialize};
+
 /// An operation's parameters.
 #[derive(Debug)]
 pub struct Schema {
@@ -58,8 +61,10 @@ pub enum Kind {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Value {
+    #[serde(deserialize_with = "apertrust_base::wire::finite")]
     Float(f32),
     Int(i64),
     Choice(u32),
@@ -77,26 +82,38 @@ impl std::fmt::Display for Value {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ParamError {
     #[error("no parameter {0}")]
     Unknown(String),
     #[error("{name} takes {expected}")]
     WrongKind {
-        name: &'static str,
-        expected: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        name: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        expected: Id,
     },
     #[error("{name} is {value}, outside {min} to {max}")]
     OutOfRange {
-        name: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        name: Id,
         value: f64,
         min: f64,
         max: f64,
     },
     #[error("{name} has no choice {value}")]
-    NoChoice { name: &'static str, value: String },
+    NoChoice {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        name: Id,
+        value: String,
+    },
     #[error("{name}: cannot read {text:?}")]
-    Invalid { name: &'static str, text: String },
+    Invalid {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        name: Id,
+        text: String,
+    },
 }
 
 /// Parameter values by name.

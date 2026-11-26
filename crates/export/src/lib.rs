@@ -28,6 +28,7 @@ extern crate self as apertrust_export;
 
 use std::io::Write;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod disk;
@@ -79,7 +80,8 @@ impl<'a> Image<'a> {
 }
 
 /// A format with its options, as darktable's format modules hold them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Format {
     Jpeg(jpeg::Options),
     Png(png::Options),
@@ -125,7 +127,7 @@ impl Format {
 /// the format with its options, and the size. The dialog edits them, and the CLI reads
 /// them from the `export.*` settings and its flags; the engine reads no settings itself
 /// (decision 43).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExportSettings {
     /// File on disk's path, a pattern of darktable's variables without the extension
     /// ([`disk::Disk::new`]).
@@ -139,7 +141,7 @@ pub struct ExportSettings {
 /// `$(PICTURES.FOLDER)`, `$(DESKTOP.FOLDER)`, `$(USERNAME)`), sent beside an export's
 /// settings by the client, which finds them on its own machine: the engine reads no
 /// platform folder (decision 43). `None` for a folder the platform has not.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Places {
     pub home: Option<std::path::PathBuf>,
     pub pictures: Option<std::path::PathBuf>,

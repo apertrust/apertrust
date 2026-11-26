@@ -19,6 +19,8 @@
 use std::cmp::Ordering;
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// An operation's place and properties (architecture decision 20).
 #[derive(Debug)]
 pub struct Manifest {
@@ -65,7 +67,7 @@ impl Slot {
 }
 
 /// A stretch of the pipeline with one data format (`docs/engine.md`, Data).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Stage {
     /// The mosaic, one value per photosite, up to demosaic.
     Raw,

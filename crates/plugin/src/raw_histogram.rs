@@ -24,12 +24,18 @@
 
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
+
 /// One bin per 16-bit value: darktable's `DEFLICKER_BINS_COUNT`.
 pub const RAW_HISTOGRAM_BINS: usize = 1 << 16;
 
 /// How many photosites of the raw hold each 16-bit value, over the region the engine
 /// meters: the declared image, the one Apertrust shows (`docs/ports/exposure.md`).
-#[derive(Debug, Clone, PartialEq)]
+///
+/// It serializes as its counts alone, and reads back through [`RawHistogram::new`], so a
+/// wrong number of counts is refused and the photosites are their sum.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(into = "Vec<u32>", try_from = "Vec<u32>")]
 pub struct RawHistogram {
     counts: Arc<[u32]>,
     pixels: u64,
@@ -90,6 +96,22 @@ impl RawHistogram {
     }
 }
 
+impl From<RawHistogram> for Vec<u32> {
+    fn from(histogram: RawHistogram) -> Self {
+        histogram.counts.to_vec()
+    }
+}
+
+impl TryFrom<Vec<u32>> for RawHistogram {
+    type Error = String;
+
+    fn try_from(counts: Vec<u32>) -> Result<Self, String> {
+        let len = counts.len();
+        RawHistogram::new(counts)
+            .ok_or_else(|| format!("a raw histogram has {RAW_HISTOGRAM_BINS} counts, not {len}"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +129,26 @@ mod tests {
     fn only_one_count_per_16_bit_value_is_a_histogram() {
         assert!(RawHistogram::new(vec![0; 256]).is_none());
         assert_eq!(histogram(&[(3, 2), (9, 5)]).pixels(), 7);
+    }
+
+    #[test]
+    fn a_raw_histogram_of_the_wrong_length_is_refused() {
+        use serde::de::IntoDeserializer;
+        use serde::de::value::{Error, SeqDeserializer};
+
+        let read = |counts: Vec<u32>| {
+            let counts: SeqDeserializer<_, Error> = counts.into_deserializer();
+            RawHistogram::deserialize(counts)
+        };
+        let error = read(vec![0; 256]).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "a raw histogram has 65536 counts, not 256"
+        );
+        let kept = histogram(&[(3, 2), (9, 5)]);
+        let read = read(Vec::from(kept.clone())).unwrap();
+        assert_eq!(read, kept);
+        assert_eq!(read.pixels(), 7);
     }
 
     /// darktable's `_compute_correction` in `f64`, the reference.

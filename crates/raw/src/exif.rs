@@ -26,6 +26,7 @@
 use rawler::decoders::RawMetadata;
 use rawler::exif::Exif as RawlerExif;
 use rawler::formats::tiff::{Rational, SRational};
+use serde::{Deserialize, Serialize};
 
 use crate::cropfactors::{self, Inputs};
 use crate::tags::{self, Tags};
@@ -35,7 +36,7 @@ use crate::tags::{self, Tags};
 /// takes from the EXIF), and the rest the Metadata tool shows (decision 110), each with its
 /// tag. The camera's names as rawler spells them, its ISO and its exposure bias are
 /// [`RawImage`](crate::RawImage)'s too.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Exif {
     /// When the photo was taken, the camera's clock: DateTimeOriginal with
     /// SubSecTimeOriginal's milliseconds and OffsetTimeOriginal; `None` where it does not
@@ -137,6 +138,7 @@ pub struct Exif {
     /// The fields Apertrust does not read from this file's format yet, by their names
     /// here: those `src/tags.rs` reads, where the IFDs cannot be reached; every one
     /// ([`Exif::unread_all`]) where the file's metadata cannot be read; none otherwise.
+    #[serde(deserialize_with = "apertrust_base::wire::id::vec")]
     pub unread: Vec<&'static str>,
 }
 
@@ -208,7 +210,7 @@ impl Exif {
 
 /// A date and time as a clock showed it: the camera's, with the offset from UTC it
 /// recorded where it did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DateTime {
     /// 1 to 9999.
     pub year: u16,
@@ -231,7 +233,7 @@ pub struct DateTime {
 
 /// A resolution as IFD0 records it: XResolution and YResolution in pixels per
 /// ResolutionUnit, 2 inches (EXIF's default where it is missing) or 3 centimetres.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Resolution {
     pub x: f32,
     pub y: f32,
@@ -240,7 +242,7 @@ pub struct Resolution {
 
 /// Where the camera pointed, in degrees from north, and whether north is true or
 /// magnetic, by GPSImgDirectionRef's `T` and `M`; `None` for another reference.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Direction {
     pub degrees: f64,
     pub magnetic: Option<bool>,
@@ -248,7 +250,7 @@ pub struct Direction {
 
 /// How fast the receiver moved, `value` in the unit GPSSpeedRef names: `K` kilometres an
 /// hour, `M` miles an hour, `N` knots.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Speed {
     pub value: f64,
     pub unit: char,

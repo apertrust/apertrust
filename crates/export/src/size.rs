@@ -25,6 +25,8 @@
 //! Not mirrored (decision 56): darktable's largest scale shrinks with the computer's
 //! memory, and its export module takes the format's largest side as a limit left at 0.
 
+use serde::{Deserialize, Serialize};
+
 use crate::{Error, Format};
 
 /// darktable's `MAX_ASPECT_RATIO`: with Allow upscaling, a side left at 0 becomes this
@@ -39,7 +41,7 @@ const LARGEST_SCALE: f64 = 100.0;
 const INCH_TO_CM: f32 = 2.54;
 
 /// The size an export asks for, as darktable's export settings hold it.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Request {
     /// The largest width and height in pixels, 0 for no limit: darktable's `width` and
     /// `height`, which hold pixels whatever unit the dialog shows them in
