@@ -6728,7 +6728,8 @@ impl App {
                 .toggle_section(&styles::tool::declared().tool, false);
         }
         if photos.metadata_toggle {
-            self.shell.toggle_section(&metadata::definition().tool);
+            self.shell
+                .toggle_section(&metadata::definition().tool, false);
         }
         if let Some(text) = photos.copied.take() {
             ui.ctx().copy_text(text);
