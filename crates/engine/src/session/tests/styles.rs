@@ -611,6 +611,75 @@ fn a_reset_laid_on_a_newer_file_empties_its_list() {
     remove(&path);
 }
 
+/// A Compress not yet saved laid on a newer file that applied another style and set Grain:
+/// its list-only step changes no list, so the newer file's order stands and Warm film keeps
+/// its record, Grain's state before it as the session recorded it, not the 20 the joined
+/// log holds there, as it would were the style taken as newly applied.
+#[test]
+fn a_compress_laid_on_a_newer_file_keeps_the_styles_records() {
+    let path = scratch("styles-newer-compress");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&path);
+    driven.run([set_tool(grain(10.0))]);
+    driven.run([append("Warm film", &[grain(40.0)])]);
+    driven.writes();
+    write_elsewhere(&path, (&Grain, on("strength", 20.0)), true);
+    driven.run([Command::Compress { up_to: None }]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    assert_eq!(listed(&taken), ["Other", "Warm film"]);
+    let warm = styles(&driven)[1].clone();
+    assert_eq!(tool_of(&warm, "grain").before, on("strength", 10.0));
+    assert_eq!(tool_of(&warm, "grain").after, on("strength", 40.0));
+    driven.writes();
+    assert_eq!(saved(&path).log.styles(), styles(&driven));
+    remove(&path);
+}
+
+/// A style applied since the last save, then a Compress, neither saved, laid on a newer file
+/// that set Grain and, where `styled`, applied Other: the Compress's list, the style's one
+/// record, is replayed from the list the base holds, so Warm film is listed on top, its
+/// tool's state before it the joined log's, and Clear puts Vignette back.
+fn a_style_applied_before_a_compress_is_kept_on_a_newer_file(styled: bool) {
+    let path = scratch(match styled {
+        true => "styles-newer-compress-applied-styled",
+        false => "styles-newer-compress-applied",
+    });
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&path);
+    driven.run([set_tool(grain(10.0))]);
+    driven.writes();
+    write_elsewhere(&path, (&Grain, on("strength", 20.0)), styled);
+    driven.run([append("Warm film", &[vignette(30.0)])]);
+    driven.run([Command::Compress { up_to: None }]);
+    assert!(driven.writes().is_empty());
+    let taken = driven.engine.newer_file(false);
+    let expected: &[&str] = match styled {
+        true => &["Warm film", "Other"],
+        false => &["Warm film"],
+    };
+    assert_eq!(listed(&taken), expected);
+    let warm = styles(&driven)[0].clone();
+    assert_eq!(tool_of(&warm, "vignette").before, ToolValues::new());
+    assert_eq!(tool_of(&warm, "vignette").after, on("scale", 30.0));
+    driven.writes();
+    assert_eq!(saved(&path).log.styles(), styles(&driven));
+    driven.run([clear("Warm film")]);
+    assert_eq!(edit(&driven).tool("vignette"), None);
+    assert_eq!(edit(&driven).tool("grain"), Some(&on("strength", 20.0)));
+    remove(&path);
+}
+
+#[test]
+fn a_style_applied_before_a_compress_is_kept_on_a_newer_file_with_another_style() {
+    a_style_applied_before_a_compress_is_kept_on_a_newer_file(true);
+}
+
+#[test]
+fn a_style_applied_before_a_compress_is_kept_on_a_newer_file_with_none() {
+    a_style_applied_before_a_compress_is_kept_on_a_newer_file(false);
+}
+
 /// An older version 2 build reads `apertrust:styles` as a field of a step it does not write:
 /// the photo opens for viewing only, its history one it cannot keep, nothing written over
 /// it, until Discard History starts it afresh without the field. Here this build reads such
