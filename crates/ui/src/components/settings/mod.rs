@@ -50,7 +50,7 @@ pub use chips::Chips;
 pub use combo::Combo;
 pub use number::Number;
 pub use readout::Readout;
-pub use row::{Note, RowOutput, SettingRow};
+pub use row::{Note, RowGlyph, RowOutput, SettingRow};
 pub use search::Search;
 pub use segmented::Segmented;
 pub use slider::Slider;

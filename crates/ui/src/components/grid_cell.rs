@@ -60,6 +60,8 @@
 //!   reject and circle are buttons inside it. The tooltip says the name, the marks and,
 //!   last, the No preview yet plate's line.
 
+use std::sync::Arc;
+
 use egui::accesskit::HasPopup;
 use egui::{
     Align, Color32, FontFamily, FontId, Id, PointerButton, Pos2, Rect, Response, Role, Sense,
@@ -194,6 +196,65 @@ pub struct CellRating {
     pub stars: u8,
     pub rejected: bool,
     pub labels: ColourLabels,
+}
+
+/// The person's own notes for the ratings and colour labels (`docs/settings.md`, Ratings
+/// and labels), each empty where none is given: app-wide, never translated and never a
+/// photo's. Wherever a rating or a label is shown or set, its tooltip and its name to screen
+/// readers end in its note, "3 stars · Print candidates" ([`RatingNotes::noted`]); an
+/// empty note adds nothing. The app sets them on the context ([`set_rating_notes`]), as it
+/// sets the slider marker, and the components read them there ([`rating_notes`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RatingNotes {
+    pub reject: String,
+    /// A rating of 1 to 5 stars', in order.
+    pub stars: [String; 5],
+    /// Each label's, in darktable's order.
+    pub labels: [String; 5],
+}
+
+impl RatingNotes {
+    /// The note for a rating of `stars`, 1 to 5; none for no stars.
+    pub fn star(&self, stars: u8) -> &str {
+        match stars {
+            1..=5 => &self.stars[usize::from(stars - 1)],
+            _ => "",
+        }
+    }
+
+    pub fn label(&self, label: ColourLabel) -> &str {
+        &self.labels[label.index()]
+    }
+
+    /// `words`, then `note` after a middle dot, "3 stars · Print candidates"
+    /// (`rating-noted`); `words` alone where `note` is empty or only spaces.
+    pub fn noted(words: String, note: &str, tr: &crate::Translator) -> String {
+        let note = note.trim();
+        if note.is_empty() {
+            return words;
+        }
+        let mut args = Args::new();
+        args.set("words", words);
+        args.set("note", note);
+        tr.text_with("rating-noted", Some(&args))
+    }
+}
+
+/// Sets the notes the components show after the ratings and labels in `ctx`.
+pub fn set_rating_notes(ctx: &egui::Context, notes: RatingNotes) {
+    if *rating_notes(ctx) != notes {
+        ctx.data_mut(|data| data.insert_temp(rating_notes_id(), Arc::new(notes)));
+    }
+}
+
+/// The notes in use; none until [`set_rating_notes`] is called.
+pub fn rating_notes(ctx: &egui::Context) -> Arc<RatingNotes> {
+    ctx.data(|data| data.get_temp::<Arc<RatingNotes>>(rating_notes_id()))
+        .unwrap_or_default()
+}
+
+fn rating_notes_id() -> Id {
+    Id::unique("apertrust-ui rating notes")
 }
 
 /// What the user did on a cell's first line.
@@ -645,9 +706,11 @@ impl<'a> GridCell<'a> {
         place
     }
 
-    /// The marks, the rating, the reject and the labels, in words.
+    /// The marks, the rating, the reject and the labels, in words, each with the person's
+    /// note for it.
     fn notes(&self, ui: &Ui) -> String {
         let tr = translator(ui.ctx());
+        let person = rating_notes(ui.ctx());
         let mut notes = Vec::new();
         if self.edited {
             notes.push(tr.text("grid-cell-edited"));
@@ -663,11 +726,13 @@ impl<'a> GridCell<'a> {
         }
         if let Some(rating) = self.rating {
             if rating.rejected {
-                notes.push(tr.text("grid-cell-rejected"));
+                let words = tr.text("grid-cell-rejected");
+                notes.push(RatingNotes::noted(words, &person.reject, &tr));
             } else {
                 let mut args = Args::new();
                 args.set("count", rating.stars);
-                notes.push(tr.text_with("grid-cell-rating", Some(&args)));
+                let words = tr.text_with("grid-cell-rating", Some(&args));
+                notes.push(RatingNotes::noted(words, person.star(rating.stars), &tr));
             }
             if !rating.labels.is_empty() {
                 let mut args = Args::new();
@@ -734,13 +799,28 @@ fn fitted(painter: &egui::Painter, name: &str, font: &FontId, width: f32) -> Str
     middle_cut(painter, stem, tail, font, width)
 }
 
-/// The labels' names, translated, in darktable's order.
+/// The labels' notes, translated, in darktable's order, each with the person's note for
+/// it.
 fn label_names(ctx: &egui::Context, labels: ColourLabels) -> String {
+    let (words, notes) = (translator(ctx), rating_notes(ctx));
     labels
         .iter()
-        .map(|label| tr(ctx, &format!("colour-label-{}", label.id())))
+        .map(|label| {
+            let colour = words.text(&format!("colour-label-{}", label.id()));
+            RatingNotes::noted(colour, notes.label(label), &words)
+        })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// `response` with `said` as its tooltip where the person gave the mark a `note`: the
+/// first line's marks have none of their own otherwise.
+fn noted_tip(response: Response, said: &str, note: &str) -> Response {
+    if note.trim().is_empty() {
+        response
+    } else {
+        response.on_hover_text(said)
+    }
 }
 
 /// The caption's first line in `line`: the reject mark at its start, the five stars in its
@@ -756,6 +836,7 @@ fn first_line(
 ) -> Option<CellAction> {
     let ctx = ui.ctx().clone();
     let words = translator(&ctx);
+    let notes = rating_notes(&ctx);
     let mut action = None;
     // Buttons for the pointer and screen readers, but no Tab stops: the keys rate.
     let button = |ui: &mut Ui, rect: Rect, id: Id| ui.interact(rect, id, Sense::CLICK);
@@ -771,11 +852,12 @@ fn first_line(
         t.colors.text_disabled
     };
     Icon::Reject.paint(painter, reject, colour);
-    let name = tr(&ctx, "grid-cell-reject");
+    let name = RatingNotes::noted(tr(&ctx, "grid-cell-reject"), &notes.reject, &words);
     pressed.widget_info(|| WidgetInfo::selected(Role::Button, true, rating.rejected, &name));
     if pressed.clicked() {
         action = Some(CellAction::ToggleReject);
     }
+    noted_tip(pressed, &name, &notes.reject);
 
     // The stars: filled for each point, those up to one under the pointer lit, all dimmed
     // while the photo is rejected.
@@ -795,7 +877,7 @@ fn first_line(
         .map(|(i, rect)| button(ui, *rect, cell.with(("star", i))))
         .collect();
     let hovered = responses.iter().position(Response::hovered);
-    for (i, (rect, star)) in rects.iter().zip(&responses).enumerate() {
+    for (i, (rect, star)) in rects.iter().zip(responses).enumerate() {
         let points = i as u8 + 1;
         let lit = hovered.is_some_and(|h| i <= h);
         let filled = lit || (hovered.is_none() && points <= rating.stars);
@@ -810,12 +892,14 @@ fn first_line(
         icon.paint(painter, *rect, colour);
         let mut args = Args::new();
         args.set("count", points);
-        let name = words.text_with("grid-cell-rate", Some(&args));
+        let rate = words.text_with("grid-cell-rate", Some(&args));
+        let name = RatingNotes::noted(rate, notes.star(points), &words);
         let on = points <= rating.stars;
         star.widget_info(|| WidgetInfo::selected(Role::Button, true, on, &name));
         if star.clicked() {
             action = Some(CellAction::Rate(points));
         }
+        noted_tip(star, &name, notes.star(points));
     }
 
     // The colour labels' circle, which opens their list.
@@ -842,11 +926,15 @@ fn first_line(
         node.set_value(value.clone());
         node.set_has_popup(HasPopup::Menu);
     });
+    // Its tooltip the labels on, where the person noted any of them.
+    let noted = (rating.labels.iter()).find(|label| !notes.label(*label).trim().is_empty());
+    let opener = noted_tip(opener, &value, noted.map_or("", |label| notes.label(label)));
     let chosen = pull_down(ui, &opener, &name, || {
         let mut entries: Vec<Entry> = ColourLabel::ALL
             .into_iter()
             .map(|label| {
-                let words = tr(&ctx, &format!("colour-label-{}", label.id()));
+                let colour = tr(&ctx, &format!("colour-label-{}", label.id()));
+                let words = RatingNotes::noted(colour, notes.label(label), &words);
                 Item::new(format!("label-{}", label.id()), words)
                     .checked(rating.labels.contains(label))
                     .shortcut(label.keys())

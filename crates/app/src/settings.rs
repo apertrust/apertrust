@@ -90,6 +90,12 @@
 //! labels = false
 //! square_thumbnails = true
 //!
+//! [ratings.note]
+//! stars_3 = "Print candidates"
+//!
+//! [labels.note]
+//! purple = "Sent to client"
+//!
 //! [keys]
 //! undo = ["Ctrl+K"]
 //! quit = []
@@ -107,7 +113,9 @@
 //! sort's key and direction, the thumbnails' size, where it is, the rows it shows at the
 //! bottom and the columns at a side, each a whole number, whether the thumbnails show
 //! their captions and whether each fills its square (`docs/gui.md`, The Browser and The
-//! browser bar). Keys are kept only where they
+//! browser bar). The person's notes for the ratings and colour labels are kept only
+//! once given, the person's words, never a photo's (`docs/settings.md`, Ratings and
+//! labels). Keys are kept only where they
 //! differ from the defaults, in the form `Shortcut::text` writes (`actions`), the same on
 //! every platform. The Viewer's two margins have no page in the Settings dialog:
 //! the margin round the photo and its caption, in points, and the one Proof margin takes,
@@ -152,8 +160,8 @@ use apertrust_engine::session::{ControlValue, StyleMode};
 use apertrust_engine::settings as engine;
 use apertrust_tools::{ControlKind, Row, SettingRow, TOOLS};
 use apertrust_ui::components::{
-    BrowserBarAction, BrowserPosition, Channel, Marker, MenuButtonStyle, ScopeView, Sort,
-    ThumbnailSize, ToolsPanelPosition,
+    BrowserBarAction, BrowserPosition, Channel, Marker, MenuButtonStyle, RatingNotes, ScopeView,
+    Sort, ThumbnailSize, ToolsPanelPosition,
 };
 use apertrust_ui::{Builtin, Locale};
 
@@ -262,6 +270,9 @@ pub struct Settings {
     pub ask_before_discard: bool,
     /// How a click on a style applies it, `styles.mode` (decision 106).
     pub style_mode: StyleMode,
+    /// The person's notes for the ratings and colour labels, `ratings.note.*` and
+    /// `labels.note.*`: app-wide, never written to a photo.
+    pub rating_notes: RatingNotes,
 }
 
 impl Default for Settings {
@@ -310,6 +321,7 @@ impl Default for Settings {
             ask_before_overwrite: EXPORT_ASK_BEFORE_OVERWRITE.default(),
             ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
             style_mode: STYLES_MODE.default(),
+            rating_notes: RatingNotes::default(),
         }
     }
 }
@@ -407,6 +419,11 @@ impl Settings {
             ask_before_overwrite: store.get(&EXPORT_ASK_BEFORE_OVERWRITE),
             ask_before_discard: store.get(&HISTORY_ASK_BEFORE_DISCARD),
             style_mode: store.get(&STYLES_MODE),
+            rating_notes: RatingNotes {
+                reject: store.get(&RATINGS_NOTE_REJECT),
+                stars: STARS_NOTES.map(|setting| store.get(setting)),
+                labels: LABELS_NOTES.map(|setting| store.get(setting)),
+            },
         }
     }
 
@@ -583,8 +600,39 @@ impl Settings {
         if s.style_mode != was.style_mode {
             store.set(&STYLES_MODE, s.style_mode);
         }
+        let (notes, before) = (&s.rating_notes, &was.rating_notes);
+        if notes.reject != before.reject {
+            store.set(&RATINGS_NOTE_REJECT, notes.reject.clone());
+        }
+        let stars = STARS_NOTES
+            .iter()
+            .zip(notes.stars.iter().zip(&before.stars));
+        let labels = LABELS_NOTES
+            .iter()
+            .zip(notes.labels.iter().zip(&before.labels));
+        for (setting, (note, was)) in stars.chain(labels) {
+            if note != was {
+                store.set(*setting, note.clone());
+            }
+        }
     }
 }
+
+/// The notes of a rating of 1 to 5 stars, and of each colour label, red to purple.
+pub const STARS_NOTES: [&Setting<&'static str>; 5] = [
+    &RATINGS_NOTE_STARS_1,
+    &RATINGS_NOTE_STARS_2,
+    &RATINGS_NOTE_STARS_3,
+    &RATINGS_NOTE_STARS_4,
+    &RATINGS_NOTE_STARS_5,
+];
+pub const LABELS_NOTES: [&Setting<&'static str>; 5] = [
+    &LABELS_NOTE_RED,
+    &LABELS_NOTE_YELLOW,
+    &LABELS_NOTE_GREEN,
+    &LABELS_NOTE_BLUE,
+    &LABELS_NOTE_PURPLE,
+];
 
 /// The tools' settings (decision 29; `docs/pickers.md`, A tool's settings): each kept
 /// setting of [`apertrust_tools::settings::registry`], by its tool and its id there,
@@ -1545,6 +1593,12 @@ mod tests {
             ask_before_overwrite: false,
             ask_before_discard: false,
             style_mode: StyleMode::Replace,
+            rating_notes: RatingNotes {
+                reject: "Out".to_owned(),
+                stars: ["Maybe", "Fine", "Print candidates", "Keepers", "Portfolio"]
+                    .map(str::to_owned),
+                labels: ["Urgent", "Waiting", "Done", "Sky", "Sent to client"].map(str::to_owned),
+            },
         }
     }
 
@@ -1703,6 +1757,8 @@ mod tests {
                 ask_before_overwrite: true,
                 ask_before_discard: true,
                 style_mode: StyleMode::Append,
+                // No notes until the person gives them.
+                rating_notes: RatingNotes::default(),
             }
         );
         // What the app takes where nothing is kept.
@@ -1847,6 +1903,13 @@ scale_factor = 2.0
 quit = []
 undo = [\"Ctrl+K\"]
 
+[labels.note]
+blue = \"Sky\"
+green = \"Done\"
+purple = \"Sent to client\"
+red = \"Urgent\"
+yellow = \"Waiting\"
+
 [log]
 domains = [\"gpu\", \"memory\"]
 keep = true
@@ -1861,6 +1924,14 @@ size = [720, 400]
 hidden = [\"aperture\"]
 open = [\"basic\", \"gps\"]
 shown = [\"software\"]
+
+[ratings.note]
+reject = \"Out\"
+stars_1 = \"Maybe\"
+stars_2 = \"Fine\"
+stars_3 = \"Print candidates\"
+stars_4 = \"Keepers\"
+stars_5 = \"Portfolio\"
 
 [scopes]
 channels = [\"red\", \"blue\", \"luminance\"]

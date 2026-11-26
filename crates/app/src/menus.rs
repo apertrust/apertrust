@@ -22,7 +22,8 @@
 //! hands in ([`WorkspaceItem`]; [`Lists`]). It names actions as the
 //! Toolbar's `TOOLBAR` does, so the registry still declares each action once: an item's
 //! words are its action's message, Undo's and Redo's naming the step they would take back
-//! or put back ([`words`]), its key the keymap's first for the platform, and it is enabled
+//! or put back and the rating's and the labels' ending in the person's notes for them
+//! ([`words`]), its key the keymap's first for the platform, and it is enabled
 //! exactly when its action can run where it is ([`shown`]). Only actions the
 //! registry declares are placed, drawn disabled until they are built; a later one joins the
 //! tree when the registry declares it, and a menu with nothing to hold is left out, but for
@@ -45,7 +46,9 @@
     )
 )]
 
-use apertrust_ui::components::{BarOption, BrowserBarAction};
+use std::sync::Arc;
+
+use apertrust_ui::components::{BarOption, BrowserBarAction, RatingNotes};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::{Translator, popup, translator};
 use eframe::egui::{self, Rect, os::OperatingSystem};
@@ -129,11 +132,13 @@ pub struct Lists<'a> {
 
 /// What Undo and Redo would do, as History names the step, in the interface's language:
 /// "Exposure", "Go to Step"; none where there is nothing to do or to name
-/// (`history::steps`, from the session's `History`).
+/// (`history::steps`, from the session's `History`). And the person's notes for the
+/// ratings and colour labels, which their actions' items carry ([`words`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Steps {
     pub undo: Option<String>,
     pub redo: Option<String>,
+    pub notes: Arc<RatingNotes>,
 }
 
 /// `action`'s words as its item shows them: its message, but Undo and Redo name what they
@@ -142,8 +147,13 @@ pub struct Steps {
 /// undo they then are, they read Undo and Redo alone (`docs/gui.md`, The editing items
 /// follow focus). Export… and Export Again say how many photos they export while several
 /// are selected ("Export 12 Photos…", `menu-export-photos`; "Export 12 Photos Again",
-/// `menu-export-photos-again`).
+/// `menu-export-photos-again`). A rating's, Reject's and a label's end in the person's note
+/// for it, where `steps` has one ("3 stars · Print candidates", [`RatingNotes::noted`]);
+/// their ids stay.
 pub fn words(action: &Action, steps: &Steps, state: &State, tr: &Translator) -> String {
+    if let Some(note) = rating_note(action.id, &steps.notes) {
+        return RatingNotes::noted(tr.text(action.message), note, tr);
+    }
     let (step, message) = match action.id {
         ActionId::UNDO => (&steps.undo, "menu-undo-step"),
         ActionId::REDO => (&steps.redo, "menu-redo-step"),
@@ -168,13 +178,29 @@ pub fn words(action: &Action, steps: &Steps, state: &State, tr: &Translator) -> 
     }
 }
 
-/// Whether `id`'s words follow the photo's history or the selection, so the Mac's menus
-/// word its item again each frame rather than only when the language changes.
+/// The person's note for the rating, the reject or the label action `id` sets, in
+/// `notes`; none for any other action, and for No Stars and Clear Labels.
+fn rating_note(id: ActionId, notes: &RatingNotes) -> Option<&str> {
+    if id == ActionId::REJECT {
+        return Some(&notes.reject);
+    }
+    let star = ActionId::RATING.iter().position(|rating| *rating == id);
+    let label = ActionId::LABEL.iter().position(|label| *label == id);
+    match (star, label) {
+        (Some(stars), _) => (stars > 0).then(|| notes.star(stars as u8)),
+        (_, Some(label)) => Some(&notes.labels[label]),
+        _ => None,
+    }
+}
+
+/// Whether `id`'s words follow the photo's history, the selection or the person's notes,
+/// so the Mac's menus word its item again each frame rather than only when the language
+/// changes.
 fn names_a_step(id: ActionId) -> bool {
     matches!(
         id,
         ActionId::UNDO | ActionId::REDO | ActionId::EXPORT | ActionId::EXPORT_AGAIN
-    )
+    ) || rating_note(id, &RatingNotes::default()).is_some()
 }
 
 /// The Mac's own items, which muda predefines: macOS performs them, so they are not the
@@ -919,7 +945,21 @@ pub fn context(
         | Place::TabBar => Vec::new(),
     };
     let (os, tr) = (ctx.os(), translator(ctx));
-    built(place, target, &added, keymap, state, os, &tr, anchor)
+    // The rating's and the labels' items carry the person's notes.
+    let steps = Steps {
+        notes: apertrust_ui::components::rating_notes(ctx),
+        ..Steps::default()
+    };
+    built(
+        place,
+        target,
+        &added,
+        keymap,
+        state,
+        &steps,
+        (os, &tr),
+        anchor,
+    )
 }
 
 /// The entries of `tool`'s ⋯, its header's options (decisions 91 and 93): the app's
@@ -1482,18 +1522,17 @@ fn built(
     added: &[Added],
     keymap: &Keymap,
     state: &State,
-    os: OperatingSystem,
-    tr: &Translator,
+    steps: &Steps,
+    (os, tr): (OperatingSystem, &Translator),
     anchor: Rect,
 ) -> popup::Request {
-    let steps = Steps::default();
     if let Place::Browser | Place::Toolbar = place {
         let entries = match (place, target) {
             // An item's own menu first, where its action has one (decision 92).
             (Place::Toolbar, Target::Toolbar { item }) => {
                 let own = item.and_then(action_menu).map(|menu| {
                     let lists = Lists::default();
-                    let drawn = drawn(menu.own, os, keymap, state, lists, &steps, tr);
+                    let drawn = drawn(menu.own, os, keymap, state, lists, steps, tr);
                     keyless(drawn.entries)
                 });
                 let mut entries = own.unwrap_or_default();
@@ -1519,7 +1558,7 @@ fn built(
                 };
                 let state = State { job, ..*state };
                 pared(
-                    drawn(&JOB, os, keymap, &state, lists, &steps, tr).entries,
+                    drawn(&JOB, os, keymap, &state, lists, steps, tr).entries,
                     false,
                 )
             }
@@ -1530,7 +1569,7 @@ fn built(
                     Place::Step => &STEP,
                     _ => &BACKGROUND,
                 };
-                let mut entries = drawn(menu, os, keymap, state, lists, &steps, tr).entries;
+                let mut entries = drawn(menu, os, keymap, state, lists, steps, tr).entries;
                 // A step's items say what they do, as ⋯'s do (decision 93).
                 for entry in entries.iter_mut().filter(|_| place == Place::Step) {
                     if let popup::Entry::Item(item) = entry
@@ -1549,7 +1588,7 @@ fn built(
     let options = open == apertrust_tools::Place::Options;
     let item = |id: &String| {
         let id = chosen(id).filter(|id| !(several && ONE_PHOTO.contains(id)))?;
-        let item = action_item(id, keymap, state, &steps, os, tr)?;
+        let item = action_item(id, keymap, state, steps, os, tr)?;
         // In ⋯ an item says what it does, as a pull-down's items do (decision 93).
         Some(match actions::options_tip(id, state).filter(|_| options) {
             Some(tip) => item.tip(tr.text(tip)),
@@ -3371,6 +3410,7 @@ mod tests {
         let steps = Steps {
             undo: Some("Exposure".to_owned()),
             redo: Some("Go to Step".to_owned()),
+            ..Steps::default()
         };
         let item = |locale, state: &State, steps: &Steps, id| {
             edit_item(&drawn_menu_naming(locale, state, steps), id)
@@ -4091,8 +4131,8 @@ mod tests {
                 photos: 1,
                 ..everything()
             },
-            OperatingSystem::Nix,
-            &translator(&ctx),
+            &Steps::default(),
+            (OperatingSystem::Nix, &translator(&ctx)),
             Rect::NOTHING,
         );
         let ids: Vec<String> = lines(&menu).into_iter().map(|(id, ..)| id).collect();
@@ -4190,8 +4230,8 @@ mod tests {
             &added,
             &Keymap::defaults(OperatingSystem::Nix),
             state,
-            OperatingSystem::Nix,
-            &translator(&ctx),
+            &Steps::default(),
+            (OperatingSystem::Nix, &translator(&ctx)),
             Rect::NOTHING,
         )
     }
@@ -4371,6 +4411,83 @@ mod tests {
             chosen_on_thumbnail(ActionId::EXPORT, 3),
             Some(ActionId::EXPORT)
         );
+    }
+
+    /// The rating's and the labels' items, in the menu bar and a thumbnail's menu, end in the
+    /// person's notes for them; with none their words are unchanged, and their ids always.
+    #[test]
+    fn the_rating_s_and_the_labels_items_end_in_the_person_s_notes() {
+        let mut notes = RatingNotes::default();
+        notes.stars[2] = "Print candidates".to_owned();
+        notes.labels[4] = "Sent to client".to_owned();
+        let tr = Translator::new(Locale::EnGb);
+        let state = everything();
+        let noted = Steps {
+            notes: Arc::new(notes.clone()),
+            ..Steps::default()
+        };
+        let said = |id: ActionId, steps: &Steps| {
+            let action = actions::action(id).expect("declared");
+            words(action, steps, &state, &tr)
+        };
+        // The menu bar's: their words, then the note; none with none, and their ids kept.
+        assert_eq!(
+            said(ActionId::RATING[3], &noted),
+            "3 stars · Print candidates"
+        );
+        assert_eq!(
+            said(ActionId::LABEL[4], &noted),
+            "Purple label · Sent to client"
+        );
+        assert_eq!(said(ActionId::RATING[2], &noted), "2 stars");
+        assert_eq!(said(ActionId::RATING[0], &noted), "No stars");
+        let none = Steps::default();
+        assert_eq!(said(ActionId::RATING[3], &none), "3 stars");
+        assert_eq!(said(ActionId::LABEL[4], &none), "Purple label");
+        // A thumbnail's menu, from the notes the context holds.
+        let ctx = egui::Context::default();
+        ctx.set_os(OperatingSystem::Nix);
+        apertrust_ui::set_locale(&ctx, Locale::EnGb);
+        apertrust_ui::components::set_rating_notes(&ctx, notes);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let one = State {
+            photos: 1,
+            exported: 1,
+            ..everything()
+        };
+        let place = Place::Open(Open::Thumbnail);
+        let menu = context(
+            &ctx,
+            place,
+            &Target::Selection,
+            &keymap,
+            &one,
+            Rect::NOTHING,
+        );
+        let items: Vec<(String, String)> = (menu.entries.iter())
+            .filter_map(|entry| match entry {
+                popup::Entry::Submenu(submenu) => Some(submenu.entries.iter()),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|entry| match entry {
+                popup::Entry::Item(item) => Some((item.id.clone(), item.text.clone())),
+                _ => None,
+            })
+            .collect();
+        let item = |id: ActionId| {
+            let found = items.iter().find(|(each, _)| each == id.0);
+            found.map(|(_, text)| text.as_str())
+        };
+        assert_eq!(
+            item(ActionId::RATING[3]),
+            Some("3 stars · Print candidates")
+        );
+        assert_eq!(
+            item(ActionId::LABEL[4]),
+            Some("Purple label · Sent to client")
+        );
+        assert_eq!(item(ActionId::LABEL[0]), Some("Red label"));
     }
 
     /// The photo's and a thumbnail's menus as the app opens them (decision 91), by section:

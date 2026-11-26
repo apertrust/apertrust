@@ -1101,6 +1101,126 @@ fn rating_and_labels_run_the_rating_s_actions() {
     assert!(harness.query_by_label("Rating: Rejected").is_some());
 }
 
+/// The person's notes follow the marks they name to screen readers, and Rating's and
+/// Colour labels' tooltips name the rating and the labels shown that have one; Copy
+/// Information's words stay the row's own.
+#[test]
+fn rating_and_labels_carry_the_person_s_notes() {
+    let rating = apertrust_engine::session::Rating {
+        stars: 3,
+        rejected: false,
+        labels: 0b100,
+    };
+    let mut harness = drawn(Builtin::Dark, 320.0, rated(scene(Some(photo())), rating));
+    let mut notes = parts::RatingNotes::default();
+    notes.stars[2] = "Print candidates".to_owned();
+    notes.labels[2] = "Done".to_owned();
+    parts::set_rating_notes(&harness.ctx, notes);
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, "Rate 3 stars · Print candidates");
+    harness.get_by_role_and_label(Role::Button, "Rate 4 stars");
+    harness.get_by_role_and_label(Role::Button, "Green · Done");
+    harness.get_by_role_and_label(Role::Button, "Red");
+    assert!(harness.query_by_label("Rating: ★★★☆☆").is_some());
+    // Over a row's label, its tooltip.
+    let tip = |harness: &mut Harness<'_, Scene>, row: &str, said: &str| {
+        let at = harness.get_by_label(row).rect().left_center() + egui::vec2(4.0, 0.0);
+        harness.hover_at(at);
+        harness.run();
+        harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.text() == said)
+        })
+    };
+    assert!(tip(
+        &mut harness,
+        "Rating: ★★★☆☆",
+        "3 stars · Print candidates"
+    ));
+    assert!(tip(
+        &mut harness,
+        "Colour labels: Green · Done",
+        "Green · Done"
+    ));
+}
+
+/// A photo open for viewing only shows its rating with the marks disabled: they run
+/// nothing, but screen readers still hear each one by name with its note.
+#[test]
+fn a_view_only_photo_s_marks_keep_their_names_and_notes() {
+    use apertrust_engine::session::ViewOnly;
+    use apertrust_engine::sidecar::{Newer, Reason};
+    let photo = Photo {
+        view_only: Some(ViewOnly {
+            build: Some("9.9.9".to_owned()),
+            reason: Reason::Newer(Newer::Tool("lens".to_owned())),
+        }),
+        ..photo()
+    };
+    let rating = apertrust_engine::session::Rating {
+        stars: 3,
+        rejected: false,
+        labels: 0b100,
+    };
+    let mut harness = drawn(Builtin::Dark, 320.0, rated(scene(Some(photo)), rating));
+    let mut notes = parts::RatingNotes::default();
+    notes.stars[2] = "Print candidates".to_owned();
+    notes.labels[2] = "Done".to_owned();
+    parts::set_rating_notes(&harness.ctx, notes);
+    harness.run();
+    assert!(harness.query_by_label("Rating: ★★★☆☆").is_some());
+    let star = harness.get_by_role_and_label(Role::Image, "Rate 3 stars · Print candidates");
+    assert!(star.accesskit_node().is_disabled());
+    harness.get_by_role_and_label(Role::Image, "Green · Done");
+    harness.get_by_role_and_label(Role::Image, "Red");
+    // No button: a mark runs nothing.
+    let three = "Rate 3 stars · Print candidates";
+    assert!(
+        harness
+            .query_by_role_and_label(Role::Button, three)
+            .is_none()
+    );
+    harness
+        .get_by_role_and_label(Role::Image, "Rate 4 stars")
+        .click();
+    harness.run();
+    assert!(harness.state().ran.is_empty());
+}
+
+/// Where Rating shows words in place of its stars, screen readers hear the notes its
+/// tooltip says: Rejected with the reject's, Different with each rating's line; and Colour
+/// labels each label with its note. Copy Information keeps the words alone.
+#[test]
+fn the_rating_rows_words_carry_the_notes_to_screen_readers() {
+    let rejected = apertrust_engine::session::Rating {
+        stars: 3,
+        rejected: true,
+        labels: 0,
+    };
+    let mut harness = drawn(Builtin::Dark, 320.0, rated(scene(Some(photo())), rejected));
+    let notes = parts::RatingNotes {
+        reject: "Out".to_owned(),
+        ..parts::RatingNotes::default()
+    };
+    parts::set_rating_notes(&harness.ctx, notes);
+    harness.run();
+    assert!(harness.query_by_label("Rating: Rejected · Out").is_some());
+    // Several photos: seven of three stars, five of one; red on all, green on some.
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    let mut notes = parts::RatingNotes::default();
+    notes.stars[2] = "Print candidates".to_owned();
+    notes.labels[0] = "Urgent".to_owned();
+    parts::set_rating_notes(&harness.ctx, notes);
+    harness.run();
+    let different = "Rating: Different: 3 stars · Print candidates · 7, 1 star · 5";
+    assert!(harness.query_by_label(different).is_some());
+    let labels = "Colour labels: Red · Urgent, Green (some photos)";
+    assert!(harness.query_by_label(labels).is_some());
+    // With no notes, the words alone.
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    assert!(harness.query_by_label("Rating: Different").is_some());
+}
+
 /// Rating's and Colour labels' rows read their value to screen readers, as Copy
 /// Information words it; and while a selection command is untold they describe no photo.
 #[test]

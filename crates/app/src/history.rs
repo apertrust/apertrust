@@ -2343,7 +2343,7 @@ fn natural_decimals(value: f64) -> usize {
 
 /// What Undo and Redo would do in `history`, the open photo's, in `tr`'s words: none where
 /// there is nothing to do, or nothing to name. `tools` are the session's, whose titles
-/// name a step.
+/// name a step; no notes for the ratings, which the app adds.
 pub fn steps(history: Option<&History>, tools: &[&dyn ProcessingTool], tr: &Translator) -> Steps {
     let side = |wanted: fn(&History) -> Option<Move>| {
         let history = history?;
@@ -2352,6 +2352,7 @@ pub fn steps(history: Option<&History>, tools: &[&dyn ProcessingTool], tr: &Tran
     Steps {
         undo: side(|h| h.undo),
         redo: side(|h| h.redo),
+        ..Steps::default()
     }
 }
 

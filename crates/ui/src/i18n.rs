@@ -1457,6 +1457,9 @@ mod tests {
                 args.set("high", "1/60");
                 args.set("read", "2,140");
                 args.set("none", 3);
+                // A rating's or a label's words and the person's note for it.
+                args.set("words", "3 stars");
+                args.set("note", "Print candidates");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

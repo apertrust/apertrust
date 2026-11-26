@@ -30,7 +30,9 @@ use std::path::PathBuf;
 
 use apertrust_engine::session::{Command, Rating, RatingChange};
 use apertrust_ui::Translator;
-use apertrust_ui::components::{CaptionTips, CellAction, CellRating, ColourLabel, ColourLabels};
+use apertrust_ui::components::{
+    CaptionTips, CellAction, CellRating, ColourLabel, ColourLabels, RatingNotes,
+};
 
 use eframe::egui::os::OperatingSystem;
 
@@ -160,8 +162,15 @@ pub fn undo_words(change: RatingChange, tr: &Translator) -> String {
 }
 
 /// The caption's tooltips, each with its key as `keymap` has it, and, while `photos` are
-/// selected, several, saying how many it rates (decision 37).
-pub fn tips(keymap: &Keymap, os: OperatingSystem, tr: &Translator, photos: usize) -> CaptionTips {
+/// selected, several, saying how many it rates (decision 37), then the person's note for
+/// its mark, `notes`: "Rate 3 stars (3) · Print candidates".
+pub fn tips(
+    keymap: &Keymap,
+    os: OperatingSystem,
+    tr: &Translator,
+    photos: usize,
+    notes: &RatingNotes,
+) -> CaptionTips {
     let with_key = |words: String, id: ActionId| match keymap.tip(id, os, tr) {
         Some(key) => {
             let mut args = apertrust_ui::i18n::Args::new();
@@ -193,6 +202,7 @@ pub fn tips(keymap: &Keymap, os: OperatingSystem, tr: &Translator, photos: usize
             with_key(this(plain.labels[i].clone()), ActionId::LABEL[i])
         }),
     }
+    .noted(notes, tr)
 }
 
 #[cfg(test)]
@@ -298,11 +308,33 @@ mod tests {
     fn the_caption_s_tips_name_the_key_and_the_photos() {
         let tr = Translator::new(apertrust_ui::Locale::EnGb);
         let keymap = Keymap::defaults(OperatingSystem::Mac);
-        let one = tips(&keymap, OperatingSystem::Mac, &tr, 1);
+        let none = RatingNotes::default();
+        let one = tips(&keymap, OperatingSystem::Mac, &tr, 1, &none);
         assert_eq!(one.stars[2], "Rate 3 stars (3)");
         assert_eq!(one.reject, "Reject (R)");
-        let twelve = tips(&keymap, OperatingSystem::Mac, &tr, 12);
+        let twelve = tips(&keymap, OperatingSystem::Mac, &tr, 12, &none);
         assert_eq!(twelve.stars[2], "Rate 3 stars on 12 photos (3)");
         assert_eq!(twelve.labels[0], "Red label on 12 photos (F1)");
+    }
+
+    /// The person's notes end the tooltips of the marks they name, after the key; a mark
+    /// with none, and the current star's Clear the rating, keep their words.
+    #[test]
+    fn the_caption_s_tips_end_in_the_person_s_notes() {
+        let tr = Translator::new(apertrust_ui::Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Mac);
+        let mut notes = RatingNotes::default();
+        notes.stars[2] = "Print candidates".to_owned();
+        notes.labels[4] = " Sent to client ".to_owned();
+        notes.labels[0] = "   ".to_owned();
+        let one = tips(&keymap, OperatingSystem::Mac, &tr, 1, &notes);
+        assert_eq!(one.stars[2], "Rate 3 stars (3) · Print candidates");
+        assert_eq!(one.labels[4], "Purple label (F5) · Sent to client");
+        assert_eq!(one.stars[1], "Rate 2 stars (2)");
+        assert_eq!(one.labels[0], "Red label (F1)");
+        assert_eq!(one.clear, "Clear the rating (0)");
+        let twelve = tips(&keymap, OperatingSystem::Mac, &tr, 12, &notes);
+        let said = "Rate 3 stars on 12 photos (3) · Print candidates";
+        assert_eq!(twelve.stars[2], said);
     }
 }

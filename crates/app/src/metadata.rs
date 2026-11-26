@@ -42,7 +42,9 @@ use apertrust_tools::settings::registry::{METADATA_HIDDEN, METADATA_OPEN, METADA
 use apertrust_tools::utility::UtilityDefinition;
 use apertrust_tools::utility::metadata::{ROWS, group_of, widget_row};
 use apertrust_tools::{Cut, Fact, FactEnd as FactEndDef, Row, Widget, messages};
-use apertrust_ui::components::{self as parts, FactCut, FactEnd, FactList, FactMarks, Marks};
+use apertrust_ui::components::{
+    self as parts, ColourLabel, FactCut, FactEnd, FactList, FactMarks, Marks, RatingNotes,
+};
 use apertrust_ui::i18n::Args;
 use apertrust_ui::popup::{Entry, Item, Submenu};
 use apertrust_ui::{Icon, Translator, theme};
@@ -459,7 +461,7 @@ impl Metadata {
                 .into_iter()
                 .find(|widget| widget_row(*widget) == Some(row.id));
             let value = match marks {
-                Some(widget) => Rated::of(cx).text(widget, cx.words),
+                Some(widget) => Rated::of(cx).text(widget, cx.words, &RatingNotes::default()),
                 None => self.worded(row.id, &subject, cx).value,
             };
             let value = value.filter(|value| !value.is_empty());
@@ -656,23 +658,37 @@ impl Rated {
         }
     }
 
-    /// Rating's or Colour labels' row as text, as Copy Information copies it: the words the
-    /// row shows, else its stars as ★ and ☆, or the labels every photo has by name and those
-    /// some have marked so; none with no photo.
-    fn text(&self, widget: Widget, words: &Translator) -> Option<String> {
+    /// Rating's or Colour labels' row as text: the words the row shows, else its stars as ★
+    /// and ☆, or the labels every photo has by name and those some have marked so; none with
+    /// no photo. With the person's `notes`, as screen readers hear it, each rating or label
+    /// the words stand for ends in its note, as the tooltip says it: "Rejected · Out", or
+    /// Different then each rating's line; Copy Information passes none.
+    fn text(&self, widget: Widget, words: &Translator, notes: &RatingNotes) -> Option<String> {
         if self.photos == 0 {
             return None;
         }
-        let row = self.row(widget, words);
+        let row = self.row(widget, words, notes);
         if let Some(said) = row.words {
-            return Some(said);
+            let plain = self.row(widget, words, &RatingNotes::default()).tip;
+            return Some(if row.tip == plain {
+                said
+            } else if plain.is_empty() {
+                // One rating, Rejected, its note the tooltip's whole line.
+                row.tip
+            } else {
+                let lines: Vec<&str> = row.tip.lines().collect();
+                format!("{said}: {}", lines.join(", "))
+            });
         }
         Some(match row.marks {
             Marks::Stars(stars) => (0..5u8)
                 .map(|at| if at < stars { '★' } else { '☆' })
                 .collect(),
             Marks::Labels { on, some } => {
-                let name = |at: usize| words.text(&format!("colour-label-{}", LABELS[at]));
+                let name = |at: usize| {
+                    let colour = words.text(&format!("colour-label-{}", LABELS[at]));
+                    RatingNotes::noted(colour, &notes.labels[at], words)
+                };
                 let mut names: Vec<String> =
                     (0..5).filter(|at| on & (1 << at) != 0).map(name).collect();
                 names.extend((0..5).filter(|at| some & (1 << at) != 0).map(|at| {
@@ -691,8 +707,10 @@ impl Rated {
 
     /// Rating's or Colour labels' row: the stars of the rating every photo has, "Rejected",
     /// or "Different" with each rating and its count in the tooltip; the labels every photo
-    /// has, filled, and those some have, ringed.
-    fn row(&self, widget: Widget, words: &Translator) -> MarksRow {
+    /// has, filled, and those some have, ringed. Its tooltip says, from `notes`, the rating
+    /// shown, each rating Different counts and each label shown, where the person noted it:
+    /// "3 stars · Print candidates", a line each.
+    fn row(&self, widget: Widget, words: &Translator, notes: &RatingNotes) -> MarksRow {
         let tip = match self.photos {
             0 => words.text("metadata-select-a-photo"),
             _ => String::new(),
@@ -700,6 +718,20 @@ impl Rated {
         if widget == Widget::MetadataLabels {
             let all = (self.ratings.iter()).fold(0x1f, |all, (rating, _)| all & rating.labels);
             let any = (self.ratings.iter()).fold(0, |any, (rating, _)| any | rating.labels);
+            let noted: Vec<String> = (ColourLabel::ALL.into_iter().enumerate())
+                .filter(|(at, label)| {
+                    any & (1 << at) != 0 && !notes.label(*label).trim().is_empty()
+                })
+                .map(|(_, label)| {
+                    let colour = words.text(&format!("colour-label-{}", label.id()));
+                    RatingNotes::noted(colour, notes.label(label), words)
+                })
+                .collect();
+            let tip = if self.photos > 0 && !noted.is_empty() {
+                noted.join("\n")
+            } else {
+                tip
+            };
             return MarksRow {
                 marks: Marks::Labels {
                     on: if self.photos > 0 { all } else { 0 },
@@ -711,12 +743,22 @@ impl Rated {
         }
         let stars = |rating: &Rating| {
             if rating.rejected {
-                words.text("metadata-rejected")
+                RatingNotes::noted(words.text("metadata-rejected"), &notes.reject, words)
             } else {
                 let mut args = Args::new();
                 args.set("count", f64::from(rating.stars));
-                words.text_with("metadata-stars", Some(&args))
+                let said = words.text_with("metadata-stars", Some(&args));
+                RatingNotes::noted(said, notes.star(rating.stars), words)
             }
+        };
+        // The rating's note, where the person gave it one.
+        let note = |rating: &Rating| {
+            let note = if rating.rejected {
+                notes.reject.as_str()
+            } else {
+                notes.star(rating.stars)
+            };
+            (!note.trim().is_empty()).then(|| stars(rating))
         };
         // As shown: a rejected photo reads Rejected whatever its stars.
         let shared =
@@ -731,7 +773,7 @@ impl Rated {
                 MarksRow {
                     marks: Marks::Stars(first.stars),
                     words: first.rejected.then(|| words.text("metadata-rejected")),
-                    tip,
+                    tip: note(first).unwrap_or(tip),
                 }
             }
             several => {
@@ -1064,8 +1106,9 @@ impl UtilityTool for Metadata {
                 let id = widget_row(widget).unwrap_or_default();
                 let label = words.text(&label_id(id));
                 let rated = self.rated(ui.ctx().cumulative_pass_nr(), cx);
-                let row = rated.row(widget, words);
-                let said = rated.text(widget, words);
+                let notes = parts::rating_notes(ui.ctx());
+                let row = rated.row(widget, words, &notes);
+                let said = rated.text(widget, words, &notes);
                 let marks = FactMarks::new(&label, &row.tip, row.marks, column)
                     .enabled(rated.enabled)
                     .words(row.words.as_deref())

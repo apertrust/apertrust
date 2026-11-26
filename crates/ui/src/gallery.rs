@@ -1980,6 +1980,8 @@ struct SettingsDemo {
     pattern: String,
     folder: String,
     search: String,
+    /// The notes of a rating of 3 stars and of the purple label.
+    notes: [String; 2],
 }
 
 impl Default for SettingsDemo {
@@ -1998,6 +2000,7 @@ impl Default for SettingsDemo {
             pattern: "$(FILE.FOLDER)/darktable_exported/$(FILE.NAME)".to_owned(),
             folder: "~/Pictures/Export".to_owned(),
             search: String::new(),
+            notes: ["Print candidates".to_owned(), String::new()],
         }
     }
 }
@@ -2005,14 +2008,15 @@ impl Default for SettingsDemo {
 /// Each Settings control in its row, the column at the row's end (`docs/gui.md`, The
 /// Settings dialog): a combo changed from its default and one at it, a slider, two
 /// segmented choices, switches on, off and disabled,
-/// chips, a text area, a number waiting for a restart, a pattern, a folder, a readout and
-/// an action; then the switch in each state.
+/// chips, a text area, a number waiting for a restart, a pattern, two texts after a glyph,
+/// a star's and a label's, a folder, a readout and an action; then the switch in each
+/// state.
 fn settings_controls(ui: &mut Ui, t: &Theme, demo: &mut SettingsDemo) {
     use crate::components::settings::{
-        Button as SettingButton, Chips, Combo, Folder, Number, Readout, Search,
+        Button as SettingButton, Chips, Combo, Folder, Number, Readout, RowGlyph, Search,
         Segmented as Segments, SettingRow, Slider, Switch as SettingSwitch, Text, TextArea,
     };
-    use crate::components::{ButtonState as State, Variable};
+    use crate::components::{ButtonState as State, ColourLabel, Variable};
     let themes = ["Dark", "Grey", "Light", "High contrast"];
     let locales = ["English (UK)", "English (US)", "Українська", "Polski"];
     let shapes = ["Triangle", "Circle", "Square"];
@@ -2154,6 +2158,25 @@ fn settings_controls(ui: &mut Ui, t: &Theme, demo: &mut SettingsDemo) {
             });
             if let Some(text) = out.inner {
                 demo.pattern = text;
+            }
+            let glyphs = [
+                ("3 stars", RowGlyph::Icon(crate::Icon::StarFilled)),
+                ("Purple", RowGlyph::Label(ColourLabel::Purple)),
+            ];
+            for ((label, glyph), name) in glyphs.into_iter().zip(&mut demo.notes) {
+                let mut row = SettingRow::new(label, label).glyph(glyph);
+                if !name.is_empty() {
+                    row = row.changed("empty");
+                }
+                let out = row.show(ui, |ui| {
+                    Text::new(label, label, name).hint("Add a note").show(ui)
+                });
+                if let Some(text) = out.inner {
+                    *name = text;
+                }
+                if out.reset {
+                    name.clear();
+                }
             }
             let out = SettingRow::new("folder", "Export to").show(ui, |ui| {
                 Folder::new("folder", "Export to", &demo.folder, "Choose folder").show(ui)

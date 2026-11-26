@@ -21,7 +21,7 @@
 
 use apertrust_ui::components::{
     Browser, BrowserAction, CellAction, CellPicture, CellRating, CellStatus, ColourLabel,
-    ColourLabels, GridCell, Thumb,
+    ColourLabels, GridCell, RatingNotes, Thumb, set_rating_notes,
 };
 use apertrust_ui::{Builtin, Locale, Theme};
 use egui::accesskit::{HasPopup, Role, Toggled};
@@ -80,9 +80,17 @@ fn rated() -> Option<CellRating> {
 
 /// A cell drawn as `state` says, 10 points in, and what its first line reported.
 fn cell(state: Cell) -> Harness<'static, Vec<CellAction>> {
+    named_cell(state, RatingNotes::default())
+}
+
+/// [`cell`] with the person's `notes` for the ratings and labels.
+fn named_cell(state: Cell, notes: RatingNotes) -> Harness<'static, Vec<CellAction>> {
     Harness::builder()
         .with_size(egui::vec2(160.0, 200.0))
-        .with_context_setup(install)
+        .with_context_setup(move |ctx| {
+            install(ctx);
+            set_rating_notes(ctx, notes);
+        })
         .build_ui_state(
             move |ui, actions: &mut Vec<CellAction>| {
                 let status = if state.unreadable {
@@ -914,6 +922,50 @@ fn the_first_line_s_clicks_rate_reject_and_open_the_labels_list() {
     harness.run();
     assert_eq!(harness.state().last(), Some(&CellAction::ClearLabels));
     // The harness checks the parent's activation response on every caption click.
+}
+
+/// The person's notes follow the marks they name, to screen readers and in the marks'
+/// tooltips, which marks with none do without: the stars, Reject, the circle's value and
+/// its list, and the cell's description.
+#[test]
+fn the_first_line_s_marks_carry_the_person_s_notes() {
+    let mut notes = RatingNotes::default();
+    notes.stars[2] = "Print candidates".to_owned();
+    notes.labels[3] = "Sent to client".to_owned();
+    let mut harness = named_cell(
+        Cell {
+            rating: rated(),
+            ..Cell::default()
+        },
+        notes,
+    );
+    harness.run();
+    let three = "Rate 3 stars · Print candidates";
+    harness.get_by_role_and_label(Role::Button, three).hover();
+    harness.run();
+    assert!(painted(&harness).iter().any(|text| text == three));
+    harness
+        .get_by_role_and_label(Role::Button, "Rate 4 stars")
+        .hover();
+    harness.run();
+    assert!(
+        !painted(&harness)
+            .iter()
+            .any(|text| text.starts_with("Rate 4"))
+    );
+    harness.get_by_role_and_label(Role::Button, "Reject");
+    let item = harness.get_by_role_and_label(Role::ListItem, "IMG_2041.ARW");
+    assert_eq!(
+        item.accesskit_node().description().as_deref(),
+        Some("3 stars · Print candidates. Colour labels: Red, Blue · Sent to client")
+    );
+    let circle = harness.get_by_role_and_label(Role::Button, "Colour labels");
+    let value = "Red, Blue · Sent to client";
+    assert_eq!(circle.accesskit_node().value().as_deref(), Some(value));
+    circle.click();
+    harness.run();
+    harness.get_by_role_and_label(Role::MenuItemCheckBox, "Blue · Sent to client");
+    harness.get_by_role_and_label(Role::MenuItemCheckBox, "Purple");
 }
 
 #[test]
