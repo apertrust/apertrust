@@ -104,7 +104,7 @@ The design is drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn3
 
 ### The order of work
 
-One slice at a time, each reviewed before the next. Slice 1 is built, and of slice 2 the read-only rows of several photos and the presets; Maker notes and slices 3 to 5 are planned:
+One slice at a time, each reviewed before the next. Slice 1 is built, of slice 2 the read-only rows of several photos and the presets, and of slice 3 the fields and the copy's name of one photo; Maker notes, the camera's text in an empty field and slices 4 and 5 are planned:
 
 1. **Read-only for one photo:** the tool, Basic (less the copy's name), Camera, Exposure, Lens and GPS for the active photo from the session's `Photo` and `apertrust-raw`'s EXIF; the IPTC groups drawn closed and disabled; ＋, Ctrl+C and Copy Information. It needs none of the library's steps.
 2. **Several photos, read-only:** Different, ranges and totals from the session's summary (`Summarise`, `Summary`), the facts read when it needs them; Maker notes for the makers rawler reads; the presets.

@@ -37,7 +37,9 @@ use std::cell::RefCell;
 
 use apertrust_engine::session::{Command, ControlValue};
 use apertrust_tools::utility::UtilityDefinition;
-use apertrust_tools::{Fact, GroupKind, Reset, Row, SettingRow, ToolDefinition, Widget, messages};
+use apertrust_tools::{
+    Fact, FieldRow, GroupKind, Reset, Row, SettingRow, ToolDefinition, Widget, messages,
+};
 use apertrust_ui::components as parts;
 use apertrust_ui::popup::Entry as MenuEntry;
 use apertrust_ui::{Translator, translator};
@@ -168,6 +170,22 @@ pub trait UtilityTool {
         _cx: &mut Context<'_>,
     ) -> Vec<Self::Action> {
         Vec::new()
+    }
+
+    /// Draws its field `field` (decision 110), and returns what it asked for.
+    fn field(
+        &mut self,
+        _ui: &mut egui::Ui,
+        _field: &FieldRow,
+        _cx: &mut Context<'_>,
+    ) -> Vec<Self::Action> {
+        Vec::new()
+    }
+
+    /// Whether its field `field` holds a value, which a closed collapsible group holding it
+    /// counts in its "N set".
+    fn holds(&self, _field: &FieldRow, _mirror: &Mirror) -> bool {
+        false
     }
 
     /// What its header's ＋ opens, where its declaration has one (`rows_shown`), in
@@ -314,6 +332,10 @@ impl<T: UtilityTool> Page<'_, '_, T> {
                     }
                 }
                 Row::Custom { widget, .. } => set += self.drawn.borrow().0.set_in(*widget),
+                Row::Field(field) => {
+                    let (tool, cx, _) = &*self.drawn.borrow();
+                    set += usize::from(tool.holds(field, cx.mirror));
+                }
                 row => set += self.count(row.rows()),
             }
         }
@@ -353,12 +375,15 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
         self.drawn.borrow().0.wheel()
     }
 
-    /// A custom row, by the utility's body; `UtilityDefinition::check` refuses every other
-    /// row the page drawer leaves to a tool's kind, each of them one that edits.
+    /// A custom row, by the utility's body, and a field, by its [`UtilityTool::field`];
+    /// `UtilityDefinition::check` refuses every other row the page drawer leaves to a tool's
+    /// kind, each of them one that edits.
     fn own(&self, ui: &mut egui::Ui, row: &Row, _changes: &mut Vec<Change>) {
-        if let Row::Custom { widget, .. } = row {
-            let (tool, cx, actions) = &mut *self.drawn.borrow_mut();
-            actions.extend(tool.body(*widget, ui, cx));
+        let (tool, cx, actions) = &mut *self.drawn.borrow_mut();
+        match row {
+            Row::Custom { widget, .. } => actions.extend(tool.body(*widget, ui, cx)),
+            Row::Field(field) => actions.extend(tool.field(ui, field, cx)),
+            _ => {}
         }
     }
 

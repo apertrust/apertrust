@@ -10,7 +10,7 @@
    <apertrust:settings>
     <rdf:Description
       apertrust:tool="metadata"
-      setting:metadata.shown="file_name rating colour_labels date_taken exposure_time aperture iso lens focal_length title"
+      setting:metadata.shown="file_name rating colour_labels copy date_taken exposure_time aperture iso lens focal_length title"
       setting:metadata.shown_only="true"
       setting:metadata.open="basic exposure lens content"/>
    </apertrust:settings>

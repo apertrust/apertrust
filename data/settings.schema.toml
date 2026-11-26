@@ -1008,8 +1008,7 @@ of = "text"
 default = []
 applies = "at-once"
 
-# The groups open, by their ids. Content opens at first once it has rows; a group with none
-# is drawn closed whatever this says.
+# The groups open, by their ids, Basic, Exposure and Content at first.
 [metadata.open]
 owner = "tool:metadata"
 kind = "list"

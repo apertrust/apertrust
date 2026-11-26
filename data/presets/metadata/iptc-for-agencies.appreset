@@ -10,7 +10,7 @@
    <apertrust:settings>
     <rdf:Description
       apertrust:tool="metadata"
-      setting:metadata.shown=""
+      setting:metadata.shown="title headline description description_writer notes creator job_title email website phone address contact_city contact_region postal_code contact_country copyright_notice usage_terms copyright_status web_statement credit_line source publisher sublocation city state country country_code instructions job_id date_created genre scene_code subject_code"
       setting:metadata.hidden=""
       setting:metadata.open="basic content creator rights location status"/>
    </apertrust:settings>

@@ -249,6 +249,7 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
         Row::LastPick { .. } => "last_pick",
         Row::Guides => "guides",
         Row::Fact(_) => "fact",
+        Row::Field(_) => "field",
     };
     let built: Vec<(&str, String)> = TOOLS
         .iter()

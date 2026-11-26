@@ -849,6 +849,22 @@ pub enum Row {
     /// nothing: [`ProcessingDefinition::check`] refuses it, and a utility holds each fact id
     /// once among its facts.
     Fact(Fact),
+    /// An editable field of a utility (decision 110), as the Metadata tool's Title: a label
+    /// and a well holding the photo's value, which writes library data, never the edit, its
+    /// words `tool-<tool>-field-<id>-label` and `-tag` ([`crate::messages::field_words`]).
+    /// It is no control: [`ProcessingDefinition::check`] refuses it, and a utility holds each
+    /// row id once among its facts and fields.
+    Field(FieldRow),
+}
+
+/// A [`Row::Field`]: its id, the field it edits by its property's qualified name, as
+/// `apertrust_library::fields::FIELDS` gives it (`dc:title`), or `apertrust:name` for the
+/// copy's name, and whether it shows until the person hides it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldRow {
+    pub id: &'static str,
+    pub field: &'static str,
+    pub shown: bool,
 }
 
 /// A [`Row::Fact`]: its id, whether it shows until the person hides it, where its value is
@@ -1068,7 +1084,8 @@ impl Row {
             | Row::Reference { .. }
             | Row::LastPick { .. }
             | Row::Guides
-            | Row::Fact(_) => &[],
+            | Row::Fact(_)
+            | Row::Field(_) => &[],
             Row::Custom { controls, .. } => controls,
         }
     }
@@ -1814,6 +1831,8 @@ pub enum DefinitionError {
     Fact(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two facts are called {0}")]
     DuplicateFact(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
+    #[error("the field {0} is a utility's, never a processing tool's")]
+    FieldRow(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0:?} is no key of dotted snake_case parts")]
     Key(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the setting {0}'s words name not each of its options")]
@@ -2208,6 +2227,7 @@ impl ProcessingDefinition {
                 Row::Fields(fields) => return Err(DefinitionError::Fields(fields.id)),
                 // Facts are a utility's, never the edit's.
                 Row::Fact(fact) => return Err(DefinitionError::Fact(fact.id)),
+                Row::Field(field) => return Err(DefinitionError::FieldRow(field.id)),
                 Row::Setting(setting) => {
                     if !settings.insert(setting.id) {
                         return Err(DefinitionError::DuplicateSetting(setting.id));

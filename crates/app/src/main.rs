@@ -10644,7 +10644,7 @@ fn let_go_of_input(ui: &egui::Ui, area: egui::Rect) {
 }
 
 /// What every control of a photo still opening says it waits for: "Opening IMG_2041…".
-fn controls_opening(mirror: &Mirror, words: &Translator) -> Option<String> {
+pub(crate) fn controls_opening(mirror: &Mirror, words: &Translator) -> Option<String> {
     mirror.opening_name().map(|name| {
         let mut args = apertrust_ui::i18n::Args::new();
         args.set(
@@ -11410,7 +11410,7 @@ fn not_saved_words(words: &Translator, error: &SessionError) -> String {
 /// What the line under the photo says of a photo open for viewing only: that part of its
 /// edit's history cannot be read, or the newer version that wrote it, where the edit records
 /// one; and that it is open for viewing only.
-fn view_only_notice(words: &Translator, view_only: &ViewOnly) -> String {
+pub(crate) fn view_only_notice(words: &Translator, view_only: &ViewOnly) -> String {
     match &view_only.reason {
         Reason::Unreadable(apertrust_engine::sidecar::Problem::UnknownField { .. }) => {
             return words.text("photo-view-only-unkept");
