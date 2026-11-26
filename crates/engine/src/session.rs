@@ -3191,6 +3191,14 @@ struct Open {
     /// The stamp of a newer sidecar that could not be read, logged once; each write it
     /// drops is told.
     unreadable: Option<Option<Stamp>>,
+    /// The sidecar's stamp, its size, modified time and hash, as its open read it, and the
+    /// first copy's fields then: a rating's move whose write landed as the photo opened
+    /// handed over the bytes read, and no field has changed since where they are the same
+    /// ([`Engine::landed_as_opened`]).
+    opened: Option<(
+        sidecar::FileStamp,
+        Vec<apertrust_library::fields::FieldEntry>,
+    )>,
     /// Whether the edit has changed since it was last handed to the writer.
     unsaved: bool,
     /// Whether its fields changed since they were last handed to the writer, which writes
@@ -5317,7 +5325,10 @@ impl Engine {
             clocks,
             file,
             stamp,
+            file_stamp,
         } = read;
+        let fields = (file.copies.first()).map_or_else(Vec::new, |copy| copy.fields.clone());
+        let opened = file_stamp.map(|stamp| (stamp, fields));
         // What the file holds, which the first write compares: the default steps a photo
         // with no history is given are not in it until the first change writes them.
         let base = history::Base::of(&log, &clocks);
@@ -5378,6 +5389,7 @@ impl Engine {
             view_only,
             photo: photo.clone(),
             unreadable: None,
+            opened,
             unsaved: false,
             fields_unsaved: false,
             failing: BTreeSet::new(),

@@ -359,6 +359,9 @@ pub(crate) struct Read {
     /// The sidecar's size and modified time as read, `None` where there was none, which
     /// the edit writer compares before it writes.
     pub stamp: Option<Stamp>,
+    /// The sidecar's size, modified time and hash as read, which a batch's write that
+    /// landed as the photo opened is told by.
+    pub file_stamp: Option<sidecar::FileStamp>,
 }
 
 /// What an open's job runs with, owned, so its body borrows nothing of the engine
@@ -660,6 +663,7 @@ fn edit(
         .pop();
     let modified = snapshot.as_ref().and_then(Snapshot::changed);
     let stamp = snapshot.as_ref().and_then(Snapshot::stamp);
+    let file_stamp = snapshot.as_ref().and_then(Snapshot::file_stamp);
     let mut read = Read {
         metadata,
         edit: Edit::default(),
@@ -669,6 +673,7 @@ fn edit(
         clocks: Vec::new(),
         file: Edits::new(""),
         stamp,
+        file_stamp,
     };
     // What the file names the photo by: its name, and its fingerprint (decision 53).
     let identify = |file: &mut Edits| {
