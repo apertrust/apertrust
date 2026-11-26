@@ -760,6 +760,33 @@ fn a_style_replayed_keeps_the_newer_item_s_state_of_a_tool_it_does_not_set() {
     remove(&path);
 }
 
+/// A style applied again at the top, its item as it was, laid on a newer file: its last step
+/// holds the list though it did not move it, so the item is rebuilt from the joined log, each
+/// tool's state before it the newer file's.
+#[test]
+fn a_style_applied_again_unchanged_is_replayed_on_a_newer_file() {
+    let path = scratch("styles-newer-unchanged");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&path);
+    driven.run([set_tool(grain(10.0))]);
+    driven.run([append("Warm film", &[grain(40.0)])]);
+    driven.run([set_tool(grain(10.0))]);
+    driven.writes();
+    write_elsewhere(&path, (&Grain, on("strength", 20.0)), false);
+    // Applied again from 10, its item as it was, at the top already.
+    let listed_before = styles(&driven);
+    driven.run([append("Warm film", &[grain(40.0)])]);
+    assert_eq!(styles(&driven), listed_before);
+    assert!(log(&driven).steps().last().unwrap().styles.is_some());
+    assert!(driven.writes().is_empty());
+    driven.engine.newer_file(false);
+    let warm = styles(&driven)[0].clone();
+    assert_eq!(tool_of(&warm, "grain").before, on("strength", 20.0));
+    driven.run([clear("Warm film")]);
+    assert_eq!(edit(&driven).tool("grain"), Some(&on("strength", 20.0)));
+    remove(&path);
+}
+
 /// A style one of whose tools is refused is refused whole: the edit and the list stay as
 /// they were, and no step is made.
 #[test]

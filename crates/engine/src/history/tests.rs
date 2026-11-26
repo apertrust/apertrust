@@ -1022,6 +1022,7 @@ fn replay_lays_the_session_s_change_of_the_list_on_the_newer_one() {
     replay(
         &mut rebuilt,
         (&[], std::slice::from_ref(&ours)),
+        false,
         &stepped,
         grain_at(2.0),
     );
@@ -1032,6 +1033,7 @@ fn replay_lays_the_session_s_change_of_the_list_on_the_newer_one() {
     replay(
         &mut rebuilt,
         (&[], std::slice::from_ref(&ours)),
+        false,
         &stepped,
         grain_at(7.0),
     );
@@ -1048,6 +1050,7 @@ fn replay_lays_the_session_s_change_of_the_list_on_the_newer_one() {
     replay(
         &mut rebuilt,
         (&[ours.clone(), b.clone()], std::slice::from_ref(&b)),
+        false,
         &none,
         grain_at(0.0),
     );
