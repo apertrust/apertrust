@@ -7039,17 +7039,13 @@ impl App {
         };
         let words = translator(ui.ctx());
         let titles = |id: &str| styles::tool::title(&words, id);
-        let (photo_open, view_only) = match &self.mirror.photo {
-            PhotoState::Open(photo) => (true, photo.view_only.is_some()),
-            _ => (false, false),
-        };
+        let ((photo_open, view_only), takes) = styles::drawn_for(&self.mirror);
         // With several selected, a style is applied to all of them, the active photo open
         // for viewing only among them skipped and named (decision 109).
         let styled = selection::batched(&self.mirror).len();
-        let takes = (self.mirror.takes_edits(), self.mirror.takes_batches());
         let mut styles_tool = styles::tool::StylesTool {
             listed: self.shell.styles.listed.as_deref().unwrap_or_default(),
-            applied: photo_open.then_some(self.mirror.values.styles.as_slice()),
+            applied: styles::applied(&self.mirror),
             kept: &self.shell.styles,
             unavailable: styles::tool::unavailable_on(
                 (photo_open, view_only),
@@ -9404,6 +9400,11 @@ impl eframe::App for App {
         self.shell.follow_picker(&self.mirror, &translator(ctx));
         // What the engine reported first, so the actions and the frame see it.
         self.drain(ctx);
+        // The photo left's values, held while the next opens, drawn disabled once the open
+        // takes `HELD_PLAIN`, and given way to no photo once it is slow.
+        if let Some(wait) = self.mirror.let_go(Instant::now()) {
+            ctx.request_repaint_after(wait);
+        }
         // The picker on as the cursors' well follows it, observed before any frame, the
         // start window's after File › Close included (decision 104).
         self.shell.follow_picker(&self.mirror, &translator(ctx));
@@ -10512,11 +10513,15 @@ type Others<'o> = dyn FnMut(&mut egui::Ui, &'static str, &mut utility::Context<'
 
 /// The tab shown's sections as the mirror's photo has them (`docs/gui.md`, The Tools
 /// panel), the workspace's layout giving the tools and their order (decision 96): the open
-/// photo's values and Scopes; with no photo, and from the moment another is asked for
-/// until its values arrive, every tool at its defaults and Scopes with no graph, all drawn
+/// photo's values and Scopes; from the moment another is asked for until its values
+/// arrive, the photo left's values and Scopes with no graph; within `mirror::HELD_PLAIN`
+/// of a switch, the values shown, the photo left's or the next photo's before it is live,
+/// drawn as a live photo's, each processing tool's section taking no input, then
+/// disabled; with no photo, every tool at its defaults and Scopes with no graph, all drawn
 /// disabled and each open or closed as it was, never a blank panel. Only the open photo's
 /// sections send the session anything ([`Mirror::takes_edits`], which [`App::change`]
-/// asks); every section opens, closes and changes tab whatever it shows. History alone in
+/// asks); every section opens, closes and changes tab whatever it shows, but a processing
+/// tool's within `mirror::HELD_PLAIN` of a switch. History alone in
 /// its tab keeps its header at the tab's top, drawn from the mirror's history, Original
 /// alone and disabled while it has none. The utilities are drawn through their
 /// `UtilityTool`s with `settings`, every header from its declaration, its buttons and ⋯'s
@@ -10566,7 +10571,11 @@ fn edit_tab(
         tab.history = actions;
         return tab;
     }
-    let opening = controls_opening(mirror, &words);
+    // The values shown just after a switch: drawn as a live photo's, saying nothing new,
+    // each processing tool taking no input ([`panel_body`]).
+    let inert = mirror.inert();
+    let shown = inert.unwrap_or(shown);
+    let opening = controls_opening(mirror, &words).filter(|_| inert.is_none());
     // A tool's picker is pressed only on the open photo once live, and never on one
     // open for viewing only, whose notice says why.
     let view_only = view_only_words(mirror, &words);
@@ -10595,6 +10604,43 @@ fn edit_tab(
     );
     (tab.scopes, tab.changes, tab.pressed, tab.history) = drawn;
     tab
+}
+
+/// Over a processing tool's `section`, drawn after it so it is on top: what takes
+/// every press, drag and hover there, so no control shows it would act; and a control
+/// in it with the keyboard's focus loses it, as a disabled one does, so no key reaches it
+/// from the next frame on, and a drag begun in it before the switch ends, so it never goes
+/// on into the next photo. It takes no focus, and screen readers have no node for it.
+fn inert_over(ui: &mut egui::Ui, section: &egui::Response) {
+    let area = section.rect;
+    let_go_of_input(ui, area);
+    let sense = egui::Sense::CLICK | egui::Sense::DRAG;
+    ui.interact(
+        area.intersect(ui.clip_rect()),
+        section.id.with("inert"),
+        sense,
+    );
+}
+
+/// A control in `area` that has the keyboard's focus loses it, what a value field holds
+/// typed dropped as Escape drops it, and one dragged stops.
+fn let_go_of_input(ui: &egui::Ui, area: egui::Rect) {
+    let ctx = ui.ctx();
+    let inside = |id| {
+        let inside = |response: egui::Response| {
+            response.layer_id == ui.layer_id() && area.intersects(response.rect)
+        };
+        ctx.read_response(id).is_some_and(inside)
+    };
+    if let Some(focused) = ctx.memory(|memory| memory.focused())
+        && inside(focused)
+    {
+        components::ValueField::forget(ctx, focused);
+        ctx.memory_mut(|memory| memory.surrender_focus(focused));
+    }
+    if ctx.dragged_id().is_some_and(inside) {
+        ctx.stop_dragging();
+    }
 }
 
 /// What every control of a photo still opening says it waits for: "Opening IMG_2041…".
@@ -10992,7 +11038,13 @@ fn panel_body(
                             pickers,
                         )
                     });
-                    changes.extend(drawn.inner);
+                    // Just after a switch, drawn as live but taking nothing ([`edit_tab`]),
+                    // a header focused before it included.
+                    if mirror.inert().is_some() {
+                        inert_over(ui, &drawn.response);
+                    } else {
+                        changes.extend(drawn.inner);
+                    }
                 }
             }
         }
@@ -15836,6 +15888,8 @@ mod tests {
         history: Vec<history::Action>,
         /// The commands it sent, where the test carries out its actions as the app does.
         sent: Vec<Command>,
+        /// What the sections asked to change of the edit, which [`App::change`] would send.
+        changes: Vec<Change>,
     }
 
     /// The settings and the actions' state the Tools panel is drawn with, as
@@ -15907,12 +15961,16 @@ mod tests {
                         mirror.takes_edits() || changes.iter().all(own),
                         "{changes:?}"
                     );
+                    editing
+                        .changes
+                        .extend(changes.into_iter().filter(|change| !own(change)));
                 },
                 Editing {
                     shell: tools_opened(Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac)),
                     mirror: crate::mirror::tests::mirror(),
                     history: Vec::new(),
                     sent: Vec::new(),
+                    changes: Vec::new(),
                 },
             )
     }
@@ -16121,6 +16179,7 @@ mod tests {
                     mirror: crate::mirror::tests::mirror(),
                     history: Vec::new(),
                     sent: Vec::new(),
+                    changes: Vec::new(),
                 },
             )
     }
@@ -18576,6 +18635,7 @@ mod tests {
                     mirror: crate::mirror::tests::mirror(),
                     history: Vec::new(),
                     sent: Vec::new(),
+                    changes: Vec::new(),
                 },
             )
     }
@@ -21081,8 +21141,46 @@ mod tests {
         }
     }
 
+    /// A drag along Exposure's slider, then a double-click on it and → with it focused,
+    /// each in frames of its own: what a person does to change or reset it.
+    fn work_exposure_slider(harness: &mut Harness<'_, Editing>) {
+        let slider = harness
+            .get_by_role_and_label(Role::Slider, "Exposure")
+            .rect();
+        let (from, to) = (slider.center(), slider.center() + egui::vec2(40.0, 0.0));
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        harness.hover_at(from);
+        harness.run();
+        harness.event(button(from, true));
+        harness.run();
+        for step in 1..=4 {
+            let at = from + (to - from) * (step as f32 / 4.0);
+            harness.event(egui::Event::PointerMoved(at));
+            harness.run();
+        }
+        harness.event(button(to, false));
+        harness.run();
+        for _ in 0..2 {
+            harness.event(button(from, true));
+            harness.event(button(from, false));
+        }
+        harness.run();
+        harness.key_press(egui::Key::ArrowRight);
+        harness.run();
+    }
+
+    /// A switch to another photo: every frame from the click until the next photo's values
+    /// arrive draws the photo left's values, never a frame of the defaults, as they were
+    /// for `HELD_PLAIN`, saying nothing of the opening, then disabled with their tooltip;
+    /// no control takes a drag, a double-click or a key meanwhile, not even one focused
+    /// before the switch; the next photo's values replace them in one frame.
     #[test]
-    fn while_the_next_photo_opens_the_panel_draws_no_photo_until_its_values_arrive() {
+    fn a_switch_draws_the_photo_left_until_the_next_one_s_values_arrive() {
         use crate::mirror::tests::photo;
         let report = photo_values;
         let folder = settings::testing::Folder::new("panel-switch");
@@ -21096,26 +21194,64 @@ mod tests {
             exposure_slider(&harness),
             (String::from("+1.500 EV"), false)
         );
-        harness.get_by_role_and_label(Role::Button, "Scopes");
-        // Another photo is asked for: every frame from the next until its values arrive
-        // draws no photo, never a panel without sections.
+        // Live, the slider takes the person's changes.
+        work_exposure_slider(&mut harness);
+        assert!(!harness.state().changes.is_empty());
+        harness.state_mut().changes.clear();
+        // Another photo is asked for, the slider focused: every frame until `HELD_PLAIN`
+        // draws the photo left's values as they were, saying nothing of the opening, and
+        // takes nothing.
+        let left = Instant::now();
         harness
             .state_mut()
             .mirror
-            .opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
-        for step in 0..3 {
-            if step == 1 {
-                harness.state_mut().mirror.apply(Event::Opened(photo(2)));
-            }
+            .opening(PathBuf::from("/photos/b.ARW"), 2, left);
+        let tip = "Opening b…";
+        let saying = |harness: &Harness<'_, Editing>| {
+            (harness.query_all_by_role(Role::Group))
+                .filter(|row| row.accesskit_node().description().as_deref() == Some(tip))
+                .count()
+        };
+        let reset_disabled = |harness: &Harness<'_, Editing>| {
+            let reset = harness.get_by_role_and_label(Role::Button, "Reset Exposure");
+            reset.accesskit_node().is_disabled()
+        };
+        for _ in 0..3 {
             harness.run();
-            draws_no_photo(&harness, ADJUST);
-            assert_eq!(exposure_slider(&harness), (String::from("+0.000 EV"), true));
+            assert_eq!(
+                exposure_slider(&harness),
+                (String::from("+1.500 EV"), false)
+            );
+            assert!(!reset_disabled(&harness));
+            assert_eq!(saying(&harness), 0);
+            assert_eq!(graph_says_in(&harness, "Histogram"), "Nothing measured yet");
         }
-        // Its values arrive: the next frame is the next photo's, Scopes with it.
-        harness
-            .state_mut()
-            .mirror
-            .apply(Event::Values(report(0.5, 2)));
+        // A key for the slider focused before the switch reaches nothing.
+        harness.key_press(egui::Key::ArrowRight);
+        harness.run();
+        assert_eq!(harness.state().changes, []);
+        work_exposure_slider(&mut harness);
+        assert_eq!(harness.state().changes, []);
+        assert_eq!(harness.state().sent, []);
+        assert_eq!(
+            exposure_slider(&harness),
+            (String::from("+1.500 EV"), false)
+        );
+        // From `HELD_PLAIN` on, disabled, each row saying why; still taking nothing.
+        let mirror = &mut harness.state_mut().mirror;
+        let next = mirror.let_go(left + mirror::HELD_PLAIN);
+        assert_eq!(next, Some(mirror::HELD_FOR - mirror::HELD_PLAIN));
+        harness.run();
+        assert_eq!(exposure_slider(&harness), (String::from("+1.500 EV"), true));
+        assert!(reset_disabled(&harness));
+        assert!(saying(&harness) > 1);
+        work_exposure_slider(&mut harness);
+        assert_eq!(harness.state().changes, []);
+        assert_eq!(harness.state().sent, []);
+        // Its metadata and values arrive in one batch: the next frame is the next photo's.
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(2)));
+        mirror.apply(Event::Values(report(0.5, 2)));
         harness.run();
         assert_eq!(
             exposure_slider(&harness),
@@ -21131,6 +21267,213 @@ mod tests {
                 harness.get_by_role_and_label(Role::Button, &title);
             }
         }
+    }
+
+    /// The photo left's values, held as another photo opens, end in no photo once that
+    /// open fails, or once it has gone [`mirror::HELD_FOR`] with none of its values.
+    #[test]
+    fn a_switch_that_fails_or_is_slow_ends_in_no_photo() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-switch-ends");
+        let mut harness = editing(&folder);
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(1.5, 1)));
+        mirror.opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
+        harness.run();
+        assert_eq!(
+            exposure_slider(&harness),
+            (String::from("+1.500 EV"), false)
+        );
+        harness
+            .state_mut()
+            .mirror
+            .apply(Event::Failed(SessionError::Open {
+                open: 2,
+                error: Box::new(SessionError::NotAMosaic),
+            }));
+        harness.run();
+        draws_no_photo(&harness, ADJUST);
+        assert_eq!(exposure_slider(&harness), (String::from("+0.000 EV"), true));
+
+        // Slow: held until `HELD_FOR` after the click, then no photo.
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.opening(PathBuf::from("/photos/a.ARW"), 3, Instant::now());
+        mirror.apply(Event::Opened(photo(3)));
+        mirror.apply(Event::Values(photo_values(1.0, 3)));
+        let asked = Instant::now();
+        mirror.opening(PathBuf::from("/photos/c.ARW"), 4, asked);
+        let early = mirror.let_go(asked + mirror::HELD_FOR / 2);
+        assert_eq!(early, Some(mirror::HELD_FOR / 2));
+        harness.run();
+        assert_eq!(exposure_slider(&harness), (String::from("+1.000 EV"), true));
+        let ended = harness.state_mut().mirror.let_go(asked + mirror::HELD_FOR);
+        assert_eq!(ended, None);
+        harness.run();
+        draws_no_photo(&harness, ADJUST);
+    }
+
+    /// A number typed in Exposure's value field and not yet committed, as another photo is
+    /// asked for with no click, by a menu or a key: the switch drops it, as Escape does, so
+    /// it never reaches the next photo, even one live by the next frame.
+    #[test]
+    fn a_value_typed_before_a_switch_never_reaches_the_next_photo() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-switch-draft");
+        let mut harness = editing(&folder);
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(1.5, 1)));
+        harness.run();
+        // The track focused by a click, then Enter opens its field, and "2" is typed.
+        let slider = harness.get_by_role_and_label(Role::Slider, "Exposure");
+        slider.click();
+        harness.run();
+        harness.key_press(egui::Key::Enter);
+        harness.run();
+        harness.run();
+        harness.event(egui::Event::Text("2".to_owned()));
+        harness.run();
+        harness.get_by_role_and_label(Role::TextInput, "Exposure, in EV");
+        harness.state_mut().changes.clear();
+        // The switch, then the next photo live before the frame after it.
+        harness
+            .state_mut()
+            .mirror
+            .opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
+        harness.run();
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(2)));
+        mirror.apply(Event::Values(photo_values(0.5, 2)));
+        for _ in 0..3 {
+            harness.run();
+        }
+        assert_eq!(harness.state().changes, []);
+        assert_eq!(harness.state().sent, []);
+        assert_eq!(
+            exposure_slider(&harness),
+            (String::from("+0.500 EV"), false)
+        );
+    }
+
+    /// A slider held through a switch, by a key with the button still down: its drag ends
+    /// with the switch, so moving on once the next photo is live changes nothing of it.
+    #[test]
+    fn a_drag_begun_before_a_switch_never_reaches_the_next_photo() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-switch-drag");
+        let mut harness = editing(&folder);
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(1.5, 1)));
+        harness.run();
+        let slider = harness
+            .get_by_role_and_label(Role::Slider, "Exposure")
+            .rect();
+        let from = slider.center();
+        let at = |step: f32| from + egui::vec2(10.0 * step, 0.0);
+        harness.hover_at(from);
+        harness.run();
+        harness.event(egui::Event::PointerButton {
+            pos: from,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        harness.run();
+        for step in 1..=2 {
+            harness.event(egui::Event::PointerMoved(at(step as f32)));
+            harness.run();
+        }
+        assert!(!harness.state().changes.is_empty());
+        harness.state_mut().changes.clear();
+        // The switch, then the next photo live at once, the button still down.
+        harness
+            .state_mut()
+            .mirror
+            .opening(PathBuf::from("/photos/b.ARW"), 2, Instant::now());
+        harness.run();
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(2)));
+        mirror.apply(Event::Values(photo_values(0.5, 2)));
+        harness.run();
+        for step in 3..=6 {
+            harness.event(egui::Event::PointerMoved(at(step as f32)));
+            harness.run();
+        }
+        harness.event(egui::Event::PointerButton {
+            pos: at(6.0),
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        harness.run();
+        assert_eq!(harness.state().changes, []);
+        assert_eq!(harness.state().sent, []);
+    }
+
+    /// A switch as the session's events come: the next photo's metadata in one drain draws
+    /// the photo left's values still, never the defaults; its first values, not yet live,
+    /// within `HELD_PLAIN` of the switch draw as live, saying nothing of the opening and
+    /// taking no input; from then on disabled, saying why, until it is live.
+    #[test]
+    fn the_next_photo_opening_draws_plain_until_held_plain() {
+        use crate::mirror::tests::photo;
+        let folder = settings::testing::Folder::new("panel-switch-stage-two");
+        let mut harness = editing(&folder);
+        let mirror = &mut harness.state_mut().mirror;
+        mirror.apply(Event::Opened(photo(1)));
+        mirror.apply(Event::Values(photo_values(1.5, 1)));
+        harness.run();
+        let left = Instant::now();
+        harness
+            .state_mut()
+            .mirror
+            .opening(PathBuf::from("/photos/b.ARW"), 2, left);
+        harness.run();
+        let opened = Photo {
+            path: PathBuf::from("/photos/b.ARW"),
+            ..photo(2)
+        };
+        harness.state_mut().mirror.apply(Event::Opened(opened));
+        harness.run();
+        assert_eq!(
+            exposure_slider(&harness),
+            (String::from("+1.500 EV"), false)
+        );
+        let not_live = Values {
+            live: false,
+            ..photo_values(0.5, 2)
+        };
+        harness.state_mut().mirror.apply(Event::Values(not_live));
+        let saying = |harness: &Harness<'_, Editing>| {
+            (harness.query_all_by_role(Role::Group))
+                .filter(|row| row.accesskit_node().description().as_deref() == Some("Opening b…"))
+                .count()
+        };
+        harness.run();
+        assert_eq!(
+            exposure_slider(&harness),
+            (String::from("+0.500 EV"), false)
+        );
+        assert_eq!(saying(&harness), 0);
+        work_exposure_slider(&mut harness);
+        assert_eq!(harness.state().changes, []);
+        assert_eq!(harness.state().sent, []);
+        // From `HELD_PLAIN` on, disabled, saying why.
+        harness.state_mut().mirror.let_go(left + mirror::HELD_PLAIN);
+        harness.run();
+        assert_eq!(exposure_slider(&harness), (String::from("+0.500 EV"), true));
+        assert!(saying(&harness) > 1);
+        // Live: enabled.
+        let live = photo_values(0.5, 2);
+        harness.state_mut().mirror.apply(Event::Values(live));
+        harness.run();
+        assert_eq!(
+            exposure_slider(&harness),
+            (String::from("+0.500 EV"), false)
+        );
+        assert_eq!(saying(&harness), 0);
     }
 
     /// What the scopes' graph, `name`, says to screen readers, in the editing tab.

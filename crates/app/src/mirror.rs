@@ -32,10 +32,17 @@
 //!   Panels read it each frame; nothing subscribes.
 //! - **What it does not hold:** the app's own state (the theme, a tab, a dialog open). That
 //!   changes by intents after the frame, with no event.
-//! - **No photo:** before any, from the moment another is asked for until its values
-//!   arrive, and after an open fails, the Tools panel draws every tool at its
-//!   definition's defaults and Scopes with no graph, disabled ([`Shown::Nothing`]): never a blank
-//!   panel. The photo's values replace them in one apply ([`Shown::Photo`]).
+//! - **No photo:** before any, after an open fails and once a photo closes, the Tools panel
+//!   draws every tool at its definition's defaults and Scopes with no graph, disabled
+//!   ([`Shown::Nothing`]): never a blank panel.
+//! - **A switch:** from the moment another photo is asked for until its values arrive, the
+//!   photo left's values stay ([`Shown::Held`]), and its history and facts until the next
+//!   photo's metadata, so the panel goes from one photo's values to the next's with no
+//!   frame of defaults between; the next photo's replace them in one apply. For
+//!   [`HELD_PLAIN`] from a switch away from a live photo, the values shown, the photo
+//!   left's or the next one's before it is live, are drawn as a live photo's, taking no
+//!   input ([`Mirror::inert`]); after it, disabled as a photo opening is. An open that
+//!   fails, or whose values have not come [`HELD_FOR`] after the switch, ends in no photo.
 //! - **Stale events:** while a photo opens, what an earlier open left on its way is dropped
 //!   ([`PhotoState::stale`]), and so is what a photo closed left ([`Mirror::closing`]); a library event naming a command other than the latest open or
 //!   close is dropped by the folder ([`folder::FolderState::apply`]).
@@ -119,12 +126,18 @@ pub enum Shown {
     /// photo is open for viewing only (`editable` false).
     Photo { editable: bool },
     /// A photo opening whose values have arrived but which is not yet live (decision 77):
-    /// its values, every control drawn disabled with its tooltip saying why, and Scopes
-    /// with no graph, as with no photo.
+    /// its values, every control drawn disabled with its tooltip saying why, but within
+    /// [`HELD_PLAIN`] of a switch ([`Mirror::inert`]), and Scopes with no graph, as with no
+    /// photo.
     Opening,
-    /// No photo, or one opening whose values have not arrived: every tool at its
-    /// definition's defaults and Scopes with no graph, drawn disabled, with no marks, so the
-    /// person sees at once that a click on another photo was taken.
+    /// Another photo opening whose values have not arrived, the photo left's values: drawn
+    /// as they were, taking no input, within [`HELD_PLAIN`] of the switch
+    /// ([`Mirror::inert`]), then as [`Shown::Opening`] draws a photo's, disabled with their
+    /// tooltip naming the photo opening, so the panel never shows a frame of defaults
+    /// between two photos ([`Mirror::opening`]).
+    Held,
+    /// No photo, or one opening with none shown before it: every tool at its definition's
+    /// defaults and Scopes with no graph, drawn disabled, with no marks.
     Nothing,
 }
 
@@ -141,11 +154,21 @@ pub struct Mirror {
     tools: &'static [&'static dyn ProcessingTool],
     pub photo: PhotoState,
     /// The tools' controls and the unowned parameters as the engine last reported them,
-    /// with the pending ones in their place (`docs/gui.md`, A frame); with no photo, and
-    /// while one opens, every tool untouched ([`untouched`]).
+    /// with the pending ones in their place (`docs/gui.md`, A frame); with no photo every
+    /// tool untouched ([`untouched`]), and while another opens the photo left's, read-only
+    /// from [`HELD_PLAIN`] on ([`Shown::Held`]).
     pub values: Values,
     /// What the Tools panel draws of `values`.
     shown: Shown,
+    /// The photo left, while [`Shown::Held`] shows its values, until the next photo's
+    /// metadata ([`Mirror::held`]).
+    held: Option<Box<Photo>>,
+    /// When the photo left was first left, while its values or the next photo's before it
+    /// is live are shown ([`Mirror::let_go`]).
+    switched: Option<Instant>,
+    /// How the values shown are drawn within [`HELD_PLAIN`] of a switch away from a live
+    /// photo ([`Mirror::inert`]).
+    plain: Option<Shown>,
     /// The tools that change the photo in `values`, in the tools' order, worked out as
     /// `values` changes, never per frame: what the dot on the Tools panel's ⋮ reads
     /// ([`Mirror::edited`]).
@@ -181,7 +204,8 @@ pub struct Mirror {
     pub saving: Saving,
     /// The open photo's history as the session last reported it, the latest by its
     /// `through` (decision 78): what Undo and Redo would do, which Edit's items name; none
-    /// with no photo, and while one opens until its own arrives.
+    /// with no photo, and the photo left's while another opens until that one's metadata
+    /// ([`Shown::Held`]), which takes no edit.
     pub history: Option<History>,
     /// The active colour picker, as the session last reported it with what the app asked
     /// since (decision 79); none with no photo, and while one opens.
@@ -248,6 +272,9 @@ impl Mirror {
             photo: PhotoState::None,
             values: untouched.clone(),
             shown: Shown::Nothing,
+            held: None,
+            switched: None,
+            plain: None,
             edited: Vec::new(),
             untouched,
             pending: Vec::new(),
@@ -347,10 +374,10 @@ impl Mirror {
         self.values.edited || self.values.tools.iter().any(unapplied)
     }
 
-    /// The raw at `path` is asked for by the open numbered `open`, `now`: nothing of the
-    /// photo left is shown for the new one, the Tools panel shows no photo until the new
-    /// one's values arrive, and the Viewer shows at once the largest thumbnail the
-    /// folder holds of it, if any (decision 77).
+    /// The raw at `path` is asked for by the open numbered `open`, `now`: the Tools panel
+    /// keeps the photo left's values, read-only, until the new one's arrive, but nothing of
+    /// it reaches the new one ([`Mirror::hold`]), and the Viewer shows at once the largest
+    /// thumbnail the folder holds of it, if any (decision 77).
     pub fn opening(&mut self, path: PathBuf, open: u64, now: Instant) {
         // The session selects a photo opened from outside the selection alone.
         self.ask(open, Ask::Open(path.clone()));
@@ -362,21 +389,90 @@ impl Mirror {
     /// The raw at `path` shown opening for the open numbered `open`, `now`, as
     /// [`Mirror::opening`] shows it.
     fn show_opening(&mut self, path: PathBuf, open: u64, now: Instant) {
-        let held = self.folder.largest_thumbnail(&path).cloned();
-        self.photo = PhotoState::Opening { path, open };
+        let thumbnail = self.folder.largest_thumbnail(&path).cloned();
+        let left = std::mem::replace(&mut self.photo, PhotoState::Opening { path, open });
         self.closed = false;
         self.folder.locate(self.photo.path());
         self.saving.leaving();
         self.frame = None;
         self.failure = None;
         self.notice = None;
-        self.no_photo();
+        self.hold(left, now);
         self.live = false;
         self.asked_at = Some(now);
-        self.set_picture(held.map(|image| Picture {
+        self.set_picture(thumbnail.map(|image| Picture {
             image,
             rendered: false,
         }));
+    }
+
+    /// Another photo is asked for at `now`, `left` the photo until then: where its values
+    /// were shown, they stay until the next photo's arrive, and its history until the next
+    /// photo's metadata ([`Shown::Held`]); a live photo's drawn as they were for
+    /// [`HELD_PLAIN`] ([`Mirror::inert`]), the time counted from the first switch while
+    /// that lasts; held already, the values first left stay, the facts the latest photo's
+    /// whose metadata came. What would reach the next
+    /// photo goes at once: the changes pending, the picker, the picks and the scopes
+    /// reading. With no photo's values shown, no photo.
+    fn hold(&mut self, left: PhotoState, now: Instant) {
+        match (left, self.shown) {
+            (PhotoState::Open(photo), was @ (Shown::Photo { .. } | Shown::Opening)) => {
+                self.held = Some(photo);
+                // A photo not yet live, past the plain time, was drawn disabled already: so
+                // it stays.
+                if self.plain.is_none() {
+                    self.switched = Some(now);
+                    self.plain = matches!(was, Shown::Photo { .. }).then_some(was);
+                }
+                self.shown = Shown::Held;
+            }
+            // The next photo's metadata came, its values not yet: its facts are held now,
+            // the values first left and the time of the first switch staying.
+            (PhotoState::Open(photo), Shown::Held) => self.held = Some(photo),
+            (_, Shown::Held) => {}
+            _ => return self.no_photo(),
+        }
+        self.pending.clear();
+        self.pickers.forget();
+        self.picked.forget();
+        self.scopes.forget();
+    }
+
+    /// The photo left, whose values and history the Tools panel holds while another opens
+    /// ([`Shown::Held`]), until that one's metadata: what the Metadata and Info tools still
+    /// describe meanwhile.
+    pub fn held(&self) -> Option<&Photo> {
+        self.held.as_deref()
+    }
+
+    /// How the Tools panel draws the values shown within [`HELD_PLAIN`] of a switch away
+    /// from a live photo, the photo left's or the next photo's before it is live: as a live
+    /// photo's, this look, taking no input; `None` otherwise, when they draw as
+    /// [`Mirror::shown`] says.
+    pub fn inert(&self) -> Option<Shown> {
+        self.plain
+    }
+
+    /// The values shown since a switch, at `now`: from [`HELD_PLAIN`] on drawn disabled,
+    /// and the photo left's, from [`HELD_FOR`] on, given way to no photo, both counted from
+    /// the first switch while they lasted; until then, how long until the next of those,
+    /// for a repaint then.
+    pub fn let_go(&mut self, now: Instant) -> Option<Duration> {
+        let since = self.switched?;
+        if self.plain.is_some() && now >= since + HELD_PLAIN {
+            self.plain = None;
+            read_only(&mut self.values);
+        }
+        let held = self.shown == Shown::Held;
+        if held && now >= since + HELD_FOR {
+            self.no_photo();
+            return None;
+        }
+        if self.plain.is_some() {
+            Some(since + HELD_PLAIN - now)
+        } else {
+            held.then(|| since + HELD_FOR - now)
+        }
     }
 
     /// The photo is closed, File › Close's `Command::Close` sent: none is open from now on,
@@ -600,9 +696,12 @@ impl Mirror {
     }
 
     /// No photo is open: every tool untouched, no history, no picker and no scopes
-    /// reading.
+    /// reading, and no photo left held.
     fn no_photo(&mut self) {
         self.shown = Shown::Nothing;
+        self.held = None;
+        self.switched = None;
+        self.plain = None;
         self.values = self.untouched.clone();
         self.values_changed();
         self.pending.clear();
@@ -667,6 +766,15 @@ impl Mirror {
             // The opening photo's picture (decision 77), for its latest open alone.
             Event::OpenPreview(preview) => self.preview(preview),
             Event::Opened(photo) => {
+                // The photo left and its history go with the next one's metadata, its
+                // values staying until the next one's, which may come in a later drain, so
+                // no frame draws the defaults between; their extent, which places the
+                // photo, is not the next photo's.
+                if self.shown == Shown::Held {
+                    self.held = None;
+                    self.history = None;
+                    self.values.extent = [0, 0];
+                }
                 self.saving.opened(&photo.path, photo.view_only.is_some());
                 self.photo = PhotoState::Open(Box::new(photo));
             }
@@ -698,9 +806,15 @@ impl Mirror {
                     self.edit_changes += u64::from(live && !self.live);
                     self.live = live;
                     self.shown = if live {
+                        self.switched = None;
+                        self.plain = None;
                         Shown::Photo { editable }
                     } else {
-                        read_only(&mut self.values);
+                        // Within the plain time of a switch, drawn as live ([`Mirror::inert`]).
+                        match &mut self.plain {
+                            Some(look) => *look = Shown::Photo { editable },
+                            None => read_only(&mut self.values),
+                        }
                         Shown::Opening
                     };
                     self.values_changed();
@@ -1206,6 +1320,19 @@ pub const SAVING_AFTER: Duration = Duration::from_secs(2);
 /// How long a photo may go unlive after it was asked for before the viewer bar says
 /// Rendering… (decision 77): a fast open shows nothing.
 pub const RENDERING_AFTER: Duration = Duration::from_secs(1);
+
+/// How long the photo left's values stay held while the next photo opens with none of its
+/// own yet ([`Shown::Held`]), counted from the first switch while they are held: as long
+/// as the viewer bar waits before it says Rendering…, so a slow open is told by both
+/// together.
+pub const HELD_FOR: Duration = RENDERING_AFTER;
+
+/// How long after a switch away from a live photo the values shown, the photo left's or
+/// the next photo's before it is live, are drawn as a live photo's, taking no input,
+/// before they are drawn disabled as a photo opening is (decision 77), counted from the
+/// first switch while that lasts: a next photo live sooner changes nothing in the panel
+/// but its values.
+pub const HELD_PLAIN: Duration = Duration::from_millis(150);
 
 /// The picture the Viewer shows of a photo until its first live frame (decision
 /// 77), unmarked: a thumbnail, its rendered one or the camera's.
@@ -2344,38 +2471,227 @@ pub(crate) mod tests {
         assert!(temperature.is_some_and(|state| !state.views.is_empty()));
     }
 
+    /// A switch to another photo: from the moment it is asked for until its values arrive,
+    /// the photo left's values, history and facts stay, never the defaults, taking no edit,
+    /// drawn as they were for `HELD_PLAIN` and read-only after, with nothing of the photo
+    /// left waiting to reach the next one; what the photo left still sends changes
+    /// nothing; the next photo's replace them as its metadata comes, with its values in the
+    /// same batch.
     #[test]
-    fn a_switch_shows_no_photo_until_the_next_one_s_values_arrive() {
+    fn a_switch_holds_the_photo_left_until_the_next_one_s_values_arrive() {
+        use crate::history::tests::{history, step};
         let mut m = mirror();
         m.apply(Event::Opened(photo(1)));
         m.apply(Event::Values(report(1.5, 1)));
+        let steps = vec![step(1, &["exposure"], None)];
+        m.apply(Event::History(history(1, steps, None, None)));
         m.apply(Event::Scopes(crate::scopes::testing::reading(
             true, false, false,
         )));
         assert_eq!(m.shown(), Shown::Photo { editable: true });
         assert!(m.takes_edits());
-        // Another photo is asked for: at once no photo, every tool untouched, no scopes,
-        // and nothing sent for them.
+        // Another photo is asked for: the photo left's values as last shown, its history
+        // and its photo held; no change waits to be shown over the next photo's values,
+        // and no scopes reading.
         m.pend(2, set_exposure(2.0));
-        m.opening(PathBuf::from("/photos/b.ARW"), 3, Instant::now());
-        assert_eq!(m.shown(), Shown::Nothing);
-        assert!(!m.takes_edits());
-        assert!(untouched_all(&m.values) && m.pending.is_empty());
-        assert!(m.scopes.measured().is_none());
-        // What the photo left still sends, and the next one's Opened, change nothing shown.
+        let left = Instant::now();
+        m.opening(PathBuf::from("/photos/b.ARW"), 3, left);
+        let held = |m: &Mirror| {
+            m.shown() == Shown::Held
+                && !m.takes_edits()
+                && !m.shown().editable()
+                && shown(m) == ControlValue::Number(2.0)
+                && m.history.as_ref().is_some_and(|h| h.through == 1)
+                && m.held().is_some_and(|photo| photo.open == 1)
+                && m.pending.is_empty()
+                && m.scopes.measured().is_none()
+        };
+        assert!(held(&m));
+        assert!(!untouched_all(&m.values));
+        // Drawn as they were, though they take nothing, until `HELD_PLAIN`; then read-only.
+        let available = |m: &Mirror| m.values.tools[0].controls[0].available;
+        assert_eq!(m.inert(), Some(Shown::Photo { editable: true }));
+        assert!(available(&m));
+        let early = left + HELD_PLAIN / 2;
+        assert_eq!(m.let_go(early), Some(HELD_PLAIN - HELD_PLAIN / 2));
+        assert!(m.inert().is_some() && available(&m));
+        assert_eq!(m.let_go(left + HELD_PLAIN), Some(HELD_FOR - HELD_PLAIN));
+        assert_eq!(m.inert(), None);
+        assert!(held(&m) && !available(&m));
+        // What the photo left still sends changes nothing shown.
         m.apply(Event::Values(report(3.0, 2)));
+        m.apply(Event::History(history(2, Vec::new(), None, None)));
         m.apply(Event::Scopes(crate::scopes::testing::reading(
             false, true, false,
         )));
-        m.apply(Event::Opened(photo(3)));
-        assert_eq!(m.shown(), Shown::Nothing);
-        assert!(untouched_all(&m.values) && m.scopes.measured().is_none());
-        // Its values replace them in one apply.
-        m.apply(Event::Values(report(0.5, 3)));
+        assert!(held(&m));
+        // Asked for again before its values, the photo first left stays.
+        m.opening(PathBuf::from("/photos/c.ARW"), 4, Instant::now());
+        assert!(held(&m));
+        // The next photo's metadata ends it, none of the photo left's history or facts
+        // paired with it; its values follow in the same batch, in one apply.
+        m.apply(Event::Opened(photo(4)));
+        assert_eq!(m.held(), None);
+        assert_eq!(m.history, None);
+        m.apply(Event::Values(report(0.5, 4)));
         assert_eq!(m.shown(), Shown::Photo { editable: true });
         assert_eq!(m.values.tools.len(), 1);
         assert_eq!(shown(&m), ControlValue::Number(0.5));
         assert!(m.takes_edits());
+    }
+
+    /// The photo left's values, held as another opens, end in no photo once that open
+    /// fails, once the photo closes, or once [`HELD_FOR`] has gone since it was first
+    /// left, however often another photo was asked for since; with no photo shown, there
+    /// is nothing to hold.
+    #[test]
+    fn a_held_photo_ends_in_no_photo_when_the_open_fails_or_is_slow() {
+        let open = |m: &mut Mirror, open| {
+            m.opening(PathBuf::from("/photos/a.ARW"), open, Instant::now());
+            m.apply(Event::Opened(photo(open)));
+            m.apply(Event::Values(report(1.5, open)));
+        };
+        let nothing = |m: &Mirror| {
+            m.shown() == Shown::Nothing && untouched_all(&m.values) && m.held().is_none()
+        };
+        let mut m = mirror();
+        // With no photo, nothing to hold.
+        m.opening(PathBuf::from("/photos/b.ARW"), 1, Instant::now());
+        assert!(nothing(&m));
+        assert_eq!(m.let_go(Instant::now()), None);
+        // An open that fails.
+        open(&mut m, 2);
+        m.opening(PathBuf::from("/photos/b.ARW"), 3, Instant::now());
+        assert_eq!(m.shown(), Shown::Held);
+        m.apply(Event::Failed(SessionError::Open {
+            open: 3,
+            error: Box::new(SessionError::NotAMosaic),
+        }));
+        assert!(nothing(&m));
+        // A photo closed.
+        open(&mut m, 4);
+        m.opening(PathBuf::from("/photos/b.ARW"), 5, Instant::now());
+        m.closing();
+        assert!(nothing(&m));
+        // A slow open, stepped on from: held until `HELD_FOR` after the first.
+        open(&mut m, 6);
+        let left = Instant::now();
+        m.opening(PathBuf::from("/photos/b.ARW"), 7, left);
+        m.opening(PathBuf::from("/photos/c.ARW"), 8, left + HELD_FOR / 2);
+        let half = HELD_FOR / 2;
+        assert_eq!(m.let_go(left + half), Some(HELD_FOR - half));
+        assert_eq!(m.shown(), Shown::Held);
+        assert_eq!(m.let_go(left + HELD_FOR), None);
+        assert!(nothing(&m));
+        assert_eq!(m.let_go(left + HELD_FOR * 2), None);
+        // Its values, coming later, show as ever.
+        m.apply(Event::Opened(photo(8)));
+        m.apply(Event::Values(report(0.5, 8)));
+        assert_eq!(m.shown(), Shown::Photo { editable: true });
+    }
+
+    /// Stepping on, A to B to C, with B's metadata come but not its values: the facts held
+    /// are B's, the values still A's, drawn as live from the first switch's time; with B's
+    /// metadata not yet come, A's facts stay.
+    #[test]
+    fn stepping_on_holds_the_facts_of_the_latest_photo_whose_metadata_came() {
+        let named = |name: &str, open| Photo {
+            path: PathBuf::from(format!("/photos/{name}.ARW")),
+            ..photo(open)
+        };
+        let path = |m: &Mirror| m.held().map(|photo| photo.path.clone());
+        let mut m = mirror();
+        m.apply(Event::Opened(named("a", 1)));
+        m.apply(Event::Values(report(1.5, 1)));
+        let left = Instant::now();
+        m.opening(PathBuf::from("/photos/b.ARW"), 2, left);
+        // B's metadata not yet come: A's facts stay as C is asked for.
+        m.opening(PathBuf::from("/photos/c.ARW"), 3, left + HELD_PLAIN / 4);
+        assert_eq!(path(&m), Some(PathBuf::from("/photos/a.ARW")));
+        // Again, B's metadata come first, its values not.
+        m.opening(PathBuf::from("/photos/b.ARW"), 4, left + HELD_PLAIN / 2);
+        m.apply(Event::Opened(named("b", 4)));
+        assert_eq!(m.held(), None);
+        m.opening(PathBuf::from("/photos/c.ARW"), 5, left + HELD_PLAIN * 3 / 4);
+        assert_eq!(path(&m), Some(PathBuf::from("/photos/b.ARW")));
+        assert_eq!(m.shown(), Shown::Held);
+        assert_eq!(shown(&m), ControlValue::Number(1.5));
+        assert_eq!(m.inert(), Some(Shown::Photo { editable: true }));
+        // The first switch's time still decides.
+        assert_eq!(m.let_go(left + HELD_PLAIN), Some(HELD_FOR - HELD_PLAIN));
+        assert_eq!(m.inert(), None);
+        // C's metadata takes the facts.
+        m.apply(Event::Opened(named("c", 5)));
+        assert_eq!(m.held(), None);
+        assert!(matches!(&m.photo, PhotoState::Open(photo) if photo.open == 5));
+    }
+
+    /// The next photo's metadata in one drain and its values in a later one: the photo
+    /// left's values stay drawn between, never the defaults, its history, facts and extent
+    /// gone with the metadata. Its first values, not yet live, within `HELD_PLAIN` of the
+    /// switch, are drawn as live, taking no edit; after it, read-only until it is live.
+    #[test]
+    fn the_next_photo_s_values_not_yet_live_are_drawn_plain_until_held_plain() {
+        use crate::history::tests::{history, step};
+        let mut m = mirror();
+        m.apply(Event::Opened(photo(1)));
+        m.apply(Event::Values(report(1.5, 1)));
+        let steps = vec![step(1, &["exposure"], None)];
+        m.apply(Event::History(history(1, steps, None, None)));
+        let left = Instant::now();
+        m.opening(PathBuf::from("/photos/b.ARW"), 2, left);
+        let available = |m: &Mirror| m.values.tools[0].controls[0].available;
+        // Its metadata alone.
+        m.apply(Event::Opened(photo(2)));
+        assert_eq!(m.shown(), Shown::Held);
+        assert_eq!(shown(&m), ControlValue::Number(1.5));
+        assert!(!untouched_all(&m.values));
+        assert_eq!(
+            (m.held(), &m.history, m.values.extent),
+            (None, &None, [0, 0])
+        );
+        assert_eq!(m.inert(), Some(Shown::Photo { editable: true }));
+        // Its values, not yet live, in the next drain: drawn as live, taking no edit.
+        let not_live = Values {
+            live: false,
+            ..report(0.5, 2)
+        };
+        m.apply(Event::Values(not_live.clone()));
+        assert_eq!(m.shown(), Shown::Opening);
+        assert_eq!(shown(&m), ControlValue::Number(0.5));
+        assert_eq!(m.inert(), Some(Shown::Photo { editable: true }));
+        assert!(available(&m) && !m.takes_edits());
+        // Another report before live keeps that look.
+        m.apply(Event::Values(not_live.clone()));
+        assert!(m.inert().is_some() && available(&m));
+        // From `HELD_PLAIN` after the switch, read-only as a photo opening is.
+        assert_eq!(m.let_go(left + HELD_PLAIN / 2), Some(HELD_PLAIN / 2));
+        assert_eq!(m.let_go(left + HELD_PLAIN), None);
+        assert_eq!(m.inert(), None);
+        assert_eq!(m.shown(), Shown::Opening);
+        assert!(!available(&m));
+        m.apply(Event::Values(not_live));
+        assert!(!available(&m));
+        // Live: its values, enabled, and nothing more to wait for.
+        m.apply(Event::Values(report(0.5, 2)));
+        assert_eq!(m.shown(), Shown::Photo { editable: true });
+        assert!(available(&m));
+        assert_eq!(m.let_go(left + HELD_FOR * 2), None);
+        // Live within `HELD_PLAIN`: never drawn read-only.
+        let again = Instant::now();
+        m.opening(PathBuf::from("/photos/c.ARW"), 3, again);
+        m.apply(Event::Opened(photo(3)));
+        m.apply(Event::Values(Values {
+            live: false,
+            ..report(0.2, 3)
+        }));
+        m.apply(Event::Values(report(0.2, 3)));
+        assert_eq!(
+            (m.shown(), m.inert()),
+            (Shown::Photo { editable: true }, None)
+        );
+        assert_eq!(m.let_go(again + HELD_PLAIN), None);
+        assert!(available(&m));
     }
 
     #[test]
@@ -2530,8 +2846,9 @@ pub(crate) mod tests {
     }
 
     /// The photo's history (decision 78): the latest by its `through`, an earlier one
-    /// arriving late dropped; none while another photo opens, until its own, an earlier
-    /// open's dropped; none once the photo closes or an open fails.
+    /// arriving late dropped; the photo left's while another photo opens, until that one's
+    /// metadata, then none until its own, an earlier open's dropped; none once the photo
+    /// closes or an open fails.
     #[test]
     fn the_mirror_keeps_the_photo_s_latest_history() {
         use crate::history::tests::{history, step};
@@ -2568,12 +2885,14 @@ pub(crate) mod tests {
         m.apply(one(4, None));
         assert_eq!(undo(&m), Some((4, None)));
         m.apply(one(4, back));
-        // Another photo: none until its own, the photo left's dropped on its way.
+        // Another photo: the photo left's held until the next one's metadata, what it
+        // still sends dropped on its way; then none until its own.
         m.opening(PathBuf::from("/photos/b.ARW"), 5, Instant::now());
-        assert_eq!(undo(&m), None);
-        m.apply(one(4, back));
-        assert_eq!(undo(&m), None);
+        assert_eq!(undo(&m), Some((4, back)));
+        m.apply(one(6, None));
+        assert_eq!(undo(&m), Some((4, back)));
         m.apply(Event::Opened(photo(5)));
+        assert_eq!(undo(&m), None);
         m.apply(Event::Values(report(0.0, 5)));
         m.apply(one(5, None));
         assert_eq!(undo(&m), Some((5, None)));

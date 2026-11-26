@@ -348,3 +348,46 @@ fn create_a_style_in_the_dark_theme() {
 fn create_a_style_in_the_light_theme() {
     photograph(Builtin::Light, "create-style-light");
 }
+
+/// The Styles tool's applied marks stay the photo left's while the next photo opens, as the
+/// Tools panel keeps its values, never none between the two photos, the tool drawn able to
+/// apply within `HELD_PLAIN` of the switch and not after; the next photo's replace them
+/// with its values, and with no photo there are none.
+#[test]
+fn the_applied_styles_stay_the_photo_left_s_while_the_next_one_opens() {
+    use apertrust_engine::session::{SessionError, StyleState};
+    let style = |name: &str| StyleState {
+        name: name.to_owned(),
+        file: format!("{name}.apstyle"),
+        tools: vec!["grain".to_owned()],
+    };
+    let values = |name: &str, through| apertrust_engine::session::Values {
+        styles: vec![style(name)],
+        ..report(0.0, through)
+    };
+    let names = |m: &Mirror| applied(m).map(|styles| styles[0].name.clone());
+    let mut m = mirror();
+    assert_eq!(applied(&m), None);
+    m.apply(Event::Opened(photo(1)));
+    m.apply(Event::Values(values("Warm", 1)));
+    assert_eq!(names(&m).as_deref(), Some("Warm"));
+    assert_eq!(drawn_for(&m), ((true, false), (true, true)));
+    let left = std::time::Instant::now();
+    m.opening(PathBuf::from("/photos/b.ARW"), 2, left);
+    assert_eq!(names(&m).as_deref(), Some("Warm"));
+    assert!(!m.takes_edits());
+    assert_eq!(drawn_for(&m), ((true, false), (true, true)));
+    m.let_go(left + crate::mirror::HELD_PLAIN);
+    assert_eq!(names(&m).as_deref(), Some("Warm"));
+    assert_eq!(drawn_for(&m), ((false, false), (false, false)));
+    m.apply(Event::Opened(photo(2)));
+    m.apply(Event::Values(values("Cool", 2)));
+    assert_eq!(names(&m).as_deref(), Some("Cool"));
+    // An open that fails leaves none.
+    m.opening(PathBuf::from("/photos/c.ARW"), 3, std::time::Instant::now());
+    m.apply(Event::Failed(SessionError::Open {
+        open: 3,
+        error: Box::new(SessionError::NotAMosaic),
+    }));
+    assert_eq!(applied(&m), None);
+}
