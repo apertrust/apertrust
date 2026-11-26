@@ -28,6 +28,7 @@
 //! - **Its ⋯** holds Copy Information and Copy Coordinates, its own items until decision
 //!   98's generated actions.
 
+pub mod fields;
 pub mod format;
 pub mod several;
 #[cfg(test)]
@@ -40,8 +41,8 @@ use apertrust_base::settings::Store;
 use apertrust_engine::session::Photo;
 use apertrust_tools::settings::registry::{METADATA_HIDDEN, METADATA_OPEN, METADATA_SHOWN};
 use apertrust_tools::utility::UtilityDefinition;
-use apertrust_tools::utility::metadata::{ROWS, group_of, widget_row};
-use apertrust_tools::{Cut, Fact, FactEnd as FactEndDef, Row, Widget, messages};
+use apertrust_tools::utility::metadata::{ROWS, field_row, group_of, widget_row};
+use apertrust_tools::{Cut, Fact, FactEnd as FactEndDef, FieldRow, Row, Widget, messages};
 use apertrust_ui::components::{
     self as parts, ColourLabel, FactCut, FactEnd, FactList, FactMarks, Marks, RatingNotes,
 };
@@ -277,6 +278,9 @@ pub struct Metadata {
     /// The rating's actions a click on Rating's stars or a label's dot asked for, which the
     /// app runs as the keys run them ([`Metadata::take_ran`]).
     ran: Vec<ActionId>,
+    /// Its fields' state between frames: values committed and not yet told, and failed
+    /// writes.
+    fields: fields::Fields,
 }
 
 impl Metadata {
@@ -293,6 +297,7 @@ impl Metadata {
             rated: None,
             asking: several::Asking::default(),
             ran: Vec::new(),
+            fields: fields::Fields::default(),
         }
     }
 
@@ -462,6 +467,7 @@ impl Metadata {
                 .find(|widget| widget_row(*widget) == Some(row.id));
             let value = match marks {
                 Some(widget) => Rated::of(cx).text(widget, cx.words, &RatingNotes::default()),
+                None if field_row(row.id).is_some() => self.field_text(row.id, cx.mirror),
                 None => self.worded(row.id, &subject, cx).value,
             };
             let value = value.filter(|value| !value.is_empty());
@@ -886,6 +892,14 @@ struct Worded {
 }
 
 impl Metadata {
+    /// The field row `id`'s value as its well shows it, none where it is empty or several
+    /// photos are selected.
+    fn field_text(&self, id: &str, mirror: &Mirror) -> Option<String> {
+        let row = field_row(id)?;
+        let text = self.fields.text(row.field, mirror);
+        (!text.is_empty() && mirror.selected_count() <= 1).then_some(text)
+    }
+
     /// The row `id` of `subject`: one photo's fact, several photos' summary, or none.
     fn worded(&self, id: &str, subject: &Subject<'_>, cx: &Context<'_>) -> Worded {
         let words = cx.words;
@@ -928,6 +942,15 @@ impl Metadata {
                 Worded {
                     value: row.value,
                     tip: row.tip,
+                    enabled: true,
+                }
+            }
+            // The sidecar's, as the session's `Metadata` tells it.
+            Subject::One(_) if id == "preserved_file_name" => {
+                let value = fields::state(cx.mirror).and_then(|s| s.preserved_file_name.clone());
+                Worded {
+                    tip: value.clone().unwrap_or(none),
+                    value,
                     enabled: true,
                 }
             }
@@ -1014,8 +1037,11 @@ fn exif_field(id: &str) -> &str {
     }
 }
 
-/// The message of the row `id`'s label: a fact's, or Rating's and Colour labels'.
+/// The message of the row `id`'s label: a fact's, a field's, or Rating's and Colour labels'.
 fn label_id(id: &str) -> String {
+    if field_row(id).is_some() {
+        return messages::field_words(ID, id)[0].clone();
+    }
     messages::fact_words(ID, id)[0].clone()
 }
 
@@ -1188,6 +1214,7 @@ impl UtilityTool for Metadata {
     fn hidden(&self, row: &Row) -> bool {
         match row {
             Row::Fact(fact) => !self.view.shows(fact.id),
+            Row::Field(field) => !self.view.shows(field.id),
             Row::Custom { widget, .. } => {
                 widget_row(*widget).is_some_and(|id| !self.view.shows(id))
             }
@@ -1199,6 +1226,28 @@ impl UtilityTool for Metadata {
             }
             _ => false,
         }
+    }
+
+    /// A field of the active photo ([`fields::Fields::draw`]); Copy only where the photo
+    /// has several copies.
+    fn field(
+        &mut self,
+        ui: &mut egui::Ui,
+        field: &FieldRow,
+        cx: &mut Context<'_>,
+    ) -> Vec<library::Action> {
+        let copies = fields::state(cx.mirror).map_or(1, |state| state.copy.count);
+        if field.field == apertrust_library::fields::COPY_NAME && copies < 2 {
+            return Vec::new();
+        }
+        let column = self.column(ui, cx.words);
+        (self.fields).draw(ui, field, column, cx.mirror, cx.words, cx.commands);
+        Vec::new()
+    }
+
+    /// A field holding a value, which a closed group's dot counts.
+    fn holds(&self, field: &FieldRow, mirror: &Mirror) -> bool {
+        self.fields.holds(field.field, mirror)
     }
 
     fn open(&self, group: &str) -> Option<bool> {

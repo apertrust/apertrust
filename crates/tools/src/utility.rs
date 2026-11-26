@@ -182,6 +182,10 @@ impl UtilityDefinition {
                 }
                 // Each fact once among its facts.
                 Row::Fact(fact) => once(&mut seen.facts, fact.id, DefinitionError::DuplicateFact)?,
+                // A field's id among the facts', since ＋ and the settings name rows by id.
+                Row::Field(field) => {
+                    once(&mut seen.facts, field.id, DefinitionError::DuplicateFact)?
+                }
                 Row::Custom { widget, .. } if !widget.is_utility() => {
                     return Err(DefinitionError::Widget(*widget));
                 }
@@ -202,7 +206,8 @@ impl UtilityDefinition {
 /// its start or a custom row's; a preset row, which writes controls; a picker's rows, a
 /// line with a picker or with no end item; a computed value, which an operation computes;
 /// and the guides, a processing tool's. None for a setting, a line of fields, a group,
-/// rows following a setting, a line of actions alone and a custom row naming no control.
+/// rows following a setting, a line of actions alone, a custom row naming no control, a
+/// fact and a field, which writes library data, never the edit (decision 110).
 fn edits(row: &Row) -> Option<&'static str> {
     match row {
         Row::Slider(slider) => Some(slider.control),
@@ -228,6 +233,7 @@ fn edits(row: &Row) -> Option<&'static str> {
         | Row::Setting(_)
         | Row::Fields(_)
         | Row::Fact(_)
+        | Row::Field(_)
         | Row::Line { .. } => None,
     }
 }

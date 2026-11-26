@@ -2376,7 +2376,17 @@ fn named(
         Move::DiscardHistory => Some(tr.text("history-discard")),
         // A change of the Metadata tool's fields or the copy's name, never a step
         // (decision 110).
-        Move::Metadata { .. } => Some(tr.text("history-metadata")),
+        // One field by its label, "Undo Title"; several at once as Metadata.
+        Move::Metadata { field, .. } => {
+            let def = field.and_then(apertrust_library::fields::field);
+            Some(match def {
+                Some(def) => {
+                    let [label, _] = messages::field_words(crate::metadata::ID, def.id);
+                    tr.text(&label)
+                }
+                None => tr.text("history-metadata"),
+            })
+        }
         Move::CopyName => Some(tr.text("history-copy-name")),
         // A rating's change, never a step: its action's name (decision 110).
         Move::Field { change, photos } => {

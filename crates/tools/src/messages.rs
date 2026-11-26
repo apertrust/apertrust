@@ -627,9 +627,17 @@ pub fn fact_words(tool: &str, fact: &str) -> [String; 3] {
     ]
 }
 
+/// The words of the field `field` of the utility `tool` (decision 110): its label,
+/// `tool-<tool>-field-<id>-label`, and its tag, which its tooltip ends with, `-tag`, the
+/// standard's field and property.
+pub fn field_words(tool: &str, field: &str) -> [String; 2] {
+    let id = format!("tool-{tool}-field-{field}");
+    [format!("{id}-label"), format!("{id}-tag")]
+}
+
 /// Every message a utility's header and rows imply, each once, as [`of`] lists a
 /// processing tool's: its own ↺'s name, its presets button's words, its ＋'s, its groups'
-/// tooltips, each group's title, each fact's words, each line of fields' words, and each setting's and field's words and options, those it
+/// tooltips, each group's title, each fact's and field's words, each line of fields' words, and each setting's and field's words and options, those it
 /// declares where it does, a name an option declares needing none. Its custom rows' words
 /// are its widgets' own.
 pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
@@ -640,6 +648,7 @@ pub fn of_utility(utility: &UtilityDefinition) -> Vec<String> {
                 Row::Group(group) => ids.push(utility.title(group.id, group.kind)),
                 Row::Fields(fields) => ids.push(fields.words.to_owned()),
                 Row::Fact(fact) => ids.extend(fact_words(tool, fact.id)),
+                Row::Field(field) => ids.extend(field_words(tool, field.id)),
                 _ => {}
             }
             // A setting row's, or each field's of a line of fields.

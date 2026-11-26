@@ -426,6 +426,8 @@ struct Scene {
     asked: Vec<Command>,
     /// The registry actions it ran: the rating's, from Rating's and Colour labels' marks.
     ran: Vec<crate::actions::ActionId>,
+    /// The commands its fields sent, `SetMetadata` and `RenameCopy`, in order.
+    sent: Vec<Command>,
 }
 
 fn scene(photo: Option<Photo>) -> Scene {
@@ -441,6 +443,7 @@ fn scene(photo: Option<Photo>) -> Scene {
         copied: Vec::new(),
         asked: Vec::new(),
         ran: Vec::new(),
+        sent: Vec::new(),
     }
 }
 
@@ -476,6 +479,12 @@ fn drawn(which: Builtin, width: f32, state: Scene) -> Harness<'static, Scene> {
         scene.copied.extend(out.copied);
         scene.actions.extend(out.actions);
         scene.ran.extend(out.run);
+        // Each a change the save state waits a write for, as `App::send_edit` sends it.
+        for command in commands {
+            scene.sent.push(command);
+            let number = scene.sent.len() as u64;
+            (scene.mirror.saving).sent(number, true, std::time::Instant::now());
+        }
         // Shown and open, it asks once drawn, as the app does.
         if let Some(command) = scene.tool.ask(true, &scene.mirror) {
             scene.asked.push(command);
@@ -639,7 +648,10 @@ fn copy_information_lists_every_row_shown() {
     assert!(lines.contains(&"Aperture: f/5.6"));
     assert!(lines.contains(&"Make: RICOH IMAGING COMPANY, LTD."));
     assert!(!lines.iter().any(|line| line.starts_with("Software")));
-    assert_eq!(lines.last(), Some(&"Altitude: 54 m"));
+    assert!(lines.contains(&"Altitude: 54 m"));
+    // The fields shown come after, Location's last.
+    assert!(lines.contains(&"Title: —"));
+    assert_eq!(lines.last(), Some(&"Country: —"));
     harness.get_by_label("Metadata options").click();
     harness.run();
     harness.get_by_label("Copy Coordinates").click();
@@ -955,7 +967,8 @@ fn copy_coordinates_says_different_places_only_for_two() {
     assert_eq!((enabled, some_none), (false, None));
 }
 
-/// Every fact row of the declaration has its summary, and every summary is a row.
+/// Every fact row of the raw's of the declaration has its summary, and every summary is a
+/// row.
 #[test]
 fn every_fact_row_is_summarised() {
     use apertrust_engine::session::facts::FACTS;
@@ -964,6 +977,8 @@ fn every_fact_row_is_summarised() {
         .flat_map(|group| group.rows.iter())
         .map(|row| row.id)
         .filter(|id| !marks.contains(&Some(*id)))
+        // Fields are no facts; the preserved file name is the sidecar's, not the raw's.
+        .filter(|id| field_row(id).is_none() && *id != "preserved_file_name")
         .collect();
     assert_eq!(rows, FACTS.iter().copied().collect());
 }
@@ -1294,4 +1309,264 @@ fn rejected_photos_read_rejected_whatever_their_stars() {
         copied.lines().any(|line| line == "Rating: Rejected"),
         "{copied}"
     );
+}
+
+/// `state` told the session's `Metadata` for its photo: `fields`, each a property and a
+/// value as typed, and the copy's name, number and count.
+fn titled(mut state: Scene, fields: &[(&str, &str)], copy: (&str, usize, usize)) -> Scene {
+    use apertrust_engine::session::{CopyState, FieldValue, MetadataState};
+    use apertrust_library::fields as library_fields;
+    let path = match &state.mirror.photo {
+        PhotoState::Open(photo) => photo.path.clone(),
+        _ => unreachable!("a photo is open"),
+    };
+    let fields = (fields.iter())
+        .map(|(property, typed)| {
+            let def = library_fields::field(property).unwrap();
+            let value = FieldValue::from_typed(def, typed, None).unwrap();
+            ((*property).to_owned(), value)
+        })
+        .collect();
+    state.mirror.apply(Event::Metadata(MetadataState {
+        through: 0,
+        photo: path,
+        fields,
+        copy: CopyState {
+            name: copy.0.to_owned(),
+            number: copy.1,
+            count: copy.2,
+        },
+        preserved_file_name: None,
+        darktable: false,
+    }));
+    state
+}
+
+/// The board's photo: its title, description and notes.
+fn lisbon() -> Scene {
+    titled(
+        scene(Some(photo())),
+        &[
+            ("dc:title", "Morning market, Alfama"),
+            (
+                "dc:description",
+                "Fish stalls before the crowd, the light coming in low over the river.",
+            ),
+            ("apertrust:notes", "Try a warmer crop"),
+        ],
+        ("", 1, 1),
+    )
+}
+
+/// Every field row edits a field `FIELDS` has, by its property, its id the field's, or the
+/// copy's name.
+#[test]
+fn every_field_row_names_a_field_of_the_library() {
+    use apertrust_library::fields as library_fields;
+    let rows = ROWS.iter().flat_map(|group| group.rows.iter());
+    let mut fields = 0;
+    for row in rows {
+        let Some(field) = field_row(row.id) else {
+            continue;
+        };
+        fields += 1;
+        if field.field == library_fields::COPY_NAME {
+            continue;
+        }
+        let def = library_fields::field(field.field)
+            .unwrap_or_else(|| panic!("{} names no field", field.id));
+        assert_eq!(def.id, field.id);
+        assert!(!library_fields::is_rating(def.property));
+    }
+    assert_eq!(fields, 34);
+}
+
+/// Typing in Title and Return sends one `SetMetadata`, shown at once; Esc in another puts
+/// it back and sends nothing.
+#[test]
+fn a_title_typed_and_return_sends_one_set_metadata_and_esc_sends_nothing() {
+    use egui::Key;
+    let mut harness = drawn(Builtin::Dark, 320.0, lisbon());
+    harness.run();
+    harness.get_by_label("Title").click();
+    harness.run();
+    // The caret where the click put it, then at the end.
+    harness.key_press(Key::End);
+    harness.run();
+    harness.get_by_label("Title").type_text(" today");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(
+        harness.state().sent,
+        [Command::SetMetadata {
+            fields: vec![(
+                "dc:title".to_owned(),
+                Some("Morning market, Alfama today".to_owned())
+            )]
+        }]
+    );
+    let shown = harness.get_by_label("Title").accesskit_node().value();
+    assert_eq!(shown.as_deref(), Some("Morning market, Alfama today"));
+    harness.get_by_label("Notes").click();
+    harness.run();
+    harness.get_by_label("Notes").type_text(" and less");
+    harness.run();
+    harness.key_press(Key::Escape);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().sent.len(), 1, "Esc sends nothing");
+    let notes = harness.get_by_label("Notes").accesskit_node().value();
+    assert_eq!(notes.as_deref(), Some("Try a warmer crop"));
+}
+
+/// A photo open for viewing only, and several photos selected, draw every field disabled.
+#[test]
+fn fields_are_disabled_on_a_view_only_photo_and_with_several_selected() {
+    use apertrust_engine::sidecar::{Newer, Reason, ViewOnly};
+    let mut view_only = photo();
+    view_only.view_only = Some(ViewOnly {
+        reason: Reason::Newer(Newer::Version(3)),
+        build: Some("0.9.0".to_owned()),
+    });
+    let state = titled(scene(Some(view_only)), &[], ("", 1, 1));
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    assert!(harness.get_by_label("Title").accesskit_node().is_disabled());
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    assert!(harness.get_by_label("Title").accesskit_node().is_disabled());
+}
+
+/// Basic's Copy shows only where the photo has several copies.
+#[test]
+fn copy_shows_only_with_several_copies() {
+    let mut harness = drawn(Builtin::Dark, 320.0, lisbon());
+    harness.run();
+    assert!(harness.query_by_label("Copy").is_none());
+    let state = titled(scene(Some(photo())), &[], ("Black and white", 2, 3));
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    let copy = harness.get_by_label("Copy").accesskit_node().value();
+    assert_eq!(copy.as_deref(), Some("Black and white"));
+}
+
+/// The board's "One photo": Content's three fields filled, Copy with "2 of 3".
+#[test]
+fn one_photo_s_fields_are_photographed() {
+    fn make() -> Scene {
+        let mut state = lisbon();
+        if let Some(metadata) = &mut state.mirror.metadata {
+            metadata.copy = apertrust_engine::session::CopyState {
+                name: "Black and white".to_owned(),
+                number: 2,
+                count: 3,
+            };
+        }
+        state
+    }
+    photograph("metadata-fields-one-photo", 320.0, make, |_| {});
+}
+
+/// The board's "Editing a field": Description edited, its outline drawn.
+#[test]
+fn editing_a_field_is_photographed() {
+    photograph("metadata-fields-editing", 320.0, lisbon, |harness| {
+        harness.get_by_label("Description").click();
+        harness.run();
+    });
+}
+
+/// The board's "A write that failed": the Title committed, its write failing, the warning
+/// button at its well's end.
+#[test]
+fn a_write_that_failed_is_photographed() {
+    // Opened, so the save state follows its writes.
+    fn opened() -> Scene {
+        let mut state = scene(Some(photo()));
+        state.mirror.apply(Event::Opened(photo()));
+        titled(state, &[("dc:title", "Morning market, Alfama")], ("", 1, 1))
+    }
+    photograph("metadata-fields-failed", 320.0, opened, |harness| {
+        harness.get_by_label("Title").click();
+        harness.run();
+        harness.key_press(egui::Key::End);
+        harness.run();
+        harness.get_by_label("Title").type_text(" today");
+        harness.run();
+        harness.key_press(egui::Key::Enter);
+        harness.run();
+        let sidecar = match &harness.state().mirror.photo {
+            PhotoState::Open(photo) => apertrust_engine::sidecar::path_for(&photo.path),
+            _ => unreachable!("a photo is open"),
+        };
+        let state = harness.state_mut();
+        state.mirror.apply(Event::Failed(
+            apertrust_engine::session::SessionError::Save {
+                path: sidecar,
+                through: 1,
+                source: std::io::Error::other("The disk is full"),
+            },
+        ));
+        harness.run();
+        harness.run();
+        assert!(harness.query_by_label("Title was not saved").is_some());
+    });
+}
+
+/// `lisbon`, opened, so the save state follows its writes.
+fn lisbon_opened() -> Scene {
+    let mut state = scene(Some(photo()));
+    state.mirror.apply(Event::Opened(photo()));
+    titled(state, &[("dc:title", "Morning market, Alfama")], ("", 1, 1))
+}
+
+/// A commit that changes nothing as the session would take it, a space added, sends
+/// nothing, so no write is waited for.
+#[test]
+fn a_commit_that_changes_nothing_leaves_no_save_waiting() {
+    let mut harness = drawn(Builtin::Dark, 320.0, lisbon_opened());
+    harness.run();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.key_press(egui::Key::End);
+    harness.run();
+    harness.get_by_label("Title").type_text("  ");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().sent, []);
+    assert!(!harness.state().mirror.saving.writing());
+}
+
+/// A draft begun on one photo, the active photo then changing with no press to end it, as
+/// Photo › Next Photo from the menu bar does, is forgotten: nothing goes to the next photo,
+/// which shows its own value.
+#[test]
+fn a_draft_never_goes_to_another_photo() {
+    let mut harness = drawn(Builtin::Dark, 320.0, lisbon_opened());
+    harness.run();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.key_press(egui::Key::End);
+    harness.run();
+    harness.get_by_label("Title").type_text(" today");
+    harness.run();
+    let mut next = photo();
+    next.path = PathBuf::from(format!("{FOLDER}/R0001226.DNG"));
+    {
+        let state = harness.state_mut();
+        state.mirror.apply(Event::Opened(next.clone()));
+        let moved = std::mem::replace(state, scene(None));
+        *state = titled(moved, &[("dc:title", "Harbour")], ("", 1, 1));
+    }
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().sent, []);
+    let title = harness.get_by_label("Title").accesskit_node().value();
+    assert_eq!(title.as_deref(), Some("Harbour"));
 }

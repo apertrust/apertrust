@@ -21,16 +21,21 @@
 //!
 //! - **Basic, Camera, Exposure, Lens and GPS** hold read-only facts ([`Row::Fact`]), each
 //!   shown or hidden at first as darktable's image information and the design have them;
-//!   Basic's Rating and Colour labels and GPS's Show on Map are the tool's own widgets.
-//! - **Content, Creator, Rights and Location** have no rows yet: drawn closed and
-//!   disabled, as groups still to come. Status and Maker notes are not declared until a
-//!   row of theirs is.
+//!   Basic's Rating and Colour labels and GPS's Show on Map are the tool's own widgets;
+//!   Basic's Copy, the open copy's name, is a field, and Preserved file name a fact.
+//! - **Content, Creator, Rights, Location and Status** hold IPTC Core's fields, Dublin
+//!   Core's publisher and Apertrust's notes ([`Row::Field`]), each editing a field by its
+//!   property, as `apertrust_library::fields::FIELDS` gives it. Status shows no row at
+//!   first, so it is not drawn until ＋ shows one. Maker notes is not declared until a row
+//!   of its is.
 //! - **＋** shows or hides any row ([`UtilityDefinition::rows_shown`]); which rows show and
 //!   which groups are open are the app's settings, never an edit's.
 
 use std::sync::LazyLock;
 
-use crate::{Cut, Fact, FactEnd, Group, GroupKind, Reset, Row, Tab, ToolDefinition, Widget};
+use crate::{
+    Cut, Fact, FactEnd, FieldRow, Group, GroupKind, Reset, Row, Tab, ToolDefinition, Widget,
+};
 
 use super::UtilityDefinition;
 
@@ -86,6 +91,9 @@ const BASIC: &[Row] = &[
     own(Widget::MetadataRating),
     own(Widget::MetadataLabels),
     fact("edited", true),
+    // The open copy's name, drawn only where the photo has several copies.
+    field("copy", "apertrust:name", true),
+    middle("preserved_file_name", false),
 ];
 
 /// Camera: EXIF's IFD0, and two of the Exif IFD's.
@@ -153,6 +161,65 @@ const GPS: &[Row] = &[
     own(Widget::MetadataMap),
 ];
 
+/// A field `id` editing `field`, by its property, shown at first or not.
+const fn field(id: &'static str, field: &'static str, shown: bool) -> Row {
+    Row::Field(FieldRow { id, field, shown })
+}
+
+/// Content: IPTC Core's Content panel, Title among it, and Apertrust's notes last.
+const CONTENT: &[Row] = &[
+    field("title", "dc:title", true),
+    field("headline", "photoshop:Headline", false),
+    field("description", "dc:description", true),
+    field("description_writer", "photoshop:CaptionWriter", false),
+    field("notes", "apertrust:notes", true),
+];
+
+/// Creator: IPTC Core's Contact panel, the creator's contact details.
+const CREATOR: &[Row] = &[
+    field("creator", "dc:creator", true),
+    field("job_title", "photoshop:AuthorsPosition", false),
+    field("email", "Iptc4xmpCore:CiEmailWork", false),
+    field("website", "Iptc4xmpCore:CiUrlWork", false),
+    field("phone", "Iptc4xmpCore:CiTelWork", false),
+    field("address", "Iptc4xmpCore:CiAdrExtadr", false),
+    field("contact_city", "Iptc4xmpCore:CiAdrCity", false),
+    field("contact_region", "Iptc4xmpCore:CiAdrRegion", false),
+    field("postal_code", "Iptc4xmpCore:CiAdrPcode", false),
+    field("contact_country", "Iptc4xmpCore:CiAdrCtry", false),
+];
+
+/// Rights: IPTC Core's rights, and Dublin Core's publisher, which darktable keeps.
+const RIGHTS: &[Row] = &[
+    field("copyright_notice", "dc:rights", true),
+    field("usage_terms", "xmpRights:UsageTerms", false),
+    field("copyright_status", "xmpRights:Marked", false),
+    field("web_statement", "xmpRights:WebStatement", false),
+    field("credit_line", "photoshop:Credit", false),
+    field("source", "photoshop:Source", false),
+    field("publisher", "dc:publisher", true),
+];
+
+/// Location: IPTC Core's location shown.
+const LOCATION: &[Row] = &[
+    field("sublocation", "Iptc4xmpCore:Location", true),
+    field("city", "photoshop:City", true),
+    field("state", "photoshop:State", false),
+    field("country", "photoshop:Country", true),
+    field("country_code", "Iptc4xmpCore:CountryCode", false),
+];
+
+/// Status: IPTC Core's Status panel, none of it shown at first, so not drawn until ＋ shows
+/// a row.
+const STATUS: &[Row] = &[
+    field("instructions", "photoshop:Instructions", false),
+    field("job_id", "photoshop:TransmissionReference", false),
+    field("date_created", "photoshop:DateCreated", false),
+    field("genre", "Iptc4xmpCore:IntellectualGenre", false),
+    field("scene_code", "Iptc4xmpCore:Scene", false),
+    field("subject_code", "Iptc4xmpCore:SubjectCode", false),
+];
+
 /// The Metadata tool (decision 110), in the Photos tab between Collections and Styles,
 /// closed at first, with presets and ＋ and no ↺.
 pub const METADATA: UtilityDefinition = UtilityDefinition {
@@ -166,11 +233,12 @@ pub const METADATA: UtilityDefinition = UtilityDefinition {
                 group("exposure", EXPOSURE),
                 group("lens", LENS),
                 group("gps", GPS),
-                // IPTC Core's groups, whose fields come with the fields' editing (#643).
-                group("content", &[]),
-                group("creator", &[]),
-                group("rights", &[]),
-                group("location", &[]),
+                // IPTC Core's groups, of fields.
+                group("content", CONTENT),
+                group("creator", CREATOR),
+                group("rights", RIGHTS),
+                group("location", LOCATION),
+                group("status", STATUS),
             ],
         }],
         before: &[],
@@ -184,8 +252,7 @@ pub const METADATA: UtilityDefinition = UtilityDefinition {
     },
     measures: None,
     titles: &[],
-    // Content opens at first too, once it has rows; its setting lists it from now.
-    open: &["basic", "exposure"],
+    open: &["basic", "exposure", "content"],
     rows_shown: true,
     tips: &[
         ("basic", "tool-metadata-collapsible-basic-tip"),
@@ -197,6 +264,7 @@ pub const METADATA: UtilityDefinition = UtilityDefinition {
         ("creator", "tool-metadata-collapsible-creator-tip"),
         ("rights", "tool-metadata-collapsible-rights-tip"),
         ("location", "tool-metadata-collapsible-location-tip"),
+        ("status", "tool-metadata-collapsible-status-tip"),
     ],
 };
 
@@ -247,6 +315,10 @@ fn listed_row(row: &Row) -> Option<ListedRow> {
             id: fact.id,
             shown: fact.shown,
         }),
+        Row::Field(field) => Some(ListedRow {
+            id: field.id,
+            shown: field.shown,
+        }),
         Row::Custom { widget, .. } => widget_row(*widget).map(|id| ListedRow { id, shown: true }),
         _ => None,
     }
@@ -257,6 +329,19 @@ pub fn group_of(id: &str) -> Option<&'static str> {
     ROWS.iter()
         .find(|listed| listed.rows.iter().any(|row| row.id == id))
         .map(|listed| listed.group)
+}
+
+/// The field row `id`, where it is one of the tool's: its field by its property.
+pub fn field_row(id: &str) -> Option<&'static FieldRow> {
+    let page = METADATA.tool.tabs[0].rows;
+    let groups = page.iter().filter_map(|row| match row {
+        Row::Group(group) => Some(group.rows),
+        _ => None,
+    });
+    groups.flatten().find_map(|row| match row {
+        Row::Field(field) if field.id == id => Some(field),
+        _ => None,
+    })
 }
 
 #[cfg(test)]
@@ -282,7 +367,7 @@ mod tests {
         let groups: Vec<&str> = ROWS.iter().map(|listed| listed.group).collect();
         let order = [
             "basic", "camera", "exposure", "lens", "gps", "content", "creator", "rights",
-            "location",
+            "location", "status",
         ];
         assert_eq!(groups, order);
         let ids: Vec<&str> = ROWS
@@ -293,18 +378,21 @@ mod tests {
         once.sort_unstable();
         once.dedup();
         assert_eq!(once.len(), ids.len());
-        // Basic's eight, the copy's name to come; Exposure's eight shown at first.
+        // Basic's nine, the copy's name among them; Exposure's eight shown at first.
         let shown = |group: &str| {
             let listed = ROWS.iter().find(|l| l.group == group).unwrap();
             listed.rows.iter().filter(|row| row.shown).count()
         };
-        assert_eq!(shown("basic"), 8);
+        assert_eq!(shown("basic"), 9);
         assert_eq!(shown("exposure"), 8);
         assert_eq!(shown("camera"), 2);
         assert_eq!(shown("lens"), 3);
         assert_eq!(shown("gps"), 3);
         assert_eq!(group_of("aperture"), Some("exposure"));
         assert_eq!(group_of("rating"), Some("basic"));
-        assert_eq!(group_of("title"), None);
+        assert_eq!(group_of("title"), Some("content"));
+        assert_eq!(shown("content"), 3);
+        assert_eq!(shown("status"), 0);
+        assert_eq!(group_of("city"), Some("location"));
     }
 }

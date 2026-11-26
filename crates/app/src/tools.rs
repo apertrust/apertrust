@@ -1624,7 +1624,8 @@ impl Rows for Page<'_> {
             | Row::WhenSetting { .. }
             | Row::Setting(_)
             | Row::Fields(_)
-            | Row::Fact(_) => {}
+            | Row::Fact(_)
+            | Row::Field(_) => {}
         }
     }
 }
@@ -1676,6 +1677,7 @@ fn draw_row(ui: &mut egui::Ui, rows: &dyn Rows, row: &Row, top: f32, changes: &m
             | Row::Reference { .. }
             | Row::LastPick { .. }
             | Row::Guides
+            | Row::Field(_)
     );
     let start = ui.cursor().top();
     draw_kind(ui, rows, row, top, changes);
@@ -4818,6 +4820,7 @@ mod tests {
                 ("metadata", "lens"),
                 ("metadata", "location"),
                 ("metadata", "rights"),
+                ("metadata", "status"),
                 ("temperature", "channel_coefficients"),
             ]
         );
