@@ -17,7 +17,7 @@
 </p>
 <!-- markdownlint-enable MD033 -->
 
-> ⚠️ **An experiment, not ready for everyday use.** We are building Apertrust to see how useful and efficient AI coding agents can be at rewriting an application as complex as an open-source raw editor. It is not ready for stable use, and it may never be. Please use it with caution, and keep copies of your photos and edits.
+> ⚠️ **Early alpha.** Apertrust began as an experiment, to see how far AI coding agents could go in rewriting an application as complex as an open-source raw editor, and it is quickly growing into something worth trying. Expect rough edges and changes between builds, and keep copies of your photos and edits.
 
 **A free raw photo editor that shows its work**
 
@@ -68,14 +68,10 @@ Releases and the nightly builds, Apertrust Nightly, are on the [Releases page](h
 On a Mac or a Linux computer, one command downloads Apertrust Nightly's package for it, checks it and installs or updates it, the steps below done for you; without `--nightly` it installs the latest release, once one is published:
 
 ```sh
-curl -q --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/apertrust/apertrust/main/tools/install.sh | bash -s -- --nightly
+curl -fsSL https://raw.githubusercontent.com/apertrust/apertrust/main/tools/install.sh | bash -s -- --nightly
 ```
 
-A pipe hides a failed download (a 404, no network) behind bash's own status; in a script or an unattended run, download the script first, then run it:
-
-```sh
-curl -q --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/apertrust/apertrust/main/tools/install.sh -o install.sh && bash install.sh --nightly
-```
+In a script, download it first (`curl -fsSLO …/install.sh && bash install.sh --nightly`), so a failed download stops it; [docs/packaging.md](docs/packaging.md#installing-with-the-script) has the details.
 
 To install a package yourself, the commands below assume the download is in `~/Downloads`; use its own folder where it went elsewhere:
 
