@@ -366,6 +366,17 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 - [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17).
 - [ ] Metadata in exported files, and styles applied on export.
 
+### Images other than raws
+
+JPEG, TIFF, PNG and the other images of decision 111's tiers, opened and edited as darktable does, GraphicsMagick's long tail left out: raws stay the primary target. One slice per tier, each a decoder or a few, after the first, which builds what they all reuse.
+
+- [ ] **1. JPEG,** for 0.2: the image's kind and colour description in the image context; its samples uploaded and unpacked on the GPU; darktable's v5.0 JPEG order; colorin's input profile from the file, sRGB, Adobe RGB and the embedded ICC profile through moxcms, matrix-shaper and LUT-based; darktable's defaults for a non-raw and each tool's page there, White balance and Highlight reconstruction by RGB passes; JPEGs in folders, one photo, the Browser and `library scan`, a JPEG beside a raw of its base name left out until step 17, with their thumbnails, sidecars, EXIF and XMP; the app's open routes and file types; golden checks of the decode, colorin's profiles and the whole pipeline against darktable-cli, on JPEGs exported from the raw corpus and libjpeg-turbo's test images.
+- [ ] **2. TIFF and PNG,** for 0.3 or later: their decoders, TIFF's ICC tag and PNG's cICP, the 16-bit and float images darktable marks HDR.
+- [ ] **3. WebP, JPEG XL and AVIF,** for 0.3 or later, AVIF through rav1d.
+- [ ] **4. OpenEXR, Radiance HDR and PFM,** for 0.3 or later: linear floats, OpenEXR's and Radiance HDR's own matrices as colorin's embedded matrix, PFM, which carries none, linear Rec709.
+- [ ] **5. JPEG 2000, binary PNM, QOI, GIF and BMP,** for 0.3 or later.
+- [ ] **6. HEIF and HEIC,** for 0.3 or later: first a spike comparing the pure-Rust `heic` crate with libheif on a corpus of phones' photos, which chooses the decoder among decision 111's four options, then the decoder.
+
 ### Culling, metadata and several computers, in folder mode
 
 The library's steps 10 to 20, 15b, 19b, 19c and 19d, [listed below](#the-librarys-steps) (decisions 46, 47, 52, 53 and 101), and metadata through the XMP layer (decision 50).
@@ -557,7 +568,7 @@ Decisions 46, 47, 52 to 55, 71, 76 and 101. Each step delivers one thing and is 
 - [ ] **Step 15.** Keywords and the metadata fields as values beside the edit as step 14's, each keyword's presence with its clock, combining keyword by keyword, IPTC Core's under their own properties, Notes Apertrust's own `apertrust:notes` and the copy's name editable (decision 110); darktable's keywords and metadata fields, read from its XMP while a photo has no `.apxmp` and copied into it at its first write (decisions 51 and 110; built for the metadata fields; darktable's keywords are not read yet, so a photo's first `.apxmp` write leaves them in darktable's `.xmp` alone, which is never read for them again); the Keywords tool, its list the folder's keywords with their properties and Recent in the user data folder's `keywords.toml`, and the Metadata tool's storage and editing, its slices 3 and 4 (decisions 73 and 110). Built: the Metadata fields and the copy's name for one photo, stored, edited and undone, darktable's read and copied in.
 - [ ] **Step 15b.** Filters in folder mode (decision 73): the index's rules and counts over the open folder, the Filters tool; first file name, rating and colour label (their rules showing the person's notes for them), history, date taken and file type, then camera, lens and exposure read with the capture times, then keywords and the metadata fields.
 - [ ] **Step 16.** Snapshots saved in the sidecar, each its edit whole, with History's Snapshots section ([history.md](history.md)).
-- [ ] **Step 17.** Photo groups: raw and JPEG by base name, groups made by hand by id in the sidecars, the G toggle.
+- [ ] **Step 17.** Photo groups: raw and JPEG by base name, a JPEG beside its raw left out of the Browser until then (decision 111), groups made by hand by id in the sidecars, the G toggle.
 - [ ] **Step 18.** Renames outside Apertrust: orphan sidecars re-paired by fingerprint; Edits without a photo.
 - [ ] **Step 19.** Move to…, Rename, Copy to… and Delete with their sidecars, `.apdata` and attached files, between any two folders (decision 101; [library.md](library.md#move-to-and-copy-to)), each a `UserForeground` job as darktable's: move, copy and rename cancellable, delete to the system's trash with a bar and not cancellable (decision 57); on one volume a move a rename, across volumes the checked copy, a photo moving whole or staying through a cancel, a crash or a write from elsewhere, its procedure settled in the step's spec; its spike, reading past the system's cache on each platform (`F_NOCACHE`, `POSIX_FADV_DONTNEED`, unbuffered reads) and its cost, measured on the M4's SSD and the NAS, the SD card, Linux and Windows to measure ([library.md](library.md#the-checked-copy)).
   - [x] The checked copy, built ahead of the commands (#713): `copy::copy_photo`, a photo's files whole or not at all, never replacing a file, read back past the cache with `Check::ReadBack`, tested by fault injection.

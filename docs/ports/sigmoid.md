@@ -316,7 +316,7 @@ The scene-referred default is darktable's auto-applied preset in its sigmoid wor
 
 Green and blue rotations turned opposite each other (green −21.97° and blue +21.97° over Display P3, ∓19.42° over sRGB, or any pair as far apart) black the per-channel image out (Precision; darktable shows values far outside the display there), and close to it colours are boosted without bound. Of the sliders' values (tenths of a degree) none reaches it, and the nearest give matrix entries of about 1e3. The defaults, rotations 0, are far from it, and Rec2020, the working profile and Adobe RGB never reach it.
 
-The operation at its defaults is no identity; as a tone mapper it needs none. Exactly one tone mapper runs on the background, the one the edit chooses (decision 33), and the tool at its defaults is darktable's scene-referred default. An edit choosing it is planned with the Sigmoid tool.
+The operation at its defaults is no identity; as a tone mapper it needs none. At most one tone mapper runs on the background, the one the edit chooses, on every raw and on another image once its tool is touched (decisions 33 and 111), and the tool at its defaults is darktable's scene-referred default. An edit choosing it is planned with the Sigmoid tool.
 
 ## Gradients
 

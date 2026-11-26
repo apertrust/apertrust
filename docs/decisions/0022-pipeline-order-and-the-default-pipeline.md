@@ -8,6 +8,8 @@ In what order do operations run, and which run on a photo nobody has edited? dar
 
 **darktable's v5.0 order throughout** (`src/common/iop_order.c`, `v50_order`). Every operation keeps darktable's place: the tone equalizer at camera RGB 24.0, after exposure and before input colour; RGB curve at 42 and RGB levels at 43, before the tone mapper; grain and vignette at 65 and 68, after it.
 
+**An image that is not a raw takes darktable's v5.0 JPEG order** (`v50_jpg_order`), which moves the operations between demosaic and colorin after colorin, in that list's order; each such slot gains its number there, between 28 and 28.5 (`Slot::non_raw`, planned), and the table and the test hold it ([0111](0111-images-other-than-raws-opened-and-edited-as-darktable-does.md)). An unedited one runs no raw stage, exposure, colour calibration or tone mapper: colorin, orientation and colorout, after the engine's unpack of its samples.
+
 **Slot rules:**
 
 - An operation keeps darktable's v5.0 number where it keeps darktable's place. darktable's place is its position in the list, which is its real order; where a number disagrees with the list (lut3d's 36, listed between 46.0 and 47.0), the operation takes a number between its list neighbours.

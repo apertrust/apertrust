@@ -35,6 +35,7 @@ A major part of Apertrust is built on darktable's trusted colour science. How cl
 - The slider tables held to darktable's (`DarktableSlider`, `testing::slider_differences`) become Apertrust's own recorded slider baselines (`SliderSpec`): a slider change is then a reviewed baseline change, as a render's is.
 - It claims no dependency on darktable: neither the harness's gates nor the docs present darktable as the reference.
 - The rule for departures during the migration ([0063](0063-departures-from-darktable-and-views-below-full-scale.md)) ends: a processing change is a baseline change.
+- **One narrow exception:** darktable-cli stays the reference for decoders of images other than raws, what a file holds, compared on the decoded samples before any processing, never for the processing ([0111](0111-images-other-than-raws-opened-and-edited-as-darktable-does.md)). A decoder added after the migration is checked against darktable-cli's decode, its profile and render against Apertrust's own baselines, first rendered at the commit that adds it.
 
 **At every stage:** nothing of darktable is ever loaded or linked; edits made with the migrated tools keep looking exactly as they did; files ported from darktable keep darktable's copyright and provenance, as the GPL requires ([0064](0064-licences-gplv3-darktables-provenance-and-bundled-fonts.md)).
 

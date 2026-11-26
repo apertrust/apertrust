@@ -27,10 +27,11 @@ The Phase 1 design is built through step 6 of the [build order](#phase-1-build-o
 | The live frame in bounded submissions | Planned: the live render cut into chunks of bounded GPU time, at most two in flight, so the window's frames run between them; then the gate shrunk with wgpu 31, row strips for longer passes, and a lower resolution while a slow drag lasts (decision 112) | [The live frame in bounded submissions](#the-live-frame-in-bounded-submissions), [The submit gate](#the-submit-gate) |
 | Several photos in one session | Planned; spike W1 measures it first (decision 37) | [Session and threads](#session-and-threads) |
 | Fusion | Open: a Phase 2 spike decides (decision 8) | [Fusion](#fusion) |
+| Images other than raws | Planned: uploaded in their own samples and unpacked on the GPU, darktable's v5.0 JPEG order, colorin's input profile from the file through moxcms, darktable's defaults for a non-raw; JPEG first (decision 111) | [Images other than raws](#images-other-than-raws) |
 
 ## What the engine does
 
-- Holds an open image: the raw on the GPU, its metadata and its edit. With several photos on screen (decision 37, planned), the session holds every photo the window shows: the active one live, the others as stills.
+- Holds an open image: the raw on the GPU, or an image that is not a raw (decision 111, planned), its metadata and its edit. With several photos on screen (decision 37, planned), the session holds every photo the window shows: the active one live, the others as stills.
 - Turns the edit into operation parameters, through the tools' bindings (decisions 4 and 28).
 - Plans and runs renders for each pipe: viewport frames and exports. Runs export jobs beside the viewport, one at a time, and writes their files (decision 56, [Export jobs](#export-jobs)).
 - Owns every GPU buffer and texture it uses, and the caches kept between renders.
@@ -270,6 +271,18 @@ Operations whose maths depends on position (the CFA pattern, vignetting, lens co
 - The camera's white balance presets from darktable's `wb_presets.json` (`white_balance_presets`, darktable's `dt_wb_data` for the camera in the file's order, looked up by `apertrust-raw`, decision 27).
 - The lens corrections the raw carries (`lens_correction`, darktable's four types as darktable stores them, decision 25).
 - For `prepare` alone, the pipe's output profile as matrices to and from XYZ D50, `None` meaning the working profile (decision 26).
+- Planned (decision 111): what the image is, `kind`, `Raw`, `Ldr` or `Hdr` as darktable's flags, `camera` set exactly for a raw; and for an image that is not a raw, its file's own colour description, `profile`, which colorin's `defaults` reads.
+
+## Images other than raws
+
+Decision 111, planned, JPEG first; the formats, their tiers and decoders are the decision's. An image that is not a raw goes through the same pipeline from the point demosaic would have reached:
+
+- **The upload:** its samples as the file holds them, 8 or 16 bits, half or full floats, uploaded once, as the mosaic is in its 16 bits. A pass of the engine's own unpacks them into RGBA `f32`, each sample over the file's own maximum, which the decoder gives with them, as darktable's loaders scale them: 255 or 65535 by its bits, a PNM's from its header, an AVIF's of 10 or 12 bits `(1 << bits) - 1`; floats as they are, alpha dropped; a CIELAB or ICC Lab TIFF's samples converted from Lab D50 to linear Rec2020 there, as darktable's loader converts them, colorin then taking linear Rec2020 as its profile. It runs in row strips where the image is larger than one binding (decision 14); 24 MP of 8-bit samples are 96 MB, against 384 MB as RGBA `f32`.
+- **The plan** starts at the unpack: no raw stage. The viewport's downscale and the full-resolution cache point follow the unpack as they follow demosaic.
+- **The order** is darktable's v5.0 JPEG order (`v50_jpg_order`): the operations darktable places between demosaic and colorin, which expect linear RGB, run after colorin in that list's order, before colour calibration, each by its slot's number there (`Slot::non_raw`, between 28 and 28.5), which `crates/operations/order.md` lists beside its raw number (decision 22).
+- **colorin's input profile** follows darktable's `reload_defaults`: the embedded ICC profile (PNG's cICP before it), else an LDR image's EXIF colour space, else sRGB for an LDR image, else the image's own matrix (EXR, Radiance), else linear Rec709. A matrix-shaper profile becomes darktable's tone curves sampled at 65,536 points with its fit above 1, and one matrix; a LUT-based one a 3D table over the encoded input that the kernel interpolates tetrahedrally, where darktable runs lcms2's transform on the CPU (decision 26).
+- **The defaults,** each operation's `defaults(image)`: an unedited JPEG runs the unpack, colorin, orientation and colorout; exposure, colour calibration, white balance, highlight reconstruction and the tone mapper run once their tools are touched, white balance and highlights by RGB passes at their darktable places (decisions 32 and 33).
+- **Opening** in stages (decision 77): the cached render, else the image itself decoded at the Viewer's size; the values from the header and the sidecar; the live frame after the whole decode.
 
 ## Order
 
@@ -318,6 +331,7 @@ flowchart LR
     class toneequal,balance,curve,levels,grain,vignette optional
 ```
 
+- **An image that is not a raw** runs darktable's v5.0 JPEG order with no raw stage: unedited, colorin, orientation and colorout ([Images other than raws](#images-other-than-raws), decision 111, planned).
 - **Defaults:** each operation takes darktable's scene-referred defaults. Colour calibration runs on every colour raw, with temperature "as shot to reference" (decision 27); colour balance rgb runs only while its tool is used, as in darktable (decision 32).
 - **Slots:** every slot is unique, and the numbers rise with the stages, so the number alone gives the order (decision 22).
 - **Passes:** one per operation until fusion. A pass takes about 1.3 ms at viewport size and 27 ms at 60 MP on the M4.
@@ -1613,7 +1627,7 @@ pub trait ProcessingTool: Send + Sync {
 - A tool's id is its operation's (`exposure`, `toneequal`, `rgbcurve`, White balance's `temperature`).
 - **Follow writes** (decision 27): where darktable's GUI writes other parameters with a control to keep one quantity consistent (an illuminant writing `x` and `y`, a coefficient writing White balance's `preset`), the tool gives those writes, `ProcessingTool::follow`, pure, and the session applies them in the same change and history step ([Follow writes](#follow-writes)). darktable's session memory is not mirrored, but for White balance's user-modified coefficients, kept by the session for the open photo (`ProcessingTool::remember` and `recall`, decision 27).
 
-**One tone mapper per edit** (decision 33, planned with sigmoid's tool). Tone mappers are tools of their own, and exactly one tone mapper operation is planned for the background: the one the edit names, an edit naming none being AgX's, or for a photo with no edit the one a setting chooses. Switching it is one command and one history step; the old tone mapper's values leave the edit, so none waits unseen, and one undo brings them back. Planned with layers: a layer may choose its own tone mapper, any of the three, which replaces the background's within its mask, never stacked on it, and darktable's masked tone-mapper instances import onto such layers.
+**One tone mapper per edit** (decision 33, planned with sigmoid's tool). Tone mappers are tools of their own, and at most one tone mapper operation is planned for the background, while its tool is on, always on a raw and once touched on an image that is not a raw (decision 111): the one the edit names, an edit naming none being AgX's, or for a photo with no edit the one a setting chooses. Switching it is one command and one history step; the old tone mapper's values leave the edit, so none waits unseen, and one undo brings them back. Planned with layers: a layer may choose its own tone mapper, any of the three, which replaces the background's within its mask, never stacked on it, and darktable's masked tone-mapper instances import onto such layers.
 
 ## Preset rows and lossless views
 
@@ -2678,11 +2692,17 @@ What is still undecided in the engine, by part. Each says what the engine does m
 
 ### Opening a photo
 
+- **A JPEG's first picture** (decision 111): decoded at the Viewer's size where its decoder can scale while it decodes, as jpeg-decoder can by eighths, else decoded whole; to be timed on a 24 MP JPEG against the raw's embedded picture's 48 ms on the M4.
 - **A low-resolution first render** between the values and the live frame (decision 77): not built. It is measured first, from the first live frame's time split by pass (`Frame::timings`) on the M4, the RTX 5060, the Radeon 780M and lavapipe: it could save at most the raw stage's and demosaic's share, less their cost at a quarter of the pixels, never the decode. It is proposed as a decision of its own only if that saving is above 250 ms on a hardware GPU for a photo with no rendered thumbnail.
 - **The metadata read on Linux and network folders** (decision 77): rawler's `RawSource::new` populates its whole mapping as it is made on Linux, so there the values wait for the whole file, about 120 MB for the 7R V. The timings on Linux and the NAS say whether a mapping that is not populated is needed, asked upstream. On the M4 the read itself takes 38 to 39 ms of the values' 41 to 42 warm for the 7R V, rawler's decode with `dummy` and its one parse of the metadata: whether to ask rawler for a lighter metadata read is decided on the other cameras' timings.
 - **Compiling kernels off the engine thread:** compiling holds the engine thread, 43 to 303 ms a new pipeline on the M4 and 0.9 s for the viewport's on WARP (decision 80), so a newer open's values wait behind it. Kernels kept across photos (decision 77) leave this to a session's first open; whether compiling moves to a worker is decided on the timings.
 
 - **The flip's gate** ([Flipping through photos](#rendered-thumbnails-of-the-live-photo)): should it move to the dwell just past `UNEDITED_SETTLE`? The back-to-back flip renders no still, so it cannot catch a thumbnail cost; the dwell-350 flip is where the still overlaps the next open. And should it compare the median or the 90th percentile over at least five alternated pairs after a discarded warm-up run, rather than the slowest photo, which moved by up to 150 ms between identical runs on the M4? Meanwhile the gate is the back-to-back flip's slowest photo.
+
+### Images other than raws
+
+- **The JPEG decoder** (decision 111): jpeg-decoder or zune-jpeg, whichever is nearer darktable's libjpeg-turbo decode, sample by sample, on the JPEG corpus; until then, neither is in the open path.
+- **A LUT-based input profile's table** (decision 111): its size, 33³ or 65³, and its tolerance against darktable's lcms2 transform, measured on the profiles the corpus holds.
 
 ### Software GPUs
 

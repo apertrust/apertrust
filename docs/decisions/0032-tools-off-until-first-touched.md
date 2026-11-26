@@ -8,6 +8,8 @@ darktable leaves most modules off on a new photo, and turning one on applies its
 
 **A tool darktable leaves off on a new photo is switched** (`ProcessingDefinition::switched`): off until a command writes one of its controls, then on with darktable's defaults for every control not set, until its reset turns it off. **A tool that is off is a no-op**, covered by an invariant test. A tool whose operation every photo runs is always on, untouched at its defaults ([0028](0028-tools-bound-to-operations.md)); `check::accept` refuses a switched tool over such an operation.
 
+**On an image that is not a raw** (planned, [0111](0111-images-other-than-raws-opened-and-edited-as-darktable-does.md)), a tool over an operation every raw runs but darktable leaves off there, Exposure, Colour calibration, White balance, Highlight reconstruction and the tone mapper, is switched: whether a tool is switched follows the photo's kind, as darktable's `default_enabled` and its auto-applied presets follow it.
+
 **From darktable:** `dt_iop_gui_changed` enables a module on every slider and combobox callback, without comparing values, so a click at the same value turns an off module on; its history stores `enabled` with the parameters.
 
 **The edit:** `ToolValues::enabled`, the tool's own state beside its values and marks, written in `.apxmp` version 1 as `apertrust:enabled="true"` on an on tool's entry, absent meaning off. An off tool holds no value off its defaults; reading repairs one that does, as on with a warning. `enabled` on a tool this build does not switch makes the photo view-only.

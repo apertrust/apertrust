@@ -9,7 +9,7 @@ This page is about what photographers get from Apertrust and how it should feel 
 
 ## The promise
 
-**Apertrust is a free, non-destructive, cross-platform raw photo editor. It aims for measured image quality, controls that keep to what they say, and help in reaching the look you want.**
+**Apertrust is a free, non-destructive, cross-platform raw photo editor that will also open JPEG, TIFF and other common image files. It aims for measured image quality, controls that keep to what they say, and help in reaching the look you want.**
 
 For photographers who care how their pictures look, Apertrust gets them there quickly and predictably, on their own computer: the picture is right, every control behaves as promised, and the editor does the slider work towards the look they want.
 

@@ -18,6 +18,7 @@ Decision 2. Apertrust migrates darktable's colour science in Phases 0 to 3. The 
 
 - Until then darktable-cli's renders are the references, as below.
 - From then on the baselines are Apertrust's own renders, taken at the commit that completes the migration, and each change to one is a deliberate, reviewed decision, its size measured and stated. Apertrust may then evolve its processing on its own and claims no dependency on darktable.
+- **The one exception:** darktable-cli stays the reference for the decoders of images other than raws, what a file holds, compared on the decoded samples before any processing, within 1/255 a sample and at most 1% of samples off; never for the processing, whose baselines are Apertrust's (decision 111; [Images other than raws](#images-other-than-raws)).
 - Nothing of darktable is ever loaded or linked, before or after, and edits made with the migrated tools carry over exactly.
 
 ## The golden-image harness, during the migration
@@ -36,6 +37,20 @@ Decision 61. For each ported operation, the same input buffer and parameters go 
 - **Timing:** each variant warms up for a fixed time, variants alternate instead of running in order, and GPU timestamp queries replace wall-clock time. Timing variants in order once made the second look 40% slower on the RTX 5060.
 - **Results are published** where photographers can see them, not only in the repository (decision 1): during the migration, each operation's ΔE2000 against darktable and the whole-pipeline test, per GPU as the homelab runners produce them; after it, each baseline change with its size. Where and in what form is not settled yet.
 - **After the migration,** each case's baseline is Apertrust's render at the commit that completes it, checked by the same tolerances, per GPU. Where those baselines are kept, and what each case's input becomes, are designed before the end of Phase 3 ([Open questions](#open-questions)).
+
+## Images other than raws
+
+Decision 111, planned, JPEG first. Three checks against darktable-cli:
+
+| Check | What is compared | Passes when |
+| --- | --- | --- |
+| The decode | darktable's loader's samples, from a render with colorin and colorout at linear Rec2020 and Orientation (`flip`) off, so both sides keep the file's own layout, against Apertrust's decode before its orientation, sample by sample | Every sample within 1/255, at most 1% of samples off |
+| colorin's profiles | Golden cases on darktable's decoded image | `Tolerance::DARKTABLE` |
+| The whole pipeline | JPEGs at their defaults and with tools set, as `pipeline` on raws | A mean ΔE2000 of at most 0.01, at most 0.01% of pixels over 2.3 |
+
+**The JPEG corpus,** never committed: JPEGs darktable-cli exports from the raw.pixls.us samples, in sRGB, Adobe RGB, Display P3 and one LUT-based ICC profile, with chroma at 4:4:4, 4:2:2 and 4:2:0, baseline, as darktable's writer encodes them; copies of one export with each of the eight EXIF orientations, the tag rewritten in place, since darktable writes orientation 1; and libjpeg-turbo's BSD-licensed test images, downloaded, which supply the progressive cases. After the migration only the decode stays against darktable-cli.
+
+**A format added after the migration,** tiers 2 to 6, is checked on its decode alone against darktable-cli. Its first baselines are rendered at the commit that adds its decoder, by the pipeline whose own baselines pass there. That pull request shows the decode check's numbers on the format's corpus and the renders. A first baseline replaces none, so it needs no decision of its own; every later change to it does.
 
 ## Departures from darktable
 

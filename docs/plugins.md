@@ -106,6 +106,7 @@ Decision 21. The image context carries:
 - planned: the camera's white balance presets from darktable's `wb_presets.json`, `white_balance_presets`, in the file's order, which temperature's defaults and the White balance tool read (decision 27);
 - the lens corrections the raw carries, `lens_correction`, as darktable's `exif_correction_type` and `exif_correction_data` hold them (decision 25);
 - for an operation that reads it, the raw's histogram (`raw_histogram`, decision 87), counted by the engine, not the decoder;
+- planned (decision 111): what the image is, `kind` (`Raw`, `Ldr` or `Hdr`, darktable's flags, the camera's metadata present exactly for a raw), and for an image that is not a raw its file's own colour description, `profile` (its ICC profile, cICP, EXIF colour space or own matrix), from which colorin's `defaults` chooses its input profile as darktable's `reload_defaults` does;
 - the pipe's output profile as matrices to and from XYZ D50 (`output_profile`, decision 26). colorout reports it through `Operation::output_profile(params)`, and the planner collects it before any `prepare`; `None`, without colorout, means the working profile. It is the edit's in the viewport and an export's chosen one in that export, read by filmic rgb's v6 and v7 and AgX's "export profile", never by `defaults` or a binding.
 
 ### The camera's names

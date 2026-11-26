@@ -8,7 +8,7 @@ What is Apertrust, beyond a rewrite of darktable, and what do product decisions 
 
 **[principles.md](../principles.md) is the basis of every product decision.** It holds:
 
-- **The promise:** a free, non-destructive, cross-platform raw photo editor that aims for measured image quality, controls that keep to what they say, and help in reaching the look you want. It names no other product.
+- **The promise:** a free, non-destructive, cross-platform raw photo editor that will also open JPEG, TIFF and other common image files (planned, [0111](0111-images-other-than-raws-opened-and-edited-as-darktable-does.md)), and aims for measured image quality, controls that keep to what they say, and help in reaching the look you want. It names no other product.
 - **What it is built on:** darktable's trusted colour science, migrated first, then evolved in Apertrust's own way ([0002](0002-rewrite-darktable-first-then-apertrusts-own-way.md)).
 - **The users:** photographers who care how their pictures look and want to get there quickly. The darktable veteran and the subscription leaver matter equally; photographers delivering hundreds of photos a job, and people editing on phones and tablets, come later.
 - **Eight principles in three groups:**
