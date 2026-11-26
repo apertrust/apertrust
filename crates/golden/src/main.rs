@@ -694,9 +694,23 @@ fn case_plan(
         &instances,
         image,
         input,
-        Pipe::Export,
+        spike_pipe(),
         &limits,
     )?)
+}
+
+/// Spike (#702), temporary: `APERTRUST_SPIKE_VIEWPORT=WxH` plans a viewport's pipe.
+fn spike_pipe() -> Pipe {
+    match std::env::var("APERTRUST_SPIKE_VIEWPORT") {
+        Ok(size) => {
+            let (w, h) = size.split_once('x').expect("WxH");
+            Pipe::Viewport {
+                width: w.parse().expect("width"),
+                height: h.parse().expect("height"),
+            }
+        }
+        Err(_) => Pipe::Export,
+    }
 }
 
 /// The RGB of a rendered image.
@@ -717,11 +731,42 @@ fn run_plan(
     timing: Timing,
     heatmaps: Option<&Path>,
 ) -> Result<bool> {
-    let images = CaseImages::load(gpu, darktable, images, case)?;
+    let mut images = CaseImages::load(gpu, darktable, images, case)?;
+    // Spike (#702), temporary: the operation's defaults, and the input resampled
+    // (nearest) to APERTRUST_SPIKE_SIZE=WxH, unchecked.
+    let values = if std::env::var_os("APERTRUST_SPIKE_DEFAULTS").is_some() {
+        ParamValues::new()
+    } else {
+        values
+    };
+    let spike = std::env::var_os("APERTRUST_SPIKE_VIEWPORT").is_some()
+        || std::env::var_os("APERTRUST_SPIKE_SIZE").is_some();
+    if let Ok(size) = std::env::var("APERTRUST_SPIKE_SIZE") {
+        let (w, h) = size.split_once('x').expect("WxH");
+        let (w, h): (u32, u32) = (w.parse()?, h.parse()?);
+        let (sw, sh) = (images.input.width(), images.input.height());
+        let source = images.input.download(gpu)?;
+        let mut pixels = Vec::with_capacity((w * h) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let (fx, fy) = (x * sw / w, y * sh / h);
+                pixels.push(source[(fy * sw + fx) as usize]);
+            }
+        }
+        images.input = GpuImage::upload(gpu, w, h, &pixels)?;
+    }
     let (width, height) = (images.input.width(), images.input.height());
     let context = ports::plan_context(case, width, height)?;
     let plan = case_plan(gpu, case, values, &context, images.input.desc())?;
     let passes = plan.passes().count();
+    if std::env::var_os("APERTRUST_SPIKE_PASSES").is_some() {
+        for (op, pass) in plan.passes() {
+            println!(
+                "    plan {} {} {:?} scale {}",
+                op.id, pass.entry_point, pass.size, op.scale
+            );
+        }
+    }
     let mut pipeline = pollster::block_on(Pipeline::new(gpu, plan, images.input))?;
     println!(
         "{} ({width}×{height}, a plan of {passes} passes)",
@@ -732,12 +777,35 @@ fn run_plan(
     let output = pipeline.output();
     let (out_width, out_height) = (output.width(), output.height());
     let actual = rgb(output.download(gpu)?, out_width, out_height)?;
-    let stats = check(case, &images.expected, &actual, heatmaps)?;
+    if std::env::var_os("APERTRUST_SPIKE_PASSES").is_some() {
+        let mut hash = 0xcbf2_9ce4_8422_2325u64;
+        for value in actual.pixels.iter().flatten() {
+            hash = (hash ^ u64::from(value.to_bits())).wrapping_mul(0x100_0000_01b3);
+        }
+        println!("    output hash {hash:016x}");
+    }
+    let stats = if spike {
+        None
+    } else {
+        Some(check(case, &images.expected, &actual, heatmaps)?)
+    };
 
     // Speed: renders, each timed by its passes' GPU timestamps, or by the wall clock
     // without them.
+    // Spike (#702), temporary: every pass's GPU time per render, its median printed.
+    let mut per_pass: Vec<(&'static str, Vec<f64>)> = Vec::new();
     let mut render = || -> Result<f64> {
         let timings = pipeline.render(gpu)?;
+        if per_pass.is_empty() {
+            per_pass = timings
+                .passes
+                .iter()
+                .map(|(n, _)| (*n, Vec::new()))
+                .collect();
+        }
+        for (slot, (_, ms)) in per_pass.iter_mut().zip(&timings.passes) {
+            slot.1.push(*ms);
+        }
         let gpu_ms: f64 = timings.passes.iter().map(|(_, ms)| ms).sum();
         Ok(if gpu_ms.is_nan() {
             timings.wall_ms
@@ -758,9 +826,21 @@ fn run_plan(
         "  {:>8.3} ms/render (min {:.3})  {}",
         times[times.len() / 2],
         times[0],
-        summary(&stats, case.tolerance)
+        stats.as_ref().map_or_else(
+            || "not checked (spike viewport)".to_string(),
+            |s| summary(s, case.tolerance)
+        )
     );
-    Ok(stats.passes(case.tolerance))
+    if std::env::var_os("APERTRUST_SPIKE_PASSES").is_some() {
+        for (index, (name, mut ms)) in per_pass.into_iter().enumerate() {
+            ms.sort_by(f64::total_cmp);
+            println!(
+                "    pass {index:>2} {name:<24} {:>8.3} ms",
+                ms[ms.len() / 2]
+            );
+        }
+    }
+    Ok(stats.is_none_or(|s| s.passes(case.tolerance)))
 }
 
 /// How a pixel of the gradient check's image is named.
