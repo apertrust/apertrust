@@ -72,6 +72,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `minimise-linux`, `maximise-linux`, `restore-linux`, `close-linux` | Drawn for Apertrust after the shapes of Adwaita's symbolic `window-minimize`, `window-maximize`, `window-restore` and `window-close`, no Adwaita file copied: the caption buttons in Linux's style, a short bar low in the box, a square, two offset squares and an × |
 | `app-icon` | Drawn for Apertrust: the app's icon in one colour, the macOS icon's rounded square with the app's mark cut out of it |
 | `caret` | Drawn for Apertrust: the menu button's ▾, after the app's icon |
+| `move-horizontal` | Lucide's `move-horizontal`: a flexible space's tile while the Toolbar is customised (decision 92) |
 | `cpu`, `hard-drive`, `keyboard`, `sparkles` and their filled forms | Lucide's `cpu`, `hard-drive`, `keyboard` and `sparkles`: the Settings dialog's Processing, Storage, Shortcuts and AI pages |
 
 `Icon::file` in `src/icons.rs` is the one place an icon is mapped to its file, its size and the Lucide icon it is derived from.

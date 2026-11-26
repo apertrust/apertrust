@@ -116,6 +116,8 @@ pub enum ToolbarAction {
     MaximiseOrRestore,
     /// Close the window.
     Close,
+    /// What was done to the Toolbar while it is customised ([`Toolbar::customising`]).
+    Edit(ToolbarEdit),
 }
 
 /// Where the toolbar menu was asked for ([`ToolbarAction::ContextMenu`]), for the app to
@@ -202,6 +204,11 @@ impl ToolbarButton {
     /// Its id, which a press reports.
     pub fn id(&self) -> &'static str {
         self.id
+    }
+
+    /// Its translated name, its full words.
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn enabled(mut self, enabled: bool) -> Self {
@@ -320,6 +327,10 @@ impl MenuButtonStyle {
     }
 }
 
+mod edit;
+
+pub use edit::{Customising, EditMenu, ToolbarEdit, ToolbarSpot};
+
 #[derive(Default)]
 pub struct Toolbar<'a> {
     entries: Vec<ToolbarEntry>,
@@ -335,6 +346,7 @@ pub struct Toolbar<'a> {
     title_bar: bool,
     caption_buttons: Option<CaptionStyle>,
     maximised: bool,
+    customising: Option<Customising>,
 }
 
 /// How the window's caption buttons are drawn (`docs/gui.md`, Windows' and Linux's
@@ -636,6 +648,53 @@ impl<'a> Toolbar<'a> {
         self
     }
 
+    /// Draws the window's caption buttons at the end of `bar`, where asked for: what was
+    /// pressed, and their rectangles.
+    fn captions(&self, ui: &mut Ui, bar: Rect) -> (Option<ToolbarAction>, Vec<Rect>) {
+        let mut action = None;
+        let mut captions = Vec::new();
+        let Some(style) = self.caption_buttons else {
+            return (action, captions);
+        };
+        let ctx = ui.ctx().clone();
+        let t = theme(&ctx);
+        let (icon, middle) = if self.maximised {
+            (Icon::Restore, "window-restore")
+        } else {
+            (Icon::Maximise, "window-maximise")
+        };
+        let buttons = [
+            (
+                Icon::Minimise,
+                "window-minimise",
+                false,
+                ToolbarAction::Minimise,
+            ),
+            (icon, middle, false, ToolbarAction::MaximiseOrRestore),
+            (Icon::Close, "window-close", true, ToolbarAction::Close),
+        ];
+        for ((icon, id, close, done), rect) in buttons.into_iter().zip(style.buttons(bar)) {
+            let button = ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                caption_button(ui, icon, &tr(&ctx, id), close, style, &t)
+            });
+            captions.push(rect);
+            if button.inner.clicked() {
+                action = Some(done);
+            }
+        }
+        (action, captions)
+    }
+
+    /// Puts the panel into its edit state, as the Toolbar's customise mode draws it
+    /// (decision 92; [`Customising`]): every entry drawn enabled and at rest on a plate, on
+    /// one line that never folds, Done at its end, what the person does reported as
+    /// [`ToolbarAction::Edit`]. No part of it moves the window; the caption buttons still
+    /// report.
+    pub fn customising(mut self, customising: Customising) -> Self {
+        self.customising = Some(customising);
+        self
+    }
+
     /// Whether the list holds `entry`.
     fn lists(&self, entry: &ToolbarEntry) -> bool {
         self.entries.contains(entry)
@@ -720,6 +779,37 @@ impl<'a> Toolbar<'a> {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Whether each entry is gone at `fold`, `well` the cursors' well given, by its place in
+    /// the list: a button under », a fixed space removed, and a fixed space [`arrange`] skips,
+    /// one with no entry drawn on a side of it before a flexible space, the menu button
+    /// counting before the first.
+    ///
+    /// [`arrange`]: Toolbar::arrange
+    fn dropped(&self, fold: Fold, well: bool) -> Vec<bool> {
+        let mut gone = self.folded(fold);
+        let shows = |at: usize| {
+            !gone[at]
+                && match &self.entries[at] {
+                    ToolbarEntry::Cursors => well,
+                    ToolbarEntry::Jobs => self.jobs.is_some(),
+                    _ => true,
+                }
+        };
+        let drawn: Vec<bool> = (0..self.entries.len()).map(shows).collect();
+        let item = |at: usize| drawn[at] && self.entries[at] != ToolbarEntry::Space;
+        let flexible = |at: &usize| self.entries[*at] != ToolbarEntry::FlexibleSpace;
+        for at in 0..self.entries.len() {
+            if self.entries[at] != ToolbarEntry::Space || !drawn[at] {
+                continue;
+            }
+            let before = (0..at).rev().take_while(flexible).any(item)
+                || (self.menu && (0..at).all(|at| flexible(&at)));
+            let after = (at + 1..self.entries.len()).take_while(flexible).any(item);
+            gone[at] = !(before && after);
+        }
+        gone
     }
 
     /// What the panel draws at `fold`, `well` the cursors' well given, in order: the menu
@@ -834,7 +924,6 @@ impl<'a> Toolbar<'a> {
         // Where the list ends at `fold`: before the guards that show.
         let list_end = |fold: Fold| inner.max.x - guards(guard_save(fold), guard_jobs);
 
-        let gap = t.spacing.xxs;
         let labelled = self.labels;
         let width = |drawn: Drawn, fold: Fold| match drawn {
             Drawn::Menu => self.menu_style.width(),
@@ -847,16 +936,8 @@ impl<'a> Toolbar<'a> {
             Drawn::Cursors => well.as_ref().map_or(0.0, |well| well.width(ui)),
             Drawn::Save => saving.width(fold.status),
         };
-        // Between two neighbours: a space or a flexible space is the whole room between
-        // them; the menu button stands a group's gap before the rest, the cursors' well one
-        // after what it follows, and the spinner one before the save state.
-        let between = |a: Drawn, b: Drawn| match (a, b) {
-            (Drawn::Space | Drawn::Flexible, _) | (_, Drawn::Space | Drawn::Flexible) => 0.0,
-            (Drawn::Menu, _) => gap + t.spacing.s,
-            (_, Drawn::Cursors) => t.spacing.xl,
-            (Drawn::Jobs, Drawn::Save) => t.spacing.m,
-            _ => gap,
-        };
+        // Between two neighbours ([`between`]).
+        let between = |a: Drawn, b: Drawn| between(&t, a, b);
         // The room `drawn` takes but for the flexible spaces' shares.
         let taken = |drawn: &[Drawn], fold: Fold| {
             let widths: f32 = drawn.iter().map(|d| width(*d, fold)).sum();
@@ -900,6 +981,25 @@ impl<'a> Toolbar<'a> {
         let outside = (inner.min.x - bar.min.x) + (bar.max.x - inner.max.x) + guards(save, jobs);
         let least = needs(&self.arrange(all, well.is_some()), all) + outside;
         ctx.data_mut(|d| d.insert_temp(least_width_id(), least.ceil()));
+        // At rest, what the edit state kept goes.
+        if self.customising.is_none() {
+            edit::rest(&ctx, response.id);
+        }
+        // Customised, the panel never folds: it draws every entry on one line that scrolls,
+        // marking what the fold at rest would take at this width.
+        if let Some(customising) = self.customising.take() {
+            let folded = self.dropped(fold, well.is_some());
+            let more = self.arrange(fold, well.is_some()).last() == Some(&Drawn::More);
+            let frame = edit::Frame {
+                bar,
+                inner,
+                response,
+                saving,
+                folded,
+                more,
+            };
+            return edit::show(&self, customising, well, ui, frame);
+        }
         let mut drawn = self.arrange(fold, well.is_some());
         // » stands at the panel's end, with or without a flexible space, after the guards
         // where they show.
@@ -1193,32 +1293,10 @@ impl<'a> Toolbar<'a> {
         }
         // At the very end: the window's caption buttons, after everything else in the focus
         // order too, each in its own place, the panel round them empty.
-        let mut captions = Vec::new();
-        if let Some(style) = self.caption_buttons {
-            let (icon, middle) = if self.maximised {
-                (Icon::Restore, "window-restore")
-            } else {
-                (Icon::Maximise, "window-maximise")
-            };
-            let buttons = [
-                (
-                    Icon::Minimise,
-                    "window-minimise",
-                    false,
-                    ToolbarAction::Minimise,
-                ),
-                (icon, middle, false, ToolbarAction::MaximiseOrRestore),
-                (Icon::Close, "window-close", true, ToolbarAction::Close),
-            ];
-            for ((icon, id, close, done), rect) in buttons.into_iter().zip(style.buttons(bar)) {
-                let button = ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
-                    caption_button(ui, icon, &tr(&ctx, id), close, style, &t)
-                });
-                captions.push(rect);
-                if pressed(button.inner) {
-                    action = Some(done);
-                }
-            }
+        let (caption, captions) = self.captions(ui, bar);
+        controls.extend(captions.iter().copied());
+        if caption.is_some() {
+            action = caption;
         }
         // The well is no empty area, between its buttons too.
         controls.extend(well_rect);
@@ -1267,6 +1345,20 @@ impl<'a> Toolbar<'a> {
         // What follows starts under the panel, whatever its last part left.
         ui.advance_cursor_after_rect(bar);
         action
+    }
+}
+
+/// The room between two neighbours drawn: a space or a flexible space is the whole room
+/// between them; the menu button stands a group's gap before the rest, the cursors' well one
+/// after what it follows, and the spinner one before the save state.
+fn between(t: &crate::Theme, a: Drawn, b: Drawn) -> f32 {
+    let gap = t.spacing.xxs;
+    match (a, b) {
+        (Drawn::Space | Drawn::Flexible, _) | (_, Drawn::Space | Drawn::Flexible) => 0.0,
+        (Drawn::Menu, _) => gap + t.spacing.s,
+        (_, Drawn::Cursors) => t.spacing.xl,
+        (Drawn::Jobs, Drawn::Save) => t.spacing.m,
+        _ => gap,
     }
 }
 

@@ -3876,6 +3876,8 @@ impl Shell {
             ToolbarAction::Jobs => Some(FromToolbar::Jobs),
             ToolbarAction::NotSaved => Some(FromToolbar::NotSaved),
             ToolbarAction::Menu => Some(FromToolbar::Action(ActionId::MENU)),
+            // The edit state's, which the app draws only while customising.
+            ToolbarAction::Edit(_) => None,
             ToolbarAction::Button(id) => {
                 actions::named(id).map(|action| FromToolbar::Action(action.id))
             }

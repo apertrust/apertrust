@@ -133,8 +133,8 @@ pub use tag::Tag;
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
 pub use toolbar::{
-    CaptionStyle, MenuButtonStyle, SaveState, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry,
-    ToolbarMenu, caption_button,
+    CaptionStyle, Customising, EditMenu, MenuButtonStyle, SaveState, Toolbar, ToolbarAction,
+    ToolbarButton, ToolbarEdit, ToolbarEntry, ToolbarMenu, ToolbarSpot, caption_button,
 };
 pub use tools_panel::{
     FindBar, FindBarAction, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, TabBar, TabBarAction,

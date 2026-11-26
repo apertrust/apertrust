@@ -28,16 +28,16 @@ use crate::components::{
     About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CaptionStyle, CellPicture,
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
-    EndItem, Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldsRow, FileManager,
-    FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job, JobFailure,
-    JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker, MaskHistogram,
-    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch, Patches, PhotoCaption,
-    PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine,
-    RailNode, ReadoutRow, Reference, ReferenceRow, RowField, SaveState, Scale, Scope, ScopeView,
-    Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
-    Switch, TabBar, TabBarAction, Tag, Thumb, Toggle, ToggleRow, ToolButton, Toolbar,
-    ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar,
-    ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
+    Customising, EndItem, Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldsRow,
+    FileManager, FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton, Job,
+    JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker,
+    MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
+    Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup,
+    Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, RowField, SaveState,
+    Scale, Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch,
+    SwatchFill, Swatches, Switch, TabBar, TabBarAction, Tag, Thumb, Toggle, ToggleRow, ToolButton,
+    Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks,
+    ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -128,6 +128,13 @@ impl Gallery {
     pub fn show_slider_warnings(&mut self, ui: &mut Ui) {
         let t = theme::theme(ui.ctx());
         slider_warnings(ui, &t);
+    }
+
+    /// Draws the Toolbar's edit state alone at the page's width, as the snapshot tests
+    /// photograph it at a window's widths.
+    pub fn show_toolbar_customising(&mut self, ui: &mut Ui) {
+        let t = theme::theme(ui.ctx());
+        toolbar_customising(ui, &t);
     }
 
     /// Draws the Cursor well section alone, as the snapshot tests photograph it.
@@ -275,6 +282,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Spacing");
         spacing(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Customising the Toolbar");
+        toolbar_customising(ui, &t);
     }
 }
 
@@ -3510,6 +3520,88 @@ pub fn toolbar_entries(ctx: &egui::Context, disabled: &[&str]) -> Vec<ToolbarEnt
         ToolbarEntry::Jobs,
         ToolbarEntry::SaveState,
     ]
+}
+
+/// What the app hands the Toolbar's edit state for `entries` (decision 92), in `ctx`'s
+/// language, `selected` the entry selected: each entry's words, its tooltip's lines, and what
+/// a release does at each gap. The gallery and the design system's tests draw it.
+pub fn customising(
+    ctx: &egui::Context,
+    entries: &[ToolbarEntry],
+    selected: Option<usize>,
+) -> Customising {
+    let words = crate::translator(ctx);
+    let names: Vec<String> = (entries.iter())
+        .map(|entry| match entry {
+            ToolbarEntry::Button(button) => button.name().to_owned(),
+            ToolbarEntry::Space => words.text("toolbar-space"),
+            ToolbarEntry::FlexibleSpace => words.text("toolbar-flexible-space"),
+            ToolbarEntry::Cursors => words.text("cursor-well"),
+            ToolbarEntry::Jobs => words.text("jobs-name"),
+            ToolbarEntry::SaveState => words.text("toolbar-save-state"),
+        })
+        .collect();
+    let how = words.text("toolbar-customise-tip");
+    let tips = names.iter().map(|name| format!("{name}\n{how}")).collect();
+    let mut release = vec![words.text("toolbar-customise-release-start")];
+    release.extend(names.iter().map(|name| {
+        let mut args = Args::new();
+        args.set("item", name.as_str());
+        words.text_with("toolbar-customise-release", Some(&args))
+    }));
+    let mut args = Args::new();
+    args.set("workspace", words.text("workspace-default"));
+    let done = words.text_with("toolbar-customise-done-tip", Some(&args));
+    Customising::new(names, tips)
+        .selected(selected)
+        .marked(words.text("toolbar-customise-marked"))
+        .release(release)
+        .done(done, false)
+}
+
+/// Phase 2's well, Select chosen, as the app hands it to the Toolbar, drawn by `draw`.
+fn sample_well<R>(draw: impl FnOnce(CursorWell<'_>) -> R) -> R {
+    let select = [WellCursor::new(Icon::Select, "Select").key("Esc")];
+    let pan = [WellCursor::new(Icon::Pan, "Pan").key("A")];
+    let picks = [WellCursor::new(Icon::PickWhiteBalance, "White balance picker").key("K")];
+    let groups = [
+        WellGroup::new("Select", &select, 0),
+        WellGroup::new("Pan", &pan, 0),
+        WellGroup::new("Pick", &picks, 0),
+    ];
+    draw(CursorWell::new(&groups))
+}
+
+/// The Toolbar's edit state (decision 92; `docs/gui.md`, The customise mode), the default
+/// list as the customise mode draws it, the time pinned: labels on, Undo selected, still;
+/// labels off, mid-wiggle; and the empty Toolbar, the bare bar with Done. At the page's width
+/// the line scrolls, its fold marks on what the Toolbar at rest would put under ».
+fn toolbar_customising(ui: &mut Ui, t: &Theme) {
+    let ctx = ui.ctx().clone();
+    let rows: [(bool, Option<usize>, f64, bool); 3] = [
+        (true, Some(3), 1.0, false),
+        (false, None, 0.04, false),
+        (true, None, 1.0, true),
+    ];
+    for (at, (labels, selected, since, empty)) in rows.into_iter().enumerate() {
+        ui.add_space(t.spacing.s);
+        let entries = if empty {
+            Vec::new()
+        } else {
+            toolbar_entries(&ctx, &[])
+        };
+        let edit = customising(&ctx, &entries, selected).since(since, false);
+        ui.push_id(("customising", at), |ui| {
+            let bar = Toolbar::new()
+                .entries(entries)
+                .labels(labels)
+                .saved(SaveState::Saved)
+                .jobs(Jobs::new(&[]))
+                .title_bar(true)
+                .customising(edit);
+            sample_well(|well| bar.cursors(well).show(ui));
+        });
+    }
 }
 
 /// The shell's parts, with sample state: the Toolbar, the viewer bar, the caption and
