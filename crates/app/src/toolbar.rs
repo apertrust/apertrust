@@ -424,6 +424,22 @@ mod tests {
         assert_eq!(ids, ["import", "undo"]);
     }
 
+    /// The rating's and the colour labels' actions are no items (decision 110): the set
+    /// holds none, and a saved list's are skipped where they stand, as any unknown id.
+    #[test]
+    fn the_set_holds_no_rating_or_label() {
+        let ids = (actions::ActionId::RATING.iter())
+            .chain(&actions::ActionId::LABEL)
+            .chain(&[actions::ActionId::REJECT, actions::ActionId::LABEL_CLEAR])
+            .map(|id| id.0);
+        for id in ids {
+            assert!(set().iter().all(|placed| placed.id != id), "{id} is placed");
+        }
+        let drawn = listed(["import", "rating-3", "reject", "label-red", "undo"]);
+        let ids: Vec<&str> = drawn.iter().map(|placed| placed.id).collect();
+        assert_eq!(ids, ["import", "undo"]);
+    }
+
     /// Every item's words exist in every language.
     #[test]
     fn every_item_s_words_exist_in_every_language() {

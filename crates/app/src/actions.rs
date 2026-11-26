@@ -2557,8 +2557,9 @@ pub static ACTIONS: [Action; 176] = [
 /// of which it makes a candidate for the Toolbar (decision 92; `toolbar::placeable`), in
 /// the order the Toolbar's set lists them. An action that belongs to a tool takes the icon
 /// its tool offers it with (`ToolDefinition::toolbar`); Import… is here until the Import
-/// tool offers it.
-pub const ICONS: [(ActionId, Icon); 24] = [
+/// tool offers it. The rating's and the colour labels' actions are not: the caption, the
+/// Browser's cells, the keys and the menus reach them (decision 110).
+pub const ICONS: [(ActionId, Icon); 11] = [
     (ActionId::IMPORT, Icon::Import),
     (ActionId::GUIDES, Icon::Guides),
     (ActionId::OPEN, Icon::Photo),
@@ -2570,19 +2571,6 @@ pub const ICONS: [(ActionId, Icon); 24] = [
     (ActionId::SHOW_JOBS, Icon::Process),
     (ActionId::NEXT_PHOTO, Icon::Chevron),
     (ActionId::PREVIOUS_PHOTO, Icon::Back),
-    (ActionId::RATING[0], Icon::Star),
-    (ActionId::RATING[1], Icon::Star),
-    (ActionId::RATING[2], Icon::Star),
-    (ActionId::RATING[3], Icon::Star),
-    (ActionId::RATING[4], Icon::Star),
-    (ActionId::RATING[5], Icon::Star),
-    (ActionId::REJECT, Icon::Reject),
-    (ActionId::LABEL[0], Icon::Label),
-    (ActionId::LABEL[1], Icon::Label),
-    (ActionId::LABEL[2], Icon::Label),
-    (ActionId::LABEL[3], Icon::Label),
-    (ActionId::LABEL[4], Icon::Label),
-    (ActionId::LABEL_CLEAR, Icon::Label),
 ];
 
 /// The action `id`, if the registry has it: one of [`ACTIONS`], a tool's

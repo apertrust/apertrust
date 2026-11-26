@@ -129,7 +129,7 @@ pub enum Icon {
     Star,
     /// A crossed circle: a photo's reject mark, under its thumbnail.
     Reject,
-    /// A circle: a colour label, the rating's label actions on the Toolbar (decision 110).
+    /// A circle: a colour label (decision 110).
     Label,
     /// A bolt, and a crossed one: the flash fired, or it did not, after the camera in the
     /// Info tool.
