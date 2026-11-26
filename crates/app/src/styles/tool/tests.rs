@@ -527,7 +527,7 @@ fn find_style_searches_both_roots_and_hides_one_with_no_match() {
             clearable: true,
         };
         let words = Translator::new(Locale::EnGb);
-        let (nodes, _) = tool.nodes(&words);
+        let (nodes, _) = tool.nodes(find, &words);
         nodes.iter().map(|node| node.name().to_owned()).collect()
     };
     assert_eq!(tool("", &styles), ["Custom Styles", "Built-in Styles"]);
@@ -585,7 +585,8 @@ fn return_applies_the_first_style_the_tree_shows() {
             clearable: true,
         };
         let words = Translator::new(Locale::EnGb);
-        tool.first_shown(&words).map(|style| style.name.clone())
+        tool.first_shown(&kept.find, &words)
+            .map(|style| style.name.clone())
     };
     assert_eq!(first(&Kept::default()).as_deref(), Some("Bright"));
     let mut open = Kept::default();
@@ -596,6 +597,40 @@ fn return_applies_the_first_style_the_tree_shows() {
         ..Kept::default()
     };
     assert_eq!(first(&finding).as_deref(), Some("Film|Warm film"));
+}
+
+/// Return pressed in the frame Find style's text changes, a paste and Return together,
+/// applies the first style the new text shows, not the one the frame before's showed.
+#[test]
+fn return_with_a_paste_applies_the_first_style_the_pasted_text_shows() {
+    let mut harness = drawn(Builtin::Dark, with_photo());
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::TextInput, "Find style")
+        .focus();
+    harness.run();
+    // In one frame: the harness runs a frame for each event it queues.
+    let enter = |pressed| egui::Event::Key {
+        key: egui::Key::Enter,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+        repeat: false,
+        physical_key: None,
+    };
+    let events = [
+        egui::Event::Paste("warm".to_owned()),
+        enter(true),
+        enter(false),
+    ];
+    harness.input_mut().events.extend(events);
+    harness.run();
+    assert_eq!(
+        harness.state().actions,
+        [
+            Action::Find("warm".to_owned()),
+            Action::Apply("Film|Warm film.apstyle".to_owned())
+        ]
+    );
 }
 
 /// Return in Find style applies the first style the tree shows, the field keeping the
