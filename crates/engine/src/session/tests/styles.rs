@@ -736,6 +736,30 @@ fn a_style_replayed_keeps_the_earlier_item_s_other_tools() {
     remove(&path);
 }
 
+/// A style applied again laid on a newer file that applied it again with a tool at another
+/// value: the tool this application does not set keeps the newer item's whole state, its
+/// after the value the joined log holds, so Clear puts it back.
+#[test]
+fn a_style_replayed_keeps_the_newer_item_s_state_of_a_tool_it_does_not_set() {
+    let path = scratch("styles-newer-again");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&path);
+    driven.run([append("Other", &[soften(30.0), grain(40.0)])]);
+    driven.writes();
+    // The other side applies Other again, Soften at 20; the session Other on Grain alone.
+    write_elsewhere(&path, (&Grain, on("strength", 20.0)), true);
+    driven.run([append("Other", &[grain(50.0)])]);
+    assert!(driven.writes().is_empty());
+    driven.engine.newer_file(false);
+    let other = styles(&driven)[0].clone();
+    assert_eq!(tool_of(&other, "soften").after, on("amount", 20.0));
+    assert_eq!(tool_of(&other, "grain").before, on("strength", 20.0));
+    driven.run([clear("Other")]);
+    assert_eq!(edit(&driven).tool("soften"), None);
+    assert_eq!(edit(&driven).tool("grain"), Some(&on("strength", 20.0)));
+    remove(&path);
+}
+
 /// A style one of whose tools is refused is refused whole: the edit and the list stay as
 /// they were, and no step is made.
 #[test]
