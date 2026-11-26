@@ -517,6 +517,11 @@ fn every_event() -> Vec<Event> {
         alias: "EOS R5".to_owned(),
         file_size: 1 << 20,
     });
+    let title = apertrust_library::fields::Fields {
+        values: vec![("dc:title".to_owned(), FieldValue::Text("Tram".to_owned()))],
+        name: String::new(),
+        copies: 1,
+    };
     let summary = apertrust_library::summary::build(&[
         Summed {
             name: "a.cr3",
@@ -524,6 +529,7 @@ fn every_event() -> Vec<Event> {
             size: 1 << 20,
             edited: true,
             facts: Facts::Read(&shot),
+            fields: &title,
         },
         Summed {
             name: "b.nef",
@@ -531,6 +537,7 @@ fn every_event() -> Vec<Event> {
             size: 2 << 20,
             edited: false,
             facts: Facts::Missing,
+            fields: &Default::default(),
         },
     ]);
     let tool_error = ToolError::Definition(DefinitionError::UnknownControl("brightness"));
@@ -977,6 +984,14 @@ fn every_event() -> Vec<Event> {
                     modified: Some(UNIX_EPOCH + Duration::from_secs(1_795_000_000)),
                     edit: EditState::Edited,
                     rating,
+                    fields: Arc::new(apertrust_library::fields::Fields {
+                        values: vec![(
+                            "dc:title".to_owned(),
+                            FieldValue::LangAlt(vec![("x-default".to_owned(), "Tram".to_owned())]),
+                        )],
+                        name: "Black and white".to_owned(),
+                        copies: 2,
+                    }),
                 },
                 apertrust_library::ops::Photo {
                     name: "b.nef".to_owned(),
@@ -989,6 +1004,7 @@ fn every_event() -> Vec<Event> {
                         what: "a number",
                     })),
                     rating: Rating::default(),
+                    fields: Default::default(),
                 },
                 apertrust_library::ops::Photo {
                     name: "c.arw".to_owned(),
@@ -996,6 +1012,7 @@ fn every_event() -> Vec<Event> {
                     modified: None,
                     edit: EditState::Unreadable("line 2: not XMP".to_owned()),
                     rating: Rating::default(),
+                    fields: Default::default(),
                 },
                 apertrust_library::ops::Photo {
                     name: "d.dng".to_owned(),
@@ -1003,6 +1020,7 @@ fn every_event() -> Vec<Event> {
                     modified: None,
                     edit: EditState::None,
                     rating: Rating::default(),
+                    fields: Default::default(),
                 },
             ],
             done: false,

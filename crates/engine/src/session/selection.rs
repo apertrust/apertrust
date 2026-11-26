@@ -1109,6 +1109,7 @@ mod tests {
             modified: None,
             edit,
             rating: Default::default(),
+            fields: Default::default(),
         }
     }
 

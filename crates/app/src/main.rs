@@ -12821,6 +12821,7 @@ mod tests {
             modified: None,
             edit: EditState::None,
             rating: Default::default(),
+            fields: Default::default(),
         };
         let photos = names.iter().map(cell).collect();
         Event::Library(LibraryEvent::Listed { open, photos, done })

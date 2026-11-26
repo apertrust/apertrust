@@ -45,7 +45,7 @@ pub use apertrust_raw::DateTime;
 use apertrust_raw::{Exif, RawFile, RawImage};
 use serde::{Deserialize, Serialize};
 
-use crate::fields::Rating;
+use crate::fields::{Fields, Rating};
 use crate::index::{Index, READERS, Sidecar};
 use crate::listing::Options;
 pub use crate::listing::browser_order;
@@ -285,6 +285,9 @@ pub struct Photo {
     /// Its rating, stars, reject and colour labels: its `.apxmp`'s first copy's, else
     /// darktable's `.xmp`'s, else none (decision 110).
     pub rating: Rating,
+    /// Its fields, its first copy's name and how many copies it has, as its rating is read
+    /// (decision 110), which a summary of several photos compares.
+    pub fields: Arc<Fields>,
 }
 
 /// What a photo's sidecar says of its edit.
@@ -1114,9 +1117,24 @@ pub fn sidecar_state(path: &Path) -> EditState {
     edit_state(crate::index::read_one(path))
 }
 
+/// The edit state and the fields of `photo`, its sidecar read now, as a listing of its
+/// folder would read them: its `.apxmp`'s, else, with none, darktable's `.xmp`'s fields
+/// beside it (decision 110).
+pub fn photo_state(photo: &Path) -> (EditState, Arc<Fields>) {
+    let sidecar = crate::index::read_one(&crate::sidecar::path_for(photo));
+    let fields = match &sidecar {
+        Sidecar::Read(edit) => Arc::clone(&edit.fields),
+        Sidecar::None => (crate::darktable::read_fields(photo).ok().flatten())
+            .map(|read| Arc::new(Fields::held(&read.fields, &read.name, 1)))
+            .unwrap_or_default(),
+        _ => Arc::default(),
+    };
+    (edit_state(sidecar), fields)
+}
+
 /// A photo of the index as a client sees it.
 fn photo(entry: crate::index::Entry) -> Photo {
-    let rating = entry.rating();
+    let (rating, fields) = (entry.rating(), entry.fields());
     let edit = edit_state(entry.sidecar);
     Photo {
         name: entry.name,
@@ -1124,6 +1142,7 @@ fn photo(entry: crate::index::Entry) -> Photo {
         modified: entry.raw.modified,
         edit,
         rating,
+        fields,
     }
 }
 

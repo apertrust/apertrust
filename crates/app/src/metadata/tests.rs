@@ -727,6 +727,7 @@ fn twelve() -> Scene {
                 rejected: false,
                 labels: if n < 3 { 0b101 } else { 0b001 },
             },
+            fields: Default::default(),
         })
         .collect();
     state.mirror.folder.folder = Folder::Open(Listing {
@@ -797,6 +798,7 @@ fn twelve_located(odd: Option<Option<f64>>) -> Arc<Summary> {
         .collect();
     let names: Vec<String> = (0..12).map(|n| format!("R00012{n:02}.DNG")).collect();
     let folder = Path::new(FOLDER);
+    let none = Default::default();
     let photos: Vec<Summed<'_>> = (0..12)
         .map(|n| Summed {
             name: &names[n],
@@ -804,6 +806,7 @@ fn twelve_located(odd: Option<Option<f64>>) -> Arc<Summary> {
             size: 32_000_000,
             edited: n < 7,
             facts: Facts::Read(&shots[n]),
+            fields: &none,
         })
         .collect();
     Arc::new(build(&photos))

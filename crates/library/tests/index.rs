@@ -304,3 +304,65 @@ fn a_rating_is_read_from_the_apxmp_else_from_darktable_s_xmp() {
     // A rating does not make a photo edited.
     assert_eq!(index.counts().edited, 0);
 }
+
+/// Each photo's fields: its `.apxmp`'s first copy's, its name and how many copies it has,
+/// else darktable's `.xmp`'s, its version name the copy's, else none (decision 110).
+#[test]
+fn fields_are_read_from_the_apxmp_else_from_darktable_s_xmp() {
+    use apertrust_library::clock::{Clock, MachineId};
+    use apertrust_library::darktable;
+    use apertrust_library::fields::{self, COPY_NAME, FieldValue};
+
+    let dir = TempDir::new().unwrap();
+    let title = |text: &str| FieldValue::LangAlt(vec![("x-default".to_owned(), text.to_owned())]);
+    // Titled in Apertrust, with two copies, the first named.
+    raw(dir.path(), "A.RAF");
+    let mut edits = sidecar::Edits::new("test");
+    let copy = |id: &str, number: &str, name: &str| sidecar::VirtualCopy {
+        id: id.to_owned(),
+        number: number.to_owned(),
+        name: name.to_owned(),
+        name_clock: None,
+        end: String::new(),
+        clocks: Vec::new(),
+        fields: Vec::new(),
+        history: Vec::new(),
+    };
+    edits.copies.push(copy(sidecar::FIRST_COPY, "0", "Colour"));
+    edits.copies.push(copy("1f2e3d4c", "1", "Black and white"));
+    let clock = Clock::at(1, None, MachineId::UNKNOWN);
+    let first = &mut edits.copies[0].fields;
+    fields::set(first, "dc:title", Some(title("Tram 28")), clock);
+    fields::set(first, fields::RATING, Some(FieldValue::Stars(4)), clock);
+    // A field cleared holds no value.
+    fields::set(first, "dc:description", None, clock);
+    sidecar::write_xml(
+        &sidecar::path_for(&dir.path().join("A.RAF")),
+        &edits.to_xml(),
+    )
+    .unwrap();
+    // darktable's alone.
+    raw(dir.path(), "B.RAF");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/darktable/fields.xmp");
+    fs::copy(fixture, darktable::path_for(&dir.path().join("B.RAF"))).unwrap();
+    // Neither.
+    raw(dir.path(), "C.RAF");
+
+    let index = build(dir.path());
+
+    let a = index.photos[0].fields();
+    assert_eq!(a.values, [("dc:title".to_owned(), title("Tram 28"))]);
+    assert_eq!((a.name.as_str(), a.copies), ("Colour", 2));
+    assert_eq!(read(&index, "A.RAF").fields, a);
+    let b = index.photos[1].fields();
+    assert_eq!(b.value("dc:title"), Some(title("Morning market, Alfama")));
+    assert_eq!(
+        b.value("apertrust:notes"),
+        Some(FieldValue::Text("Try a warmer crop".to_owned()))
+    );
+    assert_eq!(
+        b.value(COPY_NAME),
+        Some(FieldValue::Text("Black and white".to_owned()))
+    );
+    assert_eq!(*index.photos[2].fields(), Default::default());
+}

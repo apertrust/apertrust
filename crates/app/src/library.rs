@@ -1028,6 +1028,7 @@ mod tests {
             modified: None,
             edit: apertrust_engine::session::library::EditState::None,
             rating: Default::default(),
+            fields: Default::default(),
         };
         Folder::Open(Listing {
             name: "Wedding".to_owned(),
@@ -1995,6 +1996,7 @@ mod tests {
             modified: None,
             edit: apertrust_engine::session::library::EditState::None,
             rating: Default::default(),
+            fields: Default::default(),
         };
         let photos = paths.iter().map(cell).collect();
         Folder::Alone {
