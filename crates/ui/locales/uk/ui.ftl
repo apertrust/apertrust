@@ -566,6 +566,15 @@ colour-label-yellow = Жовтий
 colour-label-green = Зелений
 colour-label-blue = Синій
 colour-label-purple = Фіолетовий
+caption-reject = Відхилити
+caption-unreject = Скасувати відхилення
+caption-rating = Оцінка
+caption-clear-rating = Зняти оцінку
+caption-label-red = Червона мітка
+caption-label-yellow = Жовта мітка
+caption-label-green = Зелена мітка
+caption-label-blue = Синя мітка
+caption-label-purple = Фіолетова мітка
 browser-height = Висота оглядача
 grid-rows =
     { $count ->
