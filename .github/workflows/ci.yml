@@ -32,8 +32,8 @@ jobs:
   # ones, clippy for Linux, Windows and macOS (tools/clippy.sh --all) and the API docs,
   # when the code's checks run. Clippy compiles Windows' and macOS's code and tests here,
   # never linking, so they need no runner of their own. A build script is compiled for
-  # this runner, so crates/app/build.rs's Windows part is first built by the nightly
-  # packages.
+  # this runner, so crates/app/build.rs chooses its Windows part with cfg!(), not
+  # #[cfg], and clippy checks it here; it first runs, with rc.exe, in the nightly packages.
   pre-commit:
     name: pre-commit
     needs: platforms
