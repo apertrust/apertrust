@@ -2120,6 +2120,9 @@ struct Shell {
     discard: alerts::Question,
     /// How a click on a style applies it (`styles.mode`, decision 106).
     style_mode: StyleMode,
+    /// Whether `--conf` sets `styles.mode` for this run, so ⋯ › Mode's items are disabled,
+    /// saying why, as the settings store refuses the change (decision 43).
+    style_mode_given: bool,
     /// The Styles tool's own state: the styles read, Find style's text, the folders open.
     styles: styles::tool::Kept,
     /// Whether Discard History… ran, for the app to ask first, or send it.
@@ -2286,6 +2289,7 @@ impl Shell {
             overwrite: alerts::Question::overwrite(settings.ask_before_overwrite, false),
             discard: alerts::Question::discard(settings.ask_before_discard, false),
             style_mode: settings.style_mode,
+            style_mode_given: false,
             styles: styles::tool::Kept::default(),
             discard_history: false,
             create_style: false,
@@ -3239,7 +3243,8 @@ impl Shell {
     fn styles_head(&self, ctx: &egui::Context, state: &State) -> tools::Head {
         let definition = &styles::tool::declared().tool;
         let mut options = menus::options(ctx, definition.id, &self.keymap, state);
-        options.extend(styles::tool::options(&translator(ctx), self.style_mode));
+        let (mode, given) = (self.style_mode, self.style_mode_given);
+        options.extend(styles::tool::options(&translator(ctx), mode, given));
         let head = tools::Head {
             open: self.section_open(definition),
             peek: false,
@@ -4738,6 +4743,7 @@ impl App {
             workspace_given: keeper.overridden(&settings::registry::WORKSPACE),
             show_hidden_given: keeper.overridden(&settings::registry::TOOLS_PANEL_SHOW_HIDDEN),
             panel_position_given: keeper.overridden(&settings::registry::TOOLS_PANEL_POSITION),
+            style_mode_given: keeper.overridden(&settings::registry::STYLES_MODE),
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         // On the tab last shown in it, which the recents' `state.toml` keeps.

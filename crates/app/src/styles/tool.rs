@@ -952,11 +952,16 @@ fn empty_row(ui: &mut egui::Ui, words: &str, level: usize) {
 }
 
 /// The tool's own items in its ⋯, after Create a Style…: Mode ▸ Append and Replace, the one
-/// in use checked, then Import Style… and Export Style…, drawn disabled as later.
-pub fn options(words: &Translator, mode: StyleMode) -> Vec<Entry> {
+/// in use checked, both disabled, saying why, where `--conf` gives `styles.mode` for the run
+/// (`given`), then Import Style… and Export Style…, drawn disabled as later.
+pub fn options(words: &Translator, mode: StyleMode, given: bool) -> Vec<Entry> {
     let later = words.text("styles-later");
     let mode_item = |id: &str, message: &str, of: StyleMode| {
-        Entry::Item(Item::new(id, words.text(message)).checked(mode == of))
+        let item = Item::new(id, words.text(message)).checked(mode == of);
+        Entry::Item(match given {
+            true => item.enabled(false).tip(crate::utility::overridden(words)),
+            false => item,
+        })
     };
     vec![
         Entry::Submenu(Submenu::new(
