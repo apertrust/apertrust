@@ -47,6 +47,7 @@ use apertrust_engine::session::{
 use apertrust_engine::sidecar::Parked;
 use apertrust_library::listing::browser_order;
 use apertrust_library::presets::{Stored, builtin_styles};
+use apertrust_library::sidecar::same_style;
 use apertrust_tools::utility::UtilityDefinition;
 use apertrust_tools::{ProcessingTool, ToolValues, Widget, messages};
 use apertrust_ui::components::settings::Search;
@@ -187,14 +188,13 @@ fn parked(style: &Listed, words: &Translator) -> String {
     })
 }
 
-/// The style applied, of `applied`, that `style` is: a built-in by its file, `builtin:<id>`,
-/// whatever language it was applied in; a person's by its name, never a built-in's entry.
+/// The style applied, of `applied`, that `style` is, as the engine's list holds it
+/// (`sidecar::same_style`): a built-in by its file, `builtin:<id>`, whatever language it was
+/// applied in; a person's by its name, never a built-in's entry.
 fn applied_entry<'a>(style: &Listed, applied: &'a [StyleState]) -> Option<&'a StyleState> {
     let file = style.file();
-    applied.iter().find(|entry| match style.builtin {
-        Some(_) => entry.file == file,
-        None => entry.name == style.name && !entry.file.starts_with(BUILT_IN_FILE),
-    })
+    let mine = (style.name.as_str(), file.as_str());
+    (applied.iter()).find(|entry| same_style(mine, (&entry.name, &entry.file)))
 }
 
 /// The command a click on `style` sends: the style applied as `mode` says, its tools this
@@ -384,7 +384,7 @@ impl Default for Kept {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     /// A style applied, by its file ([`Listed::file`]), which a built-in's and a person's
-    /// of the same name do not share.
+    /// of the same name do not share, nor two files of one name.
     Apply(String),
     /// A style applied taken off, by the name it was applied under and its file, which a
     /// built-in's and a person's of the same name do not share.
@@ -392,9 +392,10 @@ pub enum Action {
         name: String,
         file: String,
     },
+    /// Rename Style…, Delete Style… and Copy to Custom Styles…, by the style's file, as
+    /// [`Apply`](Action::Apply).
     Rename(String),
     Delete(String),
-    /// Copy to Custom Styles…, for the built-in style of this name.
     Copy(String),
     /// A folder opened or closed, by its path: its root's, then its names, each after a `|`.
     Toggle(String),
@@ -582,10 +583,19 @@ const COPY: &str = "copy";
 
 impl StylesTool<'_> {
     /// The name `style` is applied under, where it is among the styles applied
-    /// ([`applied_entry`]): a built-in's in whatever language it was applied in.
+    /// ([`applied_entry`]): a built-in's in whatever language it was applied in. Of two of
+    /// the person's styles of one name, which the list holds as one item, only the one whose
+    /// file the item records.
     fn applied_as(&self, style: &Listed) -> Option<&str> {
         let applied = self.applied.unwrap_or_default();
-        applied_entry(style, applied).map(|entry| entry.name.as_str())
+        let entry = applied_entry(style, applied)?;
+        (!self.twinned(style) || entry.file == style.file()).then_some(entry.name.as_str())
+    }
+
+    /// Whether another of the person's styles has `style`'s name, a file copied by hand.
+    fn twinned(&self, style: &Listed) -> bool {
+        let same = |other: &&Listed| other.builtin.is_none() && other.name == style.name;
+        style.builtin.is_none() && self.listed.iter().filter(same).count() > 1
     }
 
     /// The tree of the styles Find style leaves, and whether its folders are all open: its
@@ -757,10 +767,11 @@ impl StylesTool<'_> {
         let applied = applied_as.is_some();
         let parked = style.tools.is_none();
         let can_apply = !parked && self.unavailable.is_none();
+        let name = self.row_name(style, words);
         let (response, _) = TreeRow {
             id: Some(id),
             level,
-            name: style.leaf(),
+            name: &name,
             expanded: None,
             mark: applied.then_some((Icon::Check, t.colors.accent_text)),
             icon: None,
@@ -812,14 +823,14 @@ impl StylesTool<'_> {
             |key: egui::Key| focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, key));
         // A newer Apertrust's file is never rewritten, so never renamed.
         if !style.newer && pressed(egui::Key::F2) {
-            actions.push(Action::Rename(style.name.clone()));
+            actions.push(Action::Rename(style.file()));
         }
         if self.alerts && (pressed(egui::Key::Delete) || pressed(egui::Key::Backspace)) {
-            actions.push(Action::Delete(style.name.clone()));
+            actions.push(Action::Delete(style.file()));
         }
         let keys = menu_asked(ui.ctx(), &response);
         let asked = response.secondary_clicked() || mac_menu || keys;
-        let menu = row_menu_name(style.leaf(), words);
+        let menu = row_menu_name(&name, words);
         let entries = || {
             let first = if applied {
                 Item::new(CLEAR, words.text("styles-clear")).enabled(self.clearable)
@@ -840,18 +851,31 @@ impl StylesTool<'_> {
                 .collect()
         };
         let chosen = menu_of(ui, &response, &menu, (asked, keys), entries);
-        let name = style.name.clone();
+        let file = style.file();
         actions.extend(match chosen.as_deref() {
-            Some(APPLY) => Some(Action::Apply(style.file())),
+            Some(APPLY) => Some(Action::Apply(file)),
             Some(CLEAR) => applied_as.map(|name| Action::Clear {
                 name: name.to_owned(),
-                file: style.file(),
+                file,
             }),
-            Some(RENAME) => Some(Action::Rename(name)),
-            Some(DELETE) => Some(Action::Delete(name)),
-            Some(COPY) => Some(Action::Copy(name)),
+            Some(RENAME) => Some(Action::Rename(file)),
+            Some(DELETE) => Some(Action::Delete(file)),
+            Some(COPY) => Some(Action::Copy(file)),
             _ => None,
         });
+    }
+
+    /// The name `style`'s row shows, in `words`: its own, or where another of the person's
+    /// styles has its name, as a file copied by hand does, its own and its file's, "Warm film
+    /// (Warm film 2.apstyle)", so the two rows are told apart.
+    fn row_name(&self, style: &Listed, words: &Translator) -> String {
+        if !self.twinned(style) {
+            return style.leaf().to_owned();
+        }
+        let mut args = Args::new();
+        args.set("name", style.leaf());
+        args.set("file", style.file());
+        words.text_with("styles-same-name", Some(&args))
     }
 
     /// A style's tooltip: the titles of the tools it sets, as the board writes them,

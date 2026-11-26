@@ -634,7 +634,7 @@ fn a_style_s_keys_and_menu() {
     // A newer Apertrust's file is never rewritten: F2 renames nothing, Delete asks.
     assert_eq!(
         harness.state().actions,
-        [Action::Delete("Future".to_owned())]
+        [Action::Delete("Future.apstyle".to_owned())]
     );
     // Its menu: Apply and Rename Style… disabled, Delete Style… offered.
     harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
@@ -666,7 +666,7 @@ fn a_style_s_keys_and_menu() {
     harness.run();
     assert_eq!(
         harness.state().actions,
-        [Action::Rename("Old look".to_owned())]
+        [Action::Rename("Old look.apstyle".to_owned())]
     );
     // An applied style's: Clear in Apply's place.
     let mut harness = drawn(Builtin::Dark, with_photo());
@@ -735,7 +735,8 @@ fn delete_waits_for_an_alert_the_platform_shows() {
     assert!(delete.accesskit_node().is_disabled());
 }
 
-/// Delete Style… removes the style's file, and Rename Style… names it anew.
+/// Delete Style… removes the style's file, and Rename Style… names it anew, each by its
+/// file: of two files of one name, a copy made by hand, the one asked for.
 #[test]
 fn delete_removes_the_file_and_rename_names_it_anew() {
     let folder =
@@ -747,12 +748,83 @@ fn delete_removes_the_file_and_rename_names_it_anew() {
             apertrust_library::presets::Stored::new(apertrust_library::presets::Kind::Style, name);
         apertrust_library::presets::write(&folder, &stored, "0.1.0").unwrap();
     }
-    super::super::delete(&folder, "Warm film").unwrap();
-    assert!(!folder.join("Warm film.apstyle").exists());
-    super::super::rename(&folder, "Bright", "Brighter").unwrap();
+    let copy = folder.join("Warm film copy.apstyle");
+    std::fs::copy(folder.join("Warm film.apstyle"), &copy).unwrap();
+    super::super::delete(&folder, "Warm film copy.apstyle").unwrap();
+    assert!(!copy.exists());
+    assert_eq!(super::super::taken(&folder).len(), 2);
+    std::fs::copy(folder.join("Warm film.apstyle"), &copy).unwrap();
+    super::super::rename(&folder, "Warm film copy.apstyle", "Warmer").unwrap();
+    assert!(folder.join("Warm film.apstyle").exists());
+    super::super::delete(&folder, "Warm film.apstyle").unwrap();
+    super::super::delete(&folder, "Warmer.apstyle").unwrap();
+    super::super::rename(&folder, "Bright.apstyle", "Brighter").unwrap();
     assert_eq!(super::super::taken(&folder), ["Brighter"]);
-    assert!(super::super::delete(&folder, "Warm film").is_err());
+    assert!(super::super::delete(&folder, "Warm film.apstyle").is_err());
     let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// Two of the person's styles of one name, a file copied by hand, show each its file after
+/// its name, each row's keys and menu act on its own file, and only the row of the file
+/// applied shows it applied.
+#[test]
+fn two_styles_of_one_name_are_told_apart_and_act_on_their_own_files() {
+    let copy = || Listed {
+        path: PathBuf::from("/styles/Bright copy.apstyle"),
+        ..style("Bright")
+    };
+    let mut state = with_photo();
+    state.applied = Some(Vec::new());
+    state.listed.push(copy());
+    let mut harness = drawn(Builtin::Dark, state);
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::TreeItem, "Bright")
+            .is_none()
+    );
+    harness
+        .get_by_role_and_label(Role::TreeItem, "Bright (Bright copy.apstyle)")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::F2);
+    harness.run();
+    harness.key_press(egui::Key::Delete);
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Apply")
+        .click();
+    harness.run();
+    let file = "Bright copy.apstyle".to_owned();
+    assert_eq!(
+        harness.state().actions,
+        [
+            Action::Rename(file.clone()),
+            Action::Delete(file.clone()),
+            Action::Apply(file)
+        ]
+    );
+    harness.get_by_role_and_label(Role::TreeItem, "Bright (Bright.apstyle)");
+    // The one item the list holds for the two marks only the row of the file it records.
+    let mut state = with_photo();
+    let mut applied = applied(&["Bright"]);
+    applied[0].file = "Bright copy.apstyle".to_owned();
+    state.applied = Some(applied);
+    state.listed.push(copy());
+    let mut harness = drawn(Builtin::Dark, state);
+    harness.run();
+    let said = |label: &str| {
+        let row = harness.get_by_role_and_label(Role::TreeItem, label);
+        let node = row.accesskit_node();
+        node.data().description().map(str::to_owned)
+    };
+    assert_eq!(
+        said("Bright (Bright copy.apstyle)").as_deref(),
+        Some("applied, Grain")
+    );
+    assert_eq!(said("Bright (Bright.apstyle)").as_deref(), Some("Grain"));
 }
 
 mod darktable;
@@ -853,7 +925,7 @@ fn a_built_in_style_applies_clears_and_copies_but_is_never_renamed_or_deleted() 
     harness.run();
     assert_eq!(
         harness.state().actions[1..],
-        [Action::Copy("Lomo".to_owned())]
+        [Action::Copy("builtin:lomo".to_owned())]
     );
     // Applied, in another language, its file still says which: its menu offers Clear, of
     // the name it was applied under.
@@ -910,7 +982,8 @@ fn a_copy_lands_in_custom_styles_and_no_style_takes_a_built_in_s_name() {
     for name in ["My lomo", "Lomo", "Black and white|HP5+", "Natural colour"] {
         assert!(refused.iter().any(|r| r == name), "{name}");
     }
-    let rename = super::super::RenameDialog::new("My lomo".to_owned(), refused);
+    let file = "My lomo.apstyle".to_owned();
+    let rename = super::super::RenameDialog::new("My lomo".to_owned(), file, refused);
     assert_eq!(rename.button(&words), ("Rename".to_owned(), true));
     let _ = std::fs::remove_dir_all(&folder);
 }
@@ -930,12 +1003,14 @@ fn a_copy_s_dialog_opens_on_a_free_name_copy_takes() {
         let mine = mine.into_iter().map(str::to_owned);
         let refused: Vec<String> = mine.chain(builtins()).collect();
         assert_eq!(super::super::copy_name("Lomo", &refused, &words), name);
-        let copy = super::super::RenameDialog::copy("Lomo".to_owned(), refused, &words);
+        let file = "builtin:lomo".to_owned();
+        let copy = super::super::RenameDialog::copy("Lomo".to_owned(), file, refused, &words);
         assert_eq!(copy.button(&words), ("Copy".to_owned(), true));
         assert_eq!(
             copy.output(),
             crate::dialog_host::Output::StyleRename {
                 from: "Lomo".to_owned(),
+                file: "builtin:lomo".to_owned(),
                 to: name.to_owned(),
                 copy: true,
             }

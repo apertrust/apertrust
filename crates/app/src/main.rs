@@ -5982,13 +5982,16 @@ impl App {
         let Some((tool, name)) = self.preset_asked.take() else {
             return;
         };
-        // A style's Delete Style…, from the styles folder.
+        // A style's Delete Style…, from the styles folder, by its file.
         if tool == styles::tool::ID {
             let Some(folder) = self.shell.presets.styles() else {
                 return;
             };
             if let Err(error) = styles::delete(&folder, &name) {
                 tracing::warn!(target: "settings", "style {name}: {error}");
+                let name = self
+                    .listed_style(&name)
+                    .map_or(name, |style| style.name.clone());
                 let said =
                     styles::not_changed(&translator(ctx), styles::NOT_DELETED, &name, &error);
                 self.status = Some((said, ctx.input(|i| i.time)));
@@ -6055,8 +6058,7 @@ impl App {
                                 && selection::batched(&self.mirror).len() > 1) => {}
                 Action::Clear { .. } if !self.mirror.takes_edits() => {}
                 Action::Apply(file) => {
-                    let listed = self.shell.styles.listed.iter().flatten();
-                    let Some(style) = listed.into_iter().find(|s| s.file() == file).cloned() else {
+                    let Some(style) = self.listed_style(&file).cloned() else {
                         continue;
                     };
                     let (mode, applied) = (self.shell.style_mode, &self.mirror.values.styles);
@@ -6074,26 +6076,31 @@ impl App {
                 Action::Clear { name, file } => {
                     self.send_edit(styles::tool::clear(&name, &file));
                 }
-                Action::Rename(ref name) | Action::Copy(ref name) => {
+                Action::Rename(ref file) | Action::Copy(ref file) => {
                     let Some(folder) = self.shell.presets.styles() else {
+                        continue;
+                    };
+                    let Some(name) = self.listed_style(file).map(|style| style.name.clone()) else {
                         continue;
                     };
                     let words = translator(ctx);
                     let refused = styles::refused(&folder, &words);
+                    let file = file.clone();
                     let dialog = match action {
-                        Action::Copy(_) => {
-                            styles::RenameDialog::copy(name.clone(), refused, &words)
-                        }
-                        _ => styles::RenameDialog::new(name.clone(), refused),
+                        Action::Copy(_) => styles::RenameDialog::copy(name, file, refused, &words),
+                        _ => styles::RenameDialog::new(name, file, refused),
                     };
                     self.dialogs.open(presets::Sheet(dialog), None, ctx);
                 }
-                Action::Delete(name) => {
-                    let request = alerts::delete_request(ctx, &name, "style");
+                Action::Delete(file) => {
+                    let Some(style) = self.listed_style(&file) else {
+                        continue;
+                    };
+                    let request = alerts::delete_request(ctx, &style.name, "style");
                     let purpose = alerts::Purpose::DeletePreset;
                     let asked = self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
                     if asked == dialog_host::Ask::Shown {
-                        self.preset_asked = Some((styles::tool::ID, name));
+                        self.preset_asked = Some((styles::tool::ID, file));
                     }
                 }
                 Action::Toggle(path) => {
@@ -6109,13 +6116,19 @@ impl App {
         }
     }
 
-    /// What Rename Style… asked: the style `from` named `to`, the tree read again, or the
-    /// Viewer saying why it could not be.
-    fn rename_style(&mut self, from: &str, to: &str, ctx: &egui::Context) {
+    /// The style the Styles tool lists in `file` ([`styles::tool::Listed::file`]).
+    fn listed_style(&self, file: &str) -> Option<&styles::tool::Listed> {
+        let mut listed = self.shell.styles.listed.iter().flatten();
+        listed.find(|style| style.file() == file)
+    }
+
+    /// What Rename Style… asked: the style `from`, in `file`, named `to`, the tree read
+    /// again, or the Viewer saying why it could not be.
+    fn rename_style(&mut self, (from, file): (&str, &str), to: &str, ctx: &egui::Context) {
         let Some(folder) = self.shell.presets.styles() else {
             return;
         };
-        if let Err(error) = styles::rename(&folder, from, to) {
+        if let Err(error) = styles::rename(&folder, file, to) {
             tracing::warn!(target: "settings", "style {from}: {error}");
             let said = styles::not_changed(&translator(ctx), styles::NOT_RENAMED, from, &error);
             self.status = Some((said, ctx.input(|i| i.time)));
@@ -6123,16 +6136,14 @@ impl App {
         self.shell.styles.listed = None;
     }
 
-    /// What Copy to Custom Styles… asked: the built-in style shown as `from` written into
-    /// the styles folder as `to`, the tree read again, or the Viewer saying why it could
-    /// not be.
-    fn copy_style(&mut self, from: &str, to: &str, ctx: &egui::Context) {
+    /// What Copy to Custom Styles… asked: the built-in style shown as `from`, in `file`,
+    /// `builtin:<id>`, written into the styles folder as `to`, the tree read again, or the
+    /// Viewer saying why it could not be.
+    fn copy_style(&mut self, (from, file): (&str, &str), to: &str, ctx: &egui::Context) {
         let Some(folder) = self.shell.presets.styles() else {
             return;
         };
-        let listed = self.shell.styles.listed.iter().flatten();
-        let found = listed.into_iter().find(|style| style.name == from);
-        let Some(id) = found.and_then(|style| style.builtin) else {
+        let Some(id) = file.strip_prefix(styles::tool::BUILT_IN_FILE) else {
             return;
         };
         let build = apertrust_base::program!().version;
@@ -8993,12 +9004,12 @@ impl eframe::App for App {
         for asked in taken.presets {
             self.preset_named(asked);
         }
-        for (from, to, copy) in taken.renamed {
+        for (from, file, to, copy) in taken.renamed {
             if copy {
-                self.copy_style(&from, &to, ctx);
+                self.copy_style((&from, &file), &to, ctx);
                 continue;
             }
-            self.rename_style(&from, &to, ctx);
+            self.rename_style((&from, &file), &to, ctx);
         }
         for asked in taken.styles {
             self.create_style(asked, ctx);
@@ -9731,7 +9742,12 @@ fn take_dialogs(
             dialog_host::Output::Log(asked) => log.push(asked),
             dialog_host::Output::Preset(asked) => presets.push(asked),
             dialog_host::Output::Style(asked) => styles.push(asked),
-            dialog_host::Output::StyleRename { from, to, copy } => renamed.push((from, to, copy)),
+            dialog_host::Output::StyleRename {
+                from,
+                file,
+                to,
+                copy,
+            } => renamed.push((from, file, to, copy)),
         }
     }
     let held = hold_close(ctx, dialogs);
@@ -9779,9 +9795,9 @@ struct Taken {
     presets: Vec<presets::Asked>,
     /// What Create a Style… asked, in order.
     styles: Vec<styles::Asked>,
-    /// What Rename Style… and Copy to Custom Styles… asked, each style's name, its new one
-    /// and whether it was copied, in order.
-    renamed: Vec<(String, String, bool)>,
+    /// What Rename Style… and Copy to Custom Styles… asked, each style's name, its file, its
+    /// new name and whether it was copied, in order.
+    renamed: Vec<(String, String, String, bool)>,
     /// The actions the app's keys asked for in a dialog's own window, in order.
     actions: Vec<ActionId>,
 }
