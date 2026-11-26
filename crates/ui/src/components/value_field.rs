@@ -346,8 +346,9 @@ impl<'a> ValueField<'a> {
     }
 
     /// Forgets what was typed in the field `id`, and whether it was put back: a field
-    /// opening afresh, or closing unseen, as a slider's does.
-    pub(crate) fn forget(ctx: &egui::Context, id: Id) {
+    /// opening afresh, or closing unseen, as a slider's does, or one whose focus the caller
+    /// takes away, so leaving it commits nothing, as after Escape.
+    pub fn forget(ctx: &egui::Context, id: Id) {
         ctx.data_mut(|d| {
             d.remove::<String>(id.with("draft"));
             d.remove::<bool>(id.with("cancelled"));

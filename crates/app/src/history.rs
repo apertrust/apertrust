@@ -908,8 +908,9 @@ pub fn declared() -> &'static UtilityDefinition {
 /// (`Widget::History`), drawn by the page drawer through its body from the mirror's
 /// history, the open photo's, disabled where there is none. A step is gone to only while
 /// the photo takes edits, live and not open for viewing only, its `GoTo` sent with the
-/// frame's commands; the eye, view state alone, is held on any photo, the tools the session
-/// reports hidden as the mirror's values have them.
+/// frame's commands; the eye, view state alone, is held on any photo, but not on the photo
+/// left's history while the next opens, the tools the session reports hidden as the
+/// mirror's values have them.
 #[derive(Debug, Default)]
 pub struct HistoryTool {
     /// Whether History is alone in its tab, its header at the top ([`tab`]): only then is
@@ -950,6 +951,9 @@ impl UtilityTool for HistoryTool {
             match action {
                 Action::GoTo(step) if takes => cx.commands.push(Command::GoTo { step }),
                 Action::GoTo(_) => {}
+                // The photo left's history, held while the next opens: its eye would hide a
+                // tool of the next.
+                Action::Peek(_) if mirror.held().is_some() => {}
                 other => actions.push(other),
             }
         }

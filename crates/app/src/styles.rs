@@ -37,7 +37,7 @@
 
 use std::path::{Path, PathBuf};
 
-use apertrust_engine::session::{ToolState, tool_entry};
+use apertrust_engine::session::{StyleState, ToolState, tool_entry};
 use apertrust_library::presets::{self as files, Kind, PresetError, Stored};
 use apertrust_tools::{ProcessingTool, messages};
 use apertrust_ui::components::Checkbox;
@@ -46,7 +46,7 @@ use apertrust_ui::{Translator, theme, tr};
 use eframe::egui::{self, Label, RichText};
 
 use crate::dialog_host::Output;
-use crate::mirror::Mirror;
+use crate::mirror::{Mirror, PhotoState, Shown};
 use crate::presets::{SheetContent, current, description_rows, name_rows, refusal};
 
 pub mod tool;
@@ -77,6 +77,30 @@ pub fn touches(state: &ToolState) -> bool {
 /// edit touching a tool.
 pub fn can_create(mirror: &Mirror) -> bool {
     mirror.takes_edits() && mirror.live() && mirror.values.tools.iter().any(touches)
+}
+
+/// The styles the Styles tool marks applied: the open photo's, and while the next photo
+/// opens the photo left's, as the Tools panel keeps its values (`Shown::Held`); none with
+/// no photo.
+pub fn applied(mirror: &Mirror) -> Option<&[StyleState]> {
+    let photo = matches!(mirror.photo, PhotoState::Open(_)) || mirror.shown() == Shown::Held;
+    photo.then_some(mirror.values.styles.as_slice())
+}
+
+/// What the Styles tool is drawn as able to do on `mirror`'s photo: whether one is open and
+/// whether for viewing only, and whether it takes edits and batches. Within the plain time
+/// of a switch, as the look the Tools panel keeps ([`Mirror::inert`]), so the tool does not
+/// dim for it; a style chosen meanwhile is still applied only as the mirror takes it.
+pub fn drawn_for(mirror: &Mirror) -> ((bool, bool), (bool, bool)) {
+    if let Some(look) = mirror.inert() {
+        let editable = look.editable();
+        return ((true, !editable), (editable, true));
+    }
+    let open = match &mirror.photo {
+        PhotoState::Open(photo) => (true, photo.view_only.is_some()),
+        _ => (false, false),
+    };
+    (open, (mirror.takes_edits(), mirror.takes_batches()))
 }
 
 /// One tool the dialog lists.

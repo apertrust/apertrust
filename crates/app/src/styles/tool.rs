@@ -447,7 +447,8 @@ pub fn unavailable_on(
 /// whether the platform asks before Delete.
 pub struct StylesTool<'a> {
     pub listed: &'a [Listed],
-    /// The styles applied, newest first; none with no photo open.
+    /// The styles applied, newest first: the photo left's while the next one opens, and
+    /// none with no photo open.
     pub applied: Option<&'a [StyleState]>,
     pub kept: &'a Kept,
     /// Why the tree's styles cannot be applied now, nor the applied ones cleared, where

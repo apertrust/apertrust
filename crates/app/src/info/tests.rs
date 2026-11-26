@@ -290,6 +290,33 @@ fn it_shows_the_active_photo_whatever_is_selected() {
     assert!(metadata::described(&state.mirror).is_none());
 }
 
+/// While the next photo opens, the card stays the photo left's, as the Tools panel keeps its
+/// values, never "No photo"; the next photo's metadata replaces it.
+#[test]
+fn the_photo_left_stays_until_the_next_one_s_metadata() {
+    let mut state = scene(None);
+    let left = recorded();
+    state.mirror.apply(Event::Opened(left.clone()));
+    state
+        .mirror
+        .apply(Event::Values(crate::mirror::tests::report(0.0, left.open)));
+    let next = PathBuf::from("/Users/ana/Pictures/2026-07 Lisbon/R0001226.DNG");
+    state
+        .mirror
+        .opening(next.clone(), 9, std::time::Instant::now());
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    assert!(region(&harness).starts_with("R0001225.DNG, "));
+    let opened = Photo {
+        path: next,
+        open: 9,
+        ..recorded()
+    };
+    harness.state_mut().mirror.apply(Event::Opened(opened));
+    harness.run();
+    assert!(region(&harness).starts_with("R0001226.DNG, "));
+}
+
 /// No photo: one line, and Copy Information disabled.
 #[test]
 fn no_photo_says_so() {

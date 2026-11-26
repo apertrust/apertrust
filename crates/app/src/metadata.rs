@@ -650,8 +650,11 @@ impl Rated {
             count(rating);
         }
         ratings.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        // Within the plain time of a switch, as the look the Tools panel keeps, so the row
+        // does not dim for it; a mark pressed meanwhile runs only as `rateable` allows.
+        let plain = mirror.inert().is_some_and(|look| look.editable());
         Rated {
-            enabled: open.is_some() && photos > 0,
+            enabled: (open.is_some() || plain) && photos > 0,
             ratings,
             photos,
             open,
@@ -977,25 +980,19 @@ pub(crate) fn one_fact(
     (shown.value, tip.collect::<Vec<_>>().join("\n"))
 }
 
-/// The active photo, where one is open, whatever else is selected.
+/// The active photo, where one is open, whatever else is selected; while the next opens,
+/// the photo left, as the Tools panel holds its values ([`Mirror::held`]).
 pub(crate) fn active_photo(mirror: &Mirror) -> Option<&Photo> {
     match &mirror.photo {
         crate::mirror::PhotoState::Open(photo) => Some(photo),
-        _ => None,
+        _ => mirror.held(),
     }
 }
 
 /// The one photo the tool describes and ⋯ copies: the active photo, but none while several
 /// are selected, whose facts the tool does not read yet.
 pub fn described(mirror: &Mirror) -> Option<&Photo> {
-    match &mirror.photo {
-        crate::mirror::PhotoState::Open(photo)
-            if mirror.selected_count() <= 1 && mirror.selection_settled() =>
-        {
-            Some(photo)
-        }
-        _ => None,
-    }
+    active_photo(mirror).filter(|_| mirror.selected_count() <= 1 && mirror.selection_settled())
 }
 
 /// The [`apertrust_engine::session::Exif`] field the fact `id` reads, by the name
