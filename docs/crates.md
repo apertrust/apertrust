@@ -1242,7 +1242,7 @@ What every program sets up as it starts, and nothing about images, colour, the G
 | `build` | `build::version()` | build-dependencies only |
 | `codegen` | the settings generator | build-dependencies only |
 | `folders` | `Folders` | the binaries (the app and the CLI) |
-| `fs` | the safe write | the export and the library |
+| `fs` | the safe write, the rename that never replaces a file and the read past the system's cache | the export and the library |
 | `jobs` | darktable's control jobs | the engine; the library is to |
 | `cache` | the disk cache, `UnusedAfter`, `CacheCommand` and `CacheEvent` among it; turns on `fs` | the engine, the app and the CLI; the library is to |
 | (none) | `settings`, `wire` | |
@@ -1320,13 +1320,15 @@ What every program sets up as it starts, and nothing about images, colour, the G
 
 ### The safe write
 
-`fs`, with no `unsafe` (decision 53): the library uses it for its sidecar and its listing.
+`fs`, with no `unsafe` (decision 53): the library uses it for its sidecar, its listing and its checked copy.
 
 - `fs::write(path, bytes)` replaces a file whole through a hidden temporary beside it (`fs::create`, named `.~NAME.XXXXXX.tmp`, `NAME` cut so the name fits 255 bytes): written, flushed, synced and renamed.
 - When the file already holds the bytes, nothing is written and the file is untouched. On an error nothing is left behind and the old file is as it was.
 - On Unix, replacing a regular file preserves its observed read, write and execute permission bits, with the temporary restricted from creation before any data is written. Special mode bits, ownership and ACLs are not copied. New files and replacements of symlinks keep the ordinary umask-filtered creation mode; a symlink's target is untouched.
 - `fs::write_if(path, bytes, still)`: the same, the file replaced only where `still`, asked just before each try of the rename, says it may be, `None` where it says no, nothing replaced and the temporary removed. A caller that compared the file's stamp before the write compares it again there, which narrows another program's window to the rename alone; no portable rename replaces a file only where it is as it was. The edit writer's write over a file as read and `apertrust-cli edit` and `history` use it.
 - `fs::persist_retrying` and `Retry`: a rename Windows refuses (sharing violation, access denied) is tried again for about a second (ten times 100 ms). `apertrust-export`'s `disk` uses it for its own renames.
+- `fs::persist_noclobber`, the rename that never replaces a file, for `persist_retrying`: tempfile's `persist_noclobber`, `AlreadyExists` where a file is there; where it is refused as unsupported (`ENOTSUP`, `EOPNOTSUPP`), on Apple's systems the exclusive rename, as macOS's SMB client refuses it, on Linux the hard link tried after it, a look for a file just before a plain rename, the window narrowed as `write_if`'s is.
+- `fs::uncache_writes`, `fs::sync` and `fs::read_uncached`, the checked copy's read past the system's cache (decision 101; [library.md](library.md#the-checked-copy)): on macOS `F_NOCACHE` on the writing and the reading handle, the sync `F_FULLFSYNC` falling back to `fsync` where a share refuses it; on Linux `fsync` then `POSIX_FADV_DONTNEED`; on Windows `FlushFileBuffers`, then reads with `FILE_FLAG_NO_BUFFERING` in whole 4 KiB blocks into an aligned buffer, a read shorter than asked the file's end. Linux's advice is best effort. Through `rustix` on Unix, std's `OpenOptionsExt` on Windows.
 - `fs::is_temporary_name` and `fs::remove_if_stale`: a temporary is told by its name alone, and removed when it is a plain file more than a day old. The library's listing calls it for the folder it lists.
 - The settings store's `FileStorage` keeps its own write: its permissions, visible `.{pid}-{n}.tmp` names and one-minute tidy differ.
 
@@ -1729,7 +1731,7 @@ flowchart TD
 3. One `Index` for rules, sorts, pages and full text: in memory over the open tree, then saved per folder tree in this computer's cache, a Library's search reading its folders' together, its engine chosen by spike L2 (`index`, decision 55).
 4. The operations, `LibraryCommand` and `LibraryEvent` (`ops`).
 
-It also holds the folder records and photos by fingerprint (decision 53), Move to… and Copy to…'s checked copy (decision 101), change detection and two copies' comparison (decision 52), and the slots and versions of the cache's thumbnails, indexes and offline thumbnails, over base's `cache` (decision 76).
+It also holds Move to… and Copy to…'s checked copy (decision 101), built (`copy`), the folder records and photos by fingerprint (decision 53), change detection and two copies' comparison (decision 52), and the slots and versions of the cache's thumbnails, indexes and offline thumbnails, over base's `cache` (decision 76).
 
 **Through the engine.** The engine's session serves its commands, so clients reach it through the session protocol (decisions 37, 53 and 57). The long ones run as jobs of its control on darktable's queues: a folder's reading `UserBackground`, thumbnails `SystemForeground`, and Move to…, Copy to…, Rename, Delete and Import… `UserForeground`, each call into a folder tree on its queue. The engine uses its `sidecar` and `ops`.
 
@@ -1746,6 +1748,17 @@ It also holds the folder records and photos by fingerprint (decision 53), Move t
 - `summary` (decision 110): `summary::build`, a pure function over each selected photo's listing and facts (`Summed`, `Facts`: waiting, missing or read), gives a `Summary`, a `FactSummary` for each fact row by its id (`summary::FACTS`): `Same`, `None`, `Different` (the ten most common values, ties by value, how many more and how many photos have none), `Range` (Date taken, Exposure time, Aperture and ISO), `Total` (Size on disk) or `Waiting`. A `FactValue` is a typed `Key`, compared as the row shows it, with one photo's `Shot` holding it, which the client words as that photo's row; never words. 10,000 photos are summarised within 16 ms on the M4 in a release build, about 100 ms in a debug one; the test fails above 50 ms in a release build and above 500 ms in a debug one, as CI runs it.
 - `testing`, behind the `testing` feature, for the tests of the library and the engine: `testing::evict` marks a raw as not on the disk until `testing::restore`, and `testing::reads` counts the library's reads of a raw, its fingerprint, embedded picture and EXIF.
 - `ops::thumbnail_key`: a thumbnail's slot and version in the disk cache (decision 76) for an `ops::Identity`, the raw's `RawStamp`, fingerprint and copy (`Identity::read`); the slot the photo's fingerprint, its virtual copy and the size, the version `apertrust_raw::PREVIEW_VERSION` and the raw's size and modified time. The engine's thumbnail jobs read and write the cache with it. `ops::thumbnail_copy` is the id of the sidecar's first virtual copy, none without a sidecar or with one that cannot be read; `ops::Fingerprints` the session's memo of fingerprints by path and stamp, each raw read once while its stamp holds. `ops::thumbnail_slot` is the slot alone, for any picture, and `ops::EMBEDDED` and `ops::RENDERED` what an embedded picture's and a rendered thumbnail's versions start with, an opening photo reading the largest rendered one at `ops::THUMBNAIL_SIZES`, stale or not (decision 77).
+
+### copy
+
+The checked copy (decisions 85 and 101; [library.md](library.md#the-checked-copy)), built ahead of the commands that use it, Import and Move to…/Copy to…:
+
+- `copy::copy_photo(source, into, check, cancel, progress)`: one photo's `PhotoFiles` (its folder, its main file and its companions; `PhotoFiles::find` takes the `.apxmp`, the `.apdata` (`copy::DATA_SUFFIX`) and darktable's `.xmp` beside it by its whole name) into the folder `into` under the same names, the companions first and the main file last, whole or not at all.
+- Each file streamed in chunks of `copy::CHUNK`, 1 MiB, hashed with BLAKE3 as it is read, into a hidden temporary (`fs::create`), synced and, with `Check::ReadBack`, read back past the system's cache and compared with the hash, renamed into place by `fs::persist_noclobber` through `fs::persist_retrying`, and only then given the source's modified time, so a listing meanwhile never takes the temporary for stale. The source is opened read-only.
+- Any failure removes the temporary and the photo's files that had landed; a file there before is never touched, and a landed file whose removal fails is logged and stays. `CopyError` names the file: `Cancelled`, `Exists`, `Read`, `Write` and `Mismatch`. `into` is made as the first file is to land; removing it if left empty is the caller's.
+- `cancel` is asked before each file and each chunk, the read-back's too; `progress` is given each chunk's bytes. `Copied` lists each `CopiedFile`, its path, length and hash.
+- A crash leaves the temporary, which the listing removes a day after it was last written, and the photo's files that had landed, its sidecars without its main file, which a second copy into that folder meets as `Exists`: they are removed by hand, or the photo copied elsewhere.
+- Tested by fault injection through a hook in the copy loop: a cancel, a read error and a full disk at every chunk of every file, a file appearing at the destination before each rename, a byte flipped in each temporary before its read-back, and a 200 MB file streamed. `examples/copy_timing.rs` times it.
 
 ### sidecar
 
@@ -1840,7 +1853,7 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
 - Sidecar version 2's other parts: snapshots, tombstones and groups (decisions 47 and 52).
 - darktable's `.xmp`'s keywords and its history (decision 51).
 - Import in folder mode (decision 85, step 20): a source's listing, the check against Folder's tree and the default folder's (`import.default_folder`), the source left out, by size and camera name (its own or the `xmpMM:PreservedFileName` every renamed copy keeps) then the fingerprint, `PreviewImport` and the copy job in path order, skipping only a byte-for-byte duplicate at its destination, with `LibraryCommand::ListSource`, `CancelListing`, `SourceThumbnails`, `PreviewImport` and `Import` and their events; the `import` settings' statics ([library.md](library.md#import-in-folder-mode)).
-- Include subfolders, a folder's `.apertrust/` albums and smart albums, and Move to… and Copy to… (decision 101, steps 19 to 19d); then, in Phase 5, the saved index, folder records, Libraries, Keep Available Offline and Keep Edits on This Computer (steps 21 to 33).
+- Include subfolders, a folder's `.apertrust/` albums and smart albums, and Move to… and Copy to…, on the checked copy (decision 101, steps 19 to 19d); then, in Phase 5, the saved index, folder records, Libraries, Keep Available Offline and Keep Edits on This Computer (steps 21 to 33).
 - A storage interface only when a second backend comes, the server's, later, if asked (decisions 54 and 71).
 - **Built-in presets** (decision 106): Import's two, and in phase 2 darktable's presets of each ported tool, embedded by `presets` as Export's are.
 

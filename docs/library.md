@@ -166,14 +166,63 @@ Planned: a folder's own in Phase 3 (steps 19c and 19d), a Library's spanning its
 
 ### Move to… and Copy to…
 
-Planned, Phase 3, the library's step 19, with Rename and Delete ([decision 101](decisions/0101-folders-first-libraries-optional.md)). Between any two folders, each a `UserForeground` job, cancellable, as darktable's (decision 57):
+Planned, Phase 3, the library's step 19, with Rename and Delete ([decision 101](decisions/0101-folders-first-libraries-optional.md)); the checked copy they stand on is built ([below](#the-checked-copy)). Between any two folders, each a `UserForeground` job, cancellable, as darktable's (decision 57):
 
 - **A photo moves whole or stays:** its main file (its raw, else its only image file) with its `.apxmp`, `.apdata` and attached files, and its edits kept on this computer, which go where the destination's edits are kept. A cancel, a crash or a write from elsewhere during the move never leaves a photo in both places, or half in each, and never loses a file: what cannot be settled is named in the activity for the person to settle. How each is met is step 19's spec.
-- **On one volume, a rename; across volumes, a checked copy:** each file is copied through a hidden temporary ([the safe write](#safe-writes)), read back past the system's cache and compared with its source's hash before any source file is removed. How to read past the cache on each platform, and its cost, is the step's spike: a 30 MB raw read back over the NAS's 84 MB/s takes about 0.36 s.
+- **On one volume, a rename; across volumes, a checked copy** ([below](#the-checked-copy)): each file is copied through a hidden temporary ([the safe write](#safe-writes)), read back past the system's cache and compared with its source's hash before any source file is removed.
 - **Never replaces a file** at the destination; a cancel takes effect between photos.
 - **Albums:** the sheet counts the album entries a move takes out of a folder's `.apertrust/`.
 - **Delete** sends photos with their sidecars to the system's trash, with a bar and not cancellable (decision 57).
-- **Import's copy is this checked copy** (decision 85): from 20a1 whole or absent and never replacing a file, its read-back Verify the copies (20b), on by default if this step's spike measures the read-back as cheap on a local SSD, adding at most 10% to a card import's time, the source hashed as it is copied and only the destination read back, else off; Backup (20d) copies to a second destination the same way.
+- **Import's copy is this checked copy** (decision 85): from 20a1 whole or absent and never replacing a file, its read-back Verify the copies (20b), on by default if the read-back adds at most 10% to a card import's time, the source hashed as it is copied and only the destination read back, else off, pending the card's measurement ([below](#what-verify-the-copies-default-waits-on)); Backup (20d) copies to a second destination the same way.
+
+### The checked copy
+
+Built, ahead of the commands that use it: `copy::copy_photo` in `apertrust-library` ([crates.md](crates.md#copy)), over `apertrust_base::fs`. One photo's files, its `.apxmp`, `.apdata` and darktable's `.xmp` first and its main file last, copied into a folder under the same names, whole or not at all:
+
+- **Each file** is streamed in 1 MiB chunks from the source, opened read-only and never written, hashed with BLAKE3 as it is read, into a hidden temporary in the destination (`.~NAME.XXXXXX.tmp`); synced and, with `Check::ReadBack`, read back past the system's cache and compared with the hash; renamed into place by a rename that refuses to replace a file; and only then given the source's modified time, a time not set logged and the copy kept. The temporary stays as young as its write, so a listing of the folder meanwhile never removes it as stale.
+- **Any failure** (a cancel, a full disk, a source that cannot be read, a file that appears at the destination, a copy that differs) removes the temporary and the photo's files that had landed, and names the file; a file that was there before is never touched. A landed file whose removal fails is logged and stays.
+- **A crash** leaves the temporary, hidden and told by its name, which the listing removes a day after it was last written; and, where some of the photo's files had landed, those under their names, its sidecars without its main file, so copying the photo into that folder again fails with `Exists`. They are copies whose source is still there: remove them and copy again, or copy into another folder.
+- **A destination folder** is made as the first file is to land; removing one left empty is the caller's. The copy always copies, on one volume too.
+- **A share without an exclusive rename:** macOS's SMB client refuses `renamex_np`'s `RENAME_EXCL`, hard links and `F_FULLFSYNC` alike (`ENOTSUP`). There the copy syncs with `fsync`, and looks for a file at the destination just before a plain rename, so another program's file made in between is replaced: the window narrowed to that, as [the safe write](#safe-writes)'s check before its rename is. Linux's SMB and NFS clients are to measure.
+
+**Reading past the cache** (`fs::uncache_writes`, `fs::sync`, `fs::read_uncached`):
+
+| System | Method | Checked |
+| --- | --- | --- |
+| macOS | `F_NOCACHE` on the handle that writes and on the one that reads; `F_FULLFSYNC`, else `fsync` | APFS and SMB: a file just written reads back at 2.0 GB/s from the SSD and at the network's 50 MB/s from the NAS, against 8 to 9 GB/s and 1.3 GB/s from the cache. `F_NOCACHE` on the read alone is answered from the pages the write left, at the cache's speed |
+| Linux | `fsync`, then `posix_fadvise(POSIX_FADV_DONTNEED)`, advice the kernel may not follow, so best effort: it drops clean pages where it is followed, never proving the cache was passed; `O_DIRECT`, refused by some file systems and asking for aligned buffers, is not used | ext4: a file just written reads back at 1.5 to 1.9 GB/s from the NVMe SSD, far below the cache's speed, so the cache is passed there. btrfs and SMB and NFS mounts to measure |
+| Windows | `FlushFileBuffers`, then reads with `FILE_FLAG_NO_BUFFERING` in whole 4 KiB blocks into an aligned buffer | NTFS: the NVMe SSD's own counters read 8,463 MB of 8,464 MB for the way that reads back, and none for copy and hash. An SMB share to measure |
+
+**What it costs,** from `examples/copy_timing.rs`, the sources read once before each run so every way meets them in the cache and the times are the destination's, a card's read cold (`--cold`, the card inserted or mounted again), each a separate run:
+
+| Destination | Files | Copy alone | Copy and hash | Copy, hash and read back | The read-back adds |
+| --- | --- | --- | --- | --- | --- |
+| The M4's SSD: a MacBook Air M4, 24 GB, 1 TB APPLE SSD AP1024Z, APFS, macOS 27.2 | 200 (17 raws of 25 to 60 MB from raw.pixls.us, repeated), 8,464 MB | 7.64 and 8.37 s, 38 and 42 ms a file | 9.72 and 9.86 s, 49 ms a file | 21.38 and 21.44 s, 107 ms a file | 11.6 and 11.7 s, 1.4 s a GB, 58 ms a 42 MB raw |
+| A NAS over SMB 3.1.1 on Wi-Fi, from the same NAS | 39 raws of 25 to 60 MB, 1,492 MB | 42.0 and 59.1 s, 1.1 and 1.5 s a file | 45.7 and 60.6 s | 87.3 and 94.7 s | 34 and 42 s, about 1 s a 38 MB raw, the network's 36 to 44 MB/s |
+| Linux's SSD: a Ryzen 7 8845HS, 59 GB, WD_BLACK SN7100 2 TB NVMe, ext4, Linux 7.0 | 200 (the same 17 raws, repeated), 8,464 MB | 6.68 to 15.40 s, 33 to 77 ms a file | 9.28 to 15.47 s, 46 to 77 ms a file | 13.89 to 23.99 s, 69 to 120 ms a file | 4.6 to 12.0 s, 0.54 to 1.41 s a GB, usually 0.55 to 0.7, the kernel's writeback varying the runs |
+| Windows' SSD: the same machine, 62 GB, NTFS, Windows 11 Pro | 200 (the same 17 raws, repeated), 8,464 MB | 7.37 to 15.69 s | 10.40 to 22.03 s | 18.53 to 21.39 s | 4.5 to 8 s, 0.5 to 1 s a GB; the first two ways swing about 2×, Defender's scan of the new files the likely cause |
+| An SD card in a USB reader at 165 MB/s, to the M4's SSD: a 128 GB LUMIX card, exFAT, cold | 200 RW2 raws of 25 to 60 MB, 7,005 MB | 42.44 and 42.31 s | 42.56 and 42.53 s | 51.84 and 51.69 s | 9.2 s, +22%, 1.3 s a GB |
+| Another LUMIX card in the same reader, cold | 22 RW2 raws of 25 to 60 MB, about 680 MB | 4.04 to 4.10 s | 4.06 to 4.10 s | 4.97 to 5.01 s | 0.92 s, +23%, 1.35 s a GB |
+| An SD card in a USB 2 reader at 41 MB/s, to Linux's SSD: a 128 GB LUMIX card, exFAT, cold | 100 RW2 raws of 25 to 60 MB, 3,450 MB | 84.31 and 85.27 s | 84.63 and 84.56 s | 86.82 and 86.64 s | 2.2 and 2.1 s, +2.6% and +2.5%, 0.6 s a GB |
+| An SD card in Windows' own reader at about 39 MB/s, to its SSD: a LUMIX card, exFAT, cold | 200 RW2 raws, 7,005 MB | — | 177.91 s, 890 ms a file | 186.58 s, 933 ms a file | 8.7 s, +4.9%, 1.2 s a GB |
+
+Hashing runs at 3 to 4 GB/s in BLAKE3's pure-Rust build. On the NAS the copy ran at 25 to 36 MB/s, below the 84 MB/s the link gave before, so a 30 MB raw's read-back takes 0.7 to 0.8 s there rather than 0.36 s.
+
+To measure, each from the repository's root:
+
+```sh
+# An SD card just inserted, holding 200 raws of 25 to 60 MB, into a scratch folder on the SSD;
+# each run on the card inserted again, so nothing of it is in the cache.
+cargo run --release -p apertrust-library --example copy_timing -- --cold hash /Volumes/CARD/DCIM ~/copy-timing 200
+cargo run --release -p apertrust-library --example copy_timing -- --cold read-back /Volumes/CARD/DCIM ~/copy-timing 200
+# Linux and Windows: the SSD, then each file system above as INTO.
+cargo run --release -p apertrust-library --example copy_timing -- test-images/raw.pixls.us /tmp/copy-timing 200
+cargo run --release -p apertrust-library --example copy_timing -- test-images\raw.pixls.us %TEMP%\copy-timing 200
+```
+
+#### What Verify the copies' default waits on
+
+On the M4's SSD the read-back adds 1.4 s a GB. A card import to it takes the card's read plus about 1.2 s a GB for the copy and hash, so the read-back adds at most 10% only where the card reads at about 78 MB/s or slower, a UHS-I card's speed; a UHS-II card at 250 MB/s would take about 27% longer. Decision 85's default for Verify the copies (`import.verify`, 20b) is pending the card's measurement: on if the card measured adds at most 10%, else off.
 
 ### Import in folder mode
 
@@ -910,7 +959,7 @@ Planned with step 20a1: `apertrust-cli import SOURCE [--folder DIR] [--subfolder
 
 The library is built in steps, each delivering one thing and reviewed before the next starts: folders first, in Phases 2 and 3, their albums, Include subfolders and Move to… and Copy to… among them, then Libraries and the index across folders in Phase 5, with spikes L1 to L4 along the way. The list, built and remaining, is [roadmap.md](roadmap.md#the-librarys-steps)'s.
 
-Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); the open folder's `Index` (step 4); the open folder through the session, Collections' Folders and the Browser (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part); the clock and the machine id (step 8.1) and version 2's text layer (step 8.2). The cache's thumbnails of the embedded pictures are built too; the live photo's own rendered thumbnails are built; rendering other photos and refreshing their stale thumbnails remain.
+Built so far: the listing and `library scan` (step 1); the `.apxmp` text layer (step 2); safe writes and stale temporaries removed (step 3); step 19's checked copy, ahead of its commands; the open folder's `Index` (step 4); the open folder through the session, Collections' Folders and the Browser (step 5's first part); the XMP layer (step 7b); the camera's embedded pictures as thumbnails (step 6's first part); the clock and the machine id (step 8.1) and version 2's text layer (step 8.2). The cache's thumbnails of the embedded pictures are built too; the live photo's own rendered thumbnails are built; rendering other photos and refreshing their stale thumbnails remain.
 
 ## Open questions
 
