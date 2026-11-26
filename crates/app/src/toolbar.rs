@@ -19,8 +19,9 @@
 //! in one stable order ([`placeable`]). An action that belongs to a tool is offered by that
 //! tool (`ToolDefinition::toolbar`); only actions that belong to no tool are the app's,
 //! those the registry gives an icon ([`actions::ICONS`]). The Toolbar draws a list from it
-//! ([`listed`]), each action with its word under its icon ([`word`]), and the Customise
-//! Toolbar window will list it.
+//! ([`listed`]), each action with its word under its icon ([`word`]), and the customise
+//! mode's Add ▸ lists what a draft does not hold of it (`customise`), its Done writing the
+//! draft back with the ids this build does not know in their places ([`merged`]).
 
 use std::sync::OnceLock;
 
@@ -163,6 +164,37 @@ pub fn listed<'a>(list: impl IntoIterator<Item = &'a str>) -> Vec<&'static Place
         }
     }
     drawn
+}
+
+/// The list Done writes for `draft`, the customise mode's list, which started as `start`,
+/// the workspace's (decision 92): `draft` with each id of `start` this build does not know,
+/// a removed tool's or a newer build's, written back right after the known id it followed in
+/// `start`, or, where that is no longer in `draft`, the nearest known id before it still
+/// there, else at the start. An old list's `menu-button` is the one unknown id dropped.
+pub fn merged(start: &[String], draft: &[&str]) -> Vec<String> {
+    let known = |id: &str| set().iter().any(|placed| placed.id == id);
+    // Each unknown id with the place in `draft` it follows, none for the start.
+    let mut unknown: Vec<(Option<usize>, &str)> = Vec::new();
+    for (at, id) in start.iter().enumerate() {
+        if known(id) || id == "menu-button" {
+            continue;
+        }
+        let anchor = (start[..at].iter().rev())
+            .filter(|before| known(before))
+            .find_map(|before| draft.iter().position(|id| id == before));
+        unknown.push((anchor, id));
+    }
+    let after = |place: Option<usize>| {
+        (unknown.iter())
+            .filter(move |(anchor, _)| *anchor == place)
+            .map(|(_, id)| (*id).to_owned())
+    };
+    let mut written: Vec<String> = after(None).collect();
+    for (at, id) in draft.iter().enumerate() {
+        written.push((*id).to_owned());
+        written.extend(after(Some(at)));
+    }
+    written
 }
 
 /// The words' message of the item `id` can place, as [`set`] has it: an action's its
@@ -343,6 +375,43 @@ mod tests {
         for id in PARTS.iter().map(|(id, _, _)| *id).chain(SPACINGS) {
             assert!(actions::named(id).is_none(), "{id} is a registry action's");
         }
+    }
+
+    fn strings(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
+    /// Decision 92: Done writes an unknown id back after the known id it followed, wherever
+    /// that now stands; after the nearest earlier one still there where it was removed;
+    /// at the start where none is. An old `menu-button` is dropped.
+    #[test]
+    fn unknown_ids_are_kept_at_their_anchors() {
+        let start = strings(&[
+            "gone-first",
+            "import",
+            "gone-a",
+            "undo",
+            "gone-b",
+            "menu-button",
+            "guides",
+        ]);
+        // Guides moved first, Undo removed: gone-b follows Import, Undo's nearest earlier.
+        let written = merged(&start, &["guides", "import", "space"]);
+        assert_eq!(
+            written,
+            [
+                "gone-first",
+                "guides",
+                "import",
+                "gone-a",
+                "gone-b",
+                "space"
+            ]
+        );
+        // Nothing known left before them: at the start.
+        let written = merged(&start, &["guides"]);
+        assert_eq!(written, ["gone-first", "gone-a", "gone-b", "guides"]);
+        assert_eq!(merged(&[], &["undo"]), ["undo"]);
     }
 
     /// Decision 92: the menu button is no item of the list, so the set holds no

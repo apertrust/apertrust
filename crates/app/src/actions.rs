@@ -211,8 +211,14 @@ impl ActionId {
     /// The Toolbar's words under its icons, on or off (decision 92), in View › Panels and
     /// the toolbar menu.
     pub const TOOLBAR_LABELS: ActionId = ActionId("toolbar-labels");
-    /// The Customise Toolbar window, drawn disabled until it is built (decision 92).
+    /// Customise Toolbar…: the main window into the Toolbar's customise mode (decision 92).
     pub const CUSTOMISE_TOOLBAR: ActionId = ActionId("customise-toolbar");
+    /// The customise menu's own (decision 92), available only while customising, with no
+    /// default keys: the selected item one place along, taken out, and Done.
+    pub const TOOLBAR_MOVE_LEFT: ActionId = ActionId("toolbar-move-left");
+    pub const TOOLBAR_MOVE_RIGHT: ActionId = ActionId("toolbar-move-right");
+    pub const TOOLBAR_REMOVE: ActionId = ActionId("toolbar-remove");
+    pub const TOOLBAR_DONE: ActionId = ActionId("toolbar-done");
     /// Reset Toolbar: the workspace's file's `toolbar` list taken out, the Toolbar its
     /// build's default again (decision 92).
     pub const RESET_TOOLBAR: ActionId = ActionId("reset-toolbar");
@@ -451,8 +457,16 @@ pub enum Intent {
     /// that menu alone (decision 92).
     ToolbarHide,
     /// The workspace's file's `toolbar` list taken out, the Toolbar its build's default
-    /// again (decision 92).
+    /// again (decision 92); while customising, the draft made the default.
     ResetToolbar,
+    /// The main window into the Toolbar's customise mode (decision 92).
+    CustomiseToolbar,
+    /// The customise mode's selected item one place to the start, or to the end; taken out;
+    /// and Done, the draft written.
+    ToolbarMoveLeft,
+    ToolbarMoveRight,
+    ToolbarRemove,
+    ToolbarDone,
     FullScreen,
     /// The main window, which ends the app as Quit does; a dialog's own window is the
     /// app's to close (`run_action`, in the app's `main`).
@@ -677,7 +691,7 @@ pub struct State {
     /// and focus stays in the dialog.
     pub dialog: bool,
     /// A modal dialog is open over the main window, a sheet or a modal window of the dialog
-    /// host's, the open dialog or About: every action that opens a dialog, a file
+    /// host's, the open dialog or About, or the Toolbar's customise mode: every action that opens a dialog, a file
     /// dialog or About rests, so one dialog is open at a time, and so does Close Window, but
     /// in a dialog's own window with the focus (decision 41).
     pub modal: bool,
@@ -694,8 +708,15 @@ pub struct State {
     /// takes out; none elsewhere, and it cannot run (decision 92).
     pub toolbar_item: Option<&'static str>,
     /// Whether the workspace's file holds a `toolbar` list, which Reset Toolbar takes out
-    /// (decision 92).
+    /// (decision 92); while customising, whether the draft differs from the default or the
+    /// file held a list.
     pub toolbar_kept: bool,
+    /// Whether the Toolbar's customise mode is on (decision 92): a modal state whose own
+    /// actions run while every other that opens a dialog rests.
+    pub customising: bool,
+    /// While customising, the item the customise menu acts on, by its place, and how many
+    /// the list holds; none on empty space.
+    pub toolbar_place: Option<(usize, usize)>,
     /// The Tools panel's tab shown, by position, whose item is shown checked.
     pub panel_tab: usize,
     /// The workspace shown, by its action ([`workspace`]), whose item is shown checked.
@@ -970,8 +991,7 @@ fn never(_: &State) -> bool {
 /// Why the action `id` cannot run in `state`, as its menu item's tooltip says, where the
 /// reason is one the person can act on: Discard History… where it would ask and the
 /// platform shows no alert; the Tools panel's positions where `--conf` sets it for this
-/// run, [`SET_BY_CONF`], and Reset Toolbar where it sets the workspace; Customise Toolbar…
-/// until its window is built; Guides' flips while the guide type is one darktable never
+/// run, [`SET_BY_CONF`], and Reset Toolbar where it sets the workspace; Guides' flips while the guide type is one darktable never
 /// flips. The message's id, or none.
 pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
     if state.panel_position_given && ActionId::TOOLS_PANEL_POSITION.contains(&id) {
@@ -979,9 +999,6 @@ pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
     }
     if state.workspace_given && id == ActionId::RESET_TOOLBAR {
         return Some(SET_BY_CONF);
-    }
-    if id == ActionId::CUSTOMISE_TOOLBAR {
-        return Some("toolbar-customise-later");
     }
     if ActionId::GUIDE_FLIPS.contains(&id) && !state.guide.flips() {
         return Some("guides-flip-unavailable");
@@ -1194,7 +1211,13 @@ const fn open_recent<const I: usize>(message: &'static str) -> Action {
 /// Whether the Tools panel has an `I`th tab, by position, that can be chosen, the main
 /// window the one acted on.
 fn tab_enabled<const I: usize>(state: &State) -> bool {
-    on_main_window(state) && state.tabs.get(I).copied().unwrap_or(false)
+    panel_available(state) && state.tabs.get(I).copied().unwrap_or(false)
+}
+
+/// Whether what acts on the Tools panel can run: on the main window, but not while the
+/// Toolbar's customise mode dims it (decision 92).
+fn panel_available(state: &State) -> bool {
+    on_main_window(state) && !state.customising
 }
 
 /// Whether a layout action can run on the section it acts on, `can` saying what it needs
@@ -1224,7 +1247,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 173] = [
+pub static ACTIONS: [Action; 177] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1601,7 +1624,7 @@ pub static ACTIONS: [Action; 173] = [
         keys: &[plain(Key::L)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: on_main_window,
+        available: panel_available,
         emits: Emit::Intent(Intent::ShowCollections),
     },
     Action {
@@ -1724,7 +1747,7 @@ pub static ACTIONS: [Action; 173] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| on_main_window(s) && s.hidden_tab.is_some(),
+        available: |s| panel_available(s) && s.hidden_tab.is_some(),
         emits: Emit::Intent(Intent::HiddenTab),
     },
     // The Tools panel's ⋮ (decision 96); the tab bar's menu joins it. Ctrl+Shift+F is Find
@@ -1735,7 +1758,7 @@ pub static ACTIONS: [Action; 173] = [
         keys: &[command_shift(Key::F)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: on_main_window,
+        available: panel_available,
         emits: Emit::Intent(Intent::FindTool),
     },
     Action {
@@ -1744,7 +1767,7 @@ pub static ACTIONS: [Action; 173] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| on_main_window(s) && !s.show_hidden_given,
+        available: |s| panel_available(s) && !s.show_hidden_given,
         emits: Emit::Intent(Intent::ShowHiddenTools),
     },
     // A section's layout (decisions 83 and 96), on the section whose header has the focus,
@@ -1900,7 +1923,7 @@ pub static ACTIONS: [Action; 173] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| on_main_window(s) && !s.modal,
+        available: |s| on_main_window(s) && (!s.modal || s.customising),
         emits: Emit::Intent(Intent::ToolbarLabels),
     },
     Action {
@@ -1918,8 +1941,45 @@ pub static ACTIONS: [Action; 173] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: never,
-        emits: Emit::Later,
+        available: |s| on_main_window(s) && !s.modal,
+        emits: Emit::Intent(Intent::CustomiseToolbar),
+    },
+    // The customise menu's own, only while customising (decision 92).
+    Action {
+        id: ActionId::TOOLBAR_MOVE_LEFT,
+        message: "action-toolbar-move-left",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.customising && s.toolbar_place.is_some_and(|(at, _)| at > 0),
+        emits: Emit::Intent(Intent::ToolbarMoveLeft),
+    },
+    Action {
+        id: ActionId::TOOLBAR_MOVE_RIGHT,
+        message: "action-toolbar-move-right",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.customising && s.toolbar_place.is_some_and(|(at, of)| at + 1 < of),
+        emits: Emit::Intent(Intent::ToolbarMoveRight),
+    },
+    Action {
+        id: ActionId::TOOLBAR_REMOVE,
+        message: "action-toolbar-remove",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.customising && s.toolbar_place.is_some(),
+        emits: Emit::Intent(Intent::ToolbarRemove),
+    },
+    Action {
+        id: ActionId::TOOLBAR_DONE,
+        message: "action-toolbar-done",
+        keys: &[],
+        scope: Scope::App,
+        trigger: Trigger::Press,
+        available: |s| s.customising,
+        emits: Emit::Intent(Intent::ToolbarDone),
     },
     // While the workspace's file holds a list, unless `--conf` sets the workspace, as a
     // workspace then cannot be chosen.
@@ -1929,7 +1989,10 @@ pub static ACTIONS: [Action; 173] = [
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| s.toolbar_kept && workspace_available(s),
+        available: |s| {
+            let customising = s.customising && !s.workspace_given && on_main_window(s);
+            s.toolbar_kept && (customising || workspace_available(s))
+        },
         emits: Emit::Intent(Intent::ResetToolbar),
     },
     // macOS keeps F11 for showing the desktop; its own full-screen keys come first there.
@@ -3708,6 +3771,8 @@ pub(crate) mod tests {
             toolbar_labels: true,
             toolbar_item: None,
             toolbar_kept: false,
+            customising: false,
+            toolbar_place: None,
             panel_tab: 0,
             workspace: workspace(crate::layout::DEFAULT),
             workspace_given: false,

@@ -1263,6 +1263,14 @@ impl Workspace {
         self.layout.toolbar.is_some()
     }
 
+    /// The Toolbar this build gives it by default, which Reset Toolbar brings back: its
+    /// built-in's, a person's own Default's (decision 92).
+    pub fn default_toolbar(&self) -> Vec<String> {
+        defaults_of(&self.id, self.builtin)
+            .toolbar
+            .unwrap_or_default()
+    }
+
     /// The tabs shown.
     pub fn tabs(&self) -> &[Tab] {
         &self.shown.tabs

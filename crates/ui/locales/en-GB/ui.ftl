@@ -412,9 +412,8 @@ toolbar-menu = Menu
 # », holding the actions a narrow Toolbar has no room for.
 toolbar-more = More actions
 # The toolbar menu, on a right-click anywhere on the Toolbar, and View › Panels (decision
-# 92): the words under the icons on or off, the Customise Toolbar window, drawn disabled
-# with its tip until it is built, and Reset Toolbar, which puts the workspace's Toolbar
-# back to the default list.
+# 92): the words under the icons on or off, the customise mode, and Reset Toolbar, which
+# puts the workspace's Toolbar back to the default list.
 action-toolbar-labels = Toolbar labels
 action-customise-toolbar = Customise toolbar…
 action-reset-toolbar = Reset toolbar
@@ -424,7 +423,6 @@ action-toolbar-hide = Hide toolbar item
 toolbar-menu-hide = Hide “{ $item }”
 # What screen readers hear once Hide has taken the item away.
 toolbar-item-hidden = { $item } hidden
-toolbar-customise-later = Customise Toolbar comes in a later version
 # The Toolbar's customise mode (decision 92): its list box's name with nothing on it, and the
 # customise menu's items, which are also each item's actions for screen readers.
 toolbar-empty = Toolbar, empty
@@ -446,6 +444,32 @@ toolbar-customise-release-start = Moves it to the start
 # Done's tooltip, $workspace the workspace's name, and the line a newer build's file adds.
 toolbar-customise-done-tip = Saves this Toolbar for the { $workspace } workspace
 toolbar-customise-newer = A newer Apertrust saved this workspace, so these changes last until you quit
+# The customise mode to screen readers: its dialog, named with the workspace, and what they
+# hear as it starts, $count the items on the Toolbar.
+toolbar-customise-dialog = Customise Toolbar — { $workspace }
+toolbar-customise-entered = Customise Toolbar, { $workspace }. Toolbar, { $count ->
+    [one] { $count } item
+   *[other] { $count } items
+}
+# The customise menu's Add, and the jobs' words in it, since Jobs is also View › Jobs.
+toolbar-add = Add
+toolbar-jobs-progress = Jobs progress
+# A part's guard, the last line of its tooltip in the customise mode.
+toolbar-guard-cursors = Hidden, every cursor keeps its key
+toolbar-guard-jobs = Hidden, a failed job still shows
+toolbar-guard-save-state = Hidden, a failed save still shows
+# What screen readers hear of each change: $item the item, $after the one before it, $at its
+# place and $of how many there are.
+toolbar-customise-added = { $item } added after { $after }, { $at } of { $of }
+toolbar-customise-added-start = { $item } added at the start, { $at } of { $of }
+toolbar-customise-moved = { $item } moved after { $after }, { $at } of { $of }
+toolbar-customise-moved-start = { $item } moved to the start, { $at } of { $of }
+toolbar-customise-removed = { $item } removed
+toolbar-customise-reset = Toolbar reset to the default
+toolbar-customise-labels-on = Labels on
+toolbar-customise-labels-off = Labels off
+toolbar-customise-saved = Toolbar saved
+toolbar-customise-unchanged = Toolbar unchanged
 # The save state at the Toolbar's end, which shows only when a save goes wrong:
 # Saving… while a write is still unconfirmed about two seconds after it started, as on a
 # slow network folder.

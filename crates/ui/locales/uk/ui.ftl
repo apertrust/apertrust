@@ -320,7 +320,6 @@ action-reset-toolbar = Скинути смугу інструментів
 action-toolbar-hide = Сховати елемент смуги інструментів
 toolbar-menu-hide = Сховати «{ $item }»
 toolbar-item-hidden = { $item }: сховано
-toolbar-customise-later = Налаштування смуги інструментів з'явиться в одній із наступних версій
 toolbar-empty = Смуга інструментів, порожня
 action-toolbar-move-left = Посунути ліворуч
 action-toolbar-move-right = Посунути праворуч
@@ -335,6 +334,28 @@ toolbar-customise-release = Стане після «{ $item }»
 toolbar-customise-release-start = Стане на початок
 toolbar-customise-done-tip = Зберігає цю смугу інструментів для робочого простору «{ $workspace }»
 toolbar-customise-newer = Цей робочий простір зберегла новіша версія Apertrust, тож зміни триватимуть до виходу з програми
+toolbar-customise-dialog = Налаштування смуги інструментів — { $workspace }
+toolbar-customise-entered = Налаштування смуги інструментів, { $workspace }. Смуга інструментів, { $count ->
+    [one] { $count } елемент
+    [few] { $count } елементи
+    [many] { $count } елементів
+   *[other] { $count } елемента
+}
+toolbar-add = Додати
+toolbar-jobs-progress = Перебіг завдань
+toolbar-guard-cursors = Коли сховано, кожен курсор лишається на своїй клавіші
+toolbar-guard-jobs = Коли сховано, невдале завдання однаково видно
+toolbar-guard-save-state = Коли сховано, невдале збереження однаково видно
+toolbar-customise-added = { $item }: додано після «{ $after }», { $at } з { $of }
+toolbar-customise-added-start = { $item }: додано на початок, { $at } з { $of }
+toolbar-customise-moved = { $item }: посунуто після «{ $after }», { $at } з { $of }
+toolbar-customise-moved-start = { $item }: посунуто на початок, { $at } з { $of }
+toolbar-customise-removed = { $item }: прибрано
+toolbar-customise-reset = Смугу інструментів скинуто до типової
+toolbar-customise-labels-on = Підписи ввімкнено
+toolbar-customise-labels-off = Підписи вимкнено
+toolbar-customise-saved = Смугу інструментів збережено
+toolbar-customise-unchanged = Смуга інструментів без змін
 status-saving = Збереження…
 status-saving-tip = Обробку цього фото ще записують поруч із ним
 status-not-saved = Не збережено
