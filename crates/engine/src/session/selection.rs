@@ -45,9 +45,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 
-use super::library::EditState;
+use super::library::{EditState, Shot};
+use super::summary::Known;
 use super::{Engine, Event, LibraryEvent, SessionError};
 
 /// What a client asks of the selection (decision 37). Each names photos by their paths:
@@ -178,6 +179,11 @@ struct Entry {
     /// classified its sidecar, 0 for none: that listing's row, which may have read the
     /// sidecar before the write, leaves `edit` as it is; a later listing's sets it.
     classified: u64,
+    /// Its size on disk, as the listing read it; 0 for a photo no listing has brought.
+    size: u64,
+    /// Its facts (decision 110), once a summary has read them: `Some(None)` where there are
+    /// none; kept for the next summary.
+    facts: Option<Option<Arc<Shot>>>,
 }
 
 /// The folder open, with its photos: the collection, one list, so every command, the fact
@@ -243,6 +249,8 @@ impl Folder {
                     seen: 1,
                     rank,
                     classified: 0,
+                    size: 0,
+                    facts: None,
                 });
             }
         }
@@ -257,11 +265,12 @@ impl Folder {
         self.brought = 0;
     }
 
-    /// `photos`, a chunk of the listing under way: each in the collection, as that listing
-    /// found it but where the edit writer classified it since that listing began.
-    fn extend(&mut self, photos: impl IntoIterator<Item = (PathBuf, EditState)>) {
+    /// `photos`, a chunk of the listing under way, each with its size: each in the
+    /// collection, as that listing found it but where the edit writer classified it since
+    /// that listing began.
+    fn extend(&mut self, photos: impl IntoIterator<Item = (PathBuf, EditState, u64)>) {
         let listing = self.listing;
-        for (name, edit) in photos {
+        for (name, edit, size) in photos {
             let rank = self.brought;
             self.brought += 1;
             match self.places.get(&self.absolute.join(&name)) {
@@ -272,6 +281,7 @@ impl Folder {
                     }
                     entry.seen = listing;
                     entry.rank = rank;
+                    entry.size = size;
                 }
                 None => self.push(Entry {
                     name,
@@ -279,6 +289,8 @@ impl Folder {
                     seen: listing,
                     rank,
                     classified: 0,
+                    size,
+                    facts: None,
                 }),
             }
         }
@@ -335,6 +347,8 @@ impl Folder {
                 seen: 0,
                 rank: 0,
                 classified: 0,
+                size: 0,
+                facts: None,
             });
         }
     }
@@ -443,8 +457,8 @@ impl State {
         self.changed = true;
         match event {
             LibraryEvent::Listed { photos, done, .. } => {
-                let listed =
-                    (photos.iter()).map(|photo| (PathBuf::from(&photo.name), photo.edit.clone()));
+                let listed = (photos.iter())
+                    .map(|photo| (PathBuf::from(&photo.name), photo.edit.clone(), photo.size));
                 folder.extend(listed);
                 if *done {
                     folder.done();
@@ -457,6 +471,49 @@ impl State {
         // keep or drop, which knows the active photo.
         let elsewhere = |photo: &PathBuf| photo.parent() != Some(folder.absolute.as_path());
         (self.selected).retain(|photo| folder.holds(photo) || elsewhere(photo));
+    }
+
+    /// The facts a summary of the collection opened by the library command numbered `open`
+    /// read, each by its path, kept for the next; dropped where another folder or photos
+    /// have been opened since.
+    pub(super) fn facts(&mut self, open: u64, facts: Vec<(PathBuf, Option<Arc<Shot>>)>) {
+        let Some(folder) = (self.folder.as_mut()).filter(|folder| folder.open == open) else {
+            return;
+        };
+        for (path, shot) in facts {
+            if let Some(&at) = folder.places.get(&key(&path)) {
+                folder.photos[at].facts = Some(shot);
+            }
+        }
+    }
+
+    /// What the collection knows of `photos`, as a client names them, and the number of the
+    /// library command that opened it: each one's listing and its facts as far as read, its
+    /// edit as the open photo's values say where it is open; a photo it lacks has no facts
+    /// and none to read.
+    pub(super) fn known(&self, photos: &[PathBuf]) -> (u64, Vec<Known>) {
+        let folder = self.folder.as_ref();
+        let known = (photos.iter())
+            .map(|path| {
+                let absolute = key(path);
+                let entry = folder.and_then(|folder| {
+                    let at = *folder.places.get(&absolute)?;
+                    Some(&folder.photos[at])
+                });
+                let Some(entry) = entry else {
+                    return Known::outside(&absolute);
+                };
+                let listed = matches!(entry.edit, Some(EditState::Edited | EditState::ViewOnly(_)));
+                let live = (self.live.as_ref()).filter(|(open, _)| *open == absolute);
+                Known {
+                    size: entry.size,
+                    edited: live.map_or(listed, |(_, edited)| *edited),
+                    facts: entry.facts.clone(),
+                    ..Known::outside(&absolute)
+                }
+            })
+            .collect();
+        (folder.map_or(0, |folder| folder.open), known)
     }
 
     /// The edit states of the photos opened alone by the library command numbered `open`, as
