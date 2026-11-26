@@ -249,6 +249,7 @@ styles-custom = Style własne
 styles-copy = Kopiuj do stylów własnych…
 styles-copy-title = Kopiuj do stylów własnych
 styles-copy-button = Kopiuj
+styles-copy-no-folder = Brak folderu danych użytkownika, do którego można go skopiować
 styles-copy-name = { $name } (kopia)
 style-not-copied = Nie udało się skopiować stylu „{ $name }”: { $error }
 style-builtin-bw-luminance = Czarno-białe|Czarno-białe

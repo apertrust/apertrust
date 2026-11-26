@@ -128,15 +128,19 @@ fn leaf(name: &str) -> &str {
 }
 
 /// The styles built in, each named as `words` show it ([`builtin_name`]), then the styles
-/// in `folder` (`styles::stored`), each of their entries made a tool's values for `tools`
-/// or left out, and why.
-pub fn read(folder: &Path, tools: &[&dyn ProcessingTool], words: &Translator) -> Vec<Listed> {
+/// in `folder` (`styles::stored`), none with no user data folder, each of their entries
+/// made a tool's values for `tools` or left out, and why.
+pub fn read(
+    folder: Option<&Path>,
+    tools: &[&dyn ProcessingTool],
+    words: &Translator,
+) -> Vec<Listed> {
     let builtins = (builtin_styles().into_iter()).map(|(id, stored)| Listed {
         name: builtin_name(id, words),
         builtin: Some(id),
         ..listed(&stored, tools)
     });
-    let own = (super::stored(folder).into_iter()).map(|stored| listed(&stored, tools));
+    let own = (folder.into_iter().flat_map(super::stored)).map(|stored| listed(&stored, tools));
     let mut styles: Vec<Listed> = builtins.chain(own).collect();
     styles.sort_by(|a, b| browser_order(&a.name, &b.name));
     styles
@@ -460,6 +464,9 @@ pub struct StylesTool<'a> {
     /// Whether the styles applied can be cleared now: Clear is the active photo's alone, so
     /// it takes edits, whatever is selected (decision 109).
     pub clearable: bool,
+    /// Whether the app has a user data folder, whose Custom Styles a built-in can be copied
+    /// into: where it has none, Copy to Custom Styles… is disabled, saying why.
+    pub custom: bool,
 }
 
 /// The Styles tool's declaration, among the utilities (decision 93).
@@ -847,7 +854,11 @@ impl StylesTool<'_> {
                     Item::new(DELETE, words.text("styles-delete")).enabled(self.alerts),
                 ]
             } else {
-                vec![Item::new(COPY, words.text("styles-copy"))]
+                let copy = Item::new(COPY, words.text("styles-copy"));
+                vec![match self.custom {
+                    true => copy,
+                    false => copy.enabled(false).tip(words.text("styles-copy-no-folder")),
+                }]
             };
             [Entry::Item(first), Entry::Separator]
                 .into_iter()

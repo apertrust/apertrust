@@ -331,6 +331,8 @@ styles-custom = Custom Styles
 styles-copy = Copy to Custom Styles…
 styles-copy-title = Copy to Custom Styles
 styles-copy-button = Copy
+# Why the menu item is disabled with no user data folder, whose Custom Styles it copies into.
+styles-copy-no-folder = No user data folder to copy it into
 # The copy's name at first, $name the built-in style's as shown; where a style has it, a
 # number, 2 and on, follows it (presets-new-name).
 styles-copy-name = { $name } copy

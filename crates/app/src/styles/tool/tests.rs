@@ -43,10 +43,21 @@ fn style(name: &str) -> Listed {
     }
 }
 
-/// The styles built in, in English, as the tree reads them.
+/// The styles built in, in English, as the tree reads them with no user data folder.
 fn builtins() -> Vec<Listed> {
     let words = Translator::new(Locale::EnGb);
-    read(Path::new("/no styles here"), TOOLS, &words)
+    read(None, TOOLS, &words)
+}
+
+/// [`read`] with no styles folder, as the shell calls it with no user data folder, gives
+/// every built-in style and none of the person's; with a folder, the person's are read too
+/// (`a_file_s_entries_are_read_as_tools…`).
+#[test]
+fn the_built_in_styles_are_read_with_no_user_data_folder() {
+    let built_in = builtins();
+    assert!(!built_in.is_empty());
+    assert_eq!(built_in.len(), builtin_styles().len());
+    assert!(built_in.iter().all(|style| style.builtin.is_some()));
 }
 
 /// The styles of the tests: two in Film, one alone, and one a newer Apertrust made.
@@ -188,7 +199,7 @@ fn a_file_s_entries_are_read_as_tools_and_a_newer_one_left_out() {
     stored.entries = vec![entry("grain", "2"), entry("grain-of-the-future", "1")];
     files::write(&folder, &stored, "0.1.0").unwrap();
     let words = Translator::new(Locale::EnGb);
-    let read = read(&folder, TOOLS, &words);
+    let read = read(Some(&folder), TOOLS, &words);
     let own: Vec<&Listed> = read.iter().filter(|s| s.builtin.is_none()).collect();
     let [warm] = own.as_slice() else {
         panic!("one style: {read:?}");
@@ -203,7 +214,7 @@ fn a_file_s_entries_are_read_as_tools_and_a_newer_one_left_out() {
     let mut future = files::Stored::new(Kind::Style, "Future");
     future.entries = vec![entry("grain-of-the-future", "1")];
     files::write(&folder, &future, "0.1.0").unwrap();
-    let read = super::read(&folder, TOOLS, &words);
+    let read = super::read(Some(&folder), TOOLS, &words);
     let future = read.iter().find(|style| style.name == "Future").unwrap();
     assert_eq!((future.tools.as_ref(), future.left_out.len()), (None, 1));
     assert_eq!(parked(future, &words), "Made by a newer Apertrust");
@@ -303,6 +314,8 @@ struct Drawn {
     photos: usize,
     /// Whether the active photo's styles can be cleared, as it takes edits.
     clearable: bool,
+    /// Whether the app has a user data folder to copy a built-in into.
+    custom: bool,
     actions: Vec<Action>,
 }
 
@@ -339,6 +352,7 @@ fn drawn_with(which: Builtin, state: Drawn, alerts: bool) -> Harness<'static, Dr
                     alerts,
                     photos: state.photos,
                     clearable: state.unavailable.is_none() && state.clearable,
+                    custom: state.custom,
                 };
                 let head = Head {
                     open: true,
@@ -364,6 +378,7 @@ fn with_photo() -> Drawn {
         unavailable: None,
         photos: 1,
         clearable: true,
+        custom: true,
         actions: Vec::new(),
     }
 }
@@ -525,6 +540,7 @@ fn find_style_searches_both_roots_and_hides_one_with_no_match() {
             alerts: true,
             photos: 1,
             clearable: true,
+            custom: true,
         };
         let words = Translator::new(Locale::EnGb);
         let (nodes, _) = tool.nodes(find, &words);
@@ -583,6 +599,7 @@ fn return_applies_the_first_style_the_tree_shows() {
             alerts: true,
             photos: 1,
             clearable: true,
+            custom: true,
         };
         let words = Translator::new(Locale::EnGb);
         tool.first_shown(&kept.find, &words)
@@ -933,6 +950,31 @@ fn each_built_in_style_reads_back_to_its_darktable_preset_control_by_control() {
             }
         }
     }
+}
+
+/// With no user data folder, a built-in's Copy to Custom Styles… is disabled, saying why.
+#[test]
+fn with_no_user_data_folder_a_built_in_is_not_copied() {
+    let state = Drawn {
+        listed: builtins(),
+        custom: false,
+        ..with_photo()
+    };
+    let mut harness = drawn(Builtin::Dark, state);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::TreeItem, "Lomo")
+        .focus();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::F10);
+    harness.run();
+    let copy = harness.get_by_role_and_label(Role::MenuItem, "Copy to Custom Styles…");
+    let node = copy.accesskit_node();
+    assert!(node.is_disabled());
+    assert_eq!(
+        node.description().as_deref(),
+        Some("No user data folder to copy it into")
+    );
 }
 
 /// A built-in style applies with its file recorded as built in, and clears by its name;
