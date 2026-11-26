@@ -439,6 +439,8 @@ Every event names the open or close it is about in its `open` field, read by `Li
 
 **A `Thumbnail`** is 8-bit RGBA, rows top to bottom, four bytes a pixel, upright: its `width`, `height` and `pixels`, an `Arc<[u8]>`, so the event's copies cost nothing.
 
+**A photo's facts,** what the Metadata tool summarises of several photos (decision 110), are an `ops::Shot`: its `Exif`, ISO, developed and sensor sizes, format, the camera's names and its size on disk, from one parse of its metadata (`Shot::read`, `RawFile::metadata`). They are not read with the capture times: the open reads the EXIF alone (`read_exif_file`), and a photo's facts are read when a summary first needs them, then kept by the session for the next ([events.md](events.md), `Summary`). Measured on the M4 in a release build, one file at a time (`tests/facts.rs`): over the raw corpus's 42 files on its SSD, the facts take 14 to 15 ms a file against 2 ms for the EXIF alone (6 to 7 times as long), and 30 to 36 ms against 1.2 ms read a second time (26 to 30 times); over SMB, 125 raws on a NAS, 535 to 550 ms against 521 to 526 ms (1.03 to 1.05 times), the network's time either way. So the open stays light, the facts cost only the summaries that need them, and a saved cache of them is planned with the saved index (Phase 5).
+
 **A `Photo`** has the raw's file `name`, its `size` in bytes, its `modified` time (`None` where the system gives none) and its `edit`, an `EditState`:
 
 | `EditState` | Meaning |

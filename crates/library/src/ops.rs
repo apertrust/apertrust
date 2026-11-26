@@ -42,6 +42,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_raw::DateTime;
+use apertrust_raw::{Exif, RawFile, RawImage};
 
 use crate::fields::Rating;
 use crate::index::{Index, READERS, Sidecar};
@@ -203,6 +204,66 @@ impl fmt::Debug for Thumbnail {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // The pixels are too many to print.
         write!(f, "Thumbnail({}×{})", self.width, self.height)
+    }
+}
+
+/// The facts of one photo the Metadata tool describes (decision 110): what one parse of
+/// its metadata gives ([`apertrust_raw::RawFile::metadata`]), read when a summary needs
+/// them, never with the folder's capture times, which read the EXIF alone.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shot {
+    /// Its EXIF; every field unread where it cannot be read.
+    pub exif: Exif,
+    /// Its ISO by darktable's rule, as the decoder reads it.
+    pub iso: Option<f32>,
+    /// The size it develops to ([`RawImage::developed_size`]), and the sensor's readout.
+    pub size: [u32; 2],
+    pub sensor: [u32; 2],
+    /// Its format, as `apertrust_raw` names it ("ARW", "DNG").
+    pub format: String,
+    /// The camera's maker and model as the decoder spells them, for a raw whose EXIF names
+    /// none.
+    pub make: String,
+    pub alias: String,
+    /// Its size on disk, in bytes.
+    pub file_size: u64,
+}
+
+// Its numbers are EXIF's rationals and the decoder's, never NaN.
+impl Eq for Shot {}
+
+impl Shot {
+    /// The facts of `raw`, read with no pixels, its `exif`, none where it cannot be read,
+    /// and its file's size.
+    pub fn of(raw: &RawImage, exif: Option<Exif>, file_size: u64) -> Shot {
+        let size = raw.developed_size();
+        Shot {
+            exif: exif.unwrap_or_else(Exif::unread_all),
+            iso: raw.iso.filter(|iso| *iso > 0.0),
+            size: [size.width, size.height],
+            sensor: [raw.width, raw.height],
+            format: raw.format.to_owned(),
+            make: raw.camera.make.clone(),
+            alias: raw.camera.alias.clone(),
+            file_size,
+        }
+    }
+
+    /// The facts of the raw at `path`, from one read of its metadata: a blocking call, made
+    /// off the interface thread. None where it cannot be read or its reading panics, and
+    /// for a cloud file not on the disk, which is not read ([`raw_state`]).
+    pub fn read(path: &Path) -> Option<Shot> {
+        if raw_state(path).is_some_and(|state| !state.local) {
+            return None;
+        }
+        #[cfg(any(test, feature = "testing"))]
+        crate::testing::read(path);
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            let file = RawFile::open(path).ok()?;
+            let (raw, exif) = file.metadata().ok()?;
+            Some(Shot::of(&raw, exif, file.size()))
+        }))
+        .unwrap_or(None)
     }
 }
 

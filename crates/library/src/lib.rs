@@ -36,6 +36,7 @@ pub mod listing;
 pub mod ops;
 pub mod presets;
 pub mod sidecar;
+pub mod summary;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod walk;
