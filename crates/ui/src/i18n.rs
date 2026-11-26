@@ -1421,8 +1421,9 @@ mod tests {
                 // What a group's list in the cursors' well holds.
                 args.set("has", "both");
                 args.set("how", "Click a neutral area, or drag one");
-                // The toolbar menu's Hide, naming its item.
+                // The toolbar menu's Hide, naming its item, and the customise mode's lines.
                 args.set("item", "Undo");
+                args.set("workspace", "Default");
                 // A style's history steps (decision 106).
                 args.set("style", "Warm film");
                 // A style on several photos: the photos it changed, and its notice's skipped

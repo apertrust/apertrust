@@ -425,6 +425,27 @@ toolbar-menu-hide = Hide “{ $item }”
 # What screen readers hear once Hide has taken the item away.
 toolbar-item-hidden = { $item } hidden
 toolbar-customise-later = Customise Toolbar comes in a later version
+# The Toolbar's customise mode (decision 92): its list box's name with nothing on it, and the
+# customise menu's items, which are also each item's actions for screen readers.
+toolbar-empty = Toolbar, empty
+action-toolbar-move-left = Move left
+action-toolbar-move-right = Move right
+action-toolbar-remove = Remove from toolbar
+action-toolbar-done = Done
+# The spacings' and the save state's names, which have no action's words.
+toolbar-space = Space
+toolbar-flexible-space = Flexible space
+toolbar-save-state = Save state
+# An item's tooltip in the customise mode, after its words; the line a fold mark adds, and its
+# description to screen readers.
+toolbar-customise-tip = Drag to move. Right-click for more
+toolbar-customise-marked = Under » at this width
+# What a drag's release does, beside the item lifted, $item the one it would stand after.
+toolbar-customise-release = Moves it after { $item }
+toolbar-customise-release-start = Moves it to the start
+# Done's tooltip, $workspace the workspace's name, and the line a newer build's file adds.
+toolbar-customise-done-tip = Saves this Toolbar for the { $workspace } workspace
+toolbar-customise-newer = A newer Apertrust saved this workspace, so these changes last until you quit
 # The save state at the Toolbar's end, which shows only when a save goes wrong:
 # Saving… while a write is still unconfirmed about two seconds after it started, as on a
 # slow network folder.

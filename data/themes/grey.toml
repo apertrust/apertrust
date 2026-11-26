@@ -176,3 +176,5 @@ shadow_spread = 1
 [motion]
 hover_ms = 80.0
 open_ms = 120.0
+# The Toolbar's items shimmying once as its customise mode starts (decision 92).
+wiggle_ms = 360.0

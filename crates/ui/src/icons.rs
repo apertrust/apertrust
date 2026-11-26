@@ -243,10 +243,13 @@ pub enum Icon {
     HardDriveFilled,
     KeyboardFilled,
     SparklesFilled,
+    /// Two arrows apart on a line: a flexible space's tile in the Toolbar's customise mode
+    /// (decision 92).
+    MoveHorizontal,
 }
 
 impl Icon {
-    pub const ALL: [Icon; 123] = [
+    pub const ALL: [Icon; 124] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -370,6 +373,7 @@ impl Icon {
         Icon::HardDriveFilled,
         Icon::KeyboardFilled,
         Icon::SparklesFilled,
+        Icon::MoveHorizontal,
     ];
 
     /// The icon's filled form, which shows a state: the chosen tab, an icon button that is
@@ -606,6 +610,7 @@ impl Icon {
             Icon::HardDriveFilled => derived!("hard-drive-filled", "hard-drive", 16.0),
             Icon::KeyboardFilled => derived!("keyboard-filled", "keyboard", 16.0),
             Icon::SparklesFilled => derived!("sparkles-filled", "sparkles", 16.0),
+            Icon::MoveHorizontal => derived!("move-horizontal", "move-horizontal", 14.0),
         }
     }
 

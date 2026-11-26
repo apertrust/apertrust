@@ -621,6 +621,8 @@ pub struct Elevation {
 pub struct Motion {
     pub hover_ms: f32,
     pub open_ms: f32,
+    /// The Toolbar's wiggle as its customise mode starts (decision 92).
+    pub wiggle_ms: f32,
 }
 
 #[derive(Debug, thiserror::Error)]
