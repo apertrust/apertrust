@@ -701,6 +701,7 @@ mod tests {
                         EditState::None
                     },
                     rating: Default::default(),
+                    fields: Default::default(),
                 })
                 .to_vec();
             let listed = LibraryEvent::Listed {
@@ -1598,6 +1599,7 @@ mod tests {
             modified: None,
             edit,
             rating: Default::default(),
+            fields: Default::default(),
         })
         .to_vec();
         f.m.apply(Event::Library(LibraryEvent::Listed {
@@ -1640,6 +1642,7 @@ mod tests {
                 modified: None,
                 edit: EditState::None,
                 rating: Default::default(),
+                fields: Default::default(),
             })
             .to_vec();
         f.m.apply(Event::Library(LibraryEvent::Listed {
@@ -1698,6 +1701,7 @@ mod tests {
             modified: None,
             edit: EditState::None,
             rating: Default::default(),
+            fields: Default::default(),
         };
         f.m.apply(Event::Library(LibraryEvent::Listed {
             open: 100,

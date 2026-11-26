@@ -262,6 +262,7 @@ mod tests {
                 modified: None,
                 edit: EditState::None,
                 rating: Default::default(),
+                fields: Default::default(),
             })
             .collect();
         for event in [

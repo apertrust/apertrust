@@ -28,6 +28,7 @@ use std::sync::Arc;
 use std::sync::mpsc::Sender;
 use std::time::{Duration, Instant};
 
+use apertrust_library::fields::Fields;
 use apertrust_library::ops::Shot;
 use apertrust_library::summary::{self, Facts, Summed};
 
@@ -48,6 +49,8 @@ pub(super) struct Known {
     pub edited: bool,
     /// `None` while its facts are not read yet; `Some(None)` where there are none.
     pub facts: Option<Option<Arc<Shot>>>,
+    /// Its fields, its first copy's name and its count of copies.
+    pub fields: Arc<Fields>,
 }
 
 impl Known {
@@ -60,6 +63,7 @@ impl Known {
             size: 0,
             edited: false,
             facts: Some(None),
+            fields: Arc::default(),
         }
     }
 
@@ -79,6 +83,7 @@ impl Known {
                 (_, Some(shot)) => Facts::Read(shot),
                 (Some(_), None) => Facts::Missing,
             },
+            fields: &self.fields,
         }
     }
 }

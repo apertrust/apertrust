@@ -29,18 +29,20 @@
 //! not arrived. Owned readers stop before their next read.
 //!
 //! A sidecar that cannot be read or parsed is that photo's alone to report
-//! ([`Sidecar::Unreadable`]); the rest are indexed. Each photo's rating is read with its
-//! sidecar, the first copy's ([`Edit::rating`]), or, for a photo with no `.apxmp`, from
-//! darktable's `.xmp` beside it on the same readers ([`Entry::darktable`], decision 110).
-//! Other metadata, and changes made outside, are planned.
+//! ([`Sidecar::Unreadable`]); the rest are indexed. Each photo's rating and fields are read
+//! with its sidecar, the first copy's, its name and the count of copies ([`Edit::rating`],
+//! [`Edit::fields`]), or, for a photo with no `.apxmp`, from darktable's `.xmp` beside it
+//! on the same readers ([`Entry::darktable`], decision 110). Changes made outside are
+//! planned.
 
 use std::io;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::mpsc::RecvTimeoutError;
 use std::time::{Duration, Instant};
 
-use crate::fields::Rating;
+use crate::fields::{Fields, Rating};
 use crate::sidecar::{Edits, Newer};
 
 use crate::listing::{Error, Event, FileStat, Folder, Listing, Options, Orphan, Photo, Summary};
@@ -82,6 +84,9 @@ pub struct Edit {
     pub view_only: Option<Newer>,
     /// The first virtual copy's rating, stars, reject and colour labels (decision 110).
     pub rating: Rating,
+    /// The first virtual copy's fields and name, and how many copies the photo has
+    /// (decision 110).
+    pub fields: Arc<Fields>,
 }
 
 /// One photo of the folder.
@@ -93,25 +98,35 @@ pub struct Entry {
     /// The sidecar's size and modified time, where it has one.
     pub file: Option<FileStat>,
     pub sidecar: Sidecar,
-    /// The rating darktable's `.xmp` gives a photo with no `.apxmp`, where it has one that
-    /// reads (decision 110); `None` for the rest.
-    pub darktable: Option<Rating>,
+    /// The rating and fields darktable's `.xmp` gives a photo with no `.apxmp`, its version
+    /// name the copy's, where it has one that reads (decision 110); `None` for the rest.
+    pub darktable: Option<(Rating, Arc<Fields>)>,
 }
 
 impl Entry {
     /// The photo's rating: its sidecar's, else darktable's, else none.
     pub fn rating(&self) -> Rating {
-        match &self.sidecar {
-            Sidecar::Read(edit) => edit.rating,
-            _ => self.darktable.unwrap_or_default(),
+        match (&self.sidecar, &self.darktable) {
+            (Sidecar::Read(edit), _) => edit.rating,
+            (_, Some((rating, _))) => *rating,
+            _ => Rating::default(),
+        }
+    }
+
+    /// The photo's fields: its sidecar's, else darktable's, else none.
+    pub fn fields(&self) -> Arc<Fields> {
+        match (&self.sidecar, &self.darktable) {
+            (Sidecar::Read(edit), _) => Arc::clone(&edit.fields),
+            (_, Some((_, fields))) => Arc::clone(fields),
+            _ => Arc::default(),
         }
     }
 }
 
-/// What one read of the build gives: a sidecar's, or darktable's rating.
+/// What one read of the build gives: a sidecar's, or darktable's rating and fields.
 enum Read {
     Sidecar(Sidecar),
-    Darktable(Option<Rating>),
+    Darktable(Option<(Rating, Arc<Fields>)>),
 }
 
 /// What an index counted of the photos' sidecars.
@@ -234,7 +249,7 @@ fn build(
             let photo = &mut photos[to_read[at].0];
             match read {
                 Read::Sidecar(sidecar) => photo.sidecar = sidecar,
-                Read::Darktable(rating) => photo.darktable = rating,
+                Read::Darktable(read) => photo.darktable = read,
             }
         }
         cancelled = stopped;
@@ -316,7 +331,7 @@ pub fn read_one(path: &Path) -> Sidecar {
 }
 
 /// Reads one file of the build: an `.apxmp`, as [`read_sidecar`] does, or darktable's
-/// `.xmp`, for its rating alone; one that cannot be read or is no XMP gives no rating.
+/// `.xmp`, for its rating and fields; one that cannot be read or is no XMP gives none.
 fn read_one_of(path: &Path, reader: &impl Fn(&Path) -> io::Result<Vec<u8>>) -> Read {
     if path
         .as_os_str()
@@ -327,7 +342,10 @@ fn read_one_of(path: &Path, reader: &impl Fn(&Path) -> io::Result<Vec<u8>>) -> R
     }
     let read = reader(path).ok();
     let fields = read.and_then(|bytes| crate::darktable::parse_bytes(path, &bytes));
-    Read::Darktable(fields.map(|read| Rating::of(&read.fields)))
+    Read::Darktable(fields.map(|read| {
+        let fields = Fields::held(&read.fields, &read.name, 1);
+        (Rating::of(&read.fields), Arc::new(fields))
+    }))
 }
 
 /// Reads one sidecar: its bytes, their hash and what [`crate::sidecar`] makes of them.
@@ -355,6 +373,7 @@ fn parse_sidecar(bytes: &[u8]) -> Sidecar {
                 rating: (edits.copies.first())
                     .map(|copy| Rating::of(&copy.fields))
                     .unwrap_or_default(),
+                fields: Arc::new(Fields::of(&edits.copies)),
             })
         }
         Err(error) => Sidecar::Unreadable(error.to_string()),

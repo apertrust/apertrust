@@ -311,6 +311,9 @@ pub enum TypedError {
     /// The rating's stars or labels, which [`RatingChange`] sets.
     #[error("set by a rating, not typed")]
     NotTyped,
+    /// A value given as it is that is no value of its field's kind.
+    #[error("not a value of its kind")]
+    WrongKind,
 }
 
 /// What a list's items are typed and shown with between them.
@@ -650,6 +653,51 @@ pub fn join_name(ours: &VirtualCopy, theirs: &VirtualCopy) -> (String, Option<Cl
         (theirs.name.clone(), theirs.name_clock)
     } else {
         (ours.name.clone(), ours.name_clock)
+    }
+}
+
+/// What a photo's first copy holds beside its edit for the Metadata tool, as a listing
+/// reads it with its sidecar and a summary of several photos compares it (decision 110):
+/// each field holding a value, but the rating's, by its property, in the order of the
+/// properties; the copy's name, empty for none; and how many copies the photo has.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Fields {
+    pub values: Vec<(String, FieldValue)>,
+    pub name: String,
+    pub copies: usize,
+}
+
+impl Fields {
+    /// What `copies` hold, the first's fields and name: nothing where there is none.
+    pub fn of(copies: &[VirtualCopy]) -> Fields {
+        let Some(first) = copies.first() else {
+            return Fields::default();
+        };
+        Fields::held(&first.fields, &first.name, copies.len())
+    }
+
+    /// What a copy of `copies` holds with `entries` and `name`.
+    pub fn held(entries: &[FieldEntry], name: &str, copies: usize) -> Fields {
+        let values = (entries.iter())
+            .filter(|entry| !is_rating(&entry.field))
+            .filter_map(|entry| Some((entry.field.clone(), entry.value.clone()?)))
+            .collect();
+        Fields {
+            values,
+            name: name.to_owned(),
+            copies,
+        }
+    }
+
+    /// The value `property` holds, or with [`COPY_NAME`] the copy's name as text, as
+    /// [`value_in`] reads a copy; `None` where it holds none.
+    pub fn value(&self, property: &str) -> Option<FieldValue> {
+        match property {
+            COPY_NAME => (!self.name.is_empty()).then(|| FieldValue::Text(self.name.clone())),
+            _ => (self.values.iter())
+                .find(|(field, _)| field == property)
+                .map(|(_, value)| value.clone()),
+        }
     }
 }
 

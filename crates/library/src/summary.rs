@@ -14,11 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The Metadata tool's facts of several photos at once (decision 110): for each fact row,
-//! the value the photos share, a range or a total where it helps, or how they differ.
-//! [`build`] is a pure function over each photo's listing and its [`Shot`]; it knows
-//! nothing of the engine, the tools or the interface, its keys the row ids ([`FACTS`]),
-//! and its values typed, never words, which the client writes in its language.
+//! The Metadata tool's facts and fields of several photos at once (decision 110): for each
+//! fact row, the value the photos share, a range or a total where it helps, or how they
+//! differ; for each field, by its property, and the copy's name, the value they share,
+//! none, or their values with how many photos hold each ([`FieldSummary`]). [`build`] is a
+//! pure function over each photo's listing, its [`Shot`] and its [`Fields`]; it knows
+//! nothing of the engine, the tools or the interface, its keys the row ids ([`FACTS`]) and
+//! the fields' properties, and its values typed, never words, which the client writes in
+//! its language.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -27,6 +30,7 @@ use std::sync::Arc;
 use apertrust_raw::DateTime;
 use serde::{Deserialize, Serialize};
 
+use crate::fields::{self, COPY_NAME, FieldKind, FieldValue, Fields};
 use crate::ops::Shot;
 
 /// The fact rows a summary describes, by the ids the Metadata tool's declaration gives
@@ -92,7 +96,8 @@ pub const FACTS: &[&str] = &[
 /// photos' values differ.
 const RANGES: &[&str] = &["date_taken", "exposure_time", "aperture", "iso"];
 
-/// How many of the most common values a [`FactSummary::Different`] keeps.
+/// How many of the most common values a [`FactSummary::Different`] and a
+/// [`FieldSummary::Different`] keep.
 const KEPT: usize = 10;
 
 /// One selected photo as [`build`] reads it: its listing, and its facts as far as read.
@@ -104,6 +109,8 @@ pub struct Summed<'a> {
     pub size: u64,
     pub edited: bool,
     pub facts: Facts<'a>,
+    /// Its fields, as its listing read them or the session wrote them since.
+    pub fields: &'a Fields,
 }
 
 /// How far a photo's facts are read.
@@ -175,13 +182,34 @@ pub enum FactSummary {
     Waiting { read: usize, of: usize },
 }
 
-/// What [`build`] gives: each row of [`FACTS`] by its id.
+/// What the photos hold of one field (decision 110).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum FieldSummary {
+    /// Every photo holds it, the same.
+    Same(FieldValue),
+    /// No photo holds it.
+    Empty,
+    /// The photos differ, or some hold none: the ten most common values with their counts,
+    /// most common first, ties by the value as shown; how many values more; how many
+    /// photos hold none.
+    Different {
+        values: Vec<(FieldValue, usize)>,
+        more: usize,
+        empty: usize,
+    },
+}
+
+/// What [`build`] gives: each row of [`FACTS`] by its id, and each field the Metadata tool
+/// edits by its property ([`fields::FIELDS`]).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Summary {
     /// How many photos it describes.
     pub photos: usize,
     #[serde(deserialize_with = "apertrust_base::wire::id::pairs")]
     facts: Vec<(&'static str, FactSummary)>,
+    #[serde(deserialize_with = "apertrust_base::wire::id::pairs")]
+    fields: Vec<(&'static str, FieldSummary)>,
 }
 
 impl Summary {
@@ -192,6 +220,24 @@ impl Summary {
             .find(|(row, _)| *row == id)
             .map(|(_, f)| f)
     }
+
+    /// The field `property`'s summary, the copy's name by [`COPY_NAME`]; none for a
+    /// property [`summed_fields`] lacks.
+    pub fn field(&self, property: &str) -> Option<&FieldSummary> {
+        self.fields
+            .iter()
+            .find(|(field, _)| *field == property)
+            .map(|(_, f)| f)
+    }
+}
+
+/// The fields a summary describes, by their properties: every field of
+/// [`fields::FIELDS`] but the rating's, then the copy's name.
+pub fn summed_fields() -> impl Iterator<Item = &'static str> {
+    (fields::FIELDS.iter())
+        .filter(|def| !fields::is_rating(def.property))
+        .map(|def| def.property)
+        .chain(std::iter::once(COPY_NAME))
 }
 
 /// The summary of `photos`, each row of [`FACTS`] in turn.
@@ -229,9 +275,45 @@ pub fn build(photos: &[Summed<'_>]) -> Summary {
             (*id, summary)
         })
         .collect();
+    let fields = summed_fields()
+        .map(|property| (property, of_field(property, photos)))
+        .collect();
     Summary {
         photos: photos.len(),
         facts,
+        fields,
+    }
+}
+
+/// The field `property` over `photos`.
+fn of_field(property: &str, photos: &[Summed<'_>]) -> FieldSummary {
+    // A bag's items in any order are one value; a sequence keeps its order.
+    let bag = fields::field(property).is_some_and(|def| def.kind == FieldKind::Bag);
+    let mut held: HashMap<FieldValue, usize> = HashMap::new();
+    let mut empty = 0;
+    for photo in photos {
+        match photo.fields.value(property) {
+            Some(FieldValue::List(mut items)) if bag => {
+                items.sort();
+                *held.entry(FieldValue::List(items)).or_insert(0) += 1;
+            }
+            Some(value) => *held.entry(value).or_insert(0) += 1,
+            None => empty += 1,
+        }
+    }
+    let mut counts: Vec<(FieldValue, usize)> = held.into_iter().collect();
+    match counts.len() {
+        0 => return FieldSummary::Empty,
+        1 if empty == 0 => return FieldSummary::Same(counts.remove(0).0),
+        _ => {}
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.shown().cmp(&b.0.shown())));
+    let more = counts.len().saturating_sub(KEPT);
+    counts.truncate(KEPT);
+    FieldSummary::Different {
+        values: counts,
+        more,
+        empty,
     }
 }
 

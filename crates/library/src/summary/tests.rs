@@ -20,6 +20,7 @@ use std::time::Instant;
 use apertrust_raw::Exif;
 
 use super::*;
+use crate::fields::FieldValue;
 
 /// A photo's facts: a Ricoh GR IV's, with `change` made to its EXIF.
 fn shot(change: impl FnOnce(&mut Exif)) -> Arc<Shot> {
@@ -59,6 +60,7 @@ fn taken(day: u8, hour: u8, year: u16) -> DateTime {
 fn summary(shots: &[Facts<'_>]) -> Summary {
     let folder = PathBuf::from("/photos");
     let names: Vec<String> = (0..shots.len()).map(|n| format!("R{n:04}.DNG")).collect();
+    let none = Fields::default();
     let photos: Vec<Summed<'_>> = (shots.iter().zip(&names))
         .map(|(facts, name)| Summed {
             name,
@@ -66,9 +68,96 @@ fn summary(shots: &[Facts<'_>]) -> Summary {
             size: 10,
             edited: false,
             facts: *facts,
+            fields: &none,
         })
         .collect();
     build(&photos)
+}
+
+/// The summary of photos holding `fields`, their facts not read yet.
+fn of_fields(fields: &[Fields]) -> Summary {
+    let folder = PathBuf::from("/photos");
+    let photos: Vec<Summed<'_>> = (fields.iter())
+        .map(|fields| Summed {
+            name: "R0000.DNG",
+            folder: &folder,
+            size: 10,
+            edited: false,
+            facts: Facts::Waiting,
+            fields,
+        })
+        .collect();
+    build(&photos)
+}
+
+/// A photo's fields: its title, where it has one, and its copy's name.
+fn titled(title: Option<&str>, name: &str) -> Fields {
+    let text = |text: &str| FieldValue::LangAlt(vec![("x-default".to_owned(), text.to_owned())]);
+    Fields {
+        values: title
+            .map(|title| ("dc:title".to_owned(), text(title)))
+            .into_iter()
+            .collect(),
+        name: name.to_owned(),
+        copies: 1,
+    }
+}
+
+/// Each field over several photos: the same where every photo holds one value, empty
+/// where none holds any, else each value with its count, most common first, at most ten,
+/// how many more and how many photos hold none; the copy's name the same way.
+#[test]
+fn fields_are_the_same_empty_or_different_with_their_counts() {
+    let same = of_fields(&[titled(Some("Alfama"), "B&W"), titled(Some("Alfama"), "B&W")]);
+    let title = |text: &str| FieldValue::LangAlt(vec![("x-default".to_owned(), text.to_owned())]);
+    assert_eq!(
+        same.field("dc:title"),
+        Some(&FieldSummary::Same(title("Alfama")))
+    );
+    assert_eq!(
+        same.field(COPY_NAME),
+        Some(&FieldSummary::Same(FieldValue::Text("B&W".to_owned())))
+    );
+    assert_eq!(same.field("dc:description"), Some(&FieldSummary::Empty));
+    // The rating's fields are no field of the tool's.
+    assert_eq!(same.field(fields::RATING), None);
+
+    let mut photos = vec![
+        titled(Some("Alfama"), ""),
+        titled(Some("Belém"), ""),
+        titled(Some("Alfama"), ""),
+        titled(None, ""),
+    ];
+    let different = of_fields(&photos);
+    assert_eq!(
+        different.field("dc:title"),
+        Some(&FieldSummary::Different {
+            values: vec![(title("Alfama"), 2), (title("Belém"), 1)],
+            more: 0,
+            empty: 1,
+        })
+    );
+    assert_eq!(different.field(COPY_NAME), Some(&FieldSummary::Empty));
+
+    // Twelve titles: the ten most common, ties by the value, and two more.
+    photos = (0..12)
+        .map(|n| titled(Some(&format!("T{n:02}")), ""))
+        .chain([titled(Some("T11"), "")])
+        .collect();
+    let Some(FieldSummary::Different {
+        values,
+        more,
+        empty,
+    }) = of_fields(&photos).field("dc:title").cloned()
+    else {
+        panic!("twelve titles differ");
+    };
+    let shown: Vec<(String, usize)> = (values.iter())
+        .map(|(value, count)| (value.shown(), *count))
+        .collect();
+    assert_eq!(shown[0], ("T11".to_owned(), 2));
+    assert_eq!(shown[1], ("T00".to_owned(), 1));
+    assert_eq!((shown.len(), more, empty), (10, 2, 0));
 }
 
 fn keys(values: &[(FactValue, usize)]) -> Vec<(Key, usize)> {
@@ -265,4 +354,33 @@ fn ten_thousand_photos_are_summarised_within_the_budget() {
     assert_eq!(summary.photos, 10_000);
     let bound = if cfg!(debug_assertions) { 500 } else { 50 };
     assert!(took.as_millis() < bound, "{took:?}");
+}
+
+/// A bag's items in another order are the same value; a sequence's are not.
+#[test]
+fn a_bag_compares_its_items_in_any_order_and_a_sequence_in_its_own() {
+    let list = |property: &str, items: [&str; 2]| Fields {
+        values: vec![(
+            property.to_owned(),
+            FieldValue::List(items.map(str::to_owned).to_vec()),
+        )],
+        name: String::new(),
+        copies: 1,
+    };
+    let bag = of_fields(&[
+        list("dc:publisher", ["Agency", "Archive"]),
+        list("dc:publisher", ["Archive", "Agency"]),
+    ]);
+    assert!(matches!(
+        bag.field("dc:publisher"),
+        Some(FieldSummary::Same(_))
+    ));
+    let seq = of_fields(&[
+        list("dc:creator", ["Ana", "Rui"]),
+        list("dc:creator", ["Rui", "Ana"]),
+    ]);
+    assert!(matches!(
+        seq.field("dc:creator"),
+        Some(FieldSummary::Different { .. })
+    ));
 }

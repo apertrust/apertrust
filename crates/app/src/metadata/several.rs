@@ -502,6 +502,7 @@ mod tests {
         };
         let folder = Path::new("/photos");
         let names: Vec<String> = (0..12).map(|n| format!("R{n:02}.DNG")).collect();
+        let none = Default::default();
         let tip = |read: usize| {
             let photos: Vec<Summed<'_>> = (names.iter().enumerate())
                 .map(|(n, name)| Summed {
@@ -514,6 +515,7 @@ mod tests {
                     } else {
                         Facts::Waiting
                     },
+                    fields: &none,
                 })
                 .collect();
             let summary = build(&photos);
