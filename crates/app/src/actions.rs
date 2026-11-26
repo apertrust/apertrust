@@ -222,9 +222,6 @@ impl ActionId {
     /// Reset Toolbar: the workspace's file's `toolbar` list taken out, the Toolbar its
     /// build's default again (decision 92).
     pub const RESET_TOOLBAR: ActionId = ActionId("reset-toolbar");
-    /// The toolbar menu's Hide "X", taking the item its menu opened on out of the
-    /// workspace's list (decision 92).
-    pub const TOOLBAR_HIDE: ActionId = ActionId("toolbar-hide");
     pub const FULL_SCREEN: ActionId = ActionId("full-screen");
     /// File › Close: the folder or photo open.
     pub const CLOSE: ActionId = ActionId("close");
@@ -453,9 +450,6 @@ pub enum Intent {
     Menu,
     /// Toolbar Labels turned on or off, `toolbar.labels`, at once (decision 92).
     ToolbarLabels,
-    /// The item the toolbar menu opened on taken out of the workspace's Toolbar, run by
-    /// that menu alone (decision 92).
-    ToolbarHide,
     /// The workspace's file's `toolbar` list taken out, the Toolbar its build's default
     /// again (decision 92); while customising, the draft made the default.
     ResetToolbar,
@@ -704,9 +698,6 @@ pub struct State {
     /// Whether the Toolbar shows its words under its icons, which Toolbar Labels' item shows
     /// checked (decision 92).
     pub toolbar_labels: bool,
-    /// The Toolbar's item whose menu is open, by its id in the workspace's list, which Hide
-    /// takes out; none elsewhere, and it cannot run (decision 92).
-    pub toolbar_item: Option<&'static str>,
     /// Whether the workspace's file holds a `toolbar` list, which Reset Toolbar takes out
     /// (decision 92); while customising, whether the draft differs from the default or the
     /// file held a list.
@@ -1247,7 +1238,7 @@ const fn to_tab<const I: usize>(message: &'static str) -> Action {
 
 /// Every action, in the order a keyboard map lists them (`docs/gui.md`, The default
 /// keyboard map). Slider keys are not here: they are the slider's own (`SliderRow`).
-pub static ACTIONS: [Action; 177] = [
+pub static ACTIONS: [Action; 176] = [
     // About Apertrust, in the app menu on the Mac and in Help on Windows and Linux.
     Action {
         id: ActionId::ABOUT,
@@ -1927,15 +1918,6 @@ pub static ACTIONS: [Action; 177] = [
         emits: Emit::Intent(Intent::ToolbarLabels),
     },
     Action {
-        id: ActionId::TOOLBAR_HIDE,
-        message: "action-toolbar-hide",
-        keys: &[],
-        scope: Scope::App,
-        trigger: Trigger::Press,
-        available: |s| s.toolbar_item.is_some() && on_main_window(s) && !s.modal,
-        emits: Emit::Intent(Intent::ToolbarHide),
-    },
-    Action {
         id: ActionId::CUSTOMISE_TOOLBAR,
         message: "action-customise-toolbar",
         keys: &[],
@@ -1981,18 +1963,16 @@ pub static ACTIONS: [Action; 177] = [
         available: |s| s.customising,
         emits: Emit::Intent(Intent::ToolbarDone),
     },
-    // While the workspace's file holds a list, unless `--conf` sets the workspace, as a
-    // workspace then cannot be chosen.
+    // The customise mode's alone (decision 92), while the draft differs from the default or
+    // the file holds a list, unless `--conf` sets the workspace, as a workspace then cannot
+    // be chosen.
     Action {
         id: ActionId::RESET_TOOLBAR,
         message: "action-reset-toolbar",
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: |s| {
-            let customising = s.customising && !s.workspace_given && on_main_window(s);
-            s.toolbar_kept && (customising || workspace_available(s))
-        },
+        available: |s| s.customising && s.toolbar_kept && !s.workspace_given && on_main_window(s),
         emits: Emit::Intent(Intent::ResetToolbar),
     },
     // macOS keeps F11 for showing the desktop; its own full-screen keys come first there.
@@ -3769,7 +3749,6 @@ pub(crate) mod tests {
             dialog_window: false,
             full_screen: false,
             toolbar_labels: true,
-            toolbar_item: None,
             toolbar_kept: false,
             customising: false,
             toolbar_place: None,

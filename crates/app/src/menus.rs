@@ -478,8 +478,8 @@ static BROWSER_POSITION: Menu = Menu {
     ]],
 };
 
-/// View › Panels: the Toolbar's Toolbar Labels, Customise Toolbar… and Reset Toolbar,
-/// which the toolbar menu holds too (decision 92).
+/// View › Panels: the Toolbar's Toolbar Labels and Customise Toolbar…, which the toolbar
+/// menu holds too (decision 92). Reset Toolbar is the customise mode's alone.
 static PANELS: Menu = Menu {
     title: "menu-panels",
     role: Role::Plain,
@@ -487,7 +487,6 @@ static PANELS: Menu = Menu {
     groups: &[&[
         item(ActionId::TOOLBAR_LABELS),
         item(ActionId::CUSTOMISE_TOOLBAR),
-        item(ActionId::RESET_TOOLBAR),
     ]],
 };
 
@@ -883,7 +882,7 @@ pub enum Target {
     /// says they can.
     Job(actions::JobItems),
     /// The Toolbar, with the item its menu opened on, by its id in the workspace's list,
-    /// which Hide takes out; none on its empty areas (decision 92).
+    /// which Customise Toolbar… starts selected; none on its empty areas (decision 92).
     Toolbar { item: Option<&'static str> },
 }
 
@@ -1492,20 +1491,16 @@ fn built(
         let entries = match (place, target) {
             // An item's own menu first, where its action has one (decision 92).
             (Place::Toolbar, Target::Toolbar { item }) => {
-                let state = State {
-                    toolbar_item: *item,
-                    ..*state
-                };
                 let own = item.and_then(action_menu).map(|menu| {
                     let lists = Lists::default();
-                    let drawn = drawn(menu.own, os, keymap, &state, lists, &steps, tr);
+                    let drawn = drawn(menu.own, os, keymap, state, lists, &steps, tr);
                     keyless(drawn.entries)
                 });
                 let mut entries = own.unwrap_or_default();
                 if !entries.is_empty() {
                     entries.push(popup::Entry::Separator);
                 }
-                entries.extend(toolbar_items(keymap, &state, os, tr));
+                entries.extend(toolbar_items(keymap, state, os, tr));
                 entries
             }
             (Place::Toolbar, _) => toolbar_items(keymap, state, os, tr),
@@ -1635,13 +1630,10 @@ fn browser_items(
     entries
 }
 
-/// The toolbar menu (decision 92), on a right-click anywhere on the Toolbar: Hide "Undo"
-/// where it opened on an item, `state.toolbar_item`, named by its words, and only where it
-/// can run, then a line; then Toolbar Labels, checked while on, Customise Toolbar…, drawn
-/// disabled with its tip until its window is built, and Reset Toolbar, enabled while the
-/// workspace's file holds a list. The menu button is no item, so on it the menu has no
-/// Hide. Each item is its registry action's; none shows its keys, as context menus show
-/// none.
+/// The toolbar menu (decision 92), on a right-click anywhere on the Toolbar: Toolbar Labels,
+/// checked while on, and Customise Toolbar…. Nothing in it changes the arrangement, which,
+/// Reset Toolbar included, is the customise mode's alone. Each item is its registry
+/// action's; none shows its keys, as context menus show none.
 fn toolbar_items(
     keymap: &Keymap,
     state: &State,
@@ -1656,27 +1648,8 @@ fn toolbar_items(
             ..item
         })
     };
-    let hide = item(ActionId::TOOLBAR_HIDE).and_then(|hide| {
-        let words = crate::toolbar::words(state.toolbar_item?)?;
-        let mut args = Args::new();
-        args.set("item", tr.text(words));
-        let text = tr.text_with("toolbar-menu-hide", Some(&args));
-        Some(popup::Item { text, ..hide })
-    });
-    let mut entries: Vec<popup::Entry> = (hide.into_iter())
-        .filter(|item| item.enabled)
-        .map(Into::into)
-        .collect();
-    if !entries.is_empty() {
-        entries.push(popup::Entry::Separator);
-    }
-    let rest = [
-        ActionId::TOOLBAR_LABELS,
-        ActionId::CUSTOMISE_TOOLBAR,
-        ActionId::RESET_TOOLBAR,
-    ];
-    entries.extend(rest.into_iter().filter_map(item).map(Into::into));
-    entries
+    let items = [ActionId::TOOLBAR_LABELS, ActionId::CUSTOMISE_TOOLBAR];
+    items.into_iter().filter_map(item).map(Into::into).collect()
 }
 
 /// `entries` with no keys, as context menus show none, a submenu's too.
@@ -2482,13 +2455,13 @@ mod tests {
         // The cursors, chosen from the well and their keys (decision 104), Pan held.
         ActionId::CURSOR_SELECT,
         ActionId::CURSOR_PAN,
-        ActionId::TOOLBAR_HIDE,
         // The customise menu's own, which act on the Toolbar's customise mode alone
         // (decision 92).
         ActionId::TOOLBAR_MOVE_LEFT,
         ActionId::TOOLBAR_MOVE_RIGHT,
         ActionId::TOOLBAR_REMOVE,
         ActionId::TOOLBAR_DONE,
+        ActionId::RESET_TOOLBAR,
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -2585,7 +2558,6 @@ mod tests {
             dialog_window: false,
             full_screen: false,
             toolbar_labels: true,
-            toolbar_item: None,
             toolbar_kept: true,
             customising: false,
             toolbar_place: None,
@@ -4924,7 +4896,7 @@ mod tests {
 
     /// Decision 92: on Guides, the toolbar menu opens Guides' own menu first, named Guides:
     /// darktable's ten types, the one in use checked, a line, Flip ▸ with its four, a line,
-    /// then the toolbar menu's entries, Hide "Guides" first. None shows its keys. Elsewhere
+    /// then the toolbar menu's entries, Toolbar Labels first. None shows its keys. Elsewhere
     /// on the Toolbar it is the toolbar menu alone.
     #[test]
     fn guides_opens_its_own_menu_then_the_toolbar_menu() {
@@ -4953,11 +4925,8 @@ mod tests {
                     "—",
                     "Flip",
                     "—",
-                    "Hide “Guides”",
-                    "—",
                     "Toolbar labels",
                     "Customise toolbar…",
-                    "Reset toolbar",
                 ],
                 "{os:?}"
             );
@@ -5166,10 +5135,10 @@ mod tests {
         assert_eq!(toolbar_added("toolbar-add/undo"), Some("undo"));
     }
 
-    /// Decision 92: the toolbar menu, named Toolbar, holds Hide "X" on an item with words,
-    /// named by them, then a line; Toolbar Labels, checked while the labels are on; Customise
-    /// Toolbar…, enabled; and Reset Toolbar, enabled while the workspace's file holds a
-    /// list. None shows keys.
+    /// Decision 92: the toolbar menu, named Toolbar, holds Toolbar Labels, checked while the
+    /// labels are on, and Customise Toolbar…, enabled, the same on an item, on the empty
+    /// areas and on the menu button: no Hide and no Reset Toolbar, since arranging and its
+    /// reset are the customise mode's alone. None shows keys.
     #[test]
     fn the_toolbar_menu_holds_its_items_as_their_states_say() {
         let line = |id: &str, text: &str, enabled, checked, tip: &Option<String>| {
@@ -5191,7 +5160,6 @@ mod tests {
                     &None,
                 ),
                 line("customise-toolbar", "Customise toolbar…", true, None, &None),
-                line("reset-toolbar", "Reset toolbar", true, None, &None),
             ]
         };
         for labels in [true, false] {
@@ -5199,77 +5167,79 @@ mod tests {
                 toolbar_labels: labels,
                 ..everything()
             };
-            // On Undo, on Linux: every item.
+            // On Undo, on Linux, and on the empty areas, as on the menu button: the two.
             let menu = toolbar_menu(Some("undo"), &state, OperatingSystem::Nix);
             assert_eq!(menu.name, "Toolbar");
-            let mut all = vec![
-                line("toolbar-hide", "Hide “Undo”", true, None, &None),
-                line("-", "", false, None, &None),
-            ];
-            all.extend(rest(labels));
-            assert_eq!(toolbar_lines(&menu), all);
-            // On the empty areas, as on the menu button, no item: the three last alone.
+            assert_eq!(toolbar_lines(&menu), rest(labels));
             let menu = toolbar_menu(None, &state, OperatingSystem::Windows);
             assert_eq!(toolbar_lines(&menu), rest(labels));
         }
-        // On the Mac, a tool's item named by its words; an item with none, as the save
-        // state, has no Hide.
+        // On the Mac, on a tool's item and on the save state, the same two.
         let state = everything();
-        let mac = toolbar_menu(Some("tool-flip-rotate_cw"), &state, OperatingSystem::Mac);
-        let lines = toolbar_lines(&mac);
-        let ids: Vec<&str> = lines.iter().map(|(id, ..)| id.as_str()).collect();
-        assert_eq!(
-            ids,
-            [
-                "toolbar-hide",
-                "-",
-                "toolbar-labels",
-                "customise-toolbar",
-                "reset-toolbar"
-            ]
-        );
-        assert_eq!(lines[0].1, "Hide “Rotate 90° clockwise”");
-        let save = toolbar_menu(Some("save-state"), &state, OperatingSystem::Mac);
-        assert_eq!(toolbar_lines(&save), rest(state.toolbar_labels));
-        // Under a modal dialog nothing runs: Hide goes, and Toolbar Labels rests.
+        for item in ["tool-flip-rotate_cw", "save-state"] {
+            let mac = toolbar_menu(Some(item), &state, OperatingSystem::Mac);
+            assert_eq!(toolbar_lines(&mac), rest(state.toolbar_labels), "{item}");
+        }
+        // Under a modal dialog nothing runs: Toolbar Labels rests.
         let modal = State {
             modal: true,
             ..everything()
         };
         let lines = toolbar_lines(&toolbar_menu(Some("undo"), &modal, OperatingSystem::Nix));
         let ids: Vec<&str> = lines.iter().map(|(id, ..)| id.as_str()).collect();
-        assert_eq!(
-            ids,
-            ["toolbar-labels", "customise-toolbar", "reset-toolbar"]
-        );
+        assert_eq!(ids, ["toolbar-labels", "customise-toolbar"]);
         assert!(
             lines.iter().all(|(_, _, enabled, ..)| !enabled),
             "{lines:?}"
         );
     }
 
-    /// Decision 92: Reset Toolbar is enabled only while the workspace's file holds a
-    /// `toolbar` list, and disabled, saying why, while `--conf` sets the workspace, as
-    /// Workspace ▸'s items are.
+    /// Decision 92: Reset Toolbar is the customise mode's alone: in its menu, enabled only
+    /// while the draft differs from the default or the workspace's file holds a list, and
+    /// disabled, saying why, while `--conf` sets the workspace, as Workspace ▸'s items are;
+    /// at rest it never runs.
     #[test]
-    fn reset_toolbar_runs_only_with_a_kept_list() {
+    fn reset_toolbar_runs_only_while_customising_with_something_to_reset() {
+        let tr = Translator::new(Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Mac);
         let reset = |state: &State| {
-            let lines = toolbar_lines(&toolbar_menu(None, state, OperatingSystem::Mac));
-            let line = lines.into_iter().find(|(id, ..)| id == "reset-toolbar");
-            let (_, _, enabled, _, tip) = line.expect("Reset Toolbar");
-            (enabled, tip)
+            let request = customise(
+                &keymap,
+                state,
+                OperatingSystem::Mac,
+                &tr,
+                &[],
+                Rect::NOTHING,
+            );
+            let line = (request.entries.into_iter()).find_map(|entry| match entry {
+                popup::Entry::Item(item) if item.id == "reset-toolbar" => Some(item),
+                _ => None,
+            });
+            let item = line.expect("Reset Toolbar");
+            (item.enabled, item.tip)
         };
-        assert_eq!(reset(&everything()), (true, None));
-        let none = State {
-            toolbar_kept: false,
+        let customising = State {
+            customising: true,
+            modal: true,
+            dialog: true,
             ..everything()
         };
+        assert_eq!(reset(&customising), (true, None));
+        let none = State {
+            toolbar_kept: false,
+            ..customising
+        };
         assert_eq!(reset(&none), (false, None));
+        let at_rest = actions::action(ActionId::RESET_TOOLBAR).unwrap();
+        assert!(
+            !at_rest.enabled(&everything()),
+            "Reset Toolbar runs at rest"
+        );
         for kept in [true, false] {
             let given = State {
                 toolbar_kept: kept,
                 workspace_given: true,
-                ..everything()
+                ..customising
             };
             let (enabled, tip) = reset(&given);
             assert!(!enabled, "kept {kept}");
@@ -5279,9 +5249,9 @@ mod tests {
     }
 
     /// Decision 92: View › Panels, in View on every platform, holds the toolbar menu's
-    /// Toolbar Labels, checked from the state, Customise Toolbar…, disabled with its tip,
-    /// and Reset Toolbar, so each is reached without a right-click (decision 91), and no
-    /// Show Menu Button, since nothing hides the menu button.
+    /// Toolbar Labels, checked from the state, and Customise Toolbar…, so each is reached
+    /// without a right-click (decision 91); no Reset Toolbar, the customise mode's alone, and
+    /// no Show Menu Button, since nothing hides the menu button.
     #[test]
     fn view_panels_holds_the_toolbar_menu_s_items() {
         let ctx = egui::Context::default();
@@ -5318,7 +5288,6 @@ mod tests {
             let expected = vec![
                 ("toolbar-labels".into(), true, Some(false), None),
                 ("customise-toolbar".into(), true, None, None),
-                ("reset-toolbar".into(), true, None, None),
             ];
             assert_eq!(lines, expected, "{os:?}");
         }

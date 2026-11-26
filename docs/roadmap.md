@@ -408,7 +408,7 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 - [ ] Usability tests with photographers coming from darktable and from commercial raw editors.
 - [ ] Fixes to the interface from what the tests find (decision 1). From then on Apertrust evolves on its own (decision 2).
 - [ ] A click on an area picker moving its area, keeping its size, tried against a new area round the click ([pickers.md](pickers.md#open-questions)).
-- [ ] The Toolbar's customise mode, within the Toolbar (decision 92; [gui.md](gui.md#the-customise-mode)): the rest of the window dimmed, plates, spacing tiles, faces and a wiggle once, Done at its end, a drag along it, Alt+← and Alt+→, the customise menu with Add ▸, one line that scrolls with fold marks, a draft Done writes once; the toolbar menu at rest loses Hide, and Customise Toolbar… is enabled.
+- [x] The Toolbar's customise mode, within the Toolbar (decision 92; [gui.md](gui.md#the-customise-mode)): the rest of the window dimmed, plates, spacing tiles, faces and a wiggle once, Done at its end, a drag along it, Alt+← and Alt+→, the customise menu with Add ▸, one line that scrolls with fold marks, a draft Done writes once; the toolbar menu at rest loses Hide and Reset Toolbar, and Customise Toolbar… is enabled.
 - [ ] Import's later parts (decision 85): Adjustments with styles, and Filters' Date taken.
 - [ ] Whether an existing folder chosen as Import's destination, which stays for the next import as darktable's does, surprises anyone (decision 85).
 
