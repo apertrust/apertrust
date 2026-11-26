@@ -74,7 +74,7 @@ Between any two folders (Phase 3, step 19, with Rename and Delete), each a `User
 - **On one volume, a rename; across volumes, a checked copy:** each file is copied, read back past the system's cache and compared with its source's hash before any source file is removed. How to read past the cache on each platform, and its cost, is the step's spike: a 30 MB raw read back over the NAS's 84 MB/s takes about 0.36 s.
 - **Never replaces a file** at the destination; a cancel takes effect between photos.
 - **Albums:** Move to… out of a folder's tree counts the album entries in its `.apertrust/` that the move takes out, and says so before it runs.
-- **Import's Verify the copies,** later ([0085](0085-import-in-folder-mode.md)), shares the same checked copy.
+- **Import's copy is the same checked copy** ([0085](0085-import-in-folder-mode.md)), from its first slice; its Verify the copies (20b) is the read-back, and its Backup (20d) a second destination.
 - **Delete** sends photos with their sidecars to the system's trash.
 
 ### Libraries, optional
@@ -139,7 +139,7 @@ For a person trying the app, an archive that must never be touched, or a share t
 
 ### The interface
 
-- **The start window's ways in:** New Library…, a disabled placeholder until Phase 5, then making a Library; Open Folder…; Import… (planned, step 20a); with the recents.
+- **The start window's ways in:** New Library…, a disabled placeholder until Phase 5, then making a Library; Open Folder…; Import… (planned, step 20a2); with the recents.
 - **Collections' ＋:** New Library…, then Open Folder… and Open…. **Its ⋯** gains Keep Available Offline, Keep Edits on This Computer and Add to Library…, each with its step.
 - **No file is a library:** a `.aplibrary` dropped, opened or passed on the command line is refused as any file that is no raw.
 - **The words:** Folder, Library, Album, Smart album, Include subfolders, Move to…, Copy to…, Keep Available Offline, Keep Edits on This Computer, Add Folder…, Add to Library…, Save Library in a Folder… and Keep Library on This Computer. The code and docs add **folder record**, **home folder** and **folder tree**; the tree's root stays the folder opened in Collections. Never project, catalogue or film roll, nor workspace for a Library.

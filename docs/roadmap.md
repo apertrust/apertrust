@@ -348,8 +348,8 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [x] the preview's answer shown only for its latest request;
   - [ ] the preview sent only while the tool is in view, with `focus` once it covers the whole selection;
   - [x] Select › Previous Selection on Ctrl+Shift+D;
-  - [ ] Collections' Import…, opening the Import sheet.
-- [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)): the sheet bar, the Browser's grid with check boxes as its choosing and day headings, a column on the Tools panel's side holding the Import tool, the footer with Help, Keep open, Close and the primary button, its keys and modality, each tool kept to its place; the warning button and the path row's ⌄ among the setting rows; then Import's first slice (the library's step 20a).
+  - [ ] Collections' Import…, opening the Import sheet, with Import's 20a2 (the library's step 20).
+- [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)), built with Import's first slice (the library's step 20a1): the sheet bar, the Browser's grid with check boxes as its choosing, a column on the Tools panel's side holding the Import tool, the footer with Help, Close and the primary button, its keys and modality, each tool kept to its place; the warning button and the path row's ⌄ among the setting rows. Day headings and Keep open come with 20a2.
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
 - [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17).
 - [ ] Metadata in exported files, and styles applied on export.
@@ -359,6 +359,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
 The library's steps 10 to 20, 15b, 19b, 19c and 19d, [listed below](#the-librarys-steps) (decisions 46, 47, 52, 53 and 101), and metadata through the XMP layer (decision 50).
 
 - [x] Ratings, a reject and colour labels, set from the caption under the photo and its keys and written to the `.apxmp`, so photos can be culled in folder mode before the Library ([gui.md](gui.md#the-caption-under-the-photo)).
+- [ ] A camera card opened as a folder view-only, nothing written on it, with its banner, ahead of Import (#674, decision 85; [gui.md](gui.md#a-card-opened-as-a-folder)); the banner's Import… comes with Import's 20a1.
 - [ ] Keywords, in the Keywords tool; darktable's ratings, labels, keywords and metadata fields read from its XMP files.
 - [ ] The Metadata tool (decision 110; [gui.md](gui.md#the-metadata-tool)), darktable's image information and metadata editor in one, in eleven groups after EXIF and IPTC Core, one slice at a time:
   - [ ] 1: read-only for one photo, the active one: Basic but the copy's name, Camera, Exposure, Lens and GPS from the session's `Photo` and `apertrust-raw`'s EXIF, the IPTC groups closed and disabled, ＋'s Rows Shown, Ctrl+C and Copy Information; needing none of the library's steps;
@@ -384,7 +385,7 @@ The library's steps 10 to 20, 15b, 19b, 19c and 19d, [listed below](#the-library
 - [ ] Move to… and Copy to… between any two folders, a checked copy across volumes, verified before the original is removed; rename and delete, with their edits.
 - [ ] Include subfolders: a folder's photos with its subfolders', remembered per folder, search and filters following what the Browser shows.
 - [ ] A folder's own albums and smart albums, kept in a hidden `.apertrust/` at its top and travelling with it; Save as Smart Album.
-- [ ] Import by copy, as darktable's copy and import: a sheet of the card's photos beside the Import tool, those already imported told by the destination (decision 85; [gui.md](gui.md#the-import-sheet)).
+- [ ] Import by copy, as darktable's copy and import: a sheet of the card's photos beside the Import tool, those already imported told by the destination; the copies verified, a backup copy, and Eject at the job's end beside what is left on the card, "Nothing new is left" or the photos not copied (decision 85; [gui.md](gui.md#the-import-sheet)).
 
 ### Shortcuts
 
@@ -407,7 +408,8 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 - [ ] Usability tests with photographers coming from darktable and from commercial raw editors.
 - [ ] Fixes to the interface from what the tests find (decision 1). From then on Apertrust evolves on its own (decision 2).
 - [ ] A click on an area picker moving its area, keeping its size, tried against a new area round the click ([pickers.md](pickers.md#open-questions)).
-- [ ] Import's later parts (decision 85): Verify the copies, Eject the card, the Backup group after Destination (the same subfolders and names under another folder, each copy checked with step 19's verified copy), Adjustments with styles, and Filters' Date taken.
+- [ ] Import's later parts (decision 85): Adjustments with styles, and Filters' Date taken.
+- [ ] Whether an existing folder chosen as Import's destination, which stays for the next import as darktable's does, surprises anyone (decision 85).
 
 ## Mobile, after Phase 3
 
@@ -548,10 +550,18 @@ Decisions 46, 47, 52 to 55, 71, 76 and 101. Each step delivers one thing and is 
 - [ ] **Step 19b.** Include subfolders, from the tree's walk, the index in memory over the tree; off by default and remembered per folder; search and filters following what the Browser shows, "37 more photos in subfolders", the tree's walk's count, with the switch beside it.
 - [ ] **Step 19c.** A folder's albums in its `.apertrust/` (decision 101): one file each, nested, combining entry by entry, cycles resolved; nested `.apertrust/` folders shown under their folder's name; the Albums section; Add to Album; the album entries counted on Move to….
 - [ ] **Step 19d.** A folder's smart albums, after step 15b's Filters: darktable's collect rules, filters and sorts, and "in album"; the Smart albums section; Filters' Save as Smart Album into the folder's `.apertrust/`.
-- [ ] **Step 20.** Import… by copy in folder mode, darktable's copy & import on the Import sheet (decisions 85 and 86; [gui.md](gui.md#the-import-sheet), [library.md](library.md#import-in-folder-mode)), after steps 12 and 19 and the sheet frame, in three slices:
-  - [ ] 20a: Ctrl+I, File, the Toolbar's Import…, Collections' and the start window's; the Import sheet on the frame; the Browser's grid with its bar, the embedded thumbnails, the already-imported mark, day headings with their three-state check box, the new photos checked and the first active, Select new, all and none, Checked only, Sort and Zoom; the Import tool, its groups Source (places, folders, Include subfolders, a card's `DCIM` whole), Destination (Import name first, Folder with its ⌄'s default folder, the folder open and the one last imported into, Subfolder with its ⌄'s fixed choices), Naming and After import (Open the destination), Metadata and Filters drawn disabled; no free text: the sample path, new or existing folders and the date used in the rows' tooltips, the disabled rows' reasons, the problems as warning buttons with their fixes, the dates-mixed fix among them; ⋯'s Open Folder Instead; the counts of files not imported yet; already imported told by Folder's tree and the default folder's less the source, by size and camera name then fingerprint, nothing written on the card; `PreviewImport`; a cancellable `UserForeground` job, "Importing 120 of 214 photos", as darktable's `dt_control_import` (decision 57), copying in path order, whole or not at all and never overwriting, folders made as photos land and removed when left empty, the sidecars and darktable's `.xmp` carried, with its failures and Try again; the destination opened as the first photo lands and filled as they land, the photo edited closing, the notice with Back to …; a card opened as a folder view-only, its banner with Import…; raws only; `apertrust-cli import`;
-  - [ ] 20b: Metadata, with no initial rating by default; Filters; a raw and its JPEG as one cell, a JPEG left behind imported beside its raw; non-raws listed and copied (after steps 14, 15 and 17); the larger look while W is held;
-  - [ ] 20c: the Import tool's presets, Original names and By capture date built in, with the presets API every tool shares; Folder's ⌄'s recent base folders and recent folders and Subfolder's recent patterns; the card's dot on the Toolbar's Import… and When a card is connected.
+- [ ] **Step 20.** Import… by copy in folder mode, darktable's copy & import on the Import sheet (decisions 85 and 86; [gui.md](gui.md#the-import-sheet), [library.md](library.md#import-in-folder-mode)), in five slices, 20a1 to 20d:
+  - [ ] 20a1, the first, after step 19's checked copy and the card opened view-only (#674), not waiting on steps 10 and 12:
+    - the library's side, in `apertrust-library`: `ListSource` (a card's `DCIM` whole, or a folder; raws only), the already-imported check (the destination's and the default folder's trees, size and camera name then the fingerprint; nothing written on the card), `PreviewImport`, and the copy job on step 19's checked copy (whole or not at all, never overwriting, in path order, the sidecars and darktable's `.xmp` carried, cancellable, its failures and Try again);
+    - the CLI: `apertrust-cli import SOURCE [--folder DIR] [--subfolder PATTERN] [--name NAME] [--dry-run]`;
+    - the sheet frame (decision 86), built with it;
+    - the Import sheet: Ctrl+I, File › Import…, the Toolbar's Import… and the card banner's Import…; the grid with embedded thumbnails, check boxes, the already-imported mark, the new photos checked; Select new, all and none;
+    - the Import tool: Source (the volumes mounted when the sheet opens, and a folder), Destination (Import name, Folder at the default folder, Subfolder's fixed choices), Naming (original names), After import (open the destination); tooltips and warning buttons for the sample path and problems, a problem's field in `error` text with no outline; Return in Import name pressing Import; the later rows drawn disabled;
+    - the job: "Importing 120 of 214 photos" with Cancel; at its end the destination opens and the photo edited closes with its edit saved;
+  - [ ] 20a2, the rest of the sheet: the destination filled as photos land and After import's choices, When the import starts the default (after step 10); the notice with Back to …, and a diverged sidecar's edit kept as a second virtual copy (after step 12; until then such a photo is skipped and named); day headings, Checked only, Sort, Zoom and Keep open; the person's own places, Include subfolders and Select only new photos; Folder's ⌄ with the default folder and Into an existing folder; Keep original file name and File name, with the dates-mixed fix; ⋯'s Open Folder Instead; Collections' and the start window's Import…; the counts of files not imported; Settings › Import's four rows; the CLI's other flags (`SOURCE...`, `--file-name`, `--original-names`, `--date`, `--all`);
+  - [ ] 20b: Metadata, with no initial rating by default; Filters; a raw and its JPEG as one cell, a JPEG left behind imported beside its raw; non-raws listed and copied (after steps 14, 15 and 17); the larger look while W is held; Verify the copies, on by default if step 19's spike measures the read-back as cheap on a local SSD, else off;
+  - [ ] 20c: the Import tool's presets, Original names and By capture date built in, with the presets API every tool shares; Folder's ⌄'s recent base folders and recent folders and Subfolder's recent patterns; "imported before" also looked for in the recent base folders and the folders imported into, the counts' tooltip saying where it looked; the card's dot on the Toolbar's Import… and When a card is connected; the source checked again at the job's end, "Nothing new is left on EOS_DIGITAL", with Eject EOS_DIGITAL there and on the card's source row;
+  - [ ] 20d: Backup, a second destination on step 19's checked copy, the same subfolders and names under another folder; until then the Help topic `import` points to Copy to….
 
 **Phase 5, Libraries and the index across folders:**
 
@@ -572,7 +582,7 @@ Decisions 46, 47, 52 to 55, 71, 76 and 101. Each step delivers one thing and is 
 
 **Later:** the tool-by-tool merge, as a setting; tethering and import from a camera through libgphoto2, an exception to decision 5 decided when they are planned; the map, geotags and GPX, with the Photos tab's Location; scripting. **Later, if asked:** editable previews and local copies of raws kept elsewhere; cloud storage folders, behind a spike; the server with sync (decision 71), with changes pushed and merged tool by tool; the presence note, written only into an existing `.apertrust/`; carrying album entries on Move to…; videos listed; the watched folder, with tethering.
 
-**Spikes:** L1, listing, folded into step 7; L2, the index's engine, step 21; L3, cloud folders on macOS and Windows, before step 29; L4, two versions, the convergence harness built with step 12; the checked copy's read-back, with step 19.
+**Spikes:** L1, listing, folded into step 7; L2, the index's engine, step 21; L3, cloud folders on macOS and Windows, before step 29; L4, two versions, the convergence harness built with step 12; the checked copy's read-back, with step 19, which also sets Verify the copies' default (20b).
 
 ## The migrated tools
 
