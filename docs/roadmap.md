@@ -408,6 +408,7 @@ Goal: controls people find and predict, the first step on Apertrust's own way: u
 - [ ] Usability tests with photographers coming from darktable and from commercial raw editors.
 - [ ] Fixes to the interface from what the tests find (decision 1). From then on Apertrust evolves on its own (decision 2).
 - [ ] A click on an area picker moving its area, keeping its size, tried against a new area round the click ([pickers.md](pickers.md#open-questions)).
+- [ ] The Toolbar's customise mode, within the Toolbar (decision 92; [gui.md](gui.md#the-customise-mode)): the rest of the window dimmed, plates, spacing tiles, faces and a wiggle once, Done at its end, a drag along it, Alt+← and Alt+→, the customise menu with Add ▸, one line that scrolls with fold marks, a draft Done writes once; the toolbar menu at rest loses Hide, and Customise Toolbar… is enabled.
 - [ ] Import's later parts (decision 85): Adjustments with styles, and Filters' Date taken.
 - [ ] Whether an existing folder chosen as Import's destination, which stays for the next import as darktable's does, surprises anyone (decision 85).
 
@@ -474,7 +475,6 @@ Goal: reach and polish.
 - [ ] Tethering and import from a camera; later, if asked, a watched folder.
 - [ ] Later, if asked: a self-hosted server with sync (decision 71; [library.md](library.md#a-server)), a container on a NAS that the app optionally connects to, the originals and their sidecars in its folders, the desktop editing local copies and sending back only what changed; editable previews and local copies of raws kept elsewhere; cloud storage folders, behind a spike; a presence note; album entries carried by Move to…; videos listed.
 - [ ] More export formats as encoders allow.
-- [ ] The Customise Toolbar window, a dedicated window for arranging the toolbar, its menu item drawn disabled until then (decision 92).
 - [ ] Scripting, with darktable's action call by Apertrust's ids for the scripts the app runs (decision 98).
 - [ ] MIDI controllers and gamepads as input devices for shortcuts, on demand, through midir and gilrs (decision 98).
 
