@@ -607,6 +607,53 @@ fn undo_batch_from_a_view_only_photo_skips_it_and_takes_the_others_back() {
     remove(&active);
 }
 
+/// `UndoBatch` on the active photo while a later batch still has it to come: the later one
+/// applied there first, as before any command on the edit, so there, as on the others, the
+/// batch is under it, kept and named as changed since.
+#[test]
+fn undo_batch_catches_a_later_batch_up_first() {
+    let active = scratch("batch-undo-catch-up");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    driven.run([warm(40.0, &others)]);
+    until_let_go(&mut driven);
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    // Faded on both, its job holding the first's route; that photo opens.
+    driven.run([Command::ApplyStyle {
+        name: "Faded".to_owned(),
+        file: "Faded.apstyle".to_owned(),
+        mode: StyleMode::Append,
+        tools: vec![("soften".to_owned(), on("amount", 20.0))],
+        photos: others.clone(),
+    }]);
+    let faded = driven.engine.remembered.back().unwrap().batch.id;
+    let route = next_route(&mut driven);
+    assert_eq!(route.photo(), others[0].as_path());
+    driven.open(&others[0]);
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    let heard = until_ends(&mut driven, 2);
+    let taken = ends(&heard)
+        .into_iter()
+        .find(|(action, ..)| *action == BatchAction::TakenBack);
+    let Some((_, changed, skipped)) = taken else {
+        panic!("{heard:?}")
+    };
+    assert!(changed.is_empty(), "{changed:?}");
+    let since: Vec<_> = (skipped.iter())
+        .filter(|(_, skip)| *skip == Skip::ChangedSince)
+        .map(|(photo, _)| photo.clone())
+        .collect();
+    assert_eq!(since, others);
+    let open = driven.engine.open.as_ref().unwrap();
+    assert_eq!(batches(open.history.log()), [batch, faded]);
+    assert!(open.edit.tool("grain").is_some());
+    remove(&active);
+}
+
 /// `UndoBatch` while the active photo, one of the batch's, opens, its history read and its
 /// decode not done: not refused, that photo left to the job, which takes the batch back
 /// there once it is live.

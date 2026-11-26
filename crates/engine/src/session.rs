@@ -3974,7 +3974,7 @@ impl Engine {
                     tools,
                     photos,
                 } if !photos.is_empty() => {
-                    let caught = self.catch_up(&mut events);
+                    let caught = self.catch_up(None, &mut events);
                     let style = batch::Owned {
                         name,
                         file,
@@ -4044,7 +4044,7 @@ impl Engine {
                 Command::Rate { photos, change } => {
                     // Earlier batches still to come on the active photo first, in the
                     // order sent (decision 109).
-                    let caught = self.catch_up(&mut events);
+                    let caught = self.catch_up(None, &mut events);
                     render |= caught.render;
                     save |= caught.save;
                     let active = |photo: &PathBuf| {
@@ -4115,7 +4115,7 @@ impl Engine {
                     // so each photo's batches and changes land in the order sent (decision
                     // 109).
                     if on_edit(&command) {
-                        let caught = self.catch_up(&mut events);
+                        let caught = self.catch_up(None, &mut events);
                         render |= caught.render;
                         save |= caught.save;
                     }
