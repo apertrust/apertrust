@@ -882,6 +882,40 @@ fn undo_names_the_photos_a_batch_changed() {
     remove(&active);
 }
 
+/// The 65th batch forgets the first, which the open photo's Undo names: the history is told
+/// again, its Undo naming one photo, as after a restart.
+#[test]
+fn a_forgotten_batch_is_told_again_on_the_open_photo() {
+    let active = scratch("batch-forgotten");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let named = [vec![active.clone()], photos(&active, "other", 1)].concat();
+    driven.run([warm(40.0, &named)]);
+    let heard = until_let_go(&mut driven);
+    assert_eq!(undo_photos(&heard), Some(2), "{heard:?}");
+    // 63 more on a photo not on the disk: 64 remembered, the open photo's untold.
+    let missing = vec![active.with_file_name("missing.ARW")];
+    let events = driven.run((0..63).map(|_| warm(50.0, &missing)));
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert_eq!(undo_photos(&events), None, "{events:?}");
+    // With a command that tells the values, the history comes once, after them.
+    let events = driven.run([
+        warm(50.0, &missing),
+        Command::Hide {
+            tool: "grain".to_owned(),
+            hidden: true,
+        },
+    ]);
+    assert_eq!(undo_photos(&events), Some(1), "{events:?}");
+    let at = |fact: fn(&Event) -> bool| (events.iter()).position(fact);
+    let values = at(|event| matches!(event, Event::Values(_)));
+    let history = at(|event| matches!(event, Event::History(_)));
+    assert!(values.is_some() && values < history, "{events:?}");
+    let told = (events.iter()).filter(|event| matches!(event, Event::History(_)));
+    assert_eq!(told.count(), 1, "{events:?}");
+    remove(&active);
+}
+
 /// A batch job cancelled while still queued, every worker busy, ends without its body: the
 /// engine thread ends it, so the batch after it runs, and the cancelled one lands nowhere.
 #[test]

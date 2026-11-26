@@ -452,9 +452,13 @@ impl Engine {
         let what = (batch, change, BatchAction::Applied);
         let pending = Arc::new(Pending::new(what, self.applied, photos));
         // Remembered for its Undo across photos, the latest kept.
-        if self.remembered.len() == REMEMBERED {
-            self.remembered.pop_front();
-        }
+        let forgotten = match self.remembered.len() == REMEMBERED {
+            true => self
+                .remembered
+                .pop_front()
+                .map(|forgotten| forgotten.batch.id),
+            false => None,
+        };
         self.remembered.push_back(Arc::clone(&pending));
         let active = self.open.as_ref().map(|open| open.sidecar.clone());
         let mut effect = Effect::default();
@@ -466,8 +470,11 @@ impl Engine {
             events.extend(pending.end(false));
         } else {
             self.batches.push(pending);
-            events.extend(self.start_batches());
+            events.extend(self.start_waiting());
         }
+        // Undo or Redo over the batch forgotten names one photo now: told after the turn's
+        // values.
+        self.tell_again_over(forgotten.as_slice());
         Ok(effect)
     }
 
@@ -654,7 +661,16 @@ impl Engine {
     /// where none runs the first waiting started, a take-back's photos read as it starts, or
     /// ended at once where none is left to reach. Its `Ended` where it ends so, and the
     /// history told again where a batch ended, its Undo naming how many photos it changed.
+    /// Outside a turn's commands: within them, [`Self::start_waiting`].
     pub(super) fn start_batches(&mut self) -> Vec<Event> {
+        let mut events = self.start_waiting();
+        events.extend(self.history_event());
+        events
+    }
+
+    /// [`Self::start_batches`] within a turn's commands: the history marked to be told
+    /// again, which the turn tells after its values.
+    fn start_waiting(&mut self) -> Vec<Event> {
         let mut events = Vec::new();
         // The batches that ended, by id, as they are let go.
         let mut ended: Vec<BatchId> = Vec::new();
@@ -689,6 +705,14 @@ impl Engine {
             break;
         }
         // Undo or Redo over one that ended names another count of photos.
+        self.tell_again_over(&ended);
+        events
+    }
+
+    /// The history marked to be told again where the open photo's Undo or Redo moves over
+    /// one of `batches`, whose count of photos changed: one that ended, or one no longer
+    /// remembered.
+    fn tell_again_over(&mut self, batches: &[BatchId]) {
         let moving = |open: &Open| {
             let over = [
                 open.history.batch_moving(false),
@@ -696,15 +720,13 @@ impl Engine {
             ];
             over.into_iter()
                 .flatten()
-                .any(|batch| ended.contains(&batch))
+                .any(|batch| batches.contains(&batch))
         };
         if let Some(open) = &mut self.open
             && moving(open)
         {
             open.history.tell_again();
-            events.extend(self.history_event());
         }
-        events
     }
 
     /// The batch's job, `apply-style` or `undo-batch` on `UserForeground`, cancellable and
@@ -871,7 +893,7 @@ impl Engine {
         // Started by the engine thread once the batches before it end, its batch's job among
         // them.
         self.batches.push(moving);
-        events.extend(self.start_batches());
+        events.extend(self.start_waiting());
     }
 
     /// The `Changed` of the open photo, `photo`, a move of the batch `pending` reached: its
