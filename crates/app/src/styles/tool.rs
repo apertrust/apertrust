@@ -599,11 +599,12 @@ impl StylesTool<'_> {
         style.builtin.is_none() && self.listed.iter().filter(same).count() > 1
     }
 
-    /// The tree of the styles Find style leaves, and whether its folders are all open: its
-    /// two roots, titled in `words`, each drawn but while Find style finds none of its own.
-    fn nodes(&self, words: &Translator) -> (Vec<Node<'_>>, bool) {
-        let finding = !self.kept.find.trim().is_empty();
-        let (builtins, own): (Vec<&Listed>, Vec<&Listed>) = shown(self.listed, &self.kept.find)
+    /// The tree of the styles Find style's text `find` leaves, and whether its folders are
+    /// all open: its two roots, titled in `words`, each drawn but while Find style finds none
+    /// of its own.
+    fn nodes(&self, find: &str, words: &Translator) -> (Vec<Node<'_>>, bool) {
+        let finding = !find.trim().is_empty();
+        let (builtins, own): (Vec<&Listed>, Vec<&Listed>) = shown(self.listed, find)
             .into_iter()
             .partition(|style| style.builtin.is_some());
         let roots = [
@@ -626,10 +627,10 @@ impl StylesTool<'_> {
         finding || self.kept.open.contains(path)
     }
 
-    /// The first style the tree shows, in its order, a closed folder's hidden: what Return
-    /// in Find style applies.
-    fn first_shown(&self, words: &Translator) -> Option<&Listed> {
-        let (nodes, finding) = self.nodes(words);
+    /// The first style the tree shows with Find style's text `find`, in its order, a closed
+    /// folder's hidden: what Return in Find style applies.
+    fn first_shown(&self, find: &str, words: &Translator) -> Option<&Listed> {
+        let (nodes, finding) = self.nodes(find, words);
         fn walk<'a>(nodes: &[Node<'a>], open: &dyn Fn(&str) -> bool) -> Option<&'a Listed> {
             nodes.iter().find_map(|node| match node {
                 Node::Style(style) => Some(*style),
@@ -650,8 +651,10 @@ impl StylesTool<'_> {
         // of the focus on Return, as Find Tool…'s does.
         let had_focus = ui.memory(|m| m.has_focus(id));
         let field = ui.scope(|ui| Search::new("styles find", &name, &self.kept.find).show(ui));
-        if let Some(text) = field.inner {
-            actions.push(Action::Find(text));
+        // Its text now, changed this frame where it was, as a paste and Return together.
+        let find = field.inner.as_deref().unwrap_or(&self.kept.find);
+        if let Some(text) = &field.inner {
+            actions.push(Action::Find(text.clone()));
         }
         let focused = ui.memory(|m| m.has_focus(id));
         let down = || ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown));
@@ -663,7 +666,7 @@ impl StylesTool<'_> {
             ui.memory_mut(|m| m.request_focus(id));
             if self.unavailable.is_none()
                 && let Some(first) = self
-                    .first_shown(words)
+                    .first_shown(find, words)
                     .filter(|style| style.tools.is_some())
             {
                 actions.push(Action::Apply(first.file()));
@@ -692,7 +695,7 @@ impl StylesTool<'_> {
     /// The tree's rows, the first drawn, folder or style, taking the id ↓ in Find style
     /// gives the focus.
     fn tree(&self, ui: &mut egui::Ui, words: &Translator, actions: &mut Vec<Action>) {
-        let (nodes, finding) = self.nodes(words);
+        let (nodes, finding) = self.nodes(&self.kept.find, words);
         let mut first = Some(tree_entry());
         self.rows(ui, words, &nodes, (1, finding), &mut first, actions);
     }
