@@ -82,6 +82,12 @@ pub enum Reaction {
         through: u64,
         preview: Box<ExportPreview>,
     },
+    /// The session's summary of several photos for the Metadata tool, which keeps the
+    /// answer to its latest request (decision 110).
+    Summary {
+        through: u64,
+        summary: std::sync::Arc<apertrust_engine::session::facts::Summary>,
+    },
     /// The folder at this path opened: it joins the recent folders.
     FolderOpened(PathBuf),
     /// The folder at this path could not be opened: its entry in the recent folders says so.
@@ -199,6 +205,9 @@ pub struct Mirror {
     /// The open photo's rating (decision 110), as the session last told it, the latest by
     /// its `through`; none before it tells one.
     pub rating: Option<RatingState>,
+    /// How many batches on several photos have ended, which the Metadata tool asks again
+    /// after, their edits and ratings changing no selection.
+    pub batches_ended: u64,
     /// The orientation the session last reported for the photo, its frames', whatever change
     /// of Orientation is still pending, which `values` shows at once: what the zoom's
     /// retained centre turns with (`docs/gui.md`, The zoom's centre).
@@ -261,6 +270,7 @@ impl Mirror {
             selected: HashSet::new(),
             view: None,
             rating: None,
+            batches_ended: 0,
             orientation: crate::zoom::Orientation::default(),
             asked: Vec::new(),
             previous: None,
@@ -478,6 +488,14 @@ impl Mirror {
         })
     }
 
+    /// Whether the selection shown is the session's: no selection command sent and not yet
+    /// told, and as many photos shown as its last fact names. What the Metadata tool shows
+    /// of several photos is of the session's selection, so it waits for it.
+    pub fn selection_settled(&self) -> bool {
+        let selecting = (self.asked.iter()).any(|asked| matches!(asked.ask, Ask::Select(..)));
+        !selecting && self.selected_count() == self.selection.photos.len()
+    }
+
     /// Whether Previous Selection is sent and not yet told: the earlier selection the last
     /// fact says the session keeps may be the one it has just put back.
     pub fn previous_pending(&self) -> bool {
@@ -661,6 +679,7 @@ impl Mirror {
                 self.folder.edited(&photo, edited, true);
             }
             Event::Batch(ended @ BatchEvent::Ended { .. }) => {
+                self.batches_ended += 1;
                 reactions.push(Reaction::Batch(ended))
             }
             // The open photo's values, which replace the untouched ones in one apply; a
@@ -723,8 +742,10 @@ impl Mirror {
             }
             // The export's own record is for scripts and the CLI: no row is drawn from it.
             Event::Export { .. } => {}
-            // The Metadata tool asks for none yet.
-            Event::Summary { .. } => {}
+            // The Metadata tool keeps the answer to its latest request.
+            Event::Summary { through, summary } => {
+                reactions.push(Reaction::Summary { through, summary });
+            }
             // The folder took these in above.
             Event::Library(_) => {}
             // Taken in above, for Settings › Storage.

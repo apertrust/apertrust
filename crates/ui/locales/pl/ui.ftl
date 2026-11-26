@@ -1701,11 +1701,17 @@ tool-metadata-kind = Zapisuje metadane zdjęć, nigdy ich edycję
 metadata-copy-information = Kopiuj informacje
 metadata-copy-coordinates = Kopiuj współrzędne
 metadata-select-a-photo = Wybierz zdjęcie
-metadata-several-later = Kilka zdjęć pojawi się w jednej z kolejnych wersji
 metadata-fact-unread = Apertrust nie odczytuje jeszcze tego z plików { $format }
 metadata-folder-open = Ten folder jest otwarty
-metadata-rating-later = Oceny pojawią się w jednej z kolejnych wersji
-metadata-labels-later = Etykiety kolorów pojawią się w jednej z kolejnych wersji
+metadata-label-some = { $label } (niektóre zdjęcia)
+metadata-rejected = Odrzucone
+metadata-stars =
+    { $count ->
+        [0] Bez gwiazdek
+        [one] { $count } gwiazdka
+        [few] { $count } gwiazdki
+       *[other] { $count } gwiazdek
+    }
 metadata-map = Pokaż na mapie
 metadata-map-later = Pojawi się wraz z mapą
 preset-metadata-essentials = Podstawy
@@ -1720,6 +1726,47 @@ metadata-edited = { $when } · { $steps ->
        *[other] { $steps } kroku
     }
 metadata-edited-never = Nigdy
+metadata-different = Różne
+metadata-value-count = { $value } · { $count }
+metadata-this-photo = { $value } (to zdjęcie)
+metadata-more-values =
+    { $count ->
+        [one] i jeszcze { $count } wartość
+        [few] i jeszcze { $count } wartości
+       *[other] i jeszcze { $count } wartości
+    }
+metadata-photos-none =
+    { $count ->
+        [one] { $count } zdjęcie bez wartości
+        [few] { $count } zdjęcia bez wartości
+       *[other] { $count } zdjęć bez wartości
+    }
+metadata-shared-some =
+    { $count ->
+        [one] { $count } zdjęcie
+        [few] { $count } zdjęcia
+       *[other] { $count } zdjęć
+    }: { $value }; { $none ->
+        [one] { $none } bez wartości
+        [few] { $none } bez wartości
+       *[other] { $none } bez wartości
+    }
+metadata-covers =
+    { $count ->
+        [one] Z { $count } zdjęcia
+       *[other] Z { $count } zdjęć
+    }
+metadata-size-total = Łącznie { $size }
+metadata-reading = Odczyt { $read } z { $of } zdjęć
+metadata-several-folders = Zdjęcia są w kilku folderach
+metadata-edited-count = Edytowano { $count } z { $of } zdjęć
+metadata-and-more = i { $count } więcej
+metadata-different-places = Zdjęcia zrobiono w różnych miejscach
+metadata-range = { $low } – { $high }
+metadata-range-day = { $date }, { $low } – { $high }
+metadata-day-time = { $date }, { $time }
+metadata-range-exposure = { $low } – { $high } s
+metadata-range-iso = ISO { $low } – { $high }
 metadata-resolution = { $x } × { $y }
 metadata-resolution-inches = { $x } × { $y } ppi
 metadata-resolution-centimetres = { $x } × { $y } pikseli na cm

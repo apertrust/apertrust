@@ -1699,11 +1699,17 @@ tool-metadata-kind = Записує метадані знімків, нікол�
 metadata-copy-information = Копіювати відомості
 metadata-copy-coordinates = Копіювати координати
 metadata-select-a-photo = Виберіть знімок
-metadata-several-later = Кілька знімків з’являться в одній із наступних версій
 metadata-fact-unread = Apertrust поки не читає цього з файлів { $format }
 metadata-folder-open = Цю папку відкрито
-metadata-rating-later = Оцінки з’являться в одній із наступних версій
-metadata-labels-later = Кольорові мітки з’являться в одній із наступних версій
+metadata-label-some = { $label } (деякі знімки)
+metadata-rejected = Відхилено
+metadata-stars =
+    { $count ->
+        [0] Без зірок
+        [one] { $count } зірка
+        [few] { $count } зірки
+       *[other] { $count } зірок
+    }
 metadata-map = Показати на мапі
 metadata-map-later = З’явиться разом із мапою
 preset-metadata-essentials = Основне
@@ -1718,6 +1724,47 @@ metadata-edited = { $when } · { $steps ->
        *[other] { $steps } кроку
     }
 metadata-edited-never = Ніколи
+metadata-different = Різні
+metadata-value-count = { $value } · { $count }
+metadata-this-photo = { $value } (цей знімок)
+metadata-more-values =
+    { $count ->
+        [one] і ще { $count } значення
+        [few] і ще { $count } значення
+       *[other] і ще { $count } значень
+    }
+metadata-photos-none =
+    { $count ->
+        [one] { $count } знімок без значення
+        [few] { $count } знімки без значення
+       *[other] { $count } знімків без значення
+    }
+metadata-shared-some =
+    { $count ->
+        [one] { $count } знімок
+        [few] { $count } знімки
+       *[other] { $count } знімків
+    }: { $value }; { $none ->
+        [one] { $none } без значення
+        [few] { $none } без значення
+       *[other] { $none } без значення
+    }
+metadata-covers =
+    { $count ->
+        [one] Із { $count } знімка
+       *[other] Із { $count } знімків
+    }
+metadata-size-total = Усього { $size }
+metadata-reading = Читання { $read } з { $of } знімків
+metadata-several-folders = Знімки в кількох папках
+metadata-edited-count = Змінено { $count } з { $of } знімків
+metadata-and-more = і ще { $count }
+metadata-different-places = Знімки зроблено в різних місцях
+metadata-range = { $low } – { $high }
+metadata-range-day = { $date }, { $low } – { $high }
+metadata-day-time = { $date }, { $time }
+metadata-range-exposure = { $low } – { $high } с
+metadata-range-iso = ISO { $low } – { $high }
 metadata-resolution = { $x } × { $y }
 metadata-resolution-inches = { $x } × { $y } ppi
 metadata-resolution-centimetres = { $x } × { $y } пікселів на см

@@ -27,7 +27,8 @@
 
 use std::path::Path;
 
-use apertrust_engine::session::library::DateTime;
+use apertrust_engine::session::facts::focal_length_35mm;
+use apertrust_engine::session::library::{DateTime, Shot};
 use apertrust_engine::session::{Exif, Photo, size_in_unit};
 use apertrust_engine::session::{History, StepSource};
 
@@ -57,8 +58,56 @@ impl Shown {
 
 /// What the facts are read from: the active photo, its history and the person's home, which
 /// a folder is shown under as `~`, and the words.
+/// What a row is worded from: the photo open's, or one photo's facts as a summary holds
+/// them ([`Of::shot`]), which have no path and no size on disk.
+#[derive(Clone, Copy, Debug)]
+pub struct Of<'a> {
+    pub path: &'a Path,
+    pub exif: &'a Exif,
+    pub format: &'a str,
+    pub file_size: u64,
+    /// The developed size, and the sensor's readout.
+    pub size: [u32; 2],
+    pub sensor: [u32; 2],
+    pub iso: Option<f32>,
+    /// The camera's maker and model as the decoder spells them.
+    pub make: &'a str,
+    pub alias: &'a str,
+}
+
+impl<'a> Of<'a> {
+    pub fn photo(photo: &'a Photo) -> Of<'a> {
+        let camera = photo.image.camera.as_ref();
+        Of {
+            path: &photo.path,
+            exif: &photo.exif,
+            format: &photo.format,
+            file_size: photo.file_size,
+            size: [photo.width, photo.height],
+            sensor: photo.sensor,
+            iso: camera.map(|camera| camera.iso),
+            make: camera.map_or("", |camera| camera.make.as_str()),
+            alias: camera.map_or("", |camera| camera.alias.as_str()),
+        }
+    }
+
+    pub fn shot(shot: &'a Shot) -> Of<'a> {
+        Of {
+            path: Path::new(""),
+            exif: &shot.exif,
+            format: &shot.format,
+            file_size: 0,
+            size: shot.size,
+            sensor: shot.sensor,
+            iso: shot.iso,
+            make: &shot.make,
+            alias: &shot.alias,
+        }
+    }
+}
+
 pub struct Source<'a> {
-    pub photo: &'a Photo,
+    pub of: Of<'a>,
     pub history: Option<&'a History>,
     pub home: Option<&'a Path>,
     pub words: &'a Translator,
@@ -66,15 +115,11 @@ pub struct Source<'a> {
 
 impl Source<'_> {
     fn exif(&self) -> &Exif {
-        &self.photo.exif
+        self.of.exif
     }
 
-    fn say(&self, id: &str, args: &[(&str, String)]) -> String {
-        let mut fluent = Args::new();
-        for (name, value) in args {
-            fluent.set(*name, value.as_str());
-        }
-        self.words.text_with(id, Some(&fluent))
+    pub(super) fn say(&self, id: &str, args: &[(&str, String)]) -> String {
+        say(self.words, id, args)
     }
 
     /// `value` with at most `decimals` decimals, its trailing zeros trimmed, in the
@@ -108,7 +153,7 @@ impl Source<'_> {
 /// The value of the row `id` of the photo in `source`, with what its tooltip adds.
 pub fn fact(id: &str, source: &Source<'_>) -> Shown {
     let exif = source.exif();
-    let photo = source.photo;
+    let photo = &source.of;
     let text = |value: &Option<String>| value.clone().map(Shown::value).unwrap_or_default();
     match id {
         "file_name" => match photo.path.file_name() {
@@ -122,26 +167,12 @@ pub fn fact(id: &str, source: &Source<'_>) -> Shown {
             .parent()
             .map(|folder| Shown::value(crate::export::shown(folder, source.home)))
             .unwrap_or_default(),
-        "type" => Shown::value(photo.format.clone()),
+        "type" => Shown::value(photo.format),
         "size_on_disk" => Shown::value(size(photo.file_size, source.words)),
         "dimensions" => dimensions(source),
         "edited" => edited(source),
-        "make" => Shown::value(exif.make_written.clone().unwrap_or_else(|| {
-            photo
-                .image
-                .camera
-                .as_ref()
-                .map(|c| c.make.clone())
-                .unwrap_or_default()
-        })),
-        "model" => Shown::value(exif.model_written.clone().unwrap_or_else(|| {
-            photo
-                .image
-                .camera
-                .as_ref()
-                .map(|c| c.alias.clone())
-                .unwrap_or_default()
-        })),
+        "make" => Shown::value(exif.make_written.as_deref().unwrap_or(photo.make)),
+        "model" => Shown::value(exif.model_written.as_deref().unwrap_or(photo.alias)),
         "serial_number" => text(&exif.serial_number),
         "owner_name" => text(&exif.owner_name),
         "software" => text(&exif.software),
@@ -296,13 +327,22 @@ pub fn fact(id: &str, source: &Source<'_>) -> Shown {
     }
 }
 
+/// The message `id` with `args`, in `words`.
+pub(super) fn say(words: &Translator, id: &str, args: &[(&str, String)]) -> String {
+    let mut fluent = Args::new();
+    for (name, value) in args {
+        fluent.set(*name, value.as_str());
+    }
+    words.text_with(id, Some(&fluent))
+}
+
 /// A value the photo records: more than 0, and a number.
 fn recorded(value: Option<f32>) -> Option<f32> {
     value.filter(|v| v.is_finite() && *v > 0.0)
 }
 
 /// A clock's date and time, as chrono holds it.
-fn naive(at: &DateTime) -> Option<chrono::NaiveDateTime> {
+pub(super) fn naive(at: &DateTime) -> Option<chrono::NaiveDateTime> {
     chrono::NaiveDate::from_ymd_opt(i32::from(at.year), u32::from(at.month), u32::from(at.day))?
         .and_hms_opt(
             u32::from(at.hour),
@@ -311,7 +351,7 @@ fn naive(at: &DateTime) -> Option<chrono::NaiveDateTime> {
         )
 }
 
-/// A size on disk, in the units disks count in: "32.4 MB".
+/// A size on disk, in the units disks count in: "32 MB".
 pub fn size(bytes: u64, words: &Translator) -> String {
     let (size, decimals, unit) = size_in_unit(bytes);
     words.format_bytes(size, decimals, unit)
@@ -320,18 +360,19 @@ pub fn size(bytes: u64, words: &Translator) -> String {
 /// The developed size and its megapixels, "6000 × 4000 · 24.0 MP", the readout in the
 /// tooltip where it differs, as darktable's "6000 (6048)".
 fn dimensions(source: &Source<'_>) -> Shown {
-    let photo = source.photo;
-    let megapixels = f64::from(photo.width) * f64::from(photo.height) / 1e6;
+    let photo = &source.of;
+    let [developed_width, developed_height] = photo.size;
+    let megapixels = f64::from(developed_width) * f64::from(developed_height) / 1e6;
     let value = source.say(
         "metadata-dimensions",
         &[
-            ("width", photo.width.to_string()),
-            ("height", photo.height.to_string()),
+            ("width", developed_width.to_string()),
+            ("height", developed_height.to_string()),
             ("megapixels", source.number(megapixels, 1)),
         ],
     );
     let [width, height] = photo.sensor;
-    let differs = [width, height] != [photo.width, photo.height] && width > 0;
+    let differs = [width, height] != photo.size && width > 0;
     let note = differs.then(|| {
         source.say(
             "metadata-dimensions-sensor",
@@ -400,7 +441,7 @@ fn f_number(f: f32, source: &Source<'_>) -> String {
 /// The ISO by darktable's rule, the photo's image context's as the caption's, the
 /// sensitivity type in the tooltip.
 fn iso(source: &Source<'_>) -> Shown {
-    let iso = source.photo.image.camera.as_ref().map(|c| c.iso);
+    let iso = source.of.iso;
     let Some(iso) = recorded(iso) else {
         return Shown::default();
     };
@@ -504,15 +545,6 @@ fn lens_specification(spec: [f32; 4], source: &Source<'_>) -> Option<String> {
         )),
         (focal, aperture) => focal.or(aperture),
     }
-}
-
-/// The 35 mm equivalent: FocalLengthIn35mmFilm, else the focal length times the crop
-/// factor, in whole millimetres.
-pub fn focal_length_35mm(exif: &Exif) -> Option<f32> {
-    recorded(exif.focal_length_35mm).or_else(|| {
-        let (focal, crop) = (recorded(exif.focal_length)?, recorded(exif.crop_factor)?);
-        Some((focal * crop).round())
-    })
 }
 
 /// A coordinate in darktable's degrees and decimal minutes to one decimal, "38° 42.6′ N",

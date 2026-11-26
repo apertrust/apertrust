@@ -80,5 +80,4 @@ export-profile-tip = Image settings: the photo's own, in Raw › Output color pr
 
 ## The Metadata tool.
 
-metadata-labels-later = Color labels come in a later version
 metadata-metering_mode-2 = Center-weighted average
