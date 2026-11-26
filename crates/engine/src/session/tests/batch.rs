@@ -220,8 +220,8 @@ fn a_view_only_photo_is_skipped_and_named() {
     remove(&active);
 }
 
-/// 200 photos, the job's progress counting them, cancelled midway: the photos done keep
-/// the batch, all in one, and the rest are untouched.
+/// 200 photos, the job's progress counting them, cancelled midway: the ten handed over keep
+/// the batch, all in one, and the rest are untouched, the eleventh's route among them.
 #[test]
 fn a_batch_cancelled_midway_keeps_the_photos_done_in_one_batch() {
     let active = scratch("batch-cancel");
@@ -246,13 +246,17 @@ fn a_batch_cancelled_midway_keeps_the_photos_done_in_one_batch() {
             break job;
         }
     };
-    // Ten photos routed, then the cancel.
+    // Ten photos routed, then the cancel while the job holds the eleventh's route, which
+    // it then hands over too late.
     for _ in 0..10 {
         let route = next_route(&mut driven);
         driven.engine.routes.push(route);
         driven.engine.take_routes();
     }
+    let eleventh = next_route(&mut driven);
     driven.run([Command::CancelJob { job }]);
+    driven.engine.routes.push(eleventh);
+    driven.engine.take_routes();
     let heard = until_ended(&mut driven);
     let Some(BatchEvent::Ended {
         batch,
@@ -264,7 +268,7 @@ fn a_batch_cancelled_midway_keeps_the_photos_done_in_one_batch() {
         unreachable!()
     };
     assert!(*cancelled);
-    assert!((10..200).contains(&changed.len()), "{}", changed.len());
+    assert_eq!(changed, &others[..10]);
     driven.writes();
     for photo in &others {
         let found = batches(&saved_log(photo));
