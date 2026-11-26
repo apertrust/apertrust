@@ -38,6 +38,7 @@ use rawler::imgop::xyz::Illuminant as RawlerIlluminant;
 use rawler::rawimage::{RawImageData, RawPhotometricInterpretation};
 use rawler::rawsource::RawSource;
 use rawler::tags::{DngTag, ExifTag};
+use serde::{Deserialize, Serialize};
 
 mod cropfactors;
 mod exif;
@@ -57,11 +58,13 @@ pub use preview::{
     read_preview_file,
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Error {
     #[error("reading {}: {source}", path.display())]
     Read {
         path: PathBuf,
+        #[serde(with = "apertrust_base::wire::io_error")]
         source: std::io::Error,
     },
     #[error("rawler: {0}")]

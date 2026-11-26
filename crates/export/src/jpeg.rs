@@ -39,6 +39,7 @@ use std::io::Write;
 
 use apertrust_base::settings::Choice;
 use jpeg_encoder::{ChromaSubsamplingMethod, ColorType, Encoder, PixelDensity, SamplingFactor};
+use serde::{Deserialize, Serialize};
 
 use crate::{Error, Image, profile, quantise};
 
@@ -46,7 +47,7 @@ use crate::{Error, Image, profile, quantise};
 pub const LARGEST: u32 = 65535;
 
 /// darktable's JPEG options, with its defaults.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Options {
     /// 5 to 100; darktable's 95.
     pub quality: u8,
@@ -67,7 +68,7 @@ impl Default for Options {
 }
 
 /// darktable's chroma subsampling choices, in its order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Subsample {
     /// libjpeg's default, 4:2:0, with darktable's changes: 4:2:2 above quality 90 and
     /// 4:4:4 above 92.

@@ -21,6 +21,8 @@
 //! plain data, so they move into the protocol unchanged.
 
 use apertrust_base::settings::Choice;
+use apertrust_base::wire::Id;
+use serde::{Deserialize, Serialize};
 
 use crate::{ControlValue, Controls};
 
@@ -28,10 +30,13 @@ use crate::{ControlValue, Controls};
 /// renders it, after crop and the geometry, (0, 0) its top left, x to the right and y
 /// down. They do not depend on the zoom, the window or the photo's size, so a script and
 /// the app name the same place.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Region {
+    #[serde(deserialize_with = "apertrust_base::wire::finite")]
     Point([f32; 2]),
     /// Left, top, right, bottom.
+    #[serde(deserialize_with = "apertrust_base::wire::finite")]
     Area([f32; 4]),
 }
 
@@ -69,7 +74,7 @@ impl Region {
 /// region, the mean, the sum over its pixels divided by their number, and the exact
 /// minimum and maximum. In the picker's space; the fourth channel a hue moved half a turn
 /// where the space has a hue, else the stage's alpha.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Stats {
     pub mean: [f32; 4],
     pub min: [f32; 4],
@@ -77,7 +82,7 @@ pub struct Stats {
 }
 
 /// The keys held, which some tools read as darktable reads `dt_key_modifier_state`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickKeys {
     /// Ctrl, Cmd on the Mac.
     pub command: bool,
@@ -112,12 +117,13 @@ pub struct Picked {
 }
 
 /// What the tool's panel shows of a reading.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Shown {
     /// The input patch, where the tool shows one.
     pub patch: Option<Patch>,
     /// The tool's settings measure mode set, as darktable's measure mode writes its target
     /// sliders; the client keeps them in its settings.
+    #[serde(deserialize_with = "apertrust_base::wire::id::pairs")]
     pub settings: Vec<(&'static str, ControlValue)>,
     /// What the pick did, for a picker that writes controls and a tool that says so: its
     /// Last pick (decision 88).
@@ -129,7 +135,7 @@ pub struct Shown {
 /// What a pick did (decision 88), as Exposure's Last pick shows it, "L 41 % → L 50 % ·
 /// +0.55 EV": the area's L as it rendered before the pick and as it renders after, and
 /// the change of the control it set, in its unit.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LastPick {
     pub before: f32,
     pub after: f32,
@@ -141,7 +147,7 @@ pub struct LastPick {
 
 /// The warnings a pick gave, independent (decision 88): an area of clipped pixels can also
 /// fall short, often because it is clipped.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct PickWarnings {
     /// Some channel's maximum over the area reaches 0.99 × that channel's maximum at the
     /// input ([`Reading::input_maximum`]): its lightness reads low.
@@ -153,7 +159,7 @@ pub struct PickWarnings {
 
 /// A pick held short of its target (decision 88): "Exposure at +18 EV: the area is L 12 %,
 /// not 50 %".
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Short {
     /// The value the control is held at, the end of its range.
     pub exposure: f32,
@@ -166,7 +172,7 @@ pub struct Short {
 }
 
 /// A patch of picked colour, as Exposure and Colour calibration show the area they read.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Patch {
     /// Its colour for the screen: sRGB, encoded, each channel 0 to 1.
     pub srgb: [f32; 3],
@@ -192,10 +198,11 @@ impl Patch {
 /// What a readout at a line of pickers' start shows ([`crate::ProcessingTool::readout`],
 /// [`crate::ReadoutDef`]): one of its texts, with its number, and its swatch's colour, as
 /// Colour calibration's "CCT: 5003 K (daylight)" and the illuminant's colour beside it.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Readout {
     /// Which of its texts, by id.
-    pub text: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub text: Id,
     /// The number its text shows, its `$value`; `None` for a text with none.
     pub value: Option<f32>,
     /// The swatch's colour, each channel 0 to 1, handed to the screen as it is, as cairo

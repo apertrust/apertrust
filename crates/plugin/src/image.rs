@@ -19,10 +19,12 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 use crate::RawHistogram;
 
 /// How a buffer holds the image (`docs/engine.md`, Data).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Format {
     /// The mosaic as decoded: one 16-bit value per photosite, two to a 32-bit word.
     Mosaic16,
@@ -60,7 +62,7 @@ impl fmt::Display for Format {
 /// The image a pass reads or writes: its size and format, the part of its stage it is,
 /// and what earlier operations did to it that later ones need, as darktable's buffer
 /// descriptor carries it (`dt_iop_buffer_dsc_t`, decision 21).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ImageDesc {
     pub width: u32,
     pub height: u32,
@@ -175,7 +177,7 @@ pub struct Extent {
 
 /// Which render a pipe makes, as its operations see it (decision 16): darktable's pipe
 /// type, for the pipes Apertrust has.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PipeKind {
     /// An export at full resolution, whole or tile by tile.
     Export,
@@ -185,7 +187,7 @@ pub enum PipeKind {
 }
 
 /// What an operation knows about the image it runs on, besides its parameters.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ImageContext {
     /// The developed image at full resolution: after the raw's crop.
     pub width: u32,
@@ -250,7 +252,7 @@ impl ImageContext {
 /// An output profile as the matrices between its linear RGB and XYZ D50, f32 by rows:
 /// what darktable's filmic rgb reads of the pipe's output profile
 /// (`dt_ioppr_get_pipe_output_profile_info`, decision 26).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OutputProfile {
     /// Linear RGB to XYZ D50: darktable's `matrix_in`.
     pub rgb_to_xyz_d50: [[f32; 3]; 3],
@@ -259,7 +261,7 @@ pub struct OutputProfile {
 }
 
 /// A raw's metadata, as the decoder reports it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Camera {
     /// The camera's maker, as darktable's `camera_maker` (decision 24).
     pub make: String,
@@ -317,7 +319,8 @@ pub struct Camera {
 /// A lens's corrections as the raw records them: darktable's `dt_image_correction_data_t`
 /// by its type, each value as darktable stores it after its checks (`src/common/exif.cc`).
 /// Lens correction computes every table from them (decision 25).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum LensCorrection {
     Sony(SonyCorrection),
     Fujifilm(FujifilmCorrection),
@@ -328,7 +331,7 @@ pub enum LensCorrection {
 /// A Sony raw's DistortionCorrParams, ChromaticAberrationCorrParams and
 /// VignettingCorrParams, darktable's `sony`: knot i lies at radius (i + 0.5) / (nc − 1)
 /// of the half-diagonal.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SonyCorrection {
     /// The knots, at most 16; every array is 0 past them.
     pub nc: u32,
@@ -344,7 +347,7 @@ pub struct SonyCorrection {
 
 /// A RAF's GeometricDistortionParams, ChromaticAberrationParams and VignettingParams,
 /// from its FujiIFD, darktable's `fuji`.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct FujifilmCorrection {
     /// The knots: 9 in the X-Trans IV and V layout, 11 in the X-Trans I to III one; every
     /// array is 0 past them.
@@ -364,7 +367,7 @@ pub struct FujifilmCorrection {
 }
 
 /// A DNG's OpcodeList3, its last WarpRectilinear and FixVignetteRadial, darktable's `dng`.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DngCorrection {
     /// WarpRectilinear's planes, 1 or 3.
     pub planes: u32,
@@ -383,7 +386,7 @@ pub struct DngCorrection {
 
 /// An Olympus or OM System raw's maker note tags 0x150a and 0x150c, of its ImageProcessing
 /// directory, darktable's `olympus`.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct OlympusCorrection {
     /// Whether `dist` corrects anything: one of its first three values is not 0.
     pub has_dist: bool,
@@ -397,7 +400,7 @@ pub struct OlympusCorrection {
 
 /// Values repeating from the top-left of the mosaic, row by row: a CFA's colours (0
 /// red, 1 green, 2 blue) or black levels.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Pattern<T> {
     pub width: u32,
     pub height: u32,

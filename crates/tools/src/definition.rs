@@ -39,6 +39,9 @@
 
 use std::collections::BTreeSet;
 
+use apertrust_base::wire::Id;
+use serde::{Deserialize, Serialize};
+
 use crate::values::{ControlValue, Controls};
 
 mod cursor;
@@ -291,7 +294,7 @@ pub struct Picker {
 
 /// A context menu tools add items to (decision 91; `docs/gui.md`, Context menus). The
 /// list is closed: the app's other places, as the surround's, hold the app's items alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Place {
     /// The photo in the Viewer.
     Photo,
@@ -486,7 +489,7 @@ pub fn check_toolbar(
 /// Whether a picker takes a point, an area or either: darktable's
 /// `DT_COLOR_PICKER_POINT`, `_AREA` and `_POINT_AREA`. One with both turns on as an area
 /// with a right-click or Ctrl-click, else as a point.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PickerKind {
     Point,
     Area,
@@ -645,7 +648,7 @@ pub const MAX_POINTS: usize = 18;
 pub const MIN_GAP: f32 = 0.0025;
 
 /// A number's unit, from the closed list the translator has messages for: `unit-<id>`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Unit {
     Ev,
     Percent,
@@ -1200,7 +1203,7 @@ impl Slider {
 /// ([`ProcessingDefinition::range`]); where darktable's `gui_changed` moves a slider's
 /// range with other controls, as AgX's pivot spans black to white relative exposure, the
 /// tool gives it ([`crate::ProcessingTool::range`]).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Range {
     pub min: f32,
     pub max: f32,
@@ -1461,7 +1464,7 @@ pub enum ChoiceStyle {
 
 /// The design system's painted widgets a definition can name; a third-party tool
 /// chooses among them and ships no UI code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Widget {
     Curve,
     ColourWheels,
@@ -1542,258 +1545,289 @@ impl Widget {
 }
 
 /// A value a control cannot take.
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ControlError {
     #[error("{control} takes {expected}")]
     WrongKind {
-        control: &'static str,
-        expected: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        expected: Id,
     },
     #[error("{control} is {value}, outside {min} to {max}")]
     OutOfRange {
-        control: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
         value: f64,
         min: f64,
         max: f64,
     },
     #[error("{control} has no option {option}")]
     NoOption {
-        control: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
         option: String,
     },
     #[error(
         "{control} takes up to {MAX_POINTS} points between its ends, left to right, {MIN_GAP} apart"
     )]
-    Points { control: &'static str },
+    Points {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
+    },
     #[error("{control}: cannot read {text:?}")]
-    Invalid { control: &'static str, text: String },
+    Invalid {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
+        text: String,
+    },
     #[error("{control}: {option} is not ported yet")]
     Unported {
-        control: &'static str,
-        option: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        option: Id,
     },
     #[error("{control} is not ported yet: it takes only its default")]
-    NotPorted { control: &'static str },
+    NotPorted {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
+    },
 }
 
 /// What is wrong with a definition.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum DefinitionError {
     #[error("{0:?} is not a snake_case id")]
-    Id(&'static str),
+    Id(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a tool's version starts at 1")]
     Version,
     #[error("two controls are called {0}")]
-    DuplicateControl(&'static str),
+    DuplicateControl(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0}: its range, step and default do not hold together")]
-    Range(&'static str),
+    Range(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0}: its slider's soft range is not in order inside its range")]
-    SoftRange(&'static str),
+    SoftRange(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "{0}: its options are missing, repeated or not snake_case, or its default is none of them"
     )]
-    Options(&'static str),
+    Options(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0}: an option marked unported is none of its options, or is its default")]
-    Unported(&'static str),
+    Unported(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "{0}: its default points are not up to {MAX_POINTS} between its ends, left to right, {MIN_GAP} apart"
     )]
-    Points(&'static str),
+    Points(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0}: only a number has a unit")]
-    Unit(&'static str),
+    Unit(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a tool has one untitled tab, or every tab titled, each once")]
     Tabs,
     #[error("a row shows {0}, which the tool lacks")]
-    UnknownControl(&'static str),
+    UnknownControl(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "{control} is in {rows} rows; each control is in exactly one, or in one per mode, no two shown at once, or only in the rows of a view covering it, besides one equalizer's at most"
     )]
-    Rows { control: &'static str, rows: usize },
+    Rows {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
+        rows: usize,
+    },
     #[error("{0} is in a row that cannot show its kind")]
-    Row(&'static str),
+    Row(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0} has options not ported, which only a list draws disabled")]
-    Segmented(&'static str),
+    Segmented(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two groups, or a group and a line of pickers' label, are called {0}")]
-    DuplicateGroup(&'static str),
+    DuplicateGroup(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the group {0} is inside a group it cannot be in: only a plain group sits inside another group, a collapsible one"
     )]
-    GroupInGroup(&'static str),
+    GroupInGroup(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the plain group {0} has no rows")]
-    EmptyGroup(&'static str),
+    EmptyGroup(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two settings are called {0}")]
-    DuplicateSetting(&'static str),
+    DuplicateSetting(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the patches of the picker {0}: their target is not one to three numbers among the tool's settings"
     )]
-    UnknownSetting(&'static str),
+    UnknownSetting(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two actions are called {0}")]
-    DuplicateAction(&'static str),
+    DuplicateAction(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     /// `tabs` is the tool's tabs' action, `tool-<tool>-tabs` (decision 98), so no
     /// action end item may take it.
     #[error("{0} is reserved for the tool's tabs")]
-    ReservedAction(&'static str),
+    ReservedAction(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the action {0} is called as a control is; one availability rule takes either's id")]
-    ActionIsControl(&'static str),
+    ActionIsControl(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the action {0}'s menu is no icon button's, or holds fewer than 2 or more than {MOST_IN_SUBMENU} actions"
     )]
-    ActionMenu(&'static str),
+    ActionMenu(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the tool publishes {0} twice")]
-    DuplicatePublished(&'static str),
+    DuplicatePublished(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the warning {0} is at the end of a row other than a slider's")]
-    WarningPlace(&'static str),
+    WarningPlace(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two warnings are called {0}")]
-    DuplicateWarning(&'static str),
+    DuplicateWarning(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two computed values are called {0}")]
-    DuplicateComputed(&'static str),
+    DuplicateComputed(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "rows follow {0}: not a choice or a toggle of the tool, no value or one it cannot hold, or among those rows"
     )]
-    Condition(&'static str),
+    Condition(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "rows follow {0} where none of its rows is sure to show: on their tab, outside its group or outside its modes; on another tab, in a group or a mode"
     )]
-    Hidden(&'static str),
+    Hidden(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0}: rows following it, with no row")]
-    Empty(&'static str),
+    Empty(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "rows follow the setting {0}: not a choice setting of the tool, no option or one it lacks, among those rows, or rows holding a control"
     )]
-    SettingCondition(&'static str),
+    SettingCondition(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a preset row is called {0}, as a control or another preset row is")]
-    DuplicatePreset(&'static str),
+    DuplicatePreset(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the preset row {0}: its options are missing, repeated or not snake_case")]
-    PresetOptions(&'static str),
+    PresetOptions(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the preset row {0} writes no control, one twice or one the tool lacks")]
-    PresetControls(&'static str),
+    PresetControls(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a row shows the preset row {0}, which the tool lacks")]
-    UnknownPreset(&'static str),
+    UnknownPreset(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the preset row {0} is segmented; only a list draws Custom and options disabled")]
-    SegmentedPreset(&'static str),
+    SegmentedPreset(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the preset row {preset} is in {rows} rows; each is in one at most")]
-    PresetRows { preset: &'static str, rows: usize },
+    PresetRows {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        preset: Id,
+        rows: usize,
+    },
     #[error("two views are called {0}")]
-    DuplicateView(&'static str),
+    DuplicateView(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the view {0} covers no control, one twice, one the tool lacks or one that is no number"
     )]
-    ViewControls(&'static str),
+    ViewControls(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the view {0} has no coordinate, or more than the controls it covers")]
-    ViewCoordinates(&'static str),
+    ViewCoordinates(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a coordinate is called {0}, as a control, a preset row or another coordinate is")]
-    DuplicateCoordinate(&'static str),
+    DuplicateCoordinate(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the coordinate {coordinate} is in {rows} rows; each is in one at most")]
     CoordinateRows {
-        coordinate: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        coordinate: Id,
         rows: usize,
     },
     #[error("two pickers are called {0}")]
-    DuplicatePicker(&'static str),
+    DuplicatePicker(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the picker {0} writes a control the tool lacks, or one twice")]
-    PickerWrites(&'static str),
+    PickerWrites(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the picker {0} reads a setting the tool lacks, or one twice")]
-    PickerSettings(&'static str),
+    PickerSettings(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the reference row's picker {0} writes controls; a reference's picker only measures")]
-    ReferenceWrites(&'static str),
+    ReferenceWrites(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a last pick row names {0}: no picker of the tool that writes controls, or one twice")]
-    LastPick(&'static str),
+    LastPick(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the picker {0}'s words follow no choice setting of the tool")]
-    WordsBy(&'static str),
+    WordsBy(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a row shows the picker {0}, which the tool lacks")]
-    UnknownPicker(&'static str),
+    UnknownPicker(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a line holds no end item")]
     EmptyLine,
     #[error(
         "the row {0} has end items not drawn there yet: a choice and a setting take none, and a slider's is a picker or a warning"
     )]
-    EndNotDrawn(&'static str),
+    EndNotDrawn(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the readout {0}: a line with a label too, no texts, an id named twice or not snake_case"
     )]
-    Readout(&'static str),
+    Readout(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the picker {picker} is in {rows} places, rows and preset options; each is in exactly one"
     )]
-    PickerRows { picker: &'static str, rows: usize },
+    PickerRows {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        picker: Id,
+        rows: usize,
+    },
     #[error(
         "the preset row {0}: an option turning a picker on is none of its options, is named twice, or names a picker the tool lacks"
     )]
-    PresetPickers(&'static str),
+    PresetPickers(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a context menu item names {0}, none of the tool's actions")]
-    UnknownMenuAction(&'static str),
+    UnknownMenuAction(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the context menu item {0} is listed twice in its place")]
-    DuplicateMenuItem(&'static str),
+    DuplicateMenuItem(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("more items in the {0:?} menu than one tool may add there")]
     MenuItems(Place),
     #[error("the context menu's submenu {0} holds no action, or more than {MOST_IN_SUBMENU}")]
-    SubmenuItems(&'static str),
+    SubmenuItems(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the context menu item {0} is in a section of the app's: a tool's are from EDIT up to LAYOUT"
     )]
-    MenuSection(&'static str),
+    MenuSection(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "the context menu item {0} comes before Reset: a tool's in EDIT take order 200 or more"
     )]
-    MenuOrder(&'static str),
+    MenuOrder(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a toolbar item names {0:?}, an empty action or one the tool lacks")]
-    UnknownToolbarAction(&'static str),
+    UnknownToolbarAction(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the toolbar item {0} is offered twice")]
-    DuplicateToolbarItem(&'static str),
+    DuplicateToolbarItem(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the toolbar item {0} names no icon, which only an icon action leaves to its button")]
-    ToolbarIcon(&'static str),
+    ToolbarIcon(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("more than {MOST_ON_TOOLBAR} toolbar items on a processing tool")]
     ToolbarItems,
     #[error("two cursors are called {0}")]
-    DuplicateCursor(&'static str),
+    DuplicateCursor(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the cursor {0} names no picker of the tool")]
-    CursorPicker(&'static str),
+    CursorPicker(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two cursors pick with the picker {0}; a picker has one cursor at most")]
-    CursorsOfPicker(&'static str),
+    CursorsOfPicker(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the cursor {0} is in a group other than Pick, a tool's cursors' one group")]
-    CursorGroup(&'static str),
+    CursorGroup(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the picker cursor {0} declares gestures, which its picker's kinds decide")]
-    CursorGestures(&'static str),
+    CursorGestures(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the cursor {0} acts somewhere other than the Viewer alone")]
-    CursorSurfaces(&'static str),
+    CursorSurfaces(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the picker cursor {0} has amounts, which a picker cursor has none of")]
-    CursorOptions(&'static str),
+    CursorOptions(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a utility declares cursors, which a utility has none of until the Colour readout's")]
     UtilityCursors,
     #[error(
         "a utility's row edits, by {0}: a utility holds settings, labels, groups and custom rows naming no control"
     )]
-    Edits(&'static str),
+    Edits(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a custom row shows {0:?}, the other kind of tool's widget")]
     Widget(Widget),
     #[error(
         "a utility's action row {0}: its rows name no action until they are bound to the registry"
     )]
-    UtilityAction(&'static str),
+    UtilityAction(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("a utility's ↺ is a registry action's, its own or none, never a processing tool's")]
     UtilityHeader,
     #[error(
         "the fields row {0}: not two or three number settings kept under keys, each once, with a separator before each but the first, in a utility"
     )]
-    Fields(&'static str),
+    Fields(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the fact {0} is a utility's read-only row, never a processing tool's")]
-    Fact(&'static str),
+    Fact(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("two facts are called {0}")]
-    DuplicateFact(&'static str),
+    DuplicateFact(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0:?} is no key of dotted snake_case parts")]
-    Key(&'static str),
+    Key(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the setting {0}'s words name not each of its options")]
-    SettingWords(&'static str),
+    SettingWords(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the setting {0} names a key or words of its own, which only a utility's do")]
-    ToolSettingKey(&'static str),
+    ToolSettingKey(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error(
         "{0} is titled but is no group of the utility's page, or opens at first but is no collapsible group of it"
     )]
-    UnknownTitle(&'static str),
+    UnknownTitle(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{0} is given more than one title")]
-    DuplicateTitle(&'static str),
+    DuplicateTitle(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("the group {0} opens at first, but has no rows, so it is drawn closed")]
-    OpensEmpty(&'static str),
+    OpensEmpty(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
 }
 
 /// snake_case ASCII: a lowercase letter, then lowercase letters, digits and single

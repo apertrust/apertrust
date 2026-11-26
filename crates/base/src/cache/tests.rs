@@ -1072,3 +1072,14 @@ fn a_slot_s_version_is_read_alone_without_setting_its_last_use() {
     fs::write(&path, short).unwrap();
     assert_eq!(cache.version(THUMBNAILS, b"slot").unwrap(), None);
 }
+
+#[test]
+fn a_kind_is_its_id_and_an_unknown_id_is_refused() {
+    for kind in KINDS {
+        let json = serde_json::to_string(&kind).unwrap();
+        assert_eq!(json, format!("\"{}\"", kind.id()));
+        assert_eq!(serde_json::from_str::<Kind>(&json).unwrap(), kind);
+    }
+    let error = serde_json::from_str::<Kind>(r#""previews""#).unwrap_err();
+    assert!(error.to_string().contains("the cache has no kind previews"));
+}

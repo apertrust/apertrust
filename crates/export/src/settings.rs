@@ -28,6 +28,7 @@
 //! conflict, its own flags giving the rest.
 
 use apertrust_base::settings::{Choice, Declared, Store};
+use serde::{Deserialize, Serialize};
 
 use crate::size::Request;
 use crate::{Format, jpeg, png};
@@ -47,7 +48,7 @@ use registry::{
 
 /// File on disk's On conflict: darktable's four (`dt_disk_onconflict_actions_t`), in its
 /// order, so the number darktable keeps for one is its place.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum OnConflict {
     /// `_01`, `_02` and on before the extension, the first that is free.
     #[default]

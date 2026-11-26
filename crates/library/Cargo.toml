@@ -31,6 +31,8 @@ machine-uid.workspace = true
 getrandom.workspace = true
 # The sidecar's XML (decision 54, layer 1).
 quick-xml.workspace = true
+# The commands, events and errors the session protocol carries (decision 108).
+serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 

@@ -58,6 +58,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
+
 use crate::settings::Choice;
 
 /// Whether a kind's entries count against the limit.
@@ -70,8 +73,9 @@ pub enum Policy {
 }
 
 /// A kind of entry, a folder of its own in the cache: one of [`KINDS`], the only ones
-/// there are.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// there are. It serializes as its id, and an id that is not one of them is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(into = "&'static str")]
 pub struct Kind {
     /// Its place in [`KINDS`].
     index: usize,
@@ -136,6 +140,21 @@ pub fn kind(id: &str) -> Option<Kind> {
     KINDS.into_iter().find(|kind| kind.id == id)
 }
 
+impl From<Kind> for &'static str {
+    fn from(kind: Kind) -> Self {
+        kind.id()
+    }
+}
+
+/// Written by hand, as serde's derive would take the `&'static str` fields as borrowed even
+/// through `try_from`, and read a kind from `'static` input alone.
+impl<'de> Deserialize<'de> for Kind {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = String::deserialize(deserializer)?;
+        kind(&id).ok_or_else(|| D::Error::custom(format!("the cache has no kind {id}")))
+    }
+}
+
 /// How long a read leaves an entry's last use alone: it is set at most once a day.
 pub const TOUCH_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 
@@ -153,7 +172,8 @@ const MAGIC: [u8; 4] = *b"APC1";
 const PROBE: (&str, &str) = (".apertrust-write-check-", ".tmp");
 
 /// How much the limited kinds may hold.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Limit {
     /// Nothing is removed by size: `cache.limited` off.
     Unlimited,
@@ -164,7 +184,8 @@ pub enum Limit {
 /// What a client asks of the cache through its session, `Command::Cache` (decision 76;
 /// `docs/cache.md`, Through the session). Removing a library's cache comes with the
 /// libraries' caches and their lock (the library's step 27).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum CacheCommand {
     /// The limit as `cache.limited` and `cache.limit` now give it, applied at once:
     /// lowered or turned on, an eviction; raised, the same or turned off, none.
@@ -179,7 +200,8 @@ pub enum CacheCommand {
 
 /// What a session tells of its cache, `Event::Cache` (decision 76): a fact, the whole of
 /// the cache, each answer superseding the last.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum CacheEvent {
     /// Each kind's entries and bytes, the limited kinds' together, and the limit they are
     /// kept within.
@@ -228,7 +250,7 @@ impl Choice for UnusedAfter {
 }
 
 /// A kind's entries and their bytes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub entries: u64,
     pub bytes: u64,
@@ -243,7 +265,7 @@ impl Usage {
 }
 
 /// Each kind's [`Usage`], in [`KINDS`]' order.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Sizes {
     usage: [Usage; KINDS.len()],
 }

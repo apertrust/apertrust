@@ -16,6 +16,9 @@
 
 //! The operation trait, and what `prepare` gives the engine.
 
+use apertrust_base::wire::Id;
+use serde::{Deserialize, Serialize};
+
 use crate::{
     Extent, ImageContext, ImageDesc, Kernel, Manifest, OutputProfile, ParamValues, Schema,
 };
@@ -259,7 +262,8 @@ impl Binding {
 
 /// What a binding holds. By convention, input is binding 0, output 1, uniforms 2,
 /// tables 3 to 7, derivatives 8 and 9, and scratch buffers 10 and up.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Resource {
     Input,
     Output,
@@ -314,9 +318,11 @@ pub enum PassKind {
 }
 
 /// A setting combination the port does not cover yet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
 #[error("{operation}: {what} is not ported yet")]
 pub struct NotPorted {
-    pub operation: &'static str,
-    pub what: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub operation: Id,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub what: Id,
 }

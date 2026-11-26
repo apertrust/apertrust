@@ -17,6 +17,9 @@ apertrust-color.workspace = true
 flate2.workspace = true
 jpeg-encoder.workspace = true
 png.workspace = true
+# The export settings, its preview's problems and its results, which the session protocol
+# carries (decision 108).
+serde.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

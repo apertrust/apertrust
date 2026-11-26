@@ -75,6 +75,8 @@
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use apertrust_base::wire::Id;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::clock::{self, Clock, ClockError, MachineId};
@@ -128,7 +130,8 @@ pub struct Edits {
 
 /// Something of a version 2 file that could not be read as written: the rest is read,
 /// and the step it is in is kept.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Problem {
     /// A step's clock that cannot be read: the step is kept with no clock.
     #[error("the clock of step {step} of copy {copy} cannot be read: {error}")]
@@ -202,7 +205,8 @@ pub enum Problem {
     Field {
         copy: String,
         field: String,
-        what: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        what: Id,
     },
     /// A step's `apertrust:styles` holding what cannot be read as a style applied
     /// (decision 106), as `what` says: an item that is no struct, one lacking its name or
@@ -212,7 +216,8 @@ pub enum Problem {
     AppliedStyle {
         copy: String,
         step: String,
-        what: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        what: Id,
     },
 }
 

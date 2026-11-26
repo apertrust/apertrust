@@ -25,6 +25,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use apertrust_raw::DateTime;
+use serde::{Deserialize, Serialize};
 
 use crate::ops::Shot;
 
@@ -119,7 +120,8 @@ pub enum Facts<'a> {
 /// A row's value as the photos are compared by it: as the row shows it, a number rounded
 /// as it is written, so 1/250 s and 0.004 s are one value. Ordered, so ties are broken and
 /// a range found.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Key {
     Text(String),
     /// A number scaled to an integer at the row's precision, a code, a date and time as
@@ -133,7 +135,7 @@ pub enum Key {
 /// A value the photos have: its [`Key`], and one photo's [`Shot`] holding it, which the
 /// client writes as it writes that photo's row; none for a value of the listing (Folder,
 /// Edited).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FactValue {
     pub key: Key,
     pub shot: Option<Arc<Shot>>,
@@ -146,7 +148,8 @@ impl PartialEq for FactValue {
 }
 
 /// What the photos have of one row.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum FactSummary {
     /// Every photo has it, the same.
     Same(FactValue),
@@ -173,10 +176,11 @@ pub enum FactSummary {
 }
 
 /// What [`build`] gives: each row of [`FACTS`] by its id.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Summary {
     /// How many photos it describes.
     pub photos: usize,
+    #[serde(deserialize_with = "apertrust_base::wire::id::pairs")]
     facts: Vec<(&'static str, FactSummary)>,
 }
 

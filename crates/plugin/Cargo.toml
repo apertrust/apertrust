@@ -9,6 +9,11 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Its `wire` helpers alone, no feature, for the ids of the errors the session protocol
+# carries (decision 108).
+apertrust-base.workspace = true
+# The image context and the errors the session protocol carries (decision 108).
+serde.workspace = true
 thiserror.workspace = true
 
 [lints]

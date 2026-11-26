@@ -59,6 +59,8 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime};
 
+use serde::{Deserialize, Serialize};
+
 pub use progress::{Argument, Destination, Failure, JobEvent, Message, Offer, Progress};
 
 use progress::Throttles;
@@ -66,7 +68,7 @@ use schedule::{Added, Identity, Queues, Scheduled};
 
 /// darktable's five job queues, `dt_job_queue_t`, in its order, which breaks ties
 /// between heads of equal priority.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Queue {
     /// `DT_JOB_QUEUE_USER_FG`: the user's actions (import, move, copy, rename, delete,
     /// Apply edit), priority 4, first in first out.
@@ -120,7 +122,7 @@ impl fmt::Display for Queue {
 
 /// A job's state, darktable's `dt_job_state_t`; its `DT_JOB_STATE_DISPOSED` is the job
 /// gone, [`Control::state`]'s `None`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum State {
     /// Made, not added yet.
     Initialized,
@@ -152,7 +154,7 @@ impl fmt::Display for State {
 }
 
 /// A job's number within its control, from 1, never reused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct JobId(u64);
 
 impl JobId {

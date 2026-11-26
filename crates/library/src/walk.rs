@@ -35,10 +35,12 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
+
 use crate::listing::{Kind, browser_order, is_raw, kind};
 
 /// One folder of the tree as the walk found it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WalkedFolder {
     pub folder: PathBuf,
     /// How many of its files the decoder reads, by their extensions; its subfolders' not

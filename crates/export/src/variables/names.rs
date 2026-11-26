@@ -21,6 +21,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// What a variable expands to: one for each of `_get_base_value`'s branches, a name and
 /// its legacy aliases sharing one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -177,7 +179,7 @@ impl Key {
 
 /// Why a variable darktable has expands to nothing in Apertrust (D7): the export goes on,
 /// and the dialog says so in a line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NotHere {
     /// darktable expands it only in its image information and overlays (job code
     /// "infos"), and to nothing in an export: `NL`, `LABELS.ICONS`, `SIDECAR_TXT`.

@@ -43,6 +43,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use apertrust_base::fs::{Retry, persist_retrying};
+use serde::{Deserialize, Serialize};
 use tempfile::{NamedTempFile, PersistError};
 use thiserror::Error;
 
@@ -110,7 +111,7 @@ pub(crate) fn destination_kind(kind: io::ErrorKind) -> bool {
 }
 
 /// Why a photo is not written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Why {
     /// The file is there and On conflict is Skip.
     Exists,
@@ -380,7 +381,8 @@ impl Claimed {
 }
 
 /// What On conflict would do with a photo's file ([`Disk::foresee`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Action {
     /// Nothing is there: the file is written under its name.
     Write,
@@ -573,7 +575,8 @@ pub fn home_for_tilde(text: &str, home: Option<&Path>) -> String {
 
 /// Whether an export's photos can go to a folder, asked without making it or writing
 /// anything ([`preflight`]).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Preflight {
     /// The folder is there and may be written.
     Ready,
@@ -585,7 +588,8 @@ pub enum Preflight {
 }
 
 /// Why a folder cannot be written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Blocked {
     /// The folder is on a disk that is not connected: a volume under `/Volumes` on the
     /// Mac, a drive letter on Windows, a folder under `/media` or `/run/media` on Linux.
@@ -595,6 +599,7 @@ pub enum Blocked {
     /// The folder has no write permission for anyone.
     ReadOnly,
     /// The system would not say, for this reason.
+    #[serde(with = "apertrust_base::wire::error_kind")]
     Unreadable(io::ErrorKind),
 }
 

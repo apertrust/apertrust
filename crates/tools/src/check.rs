@@ -21,7 +21,9 @@
 //! and leaves out the rest; the tests sweep every built-in tool's binding with
 //! [`sweep`].
 
+use apertrust_base::wire::Id;
 use apertrust_plugin::{ImageContext, Operation, ParamError, Stage, Value};
+use serde::{Deserialize, Serialize};
 
 use crate::definition::{Computed, ControlKind, DefinitionError, MAX_POINTS, Row, Space};
 use crate::{
@@ -112,33 +114,42 @@ pub fn lists_only(control: &Control, listed: &[&str], value: &ControlValue) -> b
 }
 
 /// Why a tool is left out, or a setting refused.
-#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ToolError {
     #[error(transparent)]
     Definition(#[from] DefinitionError),
     #[error("another tool is called {0}")]
-    Duplicate(&'static str),
+    Duplicate(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("there is no operation {0}")]
-    UnknownOperation(&'static str),
+    UnknownOperation(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     #[error("{operation} has no parameter {param}")]
     UnknownParam {
-        operation: &'static str,
-        param: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        param: Id,
     },
     #[error("{operation}.{param} is already owned by {owner}")]
     OwnedTwice {
-        operation: &'static str,
-        param: &'static str,
-        owner: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        param: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        owner: Id,
     },
     #[error("its binding sets {operation}.{param}, which it does not own")]
     NotOwned {
-        operation: &'static str,
-        param: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        param: Id,
     },
     #[error("its binding sets {operation}: {source}")]
     Param {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         source: ParamError,
     },
     /// A bug in the tool: its defaults or its binding panicked.
@@ -148,27 +159,33 @@ pub enum ToolError {
     /// could not leave untouched while off (decision 32).
     #[error("it is switched but owns {operation}.{param}, of an operation every photo runs")]
     SwitchedOverBase {
-        operation: &'static str,
-        param: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        param: Id,
     },
     /// A computed value of an operation the tool owns no parameter of (decision 87).
     #[error(
         "its computed value {computed} is an operation's, {operation}, which it owns no parameter of"
     )]
     ComputedOperation {
-        computed: &'static str,
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        computed: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
     },
     /// A picker reading an operation the tool owns no parameter of (decision 79).
     #[error("its picker {picker} reads {operation}, which it owns no parameter of")]
     PickerOperation {
-        picker: &'static str,
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        picker: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
     },
     /// A picker reading a mosaic other than in its operation's space or denoised, which
     /// darktable's 4-channel conversions and B-spline cannot (decision 79).
     #[error("its picker {0} reads a mosaic, which it can only in its own space and not denoised")]
-    PickerMosaic(&'static str),
+    PickerMosaic(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
 }
 
 /// A tool left out, and why.
