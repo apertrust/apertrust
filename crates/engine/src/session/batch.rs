@@ -402,6 +402,11 @@ impl Route {
     pub(super) fn photo(&self) -> &Path {
         &self.photo
     }
+
+    /// The file's XML it would write.
+    pub(super) fn xml(&self) -> &str {
+        &self.xml
+    }
 }
 
 /// How the engine thread routed a photo of a batch.
@@ -924,7 +929,8 @@ impl Engine {
 
     /// The batch `pending` taken back, or put back where `redo`, on the open photo, `photo`,
     /// by its own Undo or Redo where that would move over it, and recorded; skipped and
-    /// named as open for viewing only, before its history is read, or as changed since.
+    /// named as open for viewing only, before its history is read, or as changed since where
+    /// the move has not left it so already.
     fn move_live(
         &mut self,
         pending: &Arc<Pending>,
@@ -944,7 +950,16 @@ impl Engine {
             return self.put_rated_live(pending, photo, redo, events);
         }
         if !moves {
-            pending.reach(photo, Outcome::Skipped(Skip::ChangedSince));
+            // Where the move leaves it already, as the job's write that landed as it opened
+            // left it: reached, not changed since.
+            let left = (self.open.as_ref()).is_some_and(|o| o.history.moves_batch(batch, !redo));
+            let outcome = match left {
+                true => Outcome::Changed,
+                false => Outcome::Skipped(Skip::ChangedSince),
+            };
+            if pending.reach(photo, outcome) && left {
+                events.push(self.moved_event(pending, photo));
+            }
             return Effect::default();
         }
         let command = match redo {
