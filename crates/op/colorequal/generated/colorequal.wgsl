@@ -81,6 +81,14 @@ struct Params_std140_0
 
 @binding(22) @group(0) var<storage, read_write> line2_out_0 : array<vec2<f32>>;
 
+@binding(27) @group(0) var<storage, read_write> line2_in_b_0 : array<vec2<f32>>;
+
+@binding(29) @group(0) var<storage, read_write> line2_in_c_0 : array<vec2<f32>>;
+
+@binding(28) @group(0) var<storage, read_write> line2_out_b_0 : array<vec2<f32>>;
+
+@binding(30) @group(0) var<storage, read_write> line2_out_c_0 : array<vec2<f32>>;
+
 @binding(23) @group(0) var<storage, read_write> line1_in_0 : array<f32>;
 
 @binding(24) @group(0) var<storage, read_write> line1_out_0 : array<f32>;
@@ -3283,23 +3291,26 @@ fn blur_rows2(@builtin(global_invocation_id) id_5 : vec3<u32>)
     return;
 }
 
-fn causal_1( d_5 : Deriche_0,  xc_3 : f32,  xp_3 : f32,  yp_2 : f32,  yb_3 : f32) -> f32
+fn walk2x3_0( start_1 : u32,  stride_1 : u32,  count_1 : u32,  d_5 : Deriche_0)
 {
-    return d_5.a0_0 * xc_3 + d_5.a1_0 * xp_3 - d_5.b1_0 * yp_2 - d_5.b2_0 * yb_3;
-}
-
-fn anticausal_1( d_6 : Deriche_0,  xn_3 : f32,  xa_2 : f32,  yn_3 : f32,  ya_2 : f32) -> f32
-{
-    return d_6.a2_0 * xn_3 + d_6.a3_0 * xa_2 - d_6.b1_0 * yn_3 - d_6.b2_0 * ya_2;
-}
-
-fn walk1_0( start_1 : u32,  stride_1 : u32,  count_1 : u32,  d_7 : Deriche_0)
-{
-    var xp_4 : f32 = clampf_0(line1_in_0[start_1], -1.0e+09f, 1.0e+09f);
-    var yb_4 : f32 = xp_4 * d_7.coefp_0;
-    var xp_5 : f32 = xp_4;
-    var yp_3 : f32 = yb_4;
-    var yb_5 : f32 = yb_4;
+    var low_3 : vec2<f32> = vec2<f32>(-1.0e+09f);
+    var high_3 : vec2<f32> = vec2<f32>(1.0e+09f);
+    var xp_a_0 : vec2<f32> = clampf_1(line2_in_0[start_1], low_3, high_3);
+    var xp_b_0 : vec2<f32> = clampf_1(line2_in_b_0[start_1], low_3, high_3);
+    var xp_c_0 : vec2<f32> = clampf_1(line2_in_c_0[start_1], low_3, high_3);
+    var _S836 : vec2<f32> = vec2<f32>(d_5.coefp_0);
+    var yb_a_0 : vec2<f32> = xp_a_0 * _S836;
+    var yb_b_0 : vec2<f32> = xp_b_0 * _S836;
+    var yb_c_0 : vec2<f32> = xp_c_0 * _S836;
+    var xp_a_1 : vec2<f32> = xp_a_0;
+    var yp_a_0 : vec2<f32> = yb_a_0;
+    var yb_a_1 : vec2<f32> = yb_a_0;
+    var xp_b_1 : vec2<f32> = xp_b_0;
+    var yp_b_0 : vec2<f32> = yb_b_0;
+    var yb_b_1 : vec2<f32> = yb_b_0;
+    var xp_c_1 : vec2<f32> = xp_c_0;
+    var yp_c_0 : vec2<f32> = yb_c_0;
+    var yb_c_1 : vec2<f32> = yb_c_0;
     var n_1 : u32 = u32(0);
     loop
     {
@@ -3311,21 +3322,47 @@ fn walk1_0( start_1 : u32,  stride_1 : u32,  count_1 : u32,  d_7 : Deriche_0)
             break;
         }
         var at_2 : u32 = start_1 + n_1 * stride_1;
-        var xc_4 : f32 = clampf_0(line1_in_0[at_2], -1.0e+09f, 1.0e+09f);
-        var yc_2 : f32 = causal_1(d_7, xc_4, xp_5, yp_3, yb_5);
-        line1_out_0[at_2] = yc_2;
-        var _S836 : u32 = n_1 + u32(1);
-        xp_5 = xc_4;
-        yb_5 = yp_3;
-        yp_3 = yc_2;
-        n_1 = _S836;
+        var xc_a_0 : vec2<f32> = clampf_1(line2_in_0[at_2], low_3, high_3);
+        var xc_b_0 : vec2<f32> = clampf_1(line2_in_b_0[at_2], low_3, high_3);
+        var xc_c_0 : vec2<f32> = clampf_1(line2_in_c_0[at_2], low_3, high_3);
+        var yc_a_0 : vec2<f32> = causal_0(d_5, xc_a_0, xp_a_1, yp_a_0, yb_a_1);
+        var yc_b_0 : vec2<f32> = causal_0(d_5, xc_b_0, xp_b_1, yp_b_0, yb_b_1);
+        var yc_c_0 : vec2<f32> = causal_0(d_5, xc_c_0, xp_c_1, yp_c_0, yb_c_1);
+        line2_out_0[at_2] = yc_a_0;
+        line2_out_b_0[at_2] = yc_b_0;
+        line2_out_c_0[at_2] = yc_c_0;
+        var _S837 : u32 = n_1 + u32(1);
+        xp_a_1 = xc_a_0;
+        yb_a_1 = yp_a_0;
+        yp_a_0 = yc_a_0;
+        xp_b_1 = xc_b_0;
+        yb_b_1 = yp_b_0;
+        yp_b_0 = yc_b_0;
+        xp_c_1 = xc_c_0;
+        yb_c_1 = yp_c_0;
+        yp_c_0 = yc_c_0;
+        n_1 = _S837;
     }
-    var xn_4 : f32 = clampf_0(line1_in_0[start_1 + (count_1 - u32(1)) * stride_1], -1.0e+09f, 1.0e+09f);
-    var yn_4 : f32 = xn_4 * d_7.coefn_0;
-    var xn_5 : f32 = xn_4;
-    var xa_3 : f32 = xn_4;
-    var yn_5 : f32 = yn_4;
-    var ya_3 : f32 = yn_4;
+    var last_0 : u32 = start_1 + (count_1 - u32(1)) * stride_1;
+    var xn_a_0 : vec2<f32> = clampf_1(line2_in_0[last_0], low_3, high_3);
+    var xn_b_0 : vec2<f32> = clampf_1(line2_in_b_0[last_0], low_3, high_3);
+    var xn_c_0 : vec2<f32> = clampf_1(line2_in_c_0[last_0], low_3, high_3);
+    var _S838 : vec2<f32> = vec2<f32>(d_5.coefn_0);
+    var yn_a_0 : vec2<f32> = xn_a_0 * _S838;
+    var yn_b_0 : vec2<f32> = xn_b_0 * _S838;
+    var yn_c_0 : vec2<f32> = xn_c_0 * _S838;
+    var xn_a_1 : vec2<f32> = xn_a_0;
+    var xa_a_0 : vec2<f32> = xn_a_0;
+    var yn_a_1 : vec2<f32> = yn_a_0;
+    var ya_a_0 : vec2<f32> = yn_a_0;
+    var xn_b_1 : vec2<f32> = xn_b_0;
+    var xa_b_0 : vec2<f32> = xn_b_0;
+    var yn_b_1 : vec2<f32> = yn_b_0;
+    var ya_b_0 : vec2<f32> = yn_b_0;
+    var xn_c_1 : vec2<f32> = xn_c_0;
+    var xa_c_0 : vec2<f32> = xn_c_0;
+    var yn_c_1 : vec2<f32> = yn_c_0;
+    var ya_c_0 : vec2<f32> = yn_c_0;
     n_1 = count_1;
     loop
     {
@@ -3336,47 +3373,158 @@ fn walk1_0( start_1 : u32,  stride_1 : u32,  count_1 : u32,  d_7 : Deriche_0)
         {
             break;
         }
-        var _S837 : u32 = n_1 - u32(1);
-        var at_3 : u32 = start_1 + _S837 * stride_1;
-        var xc_5 : f32 = clampf_0(line1_in_0[at_3], -1.0e+09f, 1.0e+09f);
-        var yc_3 : f32 = anticausal_1(d_7, xn_5, xa_3, yn_5, ya_3);
-        line1_out_0[at_3] = line1_out_0[at_3] + yc_3;
-        xa_3 = xn_5;
-        xn_5 = xc_5;
-        ya_3 = yn_5;
-        yn_5 = yc_3;
-        n_1 = _S837;
+        var _S839 : u32 = n_1 - u32(1);
+        var at_3 : u32 = start_1 + _S839 * stride_1;
+        var xc_a_1 : vec2<f32> = clampf_1(line2_in_0[at_3], low_3, high_3);
+        var xc_b_1 : vec2<f32> = clampf_1(line2_in_b_0[at_3], low_3, high_3);
+        var xc_c_1 : vec2<f32> = clampf_1(line2_in_c_0[at_3], low_3, high_3);
+        var yc_a_1 : vec2<f32> = anticausal_0(d_5, xn_a_1, xa_a_0, yn_a_1, ya_a_0);
+        var yc_b_1 : vec2<f32> = anticausal_0(d_5, xn_b_1, xa_b_0, yn_b_1, ya_b_0);
+        var yc_c_1 : vec2<f32> = anticausal_0(d_5, xn_c_1, xa_c_0, yn_c_1, ya_c_0);
+        line2_out_0[at_3] = line2_out_0[at_3] + yc_a_1;
+        line2_out_b_0[at_3] = line2_out_b_0[at_3] + yc_b_1;
+        line2_out_c_0[at_3] = line2_out_c_0[at_3] + yc_c_1;
+        xa_a_0 = xn_a_1;
+        xn_a_1 = xc_a_1;
+        ya_a_0 = yn_a_1;
+        yn_a_1 = yc_a_1;
+        xa_b_0 = xn_b_1;
+        xn_b_1 = xc_b_1;
+        ya_b_0 = yn_b_1;
+        yn_b_1 = yc_b_1;
+        xa_c_0 = xn_c_1;
+        xn_c_1 = xc_c_1;
+        ya_c_0 = yn_c_1;
+        yn_c_1 = yc_c_1;
+        n_1 = _S839;
     }
     return;
 }
 
 @compute
 @workgroup_size(16, 16, 1)
-fn blur_columns1(@builtin(global_invocation_id) id_6 : vec3<u32>)
+fn blur_columns2x3(@builtin(global_invocation_id) id_6 : vec3<u32>)
 {
     var column_1 : u32 = id_6.y * u32(16) + id_6.x;
-    var _S838 : vec4<u32> = params_0.ce_0.size_0;
-    var _S839 : u32 = params_0.ce_0.size_0.z;
-    if((column_1 >= _S839))
+    var _S840 : vec4<u32> = params_0.ce_0.size_0;
+    var _S841 : u32 = params_0.ce_0.size_0.z;
+    if((column_1 >= _S841))
     {
         return;
     }
-    walk1_0(column_1, _S839, _S838.w, deriche_of_0());
+    walk2x3_0(column_1, _S841, _S840.w, deriche_of_0());
     return;
 }
 
 @compute
 @workgroup_size(16, 16, 1)
-fn blur_rows1(@builtin(global_invocation_id) id_7 : vec3<u32>)
+fn blur_rows2x3(@builtin(global_invocation_id) id_7 : vec3<u32>)
 {
     var row_1 : u32 = id_7.y * u32(16) + id_7.x;
-    var _S840 : vec4<u32> = params_0.ce_0.size_0;
+    var _S842 : vec4<u32> = params_0.ce_0.size_0;
     if((row_1 >= (params_0.ce_0.size_0.w)))
     {
         return;
     }
-    var _S841 : u32 = _S840.z;
-    walk1_0(row_1 * _S841, u32(1), _S841, deriche_of_0());
+    var _S843 : u32 = _S842.z;
+    walk2x3_0(row_1 * _S843, u32(1), _S843, deriche_of_0());
+    return;
+}
+
+fn causal_1( d_6 : Deriche_0,  xc_3 : f32,  xp_3 : f32,  yp_2 : f32,  yb_3 : f32) -> f32
+{
+    return d_6.a0_0 * xc_3 + d_6.a1_0 * xp_3 - d_6.b1_0 * yp_2 - d_6.b2_0 * yb_3;
+}
+
+fn anticausal_1( d_7 : Deriche_0,  xn_3 : f32,  xa_2 : f32,  yn_3 : f32,  ya_2 : f32) -> f32
+{
+    return d_7.a2_0 * xn_3 + d_7.a3_0 * xa_2 - d_7.b1_0 * yn_3 - d_7.b2_0 * ya_2;
+}
+
+fn walk1_0( start_2 : u32,  stride_2 : u32,  count_2 : u32,  d_8 : Deriche_0)
+{
+    var xp_4 : f32 = clampf_0(line1_in_0[start_2], -1.0e+09f, 1.0e+09f);
+    var yb_4 : f32 = xp_4 * d_8.coefp_0;
+    var xp_5 : f32 = xp_4;
+    var yp_3 : f32 = yb_4;
+    var yb_5 : f32 = yb_4;
+    var n_2 : u32 = u32(0);
+    loop
+    {
+        if((n_2 < count_2))
+        {
+        }
+        else
+        {
+            break;
+        }
+        var at_4 : u32 = start_2 + n_2 * stride_2;
+        var xc_4 : f32 = clampf_0(line1_in_0[at_4], -1.0e+09f, 1.0e+09f);
+        var yc_2 : f32 = causal_1(d_8, xc_4, xp_5, yp_3, yb_5);
+        line1_out_0[at_4] = yc_2;
+        var _S844 : u32 = n_2 + u32(1);
+        xp_5 = xc_4;
+        yb_5 = yp_3;
+        yp_3 = yc_2;
+        n_2 = _S844;
+    }
+    var xn_4 : f32 = clampf_0(line1_in_0[start_2 + (count_2 - u32(1)) * stride_2], -1.0e+09f, 1.0e+09f);
+    var yn_4 : f32 = xn_4 * d_8.coefn_0;
+    var xn_5 : f32 = xn_4;
+    var xa_3 : f32 = xn_4;
+    var yn_5 : f32 = yn_4;
+    var ya_3 : f32 = yn_4;
+    n_2 = count_2;
+    loop
+    {
+        if((n_2 > u32(0)))
+        {
+        }
+        else
+        {
+            break;
+        }
+        var _S845 : u32 = n_2 - u32(1);
+        var at_5 : u32 = start_2 + _S845 * stride_2;
+        var xc_5 : f32 = clampf_0(line1_in_0[at_5], -1.0e+09f, 1.0e+09f);
+        var yc_3 : f32 = anticausal_1(d_8, xn_5, xa_3, yn_5, ya_3);
+        line1_out_0[at_5] = line1_out_0[at_5] + yc_3;
+        xa_3 = xn_5;
+        xn_5 = xc_5;
+        ya_3 = yn_5;
+        yn_5 = yc_3;
+        n_2 = _S845;
+    }
+    return;
+}
+
+@compute
+@workgroup_size(16, 16, 1)
+fn blur_columns1(@builtin(global_invocation_id) id_8 : vec3<u32>)
+{
+    var column_2 : u32 = id_8.y * u32(16) + id_8.x;
+    var _S846 : vec4<u32> = params_0.ce_0.size_0;
+    var _S847 : u32 = params_0.ce_0.size_0.z;
+    if((column_2 >= _S847))
+    {
+        return;
+    }
+    walk1_0(column_2, _S847, _S846.w, deriche_of_0());
+    return;
+}
+
+@compute
+@workgroup_size(16, 16, 1)
+fn blur_rows1(@builtin(global_invocation_id) id_9 : vec3<u32>)
+{
+    var row_2 : u32 = id_9.y * u32(16) + id_9.x;
+    var _S848 : vec4<u32> = params_0.ce_0.size_0;
+    if((row_2 >= (params_0.ce_0.size_0.w)))
+    {
+        return;
+    }
+    var _S849 : u32 = _S848.z;
+    walk1_0(row_2 * _S849, u32(1), _S849, deriche_of_0());
     return;
 }
 
@@ -3392,148 +3540,148 @@ struct Taps_0
      dy_prev_0 : f32,
 };
 
-fn bilinear_0( at_4 : vec2<u32>,  size_in_0 : vec2<u32>,  size_out_0 : vec2<u32>) -> Taps_0
+fn bilinear_0( at_6 : vec2<u32>,  size_in_0 : vec2<u32>,  size_out_0 : vec2<u32>) -> Taps_0
 {
-    var _S842 : u32 = size_in_0.x;
-    var x_in_0 : f32 = f32(at_4.x) / f32(size_out_0.x) * f32(_S842);
-    var _S843 : u32 = size_in_0.y;
-    var y_in_0 : f32 = f32(at_4.y) / f32(size_out_0.y) * f32(_S843);
+    var _S850 : u32 = size_in_0.x;
+    var x_in_0 : f32 = f32(at_6.x) / f32(size_out_0.x) * f32(_S850);
+    var _S851 : u32 = size_in_0.y;
+    var y_in_0 : f32 = f32(at_6.y) / f32(size_out_0.y) * f32(_S851);
     var x_prev_4 : u32 = u32(floor(x_in_0));
     var y_prev_1 : u32 = u32(floor(y_in_0));
     var t_0 : Taps_0;
-    var _S844 : u32 = _S842 - u32(1);
-    var _S845 : u32 = min(x_prev_4 + u32(1), _S844);
-    t_0.x_next_0 = _S845;
-    var _S846 : u32 = _S843 - u32(1);
-    var _S847 : u32 = min(y_prev_1 + u32(1), _S846);
-    t_0.y_next_0 = _S847;
-    t_0.x_prev_3 = min(x_prev_4, _S844);
-    t_0.y_prev_0 = min(y_prev_1, _S846);
-    var _S848 : f32 = f32(_S845) - x_in_0;
-    t_0.dx_next_0 = _S848;
-    t_0.dx_prev_0 = 1.0f - _S848;
-    var _S849 : f32 = f32(_S847) - y_in_0;
-    t_0.dy_next_0 = _S849;
-    t_0.dy_prev_0 = 1.0f - _S849;
+    var _S852 : u32 = _S850 - u32(1);
+    var _S853 : u32 = min(x_prev_4 + u32(1), _S852);
+    t_0.x_next_0 = _S853;
+    var _S854 : u32 = _S851 - u32(1);
+    var _S855 : u32 = min(y_prev_1 + u32(1), _S854);
+    t_0.y_next_0 = _S855;
+    t_0.x_prev_3 = min(x_prev_4, _S852);
+    t_0.y_prev_0 = min(y_prev_1, _S854);
+    var _S856 : f32 = f32(_S853) - x_in_0;
+    t_0.dx_next_0 = _S856;
+    t_0.dx_prev_0 = 1.0f - _S856;
+    var _S857 : f32 = f32(_S855) - y_in_0;
+    t_0.dy_next_0 = _S857;
+    t_0.dy_prev_0 = 1.0f - _S857;
     return t_0;
 }
 
 fn interpolate_0( t_1 : Taps_0,  nw_0 : vec2<f32>,  ne_0 : vec2<f32>,  sw_0 : vec2<f32>,  se_0 : vec2<f32>) -> vec2<f32>
 {
-    var _S850 : vec2<f32> = vec2<f32>(t_1.dx_next_0);
-    var _S851 : vec2<f32> = vec2<f32>(t_1.dx_prev_0);
-    return vec2<f32>(t_1.dy_prev_0) * (sw_0 * _S850 + se_0 * _S851) + vec2<f32>(t_1.dy_next_0) * (nw_0 * _S850 + ne_0 * _S851);
+    var _S858 : vec2<f32> = vec2<f32>(t_1.dx_next_0);
+    var _S859 : vec2<f32> = vec2<f32>(t_1.dx_prev_0);
+    return vec2<f32>(t_1.dy_prev_0) * (sw_0 * _S858 + se_0 * _S859) + vec2<f32>(t_1.dy_next_0) * (nw_0 * _S858 + ne_0 * _S859);
 }
 
-fn uv_on_grid_0( _S852 : vec2<u32>) -> vec2<f32>
+fn uv_on_grid_0( _S860 : vec2<u32>) -> vec2<f32>
 {
-    var _S853 : vec4<u32> = params_0.ce_0.size_0;
+    var _S861 : vec4<u32> = params_0.ce_0.size_0;
     var w_0 : u32 = params_0.ce_0.size_0.x;
     if((params_0.ce_0.mode_0.y) == u32(0))
     {
-        return uv_0[_S852.y * w_0 + _S852.x];
+        return uv_0[_S860.y * w_0 + _S860.x];
     }
-    var t_2 : Taps_0 = bilinear_0(_S852, _S853.xy, _S853.zw);
-    var _S854 : u32 = t_2.y_prev_0 * w_0;
-    var _S855 : u32 = t_2.y_next_0 * w_0;
-    return interpolate_0(t_2, uv_0[_S854 + t_2.x_prev_3], uv_0[_S854 + t_2.x_next_0], uv_0[_S855 + t_2.x_prev_3], uv_0[_S855 + t_2.x_next_0]);
+    var t_2 : Taps_0 = bilinear_0(_S860, _S861.xy, _S861.zw);
+    var _S862 : u32 = t_2.y_prev_0 * w_0;
+    var _S863 : u32 = t_2.y_next_0 * w_0;
+    return interpolate_0(t_2, uv_0[_S862 + t_2.x_prev_3], uv_0[_S862 + t_2.x_next_0], uv_0[_S863 + t_2.x_prev_3], uv_0[_S863 + t_2.x_next_0]);
 }
 
 @compute
 @workgroup_size(16, 16, 1)
-fn prefilter_init(@builtin(global_invocation_id) id_8 : vec3<u32>)
+fn prefilter_init(@builtin(global_invocation_id) id_10 : vec3<u32>)
 {
-    var _S856 : u32 = id_8.x;
-    var _S857 : vec4<u32> = params_0.ce_0.size_0;
-    var _S858 : u32 = params_0.ce_0.size_0.z;
-    var _S859 : bool;
-    if((_S856 >= _S858))
+    var _S864 : u32 = id_10.x;
+    var _S865 : vec4<u32> = params_0.ce_0.size_0;
+    var _S866 : u32 = params_0.ce_0.size_0.z;
+    var _S867 : bool;
+    if((_S864 >= _S866))
     {
-        _S859 = true;
+        _S867 = true;
     }
     else
     {
-        _S859 = ((id_8.y) >= (_S857.w));
+        _S867 = ((id_10.y) >= (_S865.w));
     }
-    if(_S859)
+    if(_S867)
     {
         return;
     }
-    var d_8 : u32 = id_8.y * _S858 + _S856;
-    var _S860 : vec2<f32> = uv_on_grid_0(id_8.xy);
-    grid_uv_0[d_8] = _S860;
-    var _S861 : f32 = _S860.x;
-    var _S862 : f32 = _S860.y;
-    var _S863 : f32 = _S861 * _S862;
-    p1_0[d_8] = vec2<f32>(_S861 * _S861, _S863);
-    p2_0[d_8] = vec2<f32>(_S863, _S862 * _S862);
+    var d_9 : u32 = id_10.y * _S866 + _S864;
+    var _S868 : vec2<f32> = uv_on_grid_0(id_10.xy);
+    grid_uv_0[d_9] = _S868;
+    var _S869 : f32 = _S868.x;
+    var _S870 : f32 = _S868.y;
+    var _S871 : f32 = _S869 * _S870;
+    p1_0[d_9] = vec2<f32>(_S869 * _S869, _S871);
+    p2_0[d_9] = vec2<f32>(_S871, _S870 * _S870);
     return;
 }
 
 fn inverse_of_0( sigma_0 : vec4<f32>,  invertible_0 : ptr<function, bool>) -> vec4<f32>
 {
-    var _S864 : f32 = sigma_0.x;
-    var _S865 : f32 = sigma_0.w;
-    var _S866 : f32 = sigma_0.y;
-    var _S867 : f32 = sigma_0.z;
-    var det_0 : f32 = _S864 * _S865 - _S866 * _S867;
-    var _S868 : bool = ((abs(det_0)) > 4.76837158203125e-07f);
-    (*invertible_0) = _S868;
-    if(!_S868)
+    var _S872 : f32 = sigma_0.x;
+    var _S873 : f32 = sigma_0.w;
+    var _S874 : f32 = sigma_0.y;
+    var _S875 : f32 = sigma_0.z;
+    var det_0 : f32 = _S872 * _S873 - _S874 * _S875;
+    var _S876 : bool = ((abs(det_0)) > 4.76837158203125e-07f);
+    (*invertible_0) = _S876;
+    if(!_S876)
     {
         return vec4<f32>(0.0f);
     }
-    return vec4<f32>(_S865 / det_0, - _S866 / det_0, - _S867 / det_0, _S864 / det_0);
+    return vec4<f32>(_S873 / det_0, - _S874 / det_0, - _S875 / det_0, _S872 / det_0);
 }
 
 @compute
 @workgroup_size(16, 16, 1)
-fn prefilter_coefficients(@builtin(global_invocation_id) id_9 : vec3<u32>)
+fn prefilter_coefficients(@builtin(global_invocation_id) id_11 : vec3<u32>)
 {
-    var _S869 : u32 = id_9.x;
-    var _S870 : vec4<u32> = params_0.ce_0.size_0;
-    var _S871 : u32 = params_0.ce_0.size_0.z;
-    var _S872 : bool;
-    if((_S869 >= _S871))
+    var _S877 : u32 = id_11.x;
+    var _S878 : vec4<u32> = params_0.ce_0.size_0;
+    var _S879 : u32 = params_0.ce_0.size_0.z;
+    var _S880 : bool;
+    if((_S877 >= _S879))
     {
-        _S872 = true;
+        _S880 = true;
     }
     else
     {
-        _S872 = ((id_9.y) >= (_S870.w));
+        _S880 = ((id_11.y) >= (_S878.w));
     }
-    if(_S872)
+    if(_S880)
     {
         return;
     }
-    var d_9 : u32 = id_9.y * _S871 + _S869;
-    var _S873 : f32 = grid_uv_0[d_9].x;
-    var _S874 : f32 = p1_0[d_9].x - _S873 * _S873;
-    var _S875 : f32 = grid_uv_0[d_9].y;
-    var _S876 : f32 = _S873 * _S875;
-    var _S877 : f32 = p1_0[d_9].y - _S876;
-    var _S878 : f32 = p2_0[d_9].x - _S876;
-    var _S879 : f32 = p2_0[d_9].y - _S875 * _S875;
+    var d_10 : u32 = id_11.y * _S879 + _S877;
+    var _S881 : f32 = grid_uv_0[d_10].x;
+    var _S882 : f32 = p1_0[d_10].x - _S881 * _S881;
+    var _S883 : f32 = grid_uv_0[d_10].y;
+    var _S884 : f32 = _S881 * _S883;
+    var _S885 : f32 = p1_0[d_10].y - _S884;
+    var _S886 : f32 = p2_0[d_10].x - _S884;
+    var _S887 : f32 = p2_0[d_10].y - _S883 * _S883;
     var eps_0 : f32 = params_0.ce_0.shifts_0.z;
     var invertible_1 : bool;
-    var inv_0 : vec4<f32> = inverse_of_0(vec4<f32>(_S874 + eps_0, _S877, _S878, _S879 + eps_0), &(invertible_1));
-    var _S880 : vec4<f32> = vec4<f32>(0.0f);
+    var inv_0 : vec4<f32> = inverse_of_0(vec4<f32>(_S882 + eps_0, _S885, _S886, _S887 + eps_0), &(invertible_1));
+    var _S888 : vec4<f32> = vec4<f32>(0.0f);
     var a_2 : vec4<f32>;
     if(invertible_1)
     {
-        var _S881 : f32 = inv_0.x;
-        var _S882 : f32 = inv_0.y;
-        var _S883 : f32 = inv_0.z;
-        var _S884 : f32 = inv_0.w;
-        a_2 = vec4<f32>(_S874 * _S881 + _S877 * _S882, _S874 * _S883 + _S877 * _S884, _S878 * _S881 + _S879 * _S882, _S878 * _S883 + _S879 * _S884);
+        var _S889 : f32 = inv_0.x;
+        var _S890 : f32 = inv_0.y;
+        var _S891 : f32 = inv_0.z;
+        var _S892 : f32 = inv_0.w;
+        a_2 = vec4<f32>(_S882 * _S889 + _S885 * _S890, _S882 * _S891 + _S885 * _S892, _S886 * _S889 + _S887 * _S890, _S886 * _S891 + _S887 * _S892);
     }
     else
     {
-        a_2 = _S880;
+        a_2 = _S888;
     }
-    p1_0[d_9] = a_2.xy;
-    p2_0[d_9] = a_2.zw;
-    c1_0[d_9] = vec2<f32>(_S873 - a_2.x * _S873 - a_2.y * _S875, _S875 - a_2.z * _S873 - a_2.w * _S875);
+    p1_0[d_10] = a_2.xy;
+    p2_0[d_10] = a_2.zw;
+    c1_0[d_10] = vec2<f32>(_S881 - a_2.x * _S881 - a_2.y * _S883, _S883 - a_2.z * _S881 - a_2.w * _S883);
     return;
 }
 
@@ -3541,9 +3689,9 @@ fn satweight_0( offset_6 : u32,  sat_0 : f32) -> f32
 {
     var isat_0 : f32 = 4096.0f * (1.0f + clamp(sat_0, -1.0f, 0.999755859375f));
     var base_0 : f32 = floor(isat_0);
-    var _S885 : u32 = offset_6 + u32(base_0);
-    var w_1 : f32 = table_0[_S885];
-    return w_1 + (isat_0 - base_0) * (table_0[_S885 + u32(1)] - w_1);
+    var _S893 : u32 = offset_6 + u32(base_0);
+    var w_1 : f32 = table_0[_S893];
+    return w_1 + (isat_0 - base_0) * (table_0[_S893 + u32(1)] - w_1);
 }
 
 struct Coefficients_0
@@ -3552,23 +3700,23 @@ struct Coefficients_0
      b_4 : vec2<f32>,
 };
 
-fn coefficients_at_0( _S886 : vec2<u32>,  _S887 : u32) -> Coefficients_0
+fn coefficients_at_0( _S894 : vec2<u32>,  _S895 : u32) -> Coefficients_0
 {
     var c_4 : Coefficients_0;
     if((params_0.ce_0.mode_0.y) == u32(0))
     {
-        c_4.a_3 = vec4<f32>(p1_0[_S887], p2_0[_S887]);
-        c_4.b_4 = c1_0[_S887];
+        c_4.a_3 = vec4<f32>(p1_0[_S895], p2_0[_S895]);
+        c_4.b_4 = c1_0[_S895];
         return c_4;
     }
     var w_2 : u32 = params_0.ce_0.size_0.z;
-    var t_3 : Taps_0 = bilinear_0(_S886, params_0.ce_0.size_0.zw, params_0.ce_0.size_0.xy);
-    var _S888 : u32 = t_3.y_prev_0 * w_2;
-    var nw_1 : u32 = _S888 + t_3.x_prev_3;
-    var ne_1 : u32 = _S888 + t_3.x_next_0;
-    var _S889 : u32 = t_3.y_next_0 * w_2;
-    var sw_1 : u32 = _S889 + t_3.x_prev_3;
-    var se_1 : u32 = _S889 + t_3.x_next_0;
+    var t_3 : Taps_0 = bilinear_0(_S894, params_0.ce_0.size_0.zw, params_0.ce_0.size_0.xy);
+    var _S896 : u32 = t_3.y_prev_0 * w_2;
+    var nw_1 : u32 = _S896 + t_3.x_prev_3;
+    var ne_1 : u32 = _S896 + t_3.x_next_0;
+    var _S897 : u32 = t_3.y_next_0 * w_2;
+    var sw_1 : u32 = _S897 + t_3.x_prev_3;
+    var se_1 : u32 = _S897 + t_3.x_next_0;
     c_4.a_3 = vec4<f32>(interpolate_0(t_3, p1_0[nw_1], p1_0[ne_1], p1_0[sw_1], p1_0[se_1]), interpolate_0(t_3, p2_0[nw_1], p2_0[ne_1], p2_0[sw_1], p2_0[se_1]));
     c_4.b_4 = interpolate_0(t_3, c1_0[nw_1], c1_0[ne_1], c1_0[sw_1], c1_0[se_1]);
     return c_4;
@@ -3576,25 +3724,25 @@ fn coefficients_at_0( _S886 : vec2<u32>,  _S887 : u32) -> Coefficients_0
 
 @compute
 @workgroup_size(16, 16, 1)
-fn prefilter_apply(@builtin(global_invocation_id) id_10 : vec3<u32>)
+fn prefilter_apply(@builtin(global_invocation_id) id_12 : vec3<u32>)
 {
-    var _S890 : u32 = id_10.x;
-    var _S891 : vec4<u32> = params_0.ce_0.size_0;
-    var _S892 : u32 = params_0.ce_0.size_0.x;
-    var _S893 : bool;
-    if((_S890 >= _S892))
+    var _S898 : u32 = id_12.x;
+    var _S899 : vec4<u32> = params_0.ce_0.size_0;
+    var _S900 : u32 = params_0.ce_0.size_0.x;
+    var _S901 : bool;
+    if((_S898 >= _S900))
     {
-        _S893 = true;
+        _S901 = true;
     }
     else
     {
-        _S893 = ((id_10.y) >= (_S891.y));
+        _S901 = ((id_12.y) >= (_S899.y));
     }
-    if(_S893)
+    if(_S901)
     {
         return;
     }
-    var k_0 : u32 = id_10.y * _S892 + _S890;
+    var k_0 : u32 = id_12.y * _S900 + _S898;
     var base_1 : vec2<f32>;
     if((params_0.ce_0.mode_0.w) != u32(0))
     {
@@ -3604,24 +3752,24 @@ fn prefilter_apply(@builtin(global_invocation_id) id_10 : vec3<u32>)
     {
         base_1 = uv_0[k_0];
     }
-    var _S894 : Coefficients_0 = coefficients_at_0(id_10.xy, k_0);
-    var _S895 : f32 = base_1.x;
-    var _S896 : f32 = base_1.y;
-    uv_0[k_0] = vec2<f32>(satweight_0(u32(0), saturation_0[k_0] - params_0.ce_0.shifts_0.x)) * (vec2<f32>(_S894.a_3.x * _S895 + _S894.a_3.y * _S896 + _S894.b_4.x, _S894.a_3.z * _S895 + _S894.a_3.w * _S896 + _S894.b_4.y) - base_1) + base_1;
+    var _S902 : Coefficients_0 = coefficients_at_0(id_12.xy, k_0);
+    var _S903 : f32 = base_1.x;
+    var _S904 : f32 = base_1.y;
+    uv_0[k_0] = vec2<f32>(satweight_0(u32(0), saturation_0[k_0] - params_0.ce_0.shifts_0.x)) * (vec2<f32>(_S902.a_3.x * _S903 + _S902.a_3.y * _S904 + _S902.b_4.x, _S902.a_3.z * _S903 + _S902.a_3.w * _S904 + _S902.b_4.y) - base_1) + base_1;
     return;
 }
 
-fn scharr_at_0( _S897 : i32,  _S898 : i32) -> f32
+fn scharr_at_0( _S905 : i32,  _S906 : i32) -> f32
 {
     var w_3 : i32 = i32(params_0.ce_0.size_0.x);
-    var _S899 : i32 = i32(params_0.ce_0.size_0.y) - i32(1);
-    var up_0 : i32 = clamp(_S897 - i32(1), i32(0), _S899) * w_3;
-    var mid_0 : i32 = clamp(_S897, i32(0), _S899) * w_3;
-    var down_0 : i32 = clamp(_S897 + i32(1), i32(0), _S899) * w_3;
-    var _S900 : i32 = w_3 - i32(1);
-    var left_2 : i32 = clamp(_S898 - i32(1), i32(0), _S900);
-    var centre_0 : i32 = clamp(_S898, i32(0), _S900);
-    var right_2 : i32 = clamp(_S898 + i32(1), i32(0), _S900);
+    var _S907 : i32 = i32(params_0.ce_0.size_0.y) - i32(1);
+    var up_0 : i32 = clamp(_S905 - i32(1), i32(0), _S907) * w_3;
+    var mid_0 : i32 = clamp(_S905, i32(0), _S907) * w_3;
+    var down_0 : i32 = clamp(_S905 + i32(1), i32(0), _S907) * w_3;
+    var _S908 : i32 = w_3 - i32(1);
+    var left_2 : i32 = clamp(_S906 - i32(1), i32(0), _S908);
+    var centre_0 : i32 = clamp(_S906, i32(0), _S908);
+    var right_2 : i32 = clamp(_S906 + i32(1), i32(0), _S908);
     var gx_0 : f32 = 0.18431372940540314f * (saturation_0[up_0 + left_2] - saturation_0[up_0 + right_2] + saturation_0[down_0 + left_2] - saturation_0[down_0 + right_2]) + 0.63529413938522339f * (saturation_0[mid_0 + left_2] - saturation_0[mid_0 + right_2]);
     var gy_0 : f32 = 0.18431372940540314f * (saturation_0[up_0 + left_2] - saturation_0[down_0 + left_2] + saturation_0[up_0 + right_2] - saturation_0[down_0 + right_2]) + 0.63529413938522339f * (saturation_0[up_0 + centre_0] - saturation_0[down_0 + centre_0]);
     return sqrt(gx_0 * gx_0 + gy_0 * gy_0);
@@ -3629,49 +3777,49 @@ fn scharr_at_0( _S897 : i32,  _S898 : i32) -> f32
 
 @compute
 @workgroup_size(16, 16, 1)
-fn corrections_pass(@builtin(global_invocation_id) id_11 : vec3<u32>)
+fn corrections_pass(@builtin(global_invocation_id) id_13 : vec3<u32>)
 {
-    var _S901 : u32 = id_11.x;
-    var _S902 : vec4<u32> = params_0.ce_0.size_0;
-    var _S903 : u32 = params_0.ce_0.size_0.x;
-    var _S904 : bool;
-    if((_S901 >= _S903))
+    var _S909 : u32 = id_13.x;
+    var _S910 : vec4<u32> = params_0.ce_0.size_0;
+    var _S911 : u32 = params_0.ce_0.size_0.x;
+    var _S912 : bool;
+    if((_S909 >= _S911))
     {
-        _S904 = true;
+        _S912 = true;
     }
     else
     {
-        _S904 = ((id_11.y) >= (_S902.y));
+        _S912 = ((id_13.y) >= (_S910.y));
     }
-    if(_S904)
+    if(_S912)
     {
         return;
     }
-    var _S905 : u32 = id_11.y;
-    var k_1 : u32 = _S905 * _S903 + _S901;
+    var _S913 : u32 = id_13.y;
+    var k_1 : u32 = _S913 * _S911 + _S909;
     var jch_3 : vec3<f32> = luv_to_jch_0(lightness_0[k_1], params_0.ce_0.white_0.x, uv_0[k_1]);
     var hsb_2 : vec3<f32> = ucs_jch_to_hsb_0(jch_3);
-    var _S906 : f32 = max(0.0f, scharr_at_0(min(i32(_S902.y) - i32(2), max(i32(1), i32(_S905))), min(i32(_S903) - i32(2), max(i32(1), i32(_S901)))) - 0.019999999552965164f);
-    var _S907 : vec4<f32> = params_0.ce_0.shifts_0;
-    lightness_0[k_1] = params_0.ce_0.shifts_0.w * (_S906 * _S906);
-    const _S908 : vec2<f32> = vec2<f32>(0.0f, 1.0f);
+    var _S914 : f32 = max(0.0f, scharr_at_0(min(i32(_S910.y) - i32(2), max(i32(1), i32(_S913))), min(i32(_S911) - i32(2), max(i32(1), i32(_S909)))) - 0.019999999552965164f);
+    var _S915 : vec4<f32> = params_0.ce_0.shifts_0;
+    lightness_0[k_1] = params_0.ce_0.shifts_0.w * (_S914 * _S914);
+    const _S916 : vec2<f32> = vec2<f32>(0.0f, 1.0f);
     var c_5 : vec2<f32>;
     var b_5 : f32;
     if(((jch_3.y) > 1.52587890625e-05f))
     {
-        var _S909 : f32 = hsb_2.x;
-        var _S910 : f32 = hsb_2.y * (lookup_0(u32(1024), _S909) - 1.0f);
-        c_5 = vec2<f32>(lookup_0(u32(0), _S909), lookup_0(u32(512), _S909));
-        b_5 = _S910;
+        var _S917 : f32 = hsb_2.x;
+        var _S918 : f32 = hsb_2.y * (lookup_0(u32(1024), _S917) - 1.0f);
+        c_5 = vec2<f32>(lookup_0(u32(0), _S917), lookup_0(u32(512), _S917));
+        b_5 = _S918;
     }
     else
     {
-        c_5 = _S908;
+        c_5 = _S916;
         b_5 = 0.0f;
     }
     corrections_0[k_1] = c_5;
     brightness_0[k_1] = b_5;
-    weights_0[k_1] = vec2<f32>(satweight_0(u32(1536), saturation_0[k_1] - _S907.x), satweight_0(u32(1536), saturation_0[k_1] - _S907.y));
+    weights_0[k_1] = vec2<f32>(satweight_0(u32(1536), saturation_0[k_1] - _S915.x), satweight_0(u32(1536), saturation_0[k_1] - _S915.y));
     return;
 }
 
@@ -3682,84 +3830,49 @@ fn interpolate_1( t_4 : Taps_0,  nw_2 : f32,  ne_2 : f32,  sw_2 : f32,  se_2 : f
 
 @compute
 @workgroup_size(16, 16, 1)
-fn guide_downsample(@builtin(global_invocation_id) id_12 : vec3<u32>)
+fn guide_downsample(@builtin(global_invocation_id) id_14 : vec3<u32>)
 {
-    var _S911 : u32 = id_12.x;
-    var _S912 : vec4<u32> = params_0.ce_0.size_0;
-    var _S913 : u32 = params_0.ce_0.size_0.z;
-    var _S914 : bool;
-    if((_S911 >= _S913))
+    var _S919 : u32 = id_14.x;
+    var _S920 : vec4<u32> = params_0.ce_0.size_0;
+    var _S921 : u32 = params_0.ce_0.size_0.z;
+    var _S922 : bool;
+    if((_S919 >= _S921))
     {
-        _S914 = true;
+        _S922 = true;
     }
     else
     {
-        _S914 = ((id_12.y) >= (_S912.w));
+        _S922 = ((id_14.y) >= (_S920.w));
     }
-    if(_S914)
+    if(_S922)
     {
         return;
     }
-    var d_10 : u32 = id_12.y * _S913 + _S911;
+    var d_11 : u32 = id_14.y * _S921 + _S919;
     if((params_0.ce_0.mode_0.y) == u32(0))
     {
-        grid_corrections_0[d_10] = corrections_0[d_10];
-        grid_brightness_0[d_10] = brightness_0[d_10];
+        grid_corrections_0[d_11] = corrections_0[d_11];
+        grid_brightness_0[d_11] = brightness_0[d_11];
         return;
     }
-    var w_4 : u32 = _S912.x;
-    var t_5 : Taps_0 = bilinear_0(id_12.xy, _S912.xy, _S912.zw);
-    var _S915 : u32 = t_5.y_prev_0 * w_4;
-    var nw_3 : u32 = _S915 + t_5.x_prev_3;
-    var ne_3 : u32 = _S915 + t_5.x_next_0;
-    var _S916 : u32 = t_5.y_next_0 * w_4;
-    var sw_3 : u32 = _S916 + t_5.x_prev_3;
-    var se_3 : u32 = _S916 + t_5.x_next_0;
-    grid_corrections_0[d_10] = interpolate_0(t_5, corrections_0[nw_3], corrections_0[ne_3], corrections_0[sw_3], corrections_0[se_3]);
-    grid_brightness_0[d_10] = interpolate_1(t_5, brightness_0[nw_3], brightness_0[ne_3], brightness_0[sw_3], brightness_0[se_3]);
+    var w_4 : u32 = _S920.x;
+    var t_5 : Taps_0 = bilinear_0(id_14.xy, _S920.xy, _S920.zw);
+    var _S923 : u32 = t_5.y_prev_0 * w_4;
+    var nw_3 : u32 = _S923 + t_5.x_prev_3;
+    var ne_3 : u32 = _S923 + t_5.x_next_0;
+    var _S924 : u32 = t_5.y_next_0 * w_4;
+    var sw_3 : u32 = _S924 + t_5.x_prev_3;
+    var se_3 : u32 = _S924 + t_5.x_next_0;
+    grid_corrections_0[d_11] = interpolate_0(t_5, corrections_0[nw_3], corrections_0[ne_3], corrections_0[sw_3], corrections_0[se_3]);
+    grid_brightness_0[d_11] = interpolate_1(t_5, brightness_0[nw_3], brightness_0[ne_3], brightness_0[sw_3], brightness_0[se_3]);
     return;
 }
 
 @compute
 @workgroup_size(16, 16, 1)
-fn guide_init(@builtin(global_invocation_id) id_13 : vec3<u32>)
+fn guide_init(@builtin(global_invocation_id) id_15 : vec3<u32>)
 {
-    var _S917 : u32 = id_13.x;
-    var _S918 : vec4<u32> = params_0.ce_0.size_0;
-    var _S919 : u32 = params_0.ce_0.size_0.z;
-    var _S920 : bool;
-    if((_S917 >= _S919))
-    {
-        _S920 = true;
-    }
-    else
-    {
-        _S920 = ((id_13.y) >= (_S918.w));
-    }
-    if(_S920)
-    {
-        return;
-    }
-    var d_11 : u32 = id_13.y * _S919 + _S917;
-    var _S921 : vec2<f32> = uv_on_grid_0(id_13.xy);
-    var c_6 : f32 = grid_corrections_0[d_11].y;
-    var b_6 : f32 = grid_brightness_0[d_11];
-    grid_uv_0[d_11] = _S921;
-    var _S922 : f32 = _S921.x;
-    var _S923 : f32 = _S921.y;
-    var _S924 : f32 = _S922 * _S923;
-    p1_0[d_11] = vec2<f32>(_S922 * _S922, _S924);
-    p2_0[d_11] = vec2<f32>(_S924, _S923 * _S923);
-    c1_0[d_11] = vec2<f32>(_S922 * c_6, _S923 * c_6);
-    c2_0[d_11] = vec2<f32>(_S922 * b_6, _S923 * b_6);
-    return;
-}
-
-@compute
-@workgroup_size(16, 16, 1)
-fn guide_coefficients(@builtin(global_invocation_id) id_14 : vec3<u32>)
-{
-    var _S925 : u32 = id_14.x;
+    var _S925 : u32 = id_15.x;
     var _S926 : vec4<u32> = params_0.ce_0.size_0;
     var _S927 : u32 = params_0.ce_0.size_0.z;
     var _S928 : bool;
@@ -3769,73 +3882,108 @@ fn guide_coefficients(@builtin(global_invocation_id) id_14 : vec3<u32>)
     }
     else
     {
-        _S928 = ((id_14.y) >= (_S926.w));
+        _S928 = ((id_15.y) >= (_S926.w));
     }
     if(_S928)
     {
         return;
     }
-    var d_12 : u32 = id_14.y * _S927 + _S925;
-    var mc_0 : f32 = grid_corrections_0[d_12].y;
-    var mb_0 : f32 = grid_brightness_0[d_12];
-    var _S929 : f32 = grid_uv_0[d_12].x;
-    var _S930 : f32 = grid_uv_0[d_12].y;
-    var _S931 : f32 = _S929 * _S930;
-    var _S932 : f32 = c1_0[d_12].x - _S929 * mc_0;
-    var _S933 : f32 = c1_0[d_12].y - _S930 * mc_0;
-    var _S934 : f32 = c2_0[d_12].x - _S929 * grid_brightness_0[d_12];
-    var _S935 : f32 = c2_0[d_12].y - _S930 * grid_brightness_0[d_12];
-    var eps_1 : f32 = params_0.ce_0.shifts_0.z;
-    var invertible_2 : bool;
-    var inv_1 : vec4<f32> = inverse_of_0(vec4<f32>(p1_0[d_12].x - _S929 * _S929 + eps_1, p1_0[d_12].y - _S931, p2_0[d_12].x - _S931, p2_0[d_12].y - _S930 * _S930 + eps_1), &(invertible_2));
-    var _S936 : vec4<f32> = vec4<f32>(0.0f);
-    var a_4 : vec4<f32>;
-    if(invertible_2)
-    {
-        var _S937 : f32 = inv_1.x;
-        var _S938 : f32 = inv_1.y;
-        var _S939 : f32 = inv_1.z;
-        var _S940 : f32 = inv_1.w;
-        a_4 = vec4<f32>(_S932 * _S937 + _S933 * _S938, _S932 * _S939 + _S933 * _S940, _S934 * _S937 + _S935 * _S938, _S934 * _S939 + _S935 * _S940);
-    }
-    else
-    {
-        a_4 = _S936;
-    }
-    p1_0[d_12] = a_4.xy;
-    p2_0[d_12] = a_4.zw;
-    c1_0[d_12] = vec2<f32>(mc_0 - a_4.x * _S929 - a_4.y * _S930, mb_0 - a_4.z * _S929 - a_4.w * _S930);
+    var d_12 : u32 = id_15.y * _S927 + _S925;
+    var _S929 : vec2<f32> = uv_on_grid_0(id_15.xy);
+    var c_6 : f32 = grid_corrections_0[d_12].y;
+    var b_6 : f32 = grid_brightness_0[d_12];
+    grid_uv_0[d_12] = _S929;
+    var _S930 : f32 = _S929.x;
+    var _S931 : f32 = _S929.y;
+    var _S932 : f32 = _S930 * _S931;
+    p1_0[d_12] = vec2<f32>(_S930 * _S930, _S932);
+    p2_0[d_12] = vec2<f32>(_S932, _S931 * _S931);
+    c1_0[d_12] = vec2<f32>(_S930 * c_6, _S931 * c_6);
+    c2_0[d_12] = vec2<f32>(_S930 * b_6, _S931 * b_6);
     return;
 }
 
 @compute
 @workgroup_size(16, 16, 1)
-fn guide_apply(@builtin(global_invocation_id) id_15 : vec3<u32>)
+fn guide_coefficients(@builtin(global_invocation_id) id_16 : vec3<u32>)
 {
-    var _S941 : u32 = id_15.x;
-    var _S942 : vec4<u32> = params_0.ce_0.size_0;
-    var _S943 : u32 = params_0.ce_0.size_0.x;
-    var _S944 : bool;
-    if((_S941 >= _S943))
+    var _S933 : u32 = id_16.x;
+    var _S934 : vec4<u32> = params_0.ce_0.size_0;
+    var _S935 : u32 = params_0.ce_0.size_0.z;
+    var _S936 : bool;
+    if((_S933 >= _S935))
     {
-        _S944 = true;
+        _S936 = true;
     }
     else
     {
-        _S944 = ((id_15.y) >= (_S942.y));
+        _S936 = ((id_16.y) >= (_S934.w));
     }
-    if(_S944)
+    if(_S936)
     {
         return;
     }
-    var k_2 : u32 = id_15.y * _S943 + _S941;
-    var _S945 : Coefficients_0 = coefficients_at_0(id_15.xy, k_2);
-    var _S946 : f32 = grid_uv_0[k_2].x;
-    var _S947 : f32 = grid_uv_0[k_2].y;
-    var _S948 : f32 = _S945.a_3.z * _S946 + _S945.a_3.w * _S947 + _S945.b_4.y;
+    var d_13 : u32 = id_16.y * _S935 + _S933;
+    var mc_0 : f32 = grid_corrections_0[d_13].y;
+    var mb_0 : f32 = grid_brightness_0[d_13];
+    var _S937 : f32 = grid_uv_0[d_13].x;
+    var _S938 : f32 = grid_uv_0[d_13].y;
+    var _S939 : f32 = _S937 * _S938;
+    var _S940 : f32 = c1_0[d_13].x - _S937 * mc_0;
+    var _S941 : f32 = c1_0[d_13].y - _S938 * mc_0;
+    var _S942 : f32 = c2_0[d_13].x - _S937 * grid_brightness_0[d_13];
+    var _S943 : f32 = c2_0[d_13].y - _S938 * grid_brightness_0[d_13];
+    var eps_1 : f32 = params_0.ce_0.shifts_0.z;
+    var invertible_2 : bool;
+    var inv_1 : vec4<f32> = inverse_of_0(vec4<f32>(p1_0[d_13].x - _S937 * _S937 + eps_1, p1_0[d_13].y - _S939, p2_0[d_13].x - _S939, p2_0[d_13].y - _S938 * _S938 + eps_1), &(invertible_2));
+    var _S944 : vec4<f32> = vec4<f32>(0.0f);
+    var a_4 : vec4<f32>;
+    if(invertible_2)
+    {
+        var _S945 : f32 = inv_1.x;
+        var _S946 : f32 = inv_1.y;
+        var _S947 : f32 = inv_1.z;
+        var _S948 : f32 = inv_1.w;
+        a_4 = vec4<f32>(_S940 * _S945 + _S941 * _S946, _S940 * _S947 + _S941 * _S948, _S942 * _S945 + _S943 * _S946, _S942 * _S947 + _S943 * _S948);
+    }
+    else
+    {
+        a_4 = _S944;
+    }
+    p1_0[d_13] = a_4.xy;
+    p2_0[d_13] = a_4.zw;
+    c1_0[d_13] = vec2<f32>(mc_0 - a_4.x * _S937 - a_4.y * _S938, mb_0 - a_4.z * _S937 - a_4.w * _S938);
+    return;
+}
+
+@compute
+@workgroup_size(16, 16, 1)
+fn guide_apply(@builtin(global_invocation_id) id_17 : vec3<u32>)
+{
+    var _S949 : u32 = id_17.x;
+    var _S950 : vec4<u32> = params_0.ce_0.size_0;
+    var _S951 : u32 = params_0.ce_0.size_0.x;
+    var _S952 : bool;
+    if((_S949 >= _S951))
+    {
+        _S952 = true;
+    }
+    else
+    {
+        _S952 = ((id_17.y) >= (_S950.y));
+    }
+    if(_S952)
+    {
+        return;
+    }
+    var k_2 : u32 = id_17.y * _S951 + _S949;
+    var _S953 : Coefficients_0 = coefficients_at_0(id_17.xy, k_2);
+    var _S954 : f32 = grid_uv_0[k_2].x;
+    var _S955 : f32 = grid_uv_0[k_2].y;
+    var _S956 : f32 = _S953.a_3.z * _S954 + _S953.a_3.w * _S955 + _S953.b_4.y;
     var w_5 : vec2<f32> = weights_0[k_2];
-    corrections_0[k_2] = vec2<f32>(corrections_0[k_2].x, 1.0f + (_S945.a_3.x * _S946 + _S945.a_3.y * _S947 + _S945.b_4.x - 1.0f) * weights_0[k_2].x);
-    brightness_0[k_2] = _S948 * (1.0f - clamp(lightness_0[k_2], 0.0f, 1.0f)) * w_5.y;
+    corrections_0[k_2] = vec2<f32>(corrections_0[k_2].x, 1.0f + (_S953.a_3.x * _S954 + _S953.a_3.y * _S955 + _S953.b_4.x - 1.0f) * weights_0[k_2].x);
+    brightness_0[k_2] = _S956 * (1.0f - clamp(lightness_0[k_2], 0.0f, 1.0f)) * w_5.y;
     return;
 }
 

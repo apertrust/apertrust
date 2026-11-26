@@ -120,6 +120,12 @@ struct Params
 // The guide's corrections on its grid: the image's own, or downsampled.
 [[vk::binding(25, 0)]] RWStructuredBuffer<float2> grid_corrections;
 [[vk::binding(26, 0)]] RWStructuredBuffer<float> grid_brightness;
+// A line pass over three buffers: the second and third buffers and the ones it writes,
+// beside line2_in and line2_out.
+[[vk::binding(27, 0)]] RWStructuredBuffer<float2> line2_in_b;
+[[vk::binding(28, 0)]] RWStructuredBuffer<float2> line2_out_b;
+[[vk::binding(29, 0)]] RWStructuredBuffer<float2> line2_in_c;
+[[vk::binding(30, 0)]] RWStructuredBuffer<float2> line2_out_c;
 
 float3x3 rgb_to_xyz_of(ColorEqualParams p)
 {
@@ -476,6 +482,85 @@ void walk1(uint start, uint stride, uint count, Deriche d)
     }
 }
 
+// walk2() over three buffers at once, line2_in, line2_in_b and line2_in_c into line2_out,
+// line2_out_b and line2_out_c: each buffer's sums are walk2()'s, in its order, so each
+// result is the same as three walks one after another; walking them together keeps
+// three independent recursions in flight per invocation.
+void walk2x3(uint start, uint stride, uint count, Deriche d)
+{
+    float2 low = float2(-MEAN_BLUR_RANGE);
+    float2 high = float2(MEAN_BLUR_RANGE);
+    float2 xp_a = clampf(line2_in[start], low, high);
+    float2 xp_b = clampf(line2_in_b[start], low, high);
+    float2 xp_c = clampf(line2_in_c[start], low, high);
+    float2 yb_a = xp_a * d.coefp;
+    float2 yb_b = xp_b * d.coefp;
+    float2 yb_c = xp_c * d.coefp;
+    float2 yp_a = yb_a;
+    float2 yp_b = yb_b;
+    float2 yp_c = yb_c;
+    for (uint n = 0; n < count; n++)
+    {
+        uint at = start + n * stride;
+        float2 xc_a = clampf(line2_in[at], low, high);
+        float2 xc_b = clampf(line2_in_b[at], low, high);
+        float2 xc_c = clampf(line2_in_c[at], low, high);
+        float2 yc_a = causal(d, xc_a, xp_a, yp_a, yb_a);
+        float2 yc_b = causal(d, xc_b, xp_b, yp_b, yb_b);
+        float2 yc_c = causal(d, xc_c, xp_c, yp_c, yb_c);
+        line2_out[at] = yc_a;
+        line2_out_b[at] = yc_b;
+        line2_out_c[at] = yc_c;
+        xp_a = xc_a;
+        xp_b = xc_b;
+        xp_c = xc_c;
+        yb_a = yp_a;
+        yb_b = yp_b;
+        yb_c = yp_c;
+        yp_a = yc_a;
+        yp_b = yc_b;
+        yp_c = yc_c;
+    }
+    uint last = start + (count - 1) * stride;
+    float2 xn_a = clampf(line2_in[last], low, high);
+    float2 xn_b = clampf(line2_in_b[last], low, high);
+    float2 xn_c = clampf(line2_in_c[last], low, high);
+    float2 xa_a = xn_a;
+    float2 xa_b = xn_b;
+    float2 xa_c = xn_c;
+    float2 yn_a = xn_a * d.coefn;
+    float2 yn_b = xn_b * d.coefn;
+    float2 yn_c = xn_c * d.coefn;
+    float2 ya_a = yn_a;
+    float2 ya_b = yn_b;
+    float2 ya_c = yn_c;
+    for (uint n = count; n > 0; n--)
+    {
+        uint at = start + (n - 1) * stride;
+        float2 xc_a = clampf(line2_in[at], low, high);
+        float2 xc_b = clampf(line2_in_b[at], low, high);
+        float2 xc_c = clampf(line2_in_c[at], low, high);
+        float2 yc_a = anticausal(d, xn_a, xa_a, yn_a, ya_a);
+        float2 yc_b = anticausal(d, xn_b, xa_b, yn_b, ya_b);
+        float2 yc_c = anticausal(d, xn_c, xa_c, yn_c, ya_c);
+        xa_a = xn_a;
+        xa_b = xn_b;
+        xa_c = xn_c;
+        xn_a = xc_a;
+        xn_b = xc_b;
+        xn_c = xc_c;
+        ya_a = yn_a;
+        ya_b = yn_b;
+        ya_c = yn_c;
+        yn_a = yc_a;
+        yn_b = yc_b;
+        yn_c = yc_c;
+        line2_out[at] = line2_out[at] + yc_a;
+        line2_out_b[at] = line2_out_b[at] + yc_b;
+        line2_out_c[at] = line2_out_c[at] + yc_c;
+    }
+}
+
 // dt_gaussian_blur()'s vertical pass over a grid of size.zw, one invocation per column,
 // in rows of 16: the pass's size is 16 × the columns over 16.
 [shader("compute")]
@@ -499,6 +584,29 @@ void blur_rows2(uint3 id: SV_DispatchThreadID)
     if (row >= p.size.w)
         return;
     walk2(row * p.size.z, 1, p.size.z, deriche_of(p));
+}
+
+// blur_columns2 and blur_rows2 over three buffers at once (walk2x3).
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void blur_columns2x3(uint3 id: SV_DispatchThreadID)
+{
+    ColorEqualParams p = params.ce;
+    uint column = id.y * 16 + id.x;
+    if (column >= p.size.z)
+        return;
+    walk2x3(column, p.size.z, p.size.w, deriche_of(p));
+}
+
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void blur_rows2x3(uint3 id: SV_DispatchThreadID)
+{
+    ColorEqualParams p = params.ce;
+    uint row = id.y * 16 + id.x;
+    if (row >= p.size.w)
+        return;
+    walk2x3(row * p.size.z, 1, p.size.z, deriche_of(p));
 }
 
 [shader("compute")]

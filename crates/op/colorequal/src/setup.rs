@@ -475,6 +475,10 @@ mod binding {
     pub const LINE1_OUT: u32 = 24;
     pub const GRID_CORRECTIONS: u32 = 25;
     pub const GRID_BRIGHTNESS: u32 = 26;
+    pub const LINE2_IN_B: u32 = 27;
+    pub const LINE2_OUT_B: u32 = 28;
+    pub const LINE2_IN_C: u32 = 29;
+    pub const LINE2_OUT_C: u32 = 30;
 }
 
 /// The scratch buffers, by index in [`Prepared::scratch`] with the filter on.
@@ -503,8 +507,12 @@ mod scratch {
     pub const C2: usize = 11;
     /// The guide's corrections on its grid, downsampled or copied, only when it does
     /// not blur in place.
-    pub const GRID_CORRECTIONS: usize = 12;
-    pub const GRID_BRIGHTNESS: usize = 13;
+    pub const GRID_CORRECTIONS: usize = 14;
+    pub const GRID_BRIGHTNESS: usize = 15;
+    /// The second and third buffers' columns for a line pass over three buffers: the
+    /// largest grid's float2.
+    pub const TEMP_B: usize = 12;
+    pub const TEMP_C: usize = 13;
 }
 
 /// The tables' layout: each hue-indexed table [`LUT_SIZE`] long, `main`'s seven, the
@@ -608,6 +616,61 @@ fn blur(buffer: usize, grid: [u32; 2], channels: u32, sigma: f32, whole: [u32; 2
             Vec::new(),
             lines(grid[1]),
             &[UNIFORMS, at(line_in, scratch::TEMP), at(line_out, buffer)],
+        ),
+    ]
+}
+
+/// [`blur`] of three float2 buffers of the same grid at the same σ, in two line passes
+/// that walk all three: each buffer's sums as its own blur's, in its order.
+fn blur3(
+    buffers: [usize; 3],
+    temps: [usize; 3],
+    grid: [u32; 2],
+    sigma: f32,
+    whole: [u32; 2],
+) -> [Pass; 2] {
+    let uniforms = |axis: u32| {
+        Uniforms {
+            size: [whole[0], whole[1], grid[0], grid[1]],
+            mode: [axis, 0, 0, 0],
+            ..Uniforms::default()
+        }
+        .deriche(sigma)
+    };
+    let [a, b, c] = buffers;
+    let [ta, tb, tc] = temps;
+    [
+        pass(
+            "blur_columns2x3",
+            PassKind::Reduction,
+            uniforms(0),
+            Vec::new(),
+            lines(grid[0]),
+            &[
+                UNIFORMS,
+                at(binding::LINE2_IN, a),
+                at(binding::LINE2_OUT, ta),
+                at(binding::LINE2_IN_B, b),
+                at(binding::LINE2_OUT_B, tb),
+                at(binding::LINE2_IN_C, c),
+                at(binding::LINE2_OUT_C, tc),
+            ],
+        ),
+        pass(
+            "blur_rows2x3",
+            PassKind::Reduction,
+            uniforms(1),
+            Vec::new(),
+            lines(grid[1]),
+            &[
+                UNIFORMS,
+                at(binding::LINE2_IN, ta),
+                at(binding::LINE2_OUT, a),
+                at(binding::LINE2_IN_B, tb),
+                at(binding::LINE2_OUT_B, b),
+                at(binding::LINE2_IN_C, tc),
+                at(binding::LINE2_OUT_C, c),
+            ],
         ),
     ]
 }
@@ -758,9 +821,14 @@ pub fn prepare(
             at(binding::P2, scratch::P2),
         ],
     ));
-    for buffer in [scratch::GRID_UV, scratch::P1, scratch::P2] {
-        passes.extend(blur(buffer, prefilter.size, 2, prefilter.sigma, whole));
-    }
+    let temps = [scratch::TEMP, scratch::TEMP_B, scratch::TEMP_C];
+    passes.extend(blur3(
+        [scratch::GRID_UV, scratch::P1, scratch::P2],
+        temps,
+        prefilter.size,
+        prefilter.sigma,
+        whole,
+    ));
     passes.push(pass(
         "prefilter_coefficients",
         PassKind::Reduction,
@@ -778,9 +846,13 @@ pub fn prepare(
             at(binding::C1, scratch::C1),
         ],
     ));
-    for buffer in [scratch::P1, scratch::P2, scratch::C1] {
-        passes.extend(blur(buffer, prefilter.size, 2, prefilter.sigma, whole));
-    }
+    passes.extend(blur3(
+        [scratch::P1, scratch::P2, scratch::C1],
+        temps,
+        prefilter.size,
+        prefilter.sigma,
+        whole,
+    ));
     passes.push(pass(
         "prefilter_apply",
         PassKind::Reduction,
@@ -871,15 +943,11 @@ pub fn prepare(
             at(binding::C2, scratch::C2),
         ],
     ));
-    for buffer in [
-        scratch::GRID_UV,
-        scratch::P1,
-        scratch::P2,
-        grid_corrections,
-        scratch::C1,
-        scratch::C2,
+    for buffers in [
+        [scratch::GRID_UV, scratch::P1, scratch::P2],
+        [grid_corrections, scratch::C1, scratch::C2],
     ] {
-        passes.extend(blur(buffer, guide.size, 2, guide.sigma, whole));
+        passes.extend(blur3(buffers, temps, guide.size, guide.sigma, whole));
     }
     passes.extend(blur(
         grid_brightness,
@@ -908,9 +976,13 @@ pub fn prepare(
             at(binding::C2, scratch::C2),
         ],
     ));
-    for buffer in [scratch::P1, scratch::P2, scratch::C1] {
-        passes.extend(blur(buffer, guide.size, 2, guide.sigma, whole));
-    }
+    passes.extend(blur3(
+        [scratch::P1, scratch::P2, scratch::C1],
+        temps,
+        guide.size,
+        guide.sigma,
+        whole,
+    ));
     // The chromaticity the guide applies to: its blur, as darktable's in-place blur
     // leaves it, or the image's own, prefiltered.
     let base = if !guide.in_place {
@@ -965,6 +1037,12 @@ pub fn prepare(
         },
         Scratch {
             bytes: 8 * guide.pixels(),
+        },
+        Scratch {
+            bytes: 8 * largest_grid,
+        },
+        Scratch {
+            bytes: 8 * largest_grid,
         },
     ];
     if !guide.in_place {
@@ -1239,7 +1317,7 @@ mod tests {
             assert_eq!(bound(main), bound(&unfiltered.passes[0]));
             assert_eq!(
                 filtered.scratch.len(),
-                if param_size > 7.0 { 14 } else { 12 }
+                if param_size > 7.0 { 16 } else { 14 }
             );
         }
     }
