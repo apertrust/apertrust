@@ -43,11 +43,11 @@ use std::path::Path;
 
 fn main() {
     apertrust_base::settings::codegen::build("app");
-    #[cfg_attr(not(windows), allow(unused_variables))]
     let version = apertrust_base::build::version();
 
-    #[cfg(windows)]
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+    // Compiled on every machine, so clippy checks it anywhere; run on Windows alone,
+    // where the SDK's rc.exe is.
+    if cfg!(windows) && env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         windows_resources(&version);
     }
 
@@ -67,7 +67,6 @@ fn main() {
 /// which Explorer shows for the executable, and the edit's 2; the version's four numbers
 /// the release's and the count of commits, its strings the full version, as the banner
 /// gives it, and the name Apertrust Nightly for a development build.
-#[cfg(windows)]
 fn windows_resources(version: &apertrust_base::build::Version) {
     let icon = "assets/icons/apertrust.ico";
     let edit = "assets/icons/apertrust-apxmp.ico";

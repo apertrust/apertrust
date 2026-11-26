@@ -41,10 +41,9 @@ muda.workspace = true
 # The settings generator: the app's settings, generated from the schema (decision 43);
 # and the version and the banner's versions, read in the app's own build (decision 44).
 apertrust-base = { workspace = true, features = ["codegen", "build"] }
-
 # The executable's icon and version resource, compiled on Windows by the SDK's rc.exe
-# (build.rs; docs/packaging.md). A host dependency: Windows builds are built on Windows.
-[target.'cfg(windows)'.build-dependencies]
+# (build.rs; docs/packaging.md); a dependency on every machine, so that clippy checks
+# that code anywhere.
 winresource.workspace = true
 
 [dev-dependencies]
