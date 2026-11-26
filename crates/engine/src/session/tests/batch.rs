@@ -1285,6 +1285,204 @@ fn redo_names_the_photos_the_undo_took_back() {
     remove(&active);
 }
 
+/// The batch's Undo on the active photo, its job's write of `failing`, the first it hands
+/// over, made to fail: a folder in its sidecar's place as the write comes, the file put back
+/// once the job has ended. What was heard.
+fn undo_failing_on(driven: &mut Driven, failing: &Path) -> Vec<Event> {
+    driven.run([Command::Undo]);
+    let route = next_route(driven);
+    assert_eq!(route.photo(), failing);
+    let sidecar = sidecar::path_for(failing);
+    let saved = std::fs::read(&sidecar).unwrap();
+    std::fs::remove_file(&sidecar).unwrap();
+    std::fs::create_dir(&sidecar).unwrap();
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    let heard = until_let_go(driven);
+    std::fs::remove_dir(&sidecar).unwrap();
+    std::fs::write(&sidecar, saved).unwrap();
+    heard
+}
+
+/// Warm film on three photos, one open, and Undo there, its write failing on one of the
+/// others: that photo still holds the batch, skipped and named.
+fn undone_but_one(name: &str) -> (Driven, PathBuf, Vec<PathBuf>, BatchId) {
+    let active = scratch(name);
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([warm(40.0, &named)]);
+    until_let_go(&mut driven);
+    driven.writes();
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    let heard = undo_failing_on(&mut driven, &others[0]);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!((*action, changed.len()), (BatchAction::TakenBack, 2));
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::Failed(_))] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert!(grained(&others[0]));
+    assert!(!grained(&others[1]));
+    (driven, active, others, batch)
+}
+
+/// A photo whose write failed during an Undo across photos is tried again by the next move
+/// that takes the batch back, the notice's Undo: taken back there, the photos the Undo took
+/// it back on counted as left so; Redo then puts it back on all three.
+#[test]
+fn a_failed_write_is_tried_again_by_the_next_undo() {
+    let (mut driven, active, others, batch) = undone_but_one("batch-undo-retried");
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_let_go(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(
+        (*action, changed.len(), skipped.len()),
+        (BatchAction::TakenBack, 3, 0)
+    );
+    assert!(changed.contains(&others[0]));
+    driven.writes();
+    assert!(others.iter().all(|photo| !grained(photo)));
+    driven.run([Command::Redo]);
+    let heard = until_let_go(&mut driven);
+    let [(action, changed, _)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!((*action, changed.len()), (BatchAction::PutBack, 3));
+    driven.writes();
+    assert!(others.iter().all(|photo| grained(photo)));
+    remove(&active);
+}
+
+/// An Undo across three photos cancelled after the first: the next Undo goes on with the
+/// other two, the first counted as taken back already.
+#[test]
+fn an_undo_after_a_cancelled_one_goes_on_with_the_rest() {
+    let active = scratch("batch-undo-cancelled-rest");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 3);
+    driven.run([warm(40.0, &others)]);
+    until_let_go(&mut driven);
+    driven.writes();
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    driven.run([Command::UndoBatch { batch }]);
+    let route = next_route(&mut driven);
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    // The second photo's route held while the job is cancelled.
+    let route = next_route(&mut driven);
+    let job = driven.engine.batches[0].job().expect("its job");
+    driven.run([Command::CancelJob { job }]);
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    let heard = until_let_go(&mut driven);
+    let [(action, changed, _)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(
+        (*action, &changed[..]),
+        (BatchAction::TakenBack, &others[..1])
+    );
+    // A move with nothing to reach ends in the command's turn.
+    let mut heard = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&heard).is_empty(), "{heard:?}");
+    if ends(&heard).is_empty() {
+        heard.extend(until_let_go(&mut driven));
+    }
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(
+        (*action, changed.len(), skipped.len()),
+        (BatchAction::TakenBack, 3, 0)
+    );
+    driven.writes();
+    assert!(others.iter().all(|photo| !grained(photo)));
+    remove(&active);
+}
+
+/// A rating's photo whose write failed during an Undo across photos is tried again by the
+/// notice's Undo: its stars taken back there, the photos the Undo took them back on counted
+/// as left so.
+#[test]
+fn a_rating_s_failed_write_is_tried_again_by_the_next_undo() {
+    let active = scratch("batch-rate-undo-retried");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([three_stars(&named)]);
+    until_let_go(&mut driven);
+    driven.writes();
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    let heard = undo_failing_on(&mut driven, &others[0]);
+    let [(_, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(changed.len(), 2);
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::Failed(_))] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert_eq!(saved_rating(&others[0]), rated(3, false, 0));
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_let_go(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(
+        (*action, changed.len(), skipped.len()),
+        (BatchAction::TakenBack, 3, 0)
+    );
+    driven.writes();
+    assert!(
+        others
+            .iter()
+            .all(|photo| saved_rating(photo) == Rating::default())
+    );
+    remove(&active);
+}
+
+/// A Redo moves only the photos the Undo took the batch back on, so the Undo after it, moving
+/// the Redo's, never tries the failed photo again: it keeps the batch.
+#[test]
+fn an_undo_after_a_redo_does_not_try_a_failed_write_again() {
+    let (mut driven, active, others, _) = undone_but_one("batch-undo-not-retried");
+    driven.run([Command::Redo]);
+    let heard = until_let_go(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(
+        (*action, changed.len(), skipped.len()),
+        (BatchAction::PutBack, 2, 0)
+    );
+    driven.run([Command::Undo]);
+    let heard = until_let_go(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(
+        (*action, changed.len(), skipped.len()),
+        (BatchAction::TakenBack, 2, 0)
+    );
+    assert!(!changed.contains(&others[0]));
+    driven.writes();
+    assert!(grained(&others[0]));
+    assert!(!grained(&others[1]));
+    remove(&active);
+}
+
 /// `Rate` of three stars naming `photos` (decision 110).
 fn three_stars(photos: &[PathBuf]) -> Command {
     Command::Rate {
