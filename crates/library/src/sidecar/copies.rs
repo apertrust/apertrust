@@ -27,8 +27,8 @@
 //!  <apertrust:copies>
 //!   <rdf:Seq>
 //!    <rdf:li>
-//!     <rdf:Description apertrust:id="7c0e9a14" apertrust:number="0" apertrust:name=""
-//!       apertrust:end="a1b2c3d4e5f60718">
+//!     <rdf:Description apertrust:id="7c0e9a14" apertrust:number="0"
+//!       apertrust:name="Black and white" apertrust:end="a1b2c3d4e5f60718">
 //!      <apertrust:clocks>
 //!       <rdf:Bag>
 //!        <rdf:li>
@@ -37,6 +37,11 @@
 //!        </rdf:li>
 //!       </rdf:Bag>
 //!      </apertrust:clocks>
+//!      <apertrust:nameClock>
+//!       <rdf:Description apertrust:when="2026-03-14T14:05:40.002Z"
+//!         apertrust:counter="0" apertrust:machine="5e1f22c9"/>
+//!      </apertrust:nameClock>
+//!      <apertrust:fields> … </apertrust:fields>
 //!      <apertrust:history>
 //!       <rdf:Seq>
 //!        <rdf:li>
@@ -236,6 +241,12 @@ pub struct VirtualCopy {
     pub number: String,
     /// `apertrust:name`, darktable's version name; empty for none.
     pub name: String,
+    /// `apertrust:nameClock`, the clock of the name's last change, a struct of a clock's
+    /// three fields after the clock vector, written where the name was set (decision 110):
+    /// two copies' names combine as a field's values do ([`crate::fields::join_name`]).
+    /// `None` for a name never set, or darktable's version name not yet written, which
+    /// takes the clock of the write that copies it in.
+    pub name_clock: Option<Clock>,
     /// `apertrust:end`, the id of the last step applied; empty for Original.
     pub end: String,
     /// `apertrust:clocks`, an `rdf:Bag` of the latest clock of each machine that changed
@@ -464,6 +475,7 @@ impl Edits {
             id: FIRST_COPY.to_owned(),
             number: "0".to_owned(),
             name: String::new(),
+            name_clock: None,
             end: String::new(),
             clocks: Vec::new(),
             fields: Vec::new(),
@@ -669,7 +681,16 @@ fn struct_fields<'a>(
 fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
     let text = |local: &str| own_field(fields, local).unwrap_or_default().to_owned();
     let id = text("id");
-    let known = ["id", "number", "name", "end", "clocks", "fields", "history"];
+    let known = [
+        "id",
+        "number",
+        "name",
+        "end",
+        "clocks",
+        "nameClock",
+        "fields",
+        "history",
+    ];
     unknown_fields(fields, &known, || format!("copy {id}"), problems);
     let mut clocks = Vec::new();
     // Whether every clock of the vector reads, so the steps' clocks can be held to it.
@@ -707,6 +728,29 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
             }
         }
     }
+    // The name's clock, a struct of a clock's three fields; one that cannot be read is the
+    // name's problem, as a field's is, and the name is read with none.
+    let name_clock = own_node(fields, "nameClock").and_then(|node| {
+        let read = node
+            .fields()
+            .filter(|_| node.qualifiers.is_empty())
+            .filter(|fields| {
+                let mut odd = Vec::new();
+                let three = [clock::WHEN, clock::COUNTER, clock::MACHINE];
+                unknown_fields(fields, &three, String::new, &mut odd);
+                plain_fields(fields, &three, "", &mut odd);
+                odd.is_empty()
+            })
+            .and_then(|fields| read_clock(fields).ok());
+        if read.is_none() {
+            problems.push(Problem::Field {
+                copy: id.clone(),
+                field: fields::COPY_NAME.to_owned(),
+                what: "a clock that cannot be read",
+            });
+        }
+        read
+    });
     let entries = (own_node(fields, "fields"))
         .map(|node| fields::read(node, &id, problems))
         .unwrap_or_default();
@@ -726,6 +770,7 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
     let copy = VirtualCopy {
         number: text("number"),
         name: text("name"),
+        name_clock,
         end: text("end"),
         id,
         clocks,
@@ -756,12 +801,18 @@ fn read_copy(fields: &[Property], problems: &mut Vec<Problem>) -> VirtualCopy {
             });
         }
     }
-    // A field's clock held to the vector as a step's is, its value still read to be shown.
-    for entry in &copy.fields {
-        if whole && entry.clock.as_ref().is_some_and(|clock| !covered(clock)) {
+    // A field's clock, and the name's, held to the vector as a step's is, its value still
+    // read to be shown.
+    let name = (fields::COPY_NAME, &copy.name_clock);
+    let entries = copy
+        .fields
+        .iter()
+        .map(|entry| (entry.field.as_str(), &entry.clock));
+    for (field, clock) in std::iter::once(name).chain(entries) {
+        if whole && clock.as_ref().is_some_and(|clock| !covered(clock)) {
             problems.push(Problem::Field {
                 copy: copy.id.clone(),
-                field: entry.field.clone(),
+                field: field.to_owned(),
                 what: "a clock past its copy's clock vector",
             });
         }
@@ -1073,8 +1124,8 @@ fn clock_fields(clock: &Clock) -> impl Iterator<Item = Property> {
         .map(|(local, text)| own(local, &text))
 }
 
-/// A virtual copy as a struct: its id, number, name and end, its clock vector, its fields
-/// where it has any, and its history.
+/// A virtual copy as a struct: its id, number, name and end, its clock vector, its name's
+/// clock where it has one, its fields where it has any, and its history.
 fn copy_node(copy: &VirtualCopy) -> Node {
     let list = |local: &str, kind, items| {
         Property::new(
@@ -1095,6 +1146,12 @@ fn copy_node(copy: &VirtualCopy) -> Node {
         own("end", &copy.end),
         list("clocks", ArrayKind::Bag, clocks),
     ];
+    if let Some(clock) = &copy.name_clock {
+        fields.push(Property::new(
+            Name::new("apertrust", NAMESPACE, "nameClock"),
+            Node::structure(clock_fields(clock).collect()),
+        ));
+    }
     if !copy.fields.is_empty() {
         fields.push(Property::new(
             Name::new("apertrust", NAMESPACE, "fields"),

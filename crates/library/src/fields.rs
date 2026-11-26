@@ -17,40 +17,64 @@
 //! A virtual copy's fields, its values beside the edit (decision 110, `docs/library.md`,
 //! Metadata beside the edit): the photo's current values, each with the clock of its last
 //! change, never steps of its history. Built: the rating's stars, the reject and the colour
-//! labels ([`Rating`]); the Metadata tool's text fields come with them.
+//! labels ([`Rating`]), and the Metadata tool's fields, IPTC Core's, Dublin Core's publisher
+//! and Apertrust's notes, typed as text ([`FieldValue::from_typed`]).
 //!
 //! Every field is data, [`FIELDS`]: its id, its property and its kind. A copy holds an
 //! entry for each field ever set ([`FieldEntry`]), its clock and its value, a cleared one
 //! kept with no value, so the clear wins over an older value on another computer. In the
 //! `.apxmp` they are the copy's `apertrust:fields`, after its clock vector, in the order of
-//! their properties, so two machines write the same bytes:
+//! their properties, so two machines write the same bytes, each value in the standard's
+//! form: a language alternative with its `x-default` item first, an `rdf:Seq`, an
+//! `rdf:Bag`, `True` or `False`, or text:
 //!
 //! ```xml
 //! <apertrust:fields>
 //!  <rdf:Bag>
 //!   <rdf:li>
-//!    <rdf:Description apertrust:field="xmp:Rating"
+//!    <rdf:Description apertrust:field="dc:title"
 //!      apertrust:when="2026-11-08T10:42:01.120Z" apertrust:counter="0"
+//!      apertrust:machine="5e1f22c9">
+//!     <apertrust:value>
+//!      <rdf:Alt><rdf:li xml:lang="x-default">Morning market, Alfama</rdf:li></rdf:Alt>
+//!     </apertrust:value>
+//!    </rdf:Description>
+//!   </rdf:li>
+//!   <rdf:li>
+//!    <rdf:Description apertrust:field="xmp:Rating"
+//!      apertrust:when="2026-11-08T10:43:12.004Z" apertrust:counter="0"
 //!      apertrust:machine="5e1f22c9" apertrust:value="3"/>
 //!   </rdf:li>
 //! ```
 //!
+//! The copy's name is no entry: it stays the copy's `apertrust:name`, with the clock of its
+//! last change in `apertrust:nameClock` where it was set ([`COPY_NAME`], [`set_in`]).
+//!
 //! [`set`] changes one; [`join`] combines two copies' entries field by field, the later
-//! clock winning each (decision 52). What cannot be read as written is a
-//! [`Problem::Field`], so the photo opens for viewing only and nothing is written over it.
+//! clock winning each (decision 52), and [`join_name`] their names. What cannot be read as
+//! written is a [`Problem::Field`], so the photo opens for viewing only and nothing is
+//! written over it.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
 use crate::clock::{self, Clock};
-use crate::sidecar::{NAMESPACE, Problem};
-use crate::xmp::{ArrayKind, Name, Node, Property, Value};
+use crate::sidecar::{NAMESPACE, Problem, VirtualCopy};
+use crate::xmp::{ArrayKind, DEFAULT_LANGUAGE, Name, Node, Property, Value, XML};
 
 /// The namespace of XMP's basic properties, `xmp:Rating`'s.
 pub const XMP_NAMESPACE: &str = "http://ns.adobe.com/xap/1.0/";
 /// darktable's namespace, `darktable:colorlabels`'s.
 pub const DARKTABLE_NAMESPACE: &str = "http://darktable.sf.net/";
+/// Dublin Core's, `dc:title`'s.
+pub const DC_NAMESPACE: &str = "http://purl.org/dc/elements/1.1/";
+/// The namespace IPTC Core keeps its older fields in, `photoshop:City`'s.
+pub const PHOTOSHOP_NAMESPACE: &str = "http://ns.adobe.com/photoshop/1.0/";
+/// IPTC Core's own, `Iptc4xmpCore:Location`'s.
+pub const IPTC_CORE_NAMESPACE: &str = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/";
+/// XMP's rights namespace, `xmpRights:Marked`'s.
+pub const RIGHTS_NAMESPACE: &str = "http://ns.adobe.com/xap/1.0/rights/";
 
 /// What a field holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +86,15 @@ pub enum FieldKind {
     /// A set of darktable's colour labels, 0 red to 4 purple, an `rdf:Seq` of their numbers
     /// as darktable writes `darktable:colorlabels`.
     Labels,
+    Text,
+    /// A language alternative, an `rdf:Alt`, its `x-default` item the one typed.
+    LangAlt,
+    /// An ordered list, an `rdf:Seq`, typed with "; " between its items.
+    Seq,
+    /// An unordered list, an `rdf:Bag`, typed with "; " between its items.
+    Bag,
+    /// An XMP date, `2026-07-04`, or with its time ([`is_date`]).
+    Date,
 }
 
 /// One field: its id, the property it is stored under and its kind.
@@ -74,6 +107,14 @@ pub struct FieldDef {
     /// Its property's qualified name, `prefix:name`, as `apertrust:field` holds it.
     pub property: &'static str,
     pub kind: FieldKind,
+    /// The struct the standard keeps it in, as `Iptc4xmpCore:CreatorContactInfo` keeps the
+    /// creator's contact details; none for a property of its own.
+    pub within: Option<&'static str>,
+    /// Whether it takes line breaks: Description and Notes.
+    pub lines: bool,
+    /// Whether it is private, left out of an exported file unless Export's Metadata group
+    /// includes it: Notes.
+    pub private: bool,
 }
 
 /// The stars, kept while the photo is rejected ("a reject that keeps the stars").
@@ -82,27 +123,150 @@ pub const RATING: &str = "xmp:Rating";
 pub const REJECTED: &str = "apertrust:rejected";
 /// The colour labels.
 pub const COLOUR_LABELS: &str = "darktable:colorlabels";
+/// The copy's name: no entry of its fields but its `apertrust:name`, which a change, its
+/// undo and a client name by this as they name a field ([`value_in`], [`set_in`]).
+pub const COPY_NAME: &str = "apertrust:name";
+/// The struct IPTC Core keeps the creator's contact details in.
+const CONTACT: Option<&str> = Some("Iptc4xmpCore:CreatorContactInfo");
 
-/// Every field, in the order of their properties.
+/// A field `id` of `namespace` under `property`, of `kind`: a property of its own, one
+/// logical line, not private.
+const fn def(
+    id: &'static str,
+    namespace: &'static str,
+    property: &'static str,
+    kind: FieldKind,
+) -> FieldDef {
+    FieldDef {
+        id,
+        namespace,
+        property,
+        kind,
+        within: None,
+        lines: false,
+        private: false,
+    }
+}
+
+/// A member `id` of the creator's contact details, text.
+const fn contact(id: &'static str, property: &'static str) -> FieldDef {
+    FieldDef {
+        within: CONTACT,
+        ..def(id, IPTC_CORE_NAMESPACE, property, FieldKind::Text)
+    }
+}
+
+/// An IPTC Core field `id` of the Photoshop namespace, text.
+const fn photoshop(id: &'static str, property: &'static str) -> FieldDef {
+    def(id, PHOTOSHOP_NAMESPACE, property, FieldKind::Text)
+}
+
+/// Every field, in the order of their properties: the Metadata tool's (`docs/gui.md`, The
+/// Metadata tool) and the rating's.
 pub const FIELDS: &[FieldDef] = &[
+    contact("contact_city", "Iptc4xmpCore:CiAdrCity"),
+    contact("contact_country", "Iptc4xmpCore:CiAdrCtry"),
+    contact("address", "Iptc4xmpCore:CiAdrExtadr"),
+    contact("postal_code", "Iptc4xmpCore:CiAdrPcode"),
+    contact("contact_region", "Iptc4xmpCore:CiAdrRegion"),
+    contact("email", "Iptc4xmpCore:CiEmailWork"),
+    contact("phone", "Iptc4xmpCore:CiTelWork"),
+    contact("website", "Iptc4xmpCore:CiUrlWork"),
+    def(
+        "country_code",
+        IPTC_CORE_NAMESPACE,
+        "Iptc4xmpCore:CountryCode",
+        FieldKind::Text,
+    ),
+    def(
+        "genre",
+        IPTC_CORE_NAMESPACE,
+        "Iptc4xmpCore:IntellectualGenre",
+        FieldKind::Text,
+    ),
+    def(
+        "sublocation",
+        IPTC_CORE_NAMESPACE,
+        "Iptc4xmpCore:Location",
+        FieldKind::Text,
+    ),
+    def(
+        "scene_code",
+        IPTC_CORE_NAMESPACE,
+        "Iptc4xmpCore:Scene",
+        FieldKind::Bag,
+    ),
+    def(
+        "subject_code",
+        IPTC_CORE_NAMESPACE,
+        "Iptc4xmpCore:SubjectCode",
+        FieldKind::Bag,
+    ),
     FieldDef {
-        id: "rejected",
-        namespace: NAMESPACE,
-        property: REJECTED,
-        kind: FieldKind::Marked,
+        lines: true,
+        private: true,
+        ..def("notes", NAMESPACE, "apertrust:notes", FieldKind::Text)
     },
+    def("rejected", NAMESPACE, REJECTED, FieldKind::Marked),
+    def(
+        "colour_labels",
+        DARKTABLE_NAMESPACE,
+        COLOUR_LABELS,
+        FieldKind::Labels,
+    ),
+    def("creator", DC_NAMESPACE, "dc:creator", FieldKind::Seq),
     FieldDef {
-        id: "colour_labels",
-        namespace: DARKTABLE_NAMESPACE,
-        property: COLOUR_LABELS,
-        kind: FieldKind::Labels,
+        lines: true,
+        ..def(
+            "description",
+            DC_NAMESPACE,
+            "dc:description",
+            FieldKind::LangAlt,
+        )
     },
-    FieldDef {
-        id: "rating",
-        namespace: XMP_NAMESPACE,
-        property: RATING,
-        kind: FieldKind::Stars,
-    },
+    def("publisher", DC_NAMESPACE, "dc:publisher", FieldKind::Bag),
+    def(
+        "copyright_notice",
+        DC_NAMESPACE,
+        "dc:rights",
+        FieldKind::LangAlt,
+    ),
+    def("title", DC_NAMESPACE, "dc:title", FieldKind::LangAlt),
+    photoshop("job_title", "photoshop:AuthorsPosition"),
+    photoshop("description_writer", "photoshop:CaptionWriter"),
+    photoshop("city", "photoshop:City"),
+    photoshop("country", "photoshop:Country"),
+    photoshop("credit_line", "photoshop:Credit"),
+    def(
+        "date_created",
+        PHOTOSHOP_NAMESPACE,
+        "photoshop:DateCreated",
+        FieldKind::Date,
+    ),
+    photoshop("headline", "photoshop:Headline"),
+    photoshop("instructions", "photoshop:Instructions"),
+    photoshop("source", "photoshop:Source"),
+    photoshop("state", "photoshop:State"),
+    photoshop("job_id", "photoshop:TransmissionReference"),
+    def("rating", XMP_NAMESPACE, RATING, FieldKind::Stars),
+    def(
+        "copyright_status",
+        RIGHTS_NAMESPACE,
+        "xmpRights:Marked",
+        FieldKind::Marked,
+    ),
+    def(
+        "usage_terms",
+        RIGHTS_NAMESPACE,
+        "xmpRights:UsageTerms",
+        FieldKind::LangAlt,
+    ),
+    def(
+        "web_statement",
+        RIGHTS_NAMESPACE,
+        "xmpRights:WebStatement",
+        FieldKind::Text,
+    ),
 ];
 
 /// The field stored under `property`, a qualified name.
@@ -110,15 +274,47 @@ pub fn field(property: &str) -> Option<&'static FieldDef> {
     FIELDS.iter().find(|def| def.property == property)
 }
 
+/// Whether `property` is the rating's, its stars, reject or labels, which
+/// [`RatingChange`] sets, never typing.
+pub fn is_rating(property: &str) -> bool {
+    [RATING, REJECTED, COLOUR_LABELS].contains(&property)
+}
+
 /// A field's value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum FieldValue {
     /// Stars, 0 to 5.
     Stars(u8),
     Marked(bool),
     /// The colour labels on, a bit each in darktable's order, bit 0 red to bit 4 purple.
     Labels(u8),
+    Text(String),
+    /// A language alternative's items, each its language and text, `x-default` first
+    /// where it was typed.
+    LangAlt(Vec<(String, String)>),
+    /// A `Seq`'s or a `Bag`'s items, in order.
+    List(Vec<String>),
+    /// An XMP date as written ([`is_date`]).
+    Date(String),
 }
+
+/// What [`FieldValue::from_typed`] cannot take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, Serialize, Deserialize)]
+pub enum TypedError {
+    /// A date field's value that is no XMP date.
+    #[error("not a date")]
+    NotADate,
+    /// A mark's value that is neither `True` nor `False`.
+    #[error("neither True nor False")]
+    NotMarked,
+    /// The rating's stars or labels, which [`RatingChange`] sets.
+    #[error("set by a rating, not typed")]
+    NotTyped,
+}
+
+/// What a list's items are typed and shown with between them.
+pub const LIST_SEPARATOR: &str = "; ";
 
 impl FieldValue {
     /// Whether it is a value of `kind`.
@@ -128,15 +324,95 @@ impl FieldValue {
             (FieldValue::Stars(_), FieldKind::Stars)
                 | (FieldValue::Marked(_), FieldKind::Marked)
                 | (FieldValue::Labels(_), FieldKind::Labels)
+                | (FieldValue::Text(_), FieldKind::Text)
+                | (FieldValue::LangAlt(_), FieldKind::LangAlt)
+                | (FieldValue::List(_), FieldKind::Seq | FieldKind::Bag)
+                | (FieldValue::Date(_), FieldKind::Date)
         )
     }
 
-    /// As the file holds it: stars as their number, a mark as `True` or `False`, labels as
-    /// an `rdf:Seq` of their numbers, lowest first.
-    fn node(&self) -> Node {
-        match *self {
+    /// As a person reads and types it: a language alternative's `x-default` item, else its
+    /// first; a list's items with "; " between them; `True` or `False`; text, a date and
+    /// stars as written; the labels' numbers with "; " between them.
+    pub fn shown(&self) -> String {
+        match self {
+            FieldValue::Text(text) | FieldValue::Date(text) => text.clone(),
+            FieldValue::LangAlt(items) => (items.iter())
+                .find(|(lang, _)| lang == DEFAULT_LANGUAGE)
+                .or(items.first())
+                .map(|(_, text)| text.clone())
+                .unwrap_or_default(),
+            FieldValue::List(items) => items.join(LIST_SEPARATOR),
+            FieldValue::Marked(on) => (if *on { "True" } else { "False" }).to_owned(),
+            FieldValue::Stars(stars) => stars.to_string(),
+            FieldValue::Labels(bits) => (0..LABELS)
+                .filter(|label| bits & (1 << label) != 0)
+                .map(|label| label.to_string())
+                .collect::<Vec<_>>()
+                .join(LIST_SEPARATOR),
+        }
+    }
+
+    /// What a person typed into the field `def`, as the field then holds it, `kept` what it
+    /// holds now: on one line, its line breaks spaces, where the field takes none; trimmed
+    /// of spaces at both ends, as darktable trims its metadata
+    /// (`src/common/metadata.c:402-417`), `None` for an empty value, which clears it; for a
+    /// language alternative its `x-default` item, first, its other languages kept from
+    /// `kept`; for a list its items split at `;`, each trimmed, the empty left out; `True`
+    /// or `False`; an XMP date ([`is_date`]). The rating's stars and labels are set
+    /// otherwise ([`TypedError::NotTyped`]).
+    pub fn from_typed(
+        def: &FieldDef,
+        typed: &str,
+        kept: Option<&FieldValue>,
+    ) -> Result<Option<FieldValue>, TypedError> {
+        let joined = typed.lines().collect::<Vec<_>>().join(" ");
+        let typed = if def.lines { typed } else { &joined };
+        let typed = typed.trim();
+        if typed.is_empty() {
+            return Ok(None);
+        }
+        let value = match def.kind {
+            FieldKind::Text => FieldValue::Text(typed.to_owned()),
+            FieldKind::LangAlt => {
+                let mut items = vec![(DEFAULT_LANGUAGE.to_owned(), typed.to_owned())];
+                if let Some(FieldValue::LangAlt(others)) = kept {
+                    let others = others.iter().filter(|(lang, _)| lang != DEFAULT_LANGUAGE);
+                    items.extend(others.cloned());
+                }
+                FieldValue::LangAlt(items)
+            }
+            FieldKind::Seq | FieldKind::Bag => {
+                let items: Vec<String> = (typed.split(';'))
+                    .map(str::trim)
+                    .filter(|item| !item.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                if items.is_empty() {
+                    return Ok(None);
+                }
+                FieldValue::List(items)
+            }
+            FieldKind::Marked => match typed {
+                "True" => FieldValue::Marked(true),
+                "False" => FieldValue::Marked(false),
+                _ => return Err(TypedError::NotMarked),
+            },
+            FieldKind::Date if is_date(typed) => FieldValue::Date(typed.to_owned()),
+            FieldKind::Date => return Err(TypedError::NotADate),
+            FieldKind::Stars | FieldKind::Labels => return Err(TypedError::NotTyped),
+        };
+        Ok(Some(value))
+    }
+
+    /// As the file holds it, for a field of `kind`: stars as their number, a mark as `True`
+    /// or `False`, labels as an `rdf:Seq` of their numbers, lowest first; text and a date
+    /// as text; a language alternative as an `rdf:Alt` of its items with their languages;
+    /// a list as an `rdf:Seq`, or an `rdf:Bag` for a bag.
+    fn node(&self, kind: FieldKind) -> Node {
+        match self {
             FieldValue::Stars(stars) => Node::simple(&stars.to_string()),
-            FieldValue::Marked(on) => Node::simple(if on { "True" } else { "False" }),
+            FieldValue::Marked(on) => Node::simple(if *on { "True" } else { "False" }),
             FieldValue::Labels(bits) => Node::array(
                 ArrayKind::Seq,
                 (0..LABELS)
@@ -144,11 +420,27 @@ impl FieldValue {
                     .map(|label| Node::simple(&label.to_string()))
                     .collect(),
             ),
+            FieldValue::Text(text) | FieldValue::Date(text) => Node::simple(text),
+            FieldValue::LangAlt(items) => Node::array(
+                ArrayKind::Alt,
+                (items.iter())
+                    .map(|(lang, text)| Node::with_lang(text, lang))
+                    .collect(),
+            ),
+            FieldValue::List(items) => {
+                let array = match kind {
+                    FieldKind::Bag => ArrayKind::Bag,
+                    _ => ArrayKind::Seq,
+                };
+                Node::array(array, items.iter().map(|item| Node::simple(item)).collect())
+            }
         }
     }
 
     /// A value of `kind` as the file holds it, [`Self::node`]'s inverse; `None` for one of
-    /// another form, stars past 5 or a label past 4 among them.
+    /// another form: stars past 5, a label past 4, an alternative's item with no language
+    /// or another qualifier, a list's item with any or that is no text, and a date that is
+    /// none, among them.
     fn read(node: &Node, kind: FieldKind) -> Option<FieldValue> {
         if !node.qualifiers.is_empty() {
             return None;
@@ -172,9 +464,95 @@ impl FieldValue {
                 }
                 Some(FieldValue::Labels(bits))
             }
+            (FieldKind::Text, Value::Simple(text)) => Some(FieldValue::Text(text.clone())),
+            (FieldKind::Date, Value::Simple(text)) if is_date(text) => {
+                Some(FieldValue::Date(text.clone()))
+            }
+            (FieldKind::LangAlt, Value::Array(ArrayKind::Alt, items)) => (items.iter())
+                .map(|item| match (&item.value, item.qualifiers.as_slice()) {
+                    (Value::Simple(text), [lang]) if lang.name.is(XML, "lang") => {
+                        Some((lang.value.clone(), text.clone()))
+                    }
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(FieldValue::LangAlt),
+            (FieldKind::Seq, Value::Array(ArrayKind::Seq, items))
+            | (FieldKind::Bag, Value::Array(ArrayKind::Bag, items)) => (items.iter())
+                .map(|item| match &item.value {
+                    Value::Simple(text) if item.qualifiers.is_empty() => Some(text.clone()),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()
+                .map(FieldValue::List),
             _ => None,
         }
     }
+}
+
+/// Whether `text` is an XMP date, ISO 8601 as XMP takes it: a year, a year and its month, a
+/// date, or a date and its hours and minutes, then its seconds and their fraction where it
+/// has them, then `Z` or an offset where it has one (`2026`, `2026-07`, `2026-07-04`,
+/// `2026-07-04T08:10:01.5+01:00`).
+pub fn is_date(text: &str) -> bool {
+    let digits =
+        |part: &str, len: usize| part.len() == len && part.bytes().all(|b| b.is_ascii_digit());
+    let number = |part: &str| part.parse::<u32>().unwrap_or(u32::MAX);
+    let (date, time) = match text.split_once('T') {
+        Some((date, time)) => (date, Some(time)),
+        None => (text, None),
+    };
+    let parts: Vec<&str> = date.split('-').collect();
+    let whole_date = match parts[..] {
+        [year] => digits(year, 4),
+        [year, month] => digits(year, 4) && digits(month, 2) && (1..=12).contains(&number(month)),
+        [year, month, day] => {
+            let year_n = number(year);
+            let leap = year_n % 4 == 0 && (year_n % 100 != 0 || year_n % 400 == 0);
+            let days = match number(month) {
+                2 if leap => 29,
+                2 => 28,
+                4 | 6 | 9 | 11 => 30,
+                1..=12 => 31,
+                _ => 0,
+            };
+            digits(year, 4)
+                && digits(month, 2)
+                && digits(day, 2)
+                && (1..=days).contains(&number(day))
+        }
+        _ => false,
+    };
+    let Some(time) = time else {
+        return whole_date;
+    };
+    // A time needs the whole date before it.
+    if !whole_date || parts.len() != 3 {
+        return false;
+    }
+    let (clock, zone) = time.split_at(time.find(['Z', '+', '-']).unwrap_or(time.len()));
+    let zone_reads = match zone {
+        "" | "Z" => true,
+        _ if !zone.starts_with(['+', '-']) => false,
+        _ => zone[1..].split_once(':').is_some_and(|(hours, minutes)| {
+            digits(hours, 2) && digits(minutes, 2) && number(hours) <= 23 && number(minutes) <= 59
+        }),
+    };
+    let (clock, fraction) = match clock.split_once('.') {
+        Some((clock, fraction)) => (clock, Some(fraction)),
+        None => (clock, None),
+    };
+    let fraction_reads =
+        fraction.is_none_or(|f| !f.is_empty() && f.bytes().all(|b| b.is_ascii_digit()));
+    let two = |part: &str, most: u32| digits(part, 2) && number(part) <= most;
+    let clock_reads = match clock.split(':').collect::<Vec<_>>()[..] {
+        [hours, minutes] => fraction.is_none() && two(hours, 23) && two(minutes, 59),
+        [hours, minutes, seconds] => {
+            two(hours, 23) && two(minutes, 59) && two(seconds, 59) && fraction_reads
+        }
+        _ => false,
+    };
+    clock_reads && zone_reads
 }
 
 /// The most stars a photo has.
@@ -227,7 +605,28 @@ pub fn set(entries: &mut Vec<FieldEntry>, field: &str, value: Option<FieldValue>
 pub fn value(entries: &[FieldEntry], field: &str) -> Option<FieldValue> {
     (entries.iter())
         .find(|entry| entry.field == field)
-        .and_then(|entry| entry.value)
+        .and_then(|entry| entry.value.clone())
+}
+
+/// The value `field` holds in `copy`: one of its fields, or with [`COPY_NAME`] its name as
+/// text, `None` where it has none.
+pub fn value_in(copy: &VirtualCopy, field: &str) -> Option<FieldValue> {
+    match field {
+        COPY_NAME => (!copy.name.is_empty()).then(|| FieldValue::Text(copy.name.clone())),
+        _ => value(&copy.fields, field),
+    }
+}
+
+/// Sets `field` in `copy` to `value` at `clock`, as [`set`] does, or with [`COPY_NAME`] its
+/// name, empty for `None`, and the name's clock.
+pub fn set_in(copy: &mut VirtualCopy, field: &str, value: Option<FieldValue>, clock: Clock) {
+    match field {
+        COPY_NAME => {
+            copy.name = value.map(|value| value.shown()).unwrap_or_default();
+            copy.name_clock = Some(clock);
+        }
+        _ => set(&mut copy.fields, field, value, clock),
+    }
 }
 
 /// Two copies' entries combined field by field (decision 52): for each field, the entry
@@ -242,6 +641,16 @@ pub fn join(ours: &[FieldEntry], theirs: &[FieldEntry]) -> Vec<FieldEntry> {
         }
     }
     joined.into_values().cloned().collect()
+}
+
+/// Two copies' names combined as [`join`] combines a field: the name with the later clock,
+/// one with no clock losing to one with a clock, and `ours` where neither has one.
+pub fn join_name(ours: &VirtualCopy, theirs: &VirtualCopy) -> (String, Option<Clock>) {
+    if theirs.name_clock > ours.name_clock {
+        (theirs.name.clone(), theirs.name_clock)
+    } else {
+        (ours.name.clone(), ours.name_clock)
+    }
 }
 
 /// A photo's rating as the Browser and the caption show it: its stars, kept under a
@@ -350,7 +759,7 @@ impl RatingChange {
             changed.push(FieldChange {
                 field: field.to_owned(),
                 before: value(entries, field),
-                after: Some(after),
+                after: Some(after.clone()),
             });
             set(entries, field, Some(after), clock);
         }
@@ -371,9 +780,10 @@ pub(crate) fn node(entries: &[FieldEntry]) -> Node {
         let clock = entry.clock.iter().flat_map(Clock::fields);
         fields.extend(clock.map(|(local, text)| own(local, &text)));
         if let Some(value) = &entry.value {
+            let kind = field(&entry.field).map_or(FieldKind::Text, |def| def.kind);
             fields.push(Property::new(
                 Name::new("apertrust", NAMESPACE, "value"),
-                value.node(),
+                value.node(kind),
             ));
         }
         Node::structure(fields)
@@ -486,6 +896,10 @@ mod tests {
         }
     }
 
+    fn alt(text: &str) -> FieldValue {
+        FieldValue::LangAlt(vec![(DEFAULT_LANGUAGE.to_owned(), text.to_owned())])
+    }
+
     #[test]
     fn every_field_is_known_by_its_property_in_order() {
         let properties: Vec<&str> = FIELDS.iter().map(|def| def.property).collect();
@@ -494,8 +908,24 @@ mod tests {
         assert_eq!(properties, sorted);
         for def in FIELDS {
             assert_eq!(field(def.property), Some(def));
+            let prefix = def.property.split(':').next().unwrap();
+            assert!(!prefix.is_empty() && def.property.len() > prefix.len() + 1);
         }
-        assert_eq!(field("dc:title"), None);
+        let ids: std::collections::BTreeSet<&str> = FIELDS.iter().map(|def| def.id).collect();
+        assert_eq!(ids.len(), FIELDS.len());
+        assert_eq!(
+            field("dc:title").map(|def| def.kind),
+            Some(FieldKind::LangAlt)
+        );
+        assert_eq!(field("dc:subject"), None);
+        let lines: Vec<&str> = (FIELDS.iter().filter(|def| def.lines))
+            .map(|def| def.id)
+            .collect();
+        assert_eq!(lines, ["notes", "description"]);
+        assert!(field("apertrust:notes").unwrap().private);
+        // The Metadata tool's 33 and the rating's three.
+        let typed = FIELDS.iter().filter(|def| !is_rating(def.property));
+        assert_eq!((typed.count(), FIELDS.len()), (33, 36));
     }
 
     #[test]
@@ -507,10 +937,25 @@ mod tests {
             (FieldKind::Marked, FieldValue::Marked(false)),
             (FieldKind::Labels, FieldValue::Labels(0)),
             (FieldKind::Labels, FieldValue::Labels(0b1_0101)),
+            (FieldKind::Text, FieldValue::Text("Alfama".to_owned())),
+            (FieldKind::LangAlt, alt("Morning market")),
+            (
+                FieldKind::LangAlt,
+                FieldValue::LangAlt(vec![
+                    ("x-default".to_owned(), "Harbour".to_owned()),
+                    ("de".to_owned(), "Hafen".to_owned()),
+                ]),
+            ),
+            (FieldKind::Seq, FieldValue::List(vec!["Ana".to_owned()])),
+            (
+                FieldKind::Bag,
+                FieldValue::List(vec!["a".to_owned(), "b".to_owned()]),
+            ),
+            (FieldKind::Date, FieldValue::Date("2026-07-04".to_owned())),
         ];
         for (kind, value) in values {
             assert!(value.is(kind));
-            assert_eq!(FieldValue::read(&value.node(), kind), Some(value));
+            assert_eq!(FieldValue::read(&value.node(kind), kind), Some(value));
         }
         let wrong = [
             (FieldKind::Stars, Node::simple("6")),
@@ -522,9 +967,125 @@ mod tests {
             ),
             (FieldKind::Labels, Node::array(ArrayKind::Bag, vec![])),
             (FieldKind::Labels, Node::simple("1")),
+            (FieldKind::LangAlt, Node::simple("bare")),
+            (
+                FieldKind::LangAlt,
+                Node::array(ArrayKind::Alt, vec![Node::simple("no language")]),
+            ),
+            (
+                FieldKind::Seq,
+                Node::array(ArrayKind::Bag, vec![Node::simple("a")]),
+            ),
+            (
+                FieldKind::Bag,
+                Node::array(ArrayKind::Bag, vec![Node::with_lang("a", "de")]),
+            ),
+            (FieldKind::Date, Node::simple("4 July")),
+            (
+                FieldKind::Text,
+                Node::array(ArrayKind::Seq, vec![Node::simple("a")]),
+            ),
         ];
         for (kind, node) in wrong {
             assert_eq!(FieldValue::read(&node, kind), None, "{node:?}");
+        }
+    }
+
+    /// What a person types, trimmed, lists split and joined with "; ", a language
+    /// alternative's other languages kept, and shown back as typed.
+    #[test]
+    fn each_kind_typed_and_shown_back() {
+        let field = |kind| def("t", NAMESPACE, "t:t", kind);
+        let typed = |kind, text: &str| FieldValue::from_typed(&field(kind), text, None);
+        assert_eq!(
+            typed(FieldKind::Text, "  Alfama \n"),
+            Ok(Some(FieldValue::Text("Alfama".to_owned())))
+        );
+        assert_eq!(typed(FieldKind::Text, "   "), Ok(None));
+        // A pasted line break is a space where the field takes none, and kept where it does.
+        let pasted = FieldValue::Text("Morning market Alfama".to_owned());
+        assert_eq!(
+            typed(FieldKind::Text, "Morning market\nAlfama"),
+            Ok(Some(pasted))
+        );
+        let notes = FieldDef {
+            lines: true,
+            ..field(FieldKind::Text)
+        };
+        let kept = FieldValue::from_typed(&notes, "a\nb", None);
+        assert_eq!(kept, Ok(Some(FieldValue::Text("a\nb".to_owned()))));
+        let creators = typed(FieldKind::Seq, " Ana Sousa ;; Rui ; ")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            creators,
+            FieldValue::List(vec!["Ana Sousa".to_owned(), "Rui".to_owned()])
+        );
+        assert_eq!(creators.shown(), "Ana Sousa; Rui");
+        assert_eq!(typed(FieldKind::Bag, " ; ; "), Ok(None));
+        let german = FieldValue::LangAlt(vec![
+            ("x-default".to_owned(), "Harbour".to_owned()),
+            ("de".to_owned(), "Hafen".to_owned()),
+        ]);
+        let retyped = FieldValue::from_typed(&field(FieldKind::LangAlt), " Port ", Some(&german));
+        assert_eq!(
+            retyped,
+            Ok(Some(FieldValue::LangAlt(vec![
+                ("x-default".to_owned(), "Port".to_owned()),
+                ("de".to_owned(), "Hafen".to_owned()),
+            ])))
+        );
+        assert_eq!(german.shown(), "Harbour");
+        assert_eq!(
+            typed(FieldKind::Marked, "True"),
+            Ok(Some(FieldValue::Marked(true)))
+        );
+        assert_eq!(typed(FieldKind::Marked, "yes"), Err(TypedError::NotMarked));
+        assert_eq!(
+            typed(FieldKind::Date, " 2026-07-04 "),
+            Ok(Some(FieldValue::Date("2026-07-04".to_owned())))
+        );
+        assert_eq!(
+            typed(FieldKind::Date, "4 July 2026"),
+            Err(TypedError::NotADate)
+        );
+        assert_eq!(typed(FieldKind::Stars, "3"), Err(TypedError::NotTyped));
+    }
+
+    #[test]
+    fn xmp_dates_and_what_is_none() {
+        for date in [
+            "2026",
+            "2026-07",
+            "2026-07-04",
+            "2024-02-29",
+            "2026-07-04T08:10",
+            "2026-07-04T08:10:01",
+            "2026-07-04T08:10:01.25",
+            "2026-07-04T08:10Z",
+            "2026-07-04T08:10:01+01:00",
+            "2026-07-04T08:10:01.5-05:30",
+        ] {
+            assert!(is_date(date), "{date}");
+        }
+        for not in [
+            "",
+            "26",
+            "2026-7-4",
+            "2026-13",
+            "2026-02-29",
+            "2026-04-31",
+            "2026-07T08:10",
+            "2026-07-04T8:10",
+            "2026-07-04T24:00",
+            "2026-07-04T08:10.5",
+            "2026-07-04T08:10:01.",
+            "2026-07-04T08:10+1",
+            "2026-07-04T08:10Z01:00",
+            "04/07/2026",
+            "2026-07-04 08:10",
+        ] {
+            assert!(!is_date(not), "{not}");
         }
     }
 
@@ -614,17 +1175,23 @@ mod tests {
         let ours = vec![
             entry(RATING, Some(5), Some(FieldValue::Stars(2))),
             entry(REJECTED, Some(1), Some(FieldValue::Marked(true))),
+            entry("dc:title", Some(4), Some(alt("Ours"))),
         ];
         let theirs = vec![
             entry(RATING, Some(3), Some(FieldValue::Stars(4))),
             // A clear beats an older value.
             entry(REJECTED, Some(2), None),
             entry(COLOUR_LABELS, None, Some(FieldValue::Labels(1))),
+            entry("dc:title", Some(6), Some(alt("Theirs"))),
+            entry("photoshop:City", Some(1), None),
         ];
         let joined = join(&ours, &theirs);
         assert_eq!(joined, join(&theirs, &ours));
         assert_eq!(Rating::of(&joined).stars, 2);
         assert_eq!(value(&joined, REJECTED), None);
+        assert_eq!(value(&joined, "dc:title"), Some(alt("Theirs")));
+        // A cleared field is kept as an entry, so the clear goes on winning.
+        assert!(joined.iter().any(|e| e.field == "photoshop:City"));
         // A value beats an older clear, and a value with a clock one with none.
         let later = [entry(REJECTED, Some(9), Some(FieldValue::Marked(true)))];
         assert_eq!(
@@ -639,11 +1206,53 @@ mod tests {
     }
 
     #[test]
+    fn the_copy_s_name_is_set_and_joined_as_a_field() {
+        let copy = |name: &str, when: Option<u64>| VirtualCopy {
+            id: "00000000".to_owned(),
+            number: "0".to_owned(),
+            name: name.to_owned(),
+            name_clock: when.map(clock),
+            end: String::new(),
+            clocks: Vec::new(),
+            fields: Vec::new(),
+            history: Vec::new(),
+        };
+        let mut ours = copy("", None);
+        assert_eq!(value_in(&ours, COPY_NAME), None);
+        set_in(
+            &mut ours,
+            COPY_NAME,
+            Some(FieldValue::Text("Black and white".to_owned())),
+            clock(3),
+        );
+        assert_eq!(
+            value_in(&ours, COPY_NAME),
+            Some(FieldValue::Text("Black and white".to_owned()))
+        );
+        set_in(&mut ours, "dc:title", Some(alt("A")), clock(4));
+        assert_eq!(value_in(&ours, "dc:title"), Some(alt("A")));
+        let theirs = copy("Warm", Some(2));
+        let joined = join_name(&ours, &theirs);
+        assert_eq!(joined, join_name(&theirs, &ours));
+        assert_eq!(joined, ("Black and white".to_owned(), Some(clock(3))));
+        // darktable's name, with no clock, loses to any set.
+        assert_eq!(join_name(&copy("dt", None), &theirs).0, "Warm");
+    }
+
+    #[test]
     fn entries_read_back_as_written_a_cleared_one_kept() {
         let entries = vec![
+            entry("Iptc4xmpCore:CiEmailWork", Some(5), None),
             entry(REJECTED, Some(2), None),
             entry(COLOUR_LABELS, Some(3), Some(FieldValue::Labels(0b11))),
+            entry(
+                "dc:creator",
+                Some(4),
+                Some(FieldValue::List(vec!["Ana".to_owned()])),
+            ),
+            entry("dc:title", Some(4), Some(alt("Morning market"))),
             entry(RATING, Some(1), Some(FieldValue::Stars(4))),
+            entry("xmpRights:Marked", Some(6), Some(FieldValue::Marked(false))),
         ];
         let mut problems = Vec::new();
         assert_eq!(read(&node(&entries), "c", &mut problems), entries);
@@ -662,13 +1271,15 @@ mod tests {
             Node::structure(fields)
         };
         let items = vec![
-            with_clock("dc:title", vec![]),
+            with_clock("dc:subject", vec![]),
             Node::simple("loose"),
             Node::structure(vec![own("field", RATING), own("when", "never")]),
             with_clock(RATING, vec![own("value", "9")]),
             with_clock(RATING, vec![own("colour", "red")]),
             with_clock(REJECTED, vec![own("value", "True")]),
             with_clock(REJECTED, vec![own("value", "False")]),
+            // A language alternative's value written as plain text.
+            with_clock("dc:title", vec![own("value", "bare")]),
         ];
         let mut problems = Vec::new();
         let read = read(&Node::array(ArrayKind::Bag, items), "c", &mut problems);
@@ -691,6 +1302,7 @@ mod tests {
                 "a value of the wrong form",
                 "what is not an entry's own",
                 "a field twice",
+                "a value of the wrong form",
             ]
         );
     }

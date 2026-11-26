@@ -17017,6 +17017,7 @@ mod tests {
                             id: format!("{photo:08x}"),
                             number: "0".to_owned(),
                             name: String::new(),
+                            name_clock: None,
                             end: String::new(),
                             fields: Vec::new(),
                             clocks: Vec::new(),

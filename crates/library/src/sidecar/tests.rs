@@ -375,6 +375,7 @@ fn edits() -> Edits {
         id: "7c0e9a14".to_owned(),
         number: "0".to_owned(),
         name: "Warm".to_owned(),
+        name_clock: None,
         end: "00000000000000b2".to_owned(),
         // In the order of their machines, as they are written.
         fields: Vec::new(),
@@ -651,6 +652,7 @@ fn an_empty_version_2_file_reads_back_empty() {
         id: "7c0e9a14".to_owned(),
         number: "0".to_owned(),
         name: String::new(),
+        name_clock: None,
         end: String::new(),
         fields: Vec::new(),
         clocks: Vec::new(),
@@ -692,6 +694,7 @@ fn version_1_reads_as_a_step_of_each_tool() {
             id: FIRST_COPY.to_owned(),
             number: "0".to_owned(),
             name: String::new(),
+            name_clock: None,
             end: id(2),
             fields: Vec::new(),
             clocks: vec![made],
@@ -1479,7 +1482,7 @@ fn a_field_s_clock_past_the_vector_is_a_problem_its_value_still_read() {
         crate::fields::set(
             fields,
             crate::fields::RATING,
-            stars,
+            stars.clone(),
             clock(late, 0, machine),
         );
         let read = Edits::parse(&past.to_xml(), 0).unwrap();
@@ -1492,6 +1495,47 @@ fn a_field_s_clock_past_the_vector_is_a_problem_its_value_still_read() {
         let rating = crate::fields::Rating::of(&read.copies[0].fields);
         assert_eq!(rating.stars, 3, "{machine}");
     }
+}
+
+/// The copy's name with its clock reads back as written; a name's clock that cannot be read
+/// or is past the vector is the name's problem, as a field's is (decision 110), and a file
+/// with no name clock reads as it did.
+#[test]
+fn the_name_s_clock_reads_back_and_one_that_cannot_be_read_is_a_problem() {
+    let named = |when: u64| {
+        let mut file = edits();
+        file.copies[0].name = "Warm".to_owned();
+        file.copies[0].name_clock = Some(clock(when, 0, "5e1f22c9"));
+        file
+    };
+    let file = named(PI_DAY + 1_000);
+    let read = Edits::parse(&file.to_xml(), 0).unwrap();
+    assert_eq!(read.problems, []);
+    assert_eq!(read, file);
+    assert!(!edits().to_xml().contains("nameClock"));
+    let problem = |what| Problem::Field {
+        copy: "7c0e9a14".to_owned(),
+        field: crate::fields::COPY_NAME.to_owned(),
+        what,
+    };
+    let past = Edits::parse(&named(PI_DAY + 60_000).to_xml(), 0).unwrap();
+    assert_eq!(
+        past.problems,
+        [problem("a clock past its copy's clock vector")]
+    );
+    let xml = file.to_xml();
+    let damaged = xml.replacen(
+        "<apertrust:nameClock>\n        <rdf:Description\n          apertrust:when=\"2026-03-14T14:02:12.120Z\"",
+        "<apertrust:nameClock>\n        <rdf:Description\n          apertrust:when=\"never\"",
+        1,
+    );
+    let unread = Edits::parse(&damaged, 0).unwrap();
+    assert_eq!(
+        unread.problems,
+        [problem("a clock that cannot be read")],
+        "{damaged}"
+    );
+    assert_eq!(unread.copies[0].name_clock, None);
 }
 
 /// A step's id twice in its copy, a step's clock past its copy's vector, and `entries` that

@@ -280,6 +280,7 @@ fn exiftool_reads_no_text_in_a_copy_at_original() {
         id: "7c0e9a14".to_owned(),
         number: "0".to_owned(),
         name: String::new(),
+        name_clock: None,
         end: String::new(),
         fields: Vec::new(),
         clocks: Vec::new(),
@@ -315,6 +316,7 @@ fn a_copy_s_fields_read_back_and_other_readers_read_them() {
         id: "7c0e9a14".to_owned(),
         number: "0".to_owned(),
         name: String::new(),
+        name_clock: None,
         end: String::new(),
         clocks: vec![clock("2026-11-08T10:43:12.004Z")],
         fields: Vec::new(),
@@ -361,6 +363,86 @@ fn a_copy_s_fields_read_back_and_other_readers_read_them() {
             "apertrust:fields[1]/apertrust:field",
             "apertrust:fields[2]/apertrust:value XmpSeq      2  0, 3",
             "apertrust:fields[3]/apertrust:value",
+        ] {
+            assert!(read.contains(field), "{field} in {read}");
+        }
+    }
+}
+
+/// The Metadata tool's fields (decision 110), a language alternative of two languages, a
+/// list, a mark, a date, text of two lines and a cleared field, and the copy's name with
+/// its clock, read back byte for byte and read by ExifTool and exiv2 without error or
+/// warning, where they are installed.
+#[test]
+fn the_metadata_fields_and_the_copy_s_name_read_back_and_other_readers_read_them() {
+    use apertrust_library::clock::Clock;
+    use apertrust_library::fields::{self, FieldValue};
+
+    let clock = |text: &str| Clock::from_fields(text, "0", "5e1f22c9").unwrap();
+    let at = clock("2026-11-08T10:43:12.004Z");
+    let mut edits = Edits::new("0.5.0+3~g1a2b3c4");
+    edits.copies.push(VirtualCopy {
+        id: "7c0e9a14".to_owned(),
+        number: "0".to_owned(),
+        name: String::new(),
+        name_clock: None,
+        end: String::new(),
+        clocks: vec![at],
+        fields: Vec::new(),
+        history: Vec::new(),
+    });
+    let copy = &mut edits.copies[0];
+    let text = |text: &str| FieldValue::Text(text.to_owned());
+    fields::set_in(copy, fields::COPY_NAME, Some(text("Black and white")), at);
+    let title = FieldValue::LangAlt(vec![
+        ("x-default".to_owned(), "Morning market, Alfama".to_owned()),
+        ("pt".to_owned(), "Mercado da manhã".to_owned()),
+    ]);
+    let creators = FieldValue::List(vec!["Ana Sousa".to_owned(), "Rui".to_owned()]);
+    let values = [
+        ("dc:title", Some(title)),
+        ("dc:creator", Some(creators)),
+        ("apertrust:notes", Some(text("Try a warmer crop\nor none"))),
+        ("xmpRights:Marked", Some(FieldValue::Marked(true))),
+        (
+            "photoshop:DateCreated",
+            Some(FieldValue::Date("2026-07-04".to_owned())),
+        ),
+        ("Iptc4xmpCore:CiEmailWork", Some(text("ana@example.com"))),
+        ("photoshop:City", None),
+    ];
+    for (field, value) in values {
+        fields::set_in(copy, field, value, at);
+    }
+    let xml = edits.to_xml();
+    assert!(xml.contains("apertrust:nameClock"), "{xml}");
+    let read = Edits::parse(&xml, 0).unwrap();
+    assert!(read.problems.is_empty(), "{:?}", read.problems);
+    assert_eq!(read, edits);
+    assert_eq!(read.to_xml(), xml);
+    assert!(!read.edited(), "fields are no edit");
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("DSCF0001.RAF.apxmp");
+    std::fs::write(&path, &xml).unwrap();
+    if let Some(read) = read_with("exiftool", &["-a", "-G1", "-struct"], &path) {
+        assert!(
+            !read.contains("Warning") && !read.contains("Error"),
+            "{read}"
+        );
+        for field in [
+            "Field=dc:title",
+            "Value=[Morning market|, Alfama,Mercado da manhã]",
+            "Field=photoshop:City,Machine",
+            "Name=Black and white,NameClock={Counter=0",
+        ] {
+            assert!(read.contains(field), "{field} in {read}");
+        }
+    }
+    if let Some(read) = read_with("exiv2", &["-px"], &path) {
+        for field in [
+            "copies[1]/apertrust:nameClock/apertrust:when XmpText",
+            "LangAlt     2  lang=\"x-default\" Morning market, Alfama, lang=\"pt\" Mercado da manhã",
         ] {
             assert!(read.contains(field), "{field} in {read}");
         }
