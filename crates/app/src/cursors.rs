@@ -379,8 +379,8 @@ pub fn ending_of(command: &Command, tool: &str) -> Option<Ended> {
 /// Why `change` of the Tools panel's, made while `active` is on, turns a tool's picker off
 /// before it is made (`docs/pickers.md`, Turning off): Apertrust has no focused tool, so
 /// darktable's module losing focus is another tool's control changing, or the picker's own
-/// tool's section closing, `open` saying whether a tool's section is open as it is
-/// toggled. The Colour picker's stays on as built.
+/// tool's section closing ([`closed`]), `open` saying whether a tool's section is open as
+/// it is toggled. The Colour picker's stays on as built.
 pub fn ended_by(
     change: &crate::tools::Change,
     active: Option<PickerRef>,
@@ -390,9 +390,7 @@ pub fn ended_by(
         return None;
     };
     match change {
-        crate::tools::Change::Toggle { tool } if *tool == on && open(tool) => {
-            Some(Ended::Closed(on.to_owned()))
-        }
+        crate::tools::Change::Toggle { tool, .. } if open(tool) => closed(tool, active),
         change => changed_by(change)
             .filter(|tool| *tool != on)
             .map(|tool| Ended::Tool(tool.to_owned())),
@@ -413,6 +411,16 @@ pub fn cleared_by(
     };
     let found = tools.iter().find(|t| t.definition().tool.id == on)?;
     (on == tool && !found.picker_ready(picker, settings)).then_some(Ended::ReferenceCleared)
+}
+
+/// Why `tool`'s section closing turns the picker `active` off: where it is that tool's, as
+/// its own header closes it or, with Open one processing tool at a time, another's opening
+/// (`Shell::closed_picker`).
+pub fn closed(tool: &str, active: Option<PickerRef>) -> Option<Ended> {
+    match active {
+        Some(PickerRef::Tool { tool: on, .. }) if on == tool => Some(Ended::Closed(on.to_owned())),
+        _ => None,
+    }
 }
 
 /// The tool whose control `change` changes.
@@ -1622,7 +1630,7 @@ mod tests {
             None
         );
         assert_eq!(ended_by(&change("exposure"), None, open), None);
-        let toggle = |tool| Change::Toggle { tool };
+        let toggle = |tool| Change::Toggle { tool, shift: false };
         assert_eq!(
             ended_by(&toggle("temperature"), Some(SPOT_PICKER), open),
             Some(Ended::Closed("temperature".to_owned()))

@@ -288,6 +288,18 @@ applies = "at-once"
 page = "editing"
 group = "tools_panel"
 
+# Whether opening a processing tool's section closes the tab shown's other processing tools'
+# sections, utilities never closed and other tabs left alone; Shift on a header does the
+# opposite, as darktable's (darkroom/ui/single_module, on there; docs/gui.md, One tool
+# model).
+[tools_panel.single_tool]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+page = "editing"
+group = "tools_panel"
+
 # Whether the Tools panel shows the Hidden tab, last, with the tools the workspace puts in
 # no tab: Show Hidden Tools, in the Tools panel's ⋮, app-wide, the same in every workspace
 # (decision 96).

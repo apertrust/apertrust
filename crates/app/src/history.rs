@@ -1984,7 +1984,7 @@ fn tip_ui(ui: &mut egui::Ui, tip: &Tip) {
 /// are only as fresh as the last change egui was told of: a change lost while a modal
 /// dialog held the window's input would leave Shift down there, and every click a
 /// Shift-click. A screen reader's click carries none, and is plain.
-fn shift_clicked(ui: &egui::Ui) -> bool {
+pub(crate) fn shift_clicked(ui: &egui::Ui) -> bool {
     ui.input(|i| {
         (i.events.iter().rev())
             .find_map(|event| match event {
