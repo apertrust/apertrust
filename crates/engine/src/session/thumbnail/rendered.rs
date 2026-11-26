@@ -598,7 +598,7 @@ impl Engine {
         state.not_before.insert(path.clone(), (hash, retry));
         let generation = state.generations.entry(path.clone()).or_default().clone();
         let at = generation.fetch_add(1, Ordering::Relaxed) + 1;
-        let canonical = apertrust_library::index::hash(
+        let canonical = library::edit_hash(
             open.xml(self.operations, &self.tools, &self.build)
                 .as_bytes(),
         );
@@ -709,7 +709,7 @@ impl Render {
         // The edit's bytes, none for a photo never edited, which a render of its defaults
         // stands for.
         let actual = match snapshots.pop().map(|snapshot| snapshot.xml()) {
-            Some(Ok(Some(xml))) => apertrust_library::index::hash(xml.as_bytes()),
+            Some(Ok(Some(xml))) => library::edit_hash(xml.as_bytes()),
             Some(Ok(None)) if self.hash == library::UNALTERED => library::UNALTERED,
             _ => return,
         };

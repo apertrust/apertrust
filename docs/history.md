@@ -185,11 +185,12 @@ darktable's history items merge further: a module's consecutive changes are one 
 | `Compress` | The log as it was before | Compress again |
 | `Truncate` | The log as it was before | Truncate again |
 | `DiscardHistory` | The log as it was before | Discard again, the default steps given anew |
-| A rating, reject, label, keyword or metadata field set, on one photo or a batch of them (planned, decision 110) | Each field as it was before on each photo, but where it changed since, which keeps its later value | Each field Undo put back set again; one it kept left as it is |
+| A rating, reject, label, keyword or metadata field set, on one photo or a batch of them (decision 110; built for the rating, reject and labels of the active photo, `Record::Field`) | Each field as it was before on each photo, but where it changed since, which keeps its later value | Each field Undo put back set again; one it kept left as it is |
 
 A change merged into the step before it adds no record, as darktable's merged change records no undo: Undo takes back the merged step whole.
 
-- **A metadata record** is no change to the log: the sidecar holds the values, not a log of their changes, so it is kept while the session runs, as a batch on several photos is ([below](#a-batch-on-several-photos)), not ending as its photo closes, and is never written to the sidecar. Undo takes back the newest record, a metadata change's or the edit's, in the order they were made; consecutive commits of one field within the merge times are one record, as a control's quick repeats are one step, with no other change between, of the edit or of metadata, which breaks the merge both ways ([Merging consecutive changes](#merging-consecutive-changes)).
+- **A metadata record** is no change to the log: the sidecar holds the values, not a log of their changes, so it is never written to the sidecar, and is kept while the session runs, as a batch on several photos is ([below](#a-batch-on-several-photos)), not ending as its photo closes. Undo takes back the newest record, a metadata change's or the edit's, in the order they were made; consecutive commits of one field within the merge times are one record, as a control's quick repeats are one step, with no other change between, of the edit or of metadata, which breaks the merge both ways ([Merging consecutive changes](#merging-consecutive-changes)).
+- **Built for the rating,** the reject and the labels of the active photo (`Command::Rate`, `session/fields.rs`): `Record::Field` on the photo's done records, which Undo puts back and Redo sets again, each field written with a clock of its own that advances the copy's clock vector, a field changed since, by a newer file taken in, keeping its later value; `History`'s `undo` and `redo` name it `Move::Field { change, photos }`, the change its last `RatingChange`. A second change of the same kind (stars, the reject, one label, a clear) within `MERGE_WITHIN` of the record's first, with no other change between, is one record. Until the batch (decision 109) the records are the photo's and end as it closes.
 - **Two stacks:** the done records and the undone ones. Undo takes the newest done record back and puts it on the undone stack; Redo puts the newest undone record back and returns it to the done stack; a new command on the history clears the undone stack. Both are the session's memory alone, not a second log: the edit's records end as the photo closes, as darktable's end on leaving the darkroom; a metadata record is kept while the session runs (above).
 - **The fallback.** Only when the done stack is empty, as after reopening a photo, does Undo move the end back through the steps the sidecar kept, over the step before it and the rest of its batch before that, never over a default step; only when the undone stack is empty does Redo move it forward over the next step and the rest of its batch. Each fallback move is recorded on the opposite stack, Undo's on the undone stack and Redo's on the done stack, so the next Redo or Undo reverses it, and is named as `Move::Steps` of the steps it crosses, not as a `GoTo`; a fallback move clears no undone record. With nothing to undo or redo they change nothing; the `History` fact says beforehand what they would do (`undo`, `redo`).
 - **Each move of the end,** by Undo, Redo or `GoTo`, holds the edit it moves to to the ranges its tools' values give on the photo, as the photo's open does, a value clamped a change not yet a step (decision 30). Such a clamp, a move's or the open's, never becomes a step of its own: where it is the only change not yet a step, the next move, and the photo's close, leave it as it is rather than make it one, so Undo and Redo pass an out-of-range step both ways. So does what a tool writes as darktable's `gui_update` redraws it (`ProcessingTool::redrawn`, decision 79), applied after the clamp: White balance's from image area becoming what its coefficients match ([tools/white-balance.md](tools/white-balance.md#controls), After a pick). Each is saved only with its own tool's next step, never a step of its own ([What makes a step](#what-makes-a-step)).
@@ -331,6 +332,9 @@ pub enum Move {
     Compress,
     Truncate,
     DiscardHistory,
+    /// A rating, reject or label change taken back or put back (decision 110), on
+    /// `photos` photos, the active one alone until the batch.
+    Field { change: RatingChange, photos: usize },
 }
 ```
 
@@ -356,7 +360,7 @@ pub enum Move {
 - `Move::Steps::photos`, built: how many photos a remembered batch named, else 1 (decision 109).
 - `ToolChange` is keyed by tool alone: layers (Phase 4) add a layer and an instance to its key.
 - An unowned operation's parameters, while `Set` exists, show as a `ToolChange` under the operation's id, its controls the parameters, an integer as a number.
-- **Built:** `Move::Steps` and `Move::GoTo`, and with 9.8's engine half `Move::Compress`, `Move::Truncate` and `Move::DiscardHistory`. A move of the end by Undo's or Redo's fallback names the steps it takes back or puts back, as `Move::Steps`.
+- **Built:** `Move::Steps` and `Move::GoTo`, and with 9.8's engine half `Move::Compress`, `Move::Truncate` and `Move::DiscardHistory`; with step 14, `Move::Field`, a rating's change (decision 110), which the Metadata tool's fields join (#643). A move of the end by Undo's or Redo's fallback names the steps it takes back or puts back, as `Move::Steps`.
 - **Built (9.6):** a tool or an operation this build does not know, as in a photo a newer build wrote, open for viewing only, is a `ToolChange` under its stored name, owned, with no control, since nothing here can describe its values; the History tab lists the step by that name.
 
 ## In the sidecar

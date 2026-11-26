@@ -830,6 +830,28 @@ pub fn unaltered_facts(version: &[u8], stamp: &RawStamp) -> Option<(RawFacts, Or
 /// renders alike.
 pub const UNALTERED: [u8; 32] = [0; 32];
 
+/// The edit hash of a sidecar's `bytes`, which a rendered thumbnail's version holds
+/// ([`rendered_version`]): the BLAKE3 hash of the file written with each copy's fields and
+/// clock vector left out, its edit alone, so a rating (decision 110), which changes both,
+/// changes no thumbnail; [`UNALTERED`] for a file holding no step, a photo only rated or
+/// not, which renders as one with no sidecar; the hash of the bytes for one that is no
+/// `.apxmp`.
+pub fn edit_hash(bytes: &[u8]) -> [u8; 32] {
+    let parsed = (std::str::from_utf8(bytes).ok())
+        .and_then(|text| crate::sidecar::Edits::parse(text, 0).ok());
+    let Some(mut edits) = parsed else {
+        return crate::index::hash(bytes);
+    };
+    if edits.copies.iter().all(|copy| copy.history.is_empty()) {
+        return UNALTERED;
+    }
+    for copy in &mut edits.copies {
+        copy.fields.clear();
+        copy.clocks.clear();
+    }
+    crate::index::hash(edits.to_xml().as_bytes())
+}
+
 /// Whether `version` is a rendered thumbnail of a photo with no edit, whatever its render
 /// version.
 pub fn rendered_unaltered(version: &[u8]) -> bool {
@@ -1656,6 +1678,57 @@ mod tests {
         assert!(took < Duration::from_secs(2), "returned after {took:?}");
         drop(done);
         releaser.join().unwrap();
+    }
+
+    /// A rating changes no thumbnail: the edit's hash leaves a copy's fields out, and a file
+    /// holding fields alone is a photo with no edit (decision 110).
+    #[test]
+    fn the_edit_s_hash_leaves_the_fields_out() {
+        use crate::clock::{Clock, MachineId};
+        use crate::fields::{self, FieldValue};
+        use crate::sidecar::{Edits, FIRST_COPY, Step, VirtualCopy};
+
+        let mut edits = Edits::new("test");
+        edits.copies.push(VirtualCopy {
+            id: FIRST_COPY.to_owned(),
+            number: "0".to_owned(),
+            name: String::new(),
+            end: String::new(),
+            clocks: Vec::new(),
+            fields: Vec::new(),
+            history: Vec::new(),
+        });
+        let clock = Clock::at(1, None, MachineId::UNKNOWN);
+        let rate = |edits: &mut Edits| {
+            let stars = Some(FieldValue::Stars(2));
+            fields::set(&mut edits.copies[0].fields, fields::RATING, stars, clock);
+        };
+        // No step, rated or not: unedited alike.
+        assert_eq!(edit_hash(edits.to_xml().as_bytes()), UNALTERED);
+        let mut rated = edits.clone();
+        rate(&mut rated);
+        assert_eq!(edit_hash(rated.to_xml().as_bytes()), UNALTERED);
+        edits.copies[0].history.push(Step {
+            id: "00000000000000a1".to_owned(),
+            clock: Some(clock),
+            source: "you".to_owned(),
+            note: None,
+            batch: None,
+            entries: Vec::new(),
+            styles: None,
+        });
+        let plain = edits.to_xml();
+        assert_ne!(edit_hash(plain.as_bytes()), UNALTERED);
+        assert_eq!(edit_hash(b"no apxmp"), crate::index::hash(b"no apxmp"));
+        // A rating changes the fields and the clock vector, neither of which counts.
+        rate(&mut edits);
+        edits.copies[0]
+            .clocks
+            .push(Clock::at(2, None, MachineId::UNKNOWN));
+        assert_eq!(
+            edit_hash(edits.to_xml().as_bytes()),
+            edit_hash(plain.as_bytes())
+        );
     }
 
     #[test]

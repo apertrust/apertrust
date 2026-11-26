@@ -113,6 +113,7 @@
 
 mod batch;
 mod cache;
+mod fields;
 mod history;
 pub(crate) mod open;
 mod outbox;
@@ -156,7 +157,8 @@ use crate::export_preview;
 pub use crate::export_preview::ExportPreview;
 use crate::gpu::{GpuContext, SubmitGate};
 pub use crate::history::{
-    BatchId, Clock, ControlChange, History, HistoryStep, Move, Note, StepId, StepSource, ToolChange,
+    BatchId, Clock, ControlChange, History, HistoryStep, Move, Note, RatingChange, StepId,
+    StepSource, ToolChange,
 };
 use crate::jobs::{self, Background, Queue, Tasks, Waiting};
 pub use crate::jobs::{JobEvent, JobId};
@@ -172,6 +174,7 @@ pub use crate::scopes::{Graphs, Reading};
 use crate::sidecar;
 pub use crate::sidecar::{Entry, Parked, ViewOnly, tool_entry, tool_values};
 pub use crate::view::{FramePlace, Placement, View, ViewScale};
+pub use apertrust_library::Rating;
 pub use batch::{BatchAction, BatchEvent, Skip};
 use cache::Upkeep;
 pub use cache::{CACHE_READ, CACHE_REMOVE, CacheOptions, size_in_unit};
@@ -305,6 +308,18 @@ pub enum Command {
     /// nothing. Any new step
     /// clears what Undo took back.
     Redo,
+    /// Sets the rating, the reject or a colour label of `photos` (decision 110), each the
+    /// photo's current value with its clock in its `.apxmp`, never a history step:
+    /// `change` is the value given, never a toggle. `photos` empty for the active photo;
+    /// one naming another photo is refused ([`SessionError::NotActive`]) until the batch of
+    /// decision 109 writes the others. Undo takes it back, a quick repeat of one key
+    /// merged; refused on a photo open for viewing only, allowed before it is live. No
+    /// command on the edit: it ends no gesture and sends no `Values`, but `Rating` and
+    /// `Rated` where it changed the rating, and `History` for Undo's words.
+    Rate {
+        photos: Vec<PathBuf>,
+        change: RatingChange,
+    },
     /// Moves the end of the history just after `step`, one inside a batch among them, or to
     /// Original with `None`, as a click on a step in the History tab does (decision 78): the steps after it stay, and
     /// the next change drops them. Undo takes it back, and after it a change, bringing back
@@ -607,6 +622,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::PreviewExport { .. }
         | Command::Library(_)
         | Command::Selection(_)
+        | Command::Rate { .. }
         | Command::Cache(_) => false,
         #[cfg(test)]
         Command::Synthetic(_)
@@ -856,7 +872,26 @@ pub enum Event {
     /// A style on several photos (decision 109): each photo's change as it lands, and the
     /// batch's end, notices.
     Batch(BatchEvent),
+    /// The open photo's rating, reject and colour labels (decision 110): after its history
+    /// as it opens, before the decode, and once in each turn that changed them, a
+    /// [`Command::Rate`], its Undo or Redo, or a newer file taken in.
+    Rating(RatingState),
+    /// A photo's rating changed, as its write was handed over, so a client's cell follows:
+    /// the open photo's in the turn that changed it, after its `Rating`.
+    Rated {
+        photo: PathBuf,
+        rating: Rating,
+    },
     Failed(SessionError),
+}
+
+/// The open photo's rating: [`Event::Rating`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RatingState {
+    /// How many commands it includes, as [`Values::through`] counts them.
+    pub through: u64,
+    pub photo: PathBuf,
+    pub rating: Rating,
 }
 
 /// What an event is about (decision 59, `docs/engine.md`, Events): a fact, the whole
@@ -902,6 +937,8 @@ pub enum Fact {
     Selection,
     /// The session's view and its placement: [`Event::View`].
     View,
+    /// The open photo's rating: [`Event::Rating`].
+    Rating,
 }
 
 impl Event {
@@ -918,6 +955,7 @@ impl Event {
             Event::History(_) => Fact::History,
             Event::Selection(_) => Fact::Selection,
             Event::View(_) => Fact::View,
+            Event::Rating(_) => Fact::Rating,
             // Each of a job's values is a topic of its own, since each event carries only
             // its own (decision 72); its adding and its end each happen once.
             Event::Job { event, .. } => match *event {
@@ -937,6 +975,7 @@ impl Event {
             | Event::Export { .. }
             | Event::Library(_)
             | Event::Batch(_)
+            | Event::Rated { .. }
             | Event::Failed(_) => {
                 return Topic::Notice;
             }
@@ -1462,6 +1501,13 @@ pub enum SessionError {
     /// The engine thread has ended, so nothing more will render.
     #[error("the engine stopped")]
     Stopped,
+    /// A [`Command::Rate`] naming a photo other than the active one: several photos come
+    /// with the batch (decision 109).
+    #[error("{} is not the active photo: only the active photo can be rated", photo.display())]
+    NotActive { photo: PathBuf },
+    /// A [`Command::Rate`] with no photo open or opening.
+    #[error("no photo is open")]
+    NoPhoto,
 }
 
 /// Called by the [`Outbox`] when events have arrived that the client may not have seen,
@@ -2474,10 +2520,10 @@ fn write_edits(
         let saved_hash = if failed {
             None
         } else if write {
-            Some(apertrust_library::index::hash(xml.as_bytes()))
+            Some(library::edit_hash(xml.as_bytes()))
         } else {
             match std::fs::read(&path) {
-                Ok(bytes) => Some(apertrust_library::index::hash(&bytes)),
+                Ok(bytes) => Some(library::edit_hash(&bytes)),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Some(library::UNALTERED),
                 Err(_) => None,
             }
@@ -3047,6 +3093,9 @@ struct Open {
     unreadable: Option<Option<Stamp>>,
     /// Whether the edit has changed since it was last handed to the writer.
     unsaved: bool,
+    /// Whether its fields changed since they were last handed to the writer, which writes
+    /// the file though its log of default steps alone is not yet written (decision 110).
+    fields_unsaved: bool,
     /// The tools whose binding failed at the last render, each reported once.
     failing: BTreeSet<&'static str>,
     /// The tools whose preset rows panicked as the values were reported, each warned
@@ -3719,6 +3768,10 @@ impl Engine {
         };
         let mut events = Vec::new();
         let (mut values, mut render, mut save, mut cancelled) = (false, false, false, false);
+        // The open photo's rating as the batch began, and whether a `Rate` changed the
+        // undo records, which a `History` then tells.
+        let rating = self.open_rating();
+        let mut rated = false;
         // Whether a tool picker's command owed an answer has nothing to write.
         let mut answer = false;
         // Whether the scopes now count a graph the published frame was not counted for.
@@ -3925,6 +3978,10 @@ impl Engine {
                     }
                 }
                 Command::Cache(command) => self.cache(command, &mut events),
+                Command::Rate { photos, change } => self.rate(&photos, change, at).map(|()| {
+                    rated = true;
+                    save = true;
+                }),
                 #[cfg(test)]
                 Command::HoldExport(hold) => {
                     self.export_hold = Some(hold);
@@ -4046,7 +4103,10 @@ impl Engine {
             )));
             // Once a batch, after its values and before its frame.
             events.extend(self.history_event());
+        } else if rated {
+            events.extend(self.history_event());
         }
+        events.extend(self.rating_events(rating));
         // Where the batch changed the view or its placement, after its values and history
         // and before its frame.
         events.extend(self.view_event());
@@ -4521,6 +4581,7 @@ impl Engine {
             | Command::Library(_)
             | Command::Selection(_)
             | Command::UndoBatch { .. }
+            | Command::Rate { .. }
             | Command::Cache(_) => {
                 return Ok(Effect::default());
             }
@@ -4661,7 +4722,11 @@ impl Engine {
             // (decision 78): handed over as one the file holds, answered and not written,
             // wherever its end; but written with no step where it took the place of steps
             // the file may hold, by Compress, Truncate or Discard History.
-            let held = if open.history.unwritten() && !open.history.cleared() {
+            // A change of its fields alone writes the file with no step all the same
+            // (decision 110), and leaves the photo unedited.
+            let log_held = open.history.unwritten() && !open.history.cleared();
+            let fields = std::mem::take(&mut open.fields_unsaved);
+            let held = if log_held && !fields {
                 true
             } else {
                 open.history.handed();
@@ -4669,18 +4734,25 @@ impl Engine {
             };
             // A change handed over to be written edits the photo: it leaves the path of one
             // never edited for good, whatever it holds.
-            if !held {
+            if !held && !log_held {
                 open.unedited = false;
+            }
+            // darktable's fields go into the first write, each with its clock.
+            if !held {
+                fields::stamp_darktable(&mut open.file, || open.history.stamp());
             }
             let xml = open.xml(self.operations, &self.tools, &self.build);
             if !held || self.writer.failed(&open.sidecar) {
-                let hash = apertrust_library::index::hash(xml.as_bytes());
-                if open.thumbnail_hash != Some(hash) {
-                    self.rendered_thumbnails
-                        .invalidate(&open.sidecar.with_extension(""));
+                // The edit's hash, the fields left out: a rating renders nothing anew.
+                if !log_held {
+                    let hash = library::edit_hash(xml.as_bytes());
+                    if open.thumbnail_hash != Some(hash) {
+                        self.rendered_thumbnails
+                            .invalidate(&open.sidecar.with_extension(""));
+                    }
+                    open.thumbnail_hash = Some(hash);
+                    open.thumbnail_saved_at = None;
                 }
-                open.thumbnail_hash = Some(hash);
-                open.thumbnail_saved_at = None;
                 open.written = true;
             }
             // The thumbnail waits for the write by the number the writer reports.
@@ -4761,8 +4833,18 @@ impl Engine {
     /// - any other is taken in: the steps not yet saved laid on its log after its end, the
     ///   change not yet a step, a gesture under way among them, kept on top, then written,
     ///   with `Values`, `History` and a frame where the edit changed, none of it rendered
-    ///   while the photo `closing`.
+    ///   while the photo `closing`;
+    ///
+    /// and `Rating` and `Rated` where taking it in changed the open photo's rating.
     fn newer_file(&mut self, closing: bool) -> Vec<Event> {
+        let rating = self.open_rating();
+        let mut events = self.take_newer_file(closing);
+        events.extend(self.rating_events(rating));
+        events
+    }
+
+    /// [`Self::newer_file`] but for its rating's events.
+    fn take_newer_file(&mut self, closing: bool) -> Vec<Event> {
         let mut events = Vec::new();
         let Some(open) = &mut self.open else {
             return events;
@@ -4831,11 +4913,7 @@ impl Engine {
             // What else the file holds is kept: other tools' properties, as a rating, and
             // the other virtual copies, whatever another program changed of them.
             if existed {
-                let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
-                open.file = loaded.file;
-                open.written = false;
-                open.file.photo = photo;
-                open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
+                open.take_file(loaded.file);
             }
             open.unsaved = true;
             self.save();
@@ -4861,11 +4939,7 @@ impl Engine {
             if matches!(view_only.reason, sidecar::Reason::Unreadable(_)) {
                 self.writer
                     .adopt(&path, stamp, history::Base::of(&loaded.log, &clocks));
-                let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
-                open.file = loaded.file;
-                open.written = false;
-                open.file.photo = photo;
-                open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
+                open.take_file(loaded.file);
             }
             open.history = history::PhotoHistory::read(loaded.log, clocks, &[]);
             open.history.set_reader(&self.tools, &open.image);
@@ -4891,11 +4965,7 @@ impl Engine {
             let clocks = loaded.clocks().to_vec();
             self.writer
                 .adopt(&path, stamp, history::Base::of(&loaded.log, &clocks));
-            let (photo, fingerprint) = (open.file.photo.take(), open.file.fingerprint.take());
-            open.file = loaded.file;
-            open.written = false;
-            open.file.photo = photo;
-            open.file.fingerprint = fingerprint.or(open.file.fingerprint.take());
+            open.take_file(loaded.file);
             // What the changes not yet a step are measured from: the old fold, but for a
             // tool the edit holds as the fold as read, so that neither a clamp nor a redraw,
             // nor a pick's value the redraw would change, is laid over the newer file's tool.
@@ -5036,6 +5106,7 @@ impl Engine {
                 events.push(Event::Opened(photo));
                 events.extend(values.map(Event::Values));
                 events.extend(self.history_event());
+                events.extend(self.rating_fact());
                 // The view placed on the photo, where its extent or the bounds since the
                 // last photo differ.
                 events.extend(self.view_event());
@@ -5172,6 +5243,7 @@ impl Engine {
             photo: photo.clone(),
             unreadable: None,
             unsaved: false,
+            fields_unsaved: false,
             failing: BTreeSet::new(),
             presets_failed: BTreeSet::new(),
             readouts_failed: BTreeSet::new(),
@@ -7072,6 +7144,7 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
 #[cfg(test)]
 mod tests {
     mod batch;
+    mod fields;
     mod history;
     mod selection;
     mod set_tool;
@@ -12122,7 +12195,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), original);
         assert_eq!(
             writer.lock().saved.get(&path).map(|(hash, _, _)| *hash),
-            Some(apertrust_library::index::hash(original))
+            Some(library::edit_hash(original))
         );
         remove(&photo);
     }
@@ -13673,6 +13746,8 @@ mod tests {
             Event::History(_) => Topic::Fact(Fact::History),
             Event::Selection(_) => Topic::Fact(Fact::Selection),
             Event::View(_) => Topic::Fact(Fact::View),
+            Event::Rating(_) => Topic::Fact(Fact::Rating),
+            Event::Rated { .. } => Topic::Notice,
             Event::Failed(_) => Topic::Notice,
         }
     }
@@ -13739,6 +13814,10 @@ mod tests {
                 }),
             },
             Event::Failed(SessionError::Stopped),
+            Event::Rated {
+                photo: path.clone(),
+                rating: Rating::default(),
+            },
             Event::Picker {
                 through: 3,
                 reading: None,
@@ -13813,7 +13892,7 @@ mod tests {
         }
         // Every variant, the ones a session sent among them, the selection and the view as
         // the photo opened, and every job event.
-        assert_eq!(seen.len(), 16, "{events:?}");
+        assert_eq!(seen.len(), 18, "{events:?}");
         assert_eq!(jobs.len(), 7, "{jobs:?}");
         // Each job's progress, title, detail, destination and state are facts of their
         // own.
@@ -14759,7 +14838,7 @@ mod tests {
         }
 
         fn library_hash(path: &Path) -> [u8; 32] {
-            apertrust_library::index::hash(&std::fs::read(path).unwrap())
+            library::edit_hash(&std::fs::read(path).unwrap())
         }
 
         #[test]
@@ -15420,7 +15499,7 @@ mod tests {
                 &mut driven,
                 &cache,
                 &path,
-                &apertrust_library::index::hash(xml.as_bytes()),
+                &library::edit_hash(xml.as_bytes()),
             );
             drop(driven);
             remove(&path);

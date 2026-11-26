@@ -228,6 +228,8 @@ fn kind(event: &Event) -> &'static str {
         Event::History(_) => "History",
         Event::Selection(_) => "Selection",
         Event::View(_) => "View",
+        Event::Rating(_) => "Rating",
+        Event::Rated { .. } => "Rated",
         Event::Failed(_) => "Failed",
     }
 }
@@ -261,6 +263,7 @@ impl fmt::Display for Line<'_> {
             )?,
             Event::Frame(frame) => write!(f, ", through {}", frame.through)?,
             Event::View(state) => write!(f, ", through {}", state.through)?,
+            Event::Rating(state) => write!(f, ", through {}", state.through)?,
             Event::Scopes(reading) => write!(f, ", through {}", reading.through)?,
             Event::Picker {
                 reading: Some(_),
@@ -292,7 +295,7 @@ impl fmt::Display for Line<'_> {
             Event::Failed(SessionError::CacheWalk { command, .. }) => {
                 write!(f, ", command {command}")?
             }
-            Event::Cache(_) | Event::Failed(_) => {}
+            Event::Cache(_) | Event::Rated { .. } | Event::Failed(_) => {}
         }
         match event.topic() {
             Topic::Fact(_) => f.write_str(", a fact"),

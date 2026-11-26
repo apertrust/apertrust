@@ -727,6 +727,9 @@ impl Mirror {
                     self.view = Some(state);
                 }
             }
+            // The open photo's rating, and a photo rated: the app shows none until it rates
+            // (decision 110).
+            Event::Rating(_) | Event::Rated { .. } => {}
             // The open photo's history, the latest by its `through`, which Undo and Redo
             // name; one numbered lower arrived late.
             Event::History(history) => {

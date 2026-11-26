@@ -671,6 +671,18 @@ fn edit(
         Some(Ok(Some(xml))) => xml,
         Some(Ok(None)) | None => {
             identify(&mut read.file);
+            // darktable's rating and labels, while the photo has no `.apxmp` (decision 110),
+            // copied in at its first write.
+            match apertrust_library::darktable::read_fields(&run.path) {
+                Ok(Some(darktable)) if !darktable.fields.is_empty() => {
+                    *super::fields::first_mut(&mut read.file) = darktable.fields;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    let name = apertrust_library::darktable::path_for(&run.path);
+                    tracing::warn!(target: "pipe", "cannot read {}: {error}", name.display());
+                }
+            }
             return Ok(read);
         }
         Some(Err(error)) => {
@@ -718,7 +730,8 @@ fn edit(
     }
     Ok(Read {
         edit,
-        hash: Some(apertrust_library::index::hash(xml.as_bytes())),
+        // A file holding fields alone, a photo only rated, is no edit (decision 110).
+        hash: Some(library::edit_hash(xml.as_bytes())).filter(|hash| *hash != library::UNALTERED),
         view_only,
         log,
         file,
