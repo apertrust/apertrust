@@ -1508,6 +1508,115 @@ fn saved_rating(photo: &Path) -> Rating {
     Rating::of(file.copies.first().map_or(&[][..], |copy| &copy.fields))
 }
 
+/// Three stars on the active photo and one other, then Undo there, the job's first route,
+/// the other's, held: the session, the other photo, the batch and the route.
+fn rating_undone(
+    name: &str,
+) -> (
+    Driven,
+    PathBuf,
+    PathBuf,
+    BatchId,
+    crate::session::batch::Route,
+) {
+    let active = scratch(name);
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let other = photos(&active, "other", 1).remove(0);
+    driven.run([three_stars(&[active.clone(), other.clone()])]);
+    until_let_go(&mut driven);
+    driven.writes();
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    driven.run([Command::Undo]);
+    let route = next_route(&mut driven);
+    assert_eq!(route.photo(), other.as_path());
+    (driven, active, other, batch, route)
+}
+
+/// The Undo's route handed to the writer as the engine thread hands it, then `bytes` put in
+/// its photo's file, as the write lands before the job hears of it: the writer, held while
+/// it is handed over, drops its own write, as the photo's open raising the file's generation
+/// makes it, so the job is routed again, which this holds back. The photo then opened and
+/// edited, and the routes held back taken: what the Undo's `Ended` says it changed and
+/// skipped.
+fn landed_as_it_opens(
+    driven: &mut Driven,
+    other: &Path,
+    route: crate::session::batch::Route,
+    bytes: impl FnOnce(&str) -> String,
+) -> (Vec<PathBuf>, Vec<(PathBuf, Skip)>) {
+    let sidecar = sidecar::path_for(other);
+    let bytes = bytes(route.xml());
+    let permit = driven.engine.writer.hold();
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    std::fs::write(&sidecar, bytes).unwrap();
+    driven.engine.writer.files().raise(&sidecar);
+    drop(permit);
+    driven.run([
+        Command::Open(other.to_owned()),
+        Command::Resize {
+            width: 40,
+            height: 40,
+        },
+    ]);
+    let mut held = Vec::new();
+    while driven.engine.opening.is_some() {
+        match (driven.inbox.recv_timeout(TEST_WAIT)).expect("the open goes on") {
+            Inbox::Open(stage) => {
+                driven.engine.stage(*stage);
+            }
+            Inbox::Task(waiting) => driven.engine.jobs.background.add(waiting),
+            Inbox::Route(route) => held.push(*route),
+            _ => {}
+        }
+    }
+    let events = driven.run([Command::SetTool {
+        tool: "soften".to_owned(),
+        values: on("amount", 10.0),
+    }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    driven.engine.routes.extend(held);
+    driven.engine.take_routes();
+    let heard = until_ended(driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    (changed.clone(), skipped.clone())
+}
+
+/// A rating's Undo whose write over a photo not open lands as the photo opens, before the
+/// job hears of it, the photo edited at once: it opened on the bytes the move handed the
+/// writer, its fields as read since, so it is reached, not changed since, and Redo names it.
+#[test]
+fn a_rating_s_undo_write_landing_as_its_photo_opens_is_reached() {
+    let (mut driven, active, other, batch, route) = rating_undone("batch-rate-undo-landed");
+    let (changed, skipped) = landed_as_it_opens(&mut driven, &other, route, str::to_owned);
+    assert_eq!((changed.len(), skipped), (2, Vec::new()));
+    assert!(changed.contains(&other));
+    assert_eq!(
+        driven.engine.open.as_ref().unwrap().rating(),
+        Rating::default()
+    );
+    assert_eq!(driven.engine.batch_photos(batch, true), Some(2));
+    remove(&active);
+}
+
+/// Another program's write of the photo's file in the move's place, with the rating the Undo
+/// leaves but other bytes: the photo did not open on the bytes the move handed over, so,
+/// though its rating is the one the Undo leaves, it is named as changed since.
+#[test]
+fn a_rating_written_back_elsewhere_before_its_photo_opens_is_changed_since() {
+    let (mut driven, active, other, batch, route) = rating_undone("batch-rate-undo-elsewhere");
+    let theirs = |xml: &str| format!("{xml}\n");
+    let (changed, skipped) = landed_as_it_opens(&mut driven, &other, route, theirs);
+    assert_eq!(changed, std::slice::from_ref(&active));
+    assert_eq!(skipped, [(other.clone(), Skip::ChangedSince)]);
+    assert_eq!(driven.engine.batch_photos(batch, true), Some(1));
+    remove(&active);
+}
+
 /// The photos the `Rated` notices among `events` name, in order.
 fn rated_photos(events: &[Event]) -> Vec<PathBuf> {
     (events.iter())

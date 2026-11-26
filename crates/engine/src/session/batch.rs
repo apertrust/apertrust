@@ -226,6 +226,10 @@ struct Reached {
     /// For a rating's batch, each photo it set fields on, with the record that takes them
     /// back, or puts them back, and the photo's rating it left.
     rated: Vec<(PathBuf, FieldRecord, Rating)>,
+    /// For a rating's take-back or put-back, each photo the engine thread handed the writer,
+    /// with the length and hash of the bytes handed over, which tell a photo that opened on
+    /// that write once it landed.
+    handed: Vec<(PathBuf, u64, [u8; 32])>,
 }
 
 /// How a photo of a batch was reached.
@@ -393,6 +397,23 @@ impl Pending {
     fn rated(&self, photo: &Path) -> Option<FieldRecord> {
         let state = self.state();
         (state.rated.iter()).find_map(|(kept, record, _)| (kept == photo).then(|| record.clone()))
+    }
+
+    /// Keeps the length and hash of `xml`, handed to the writer for `photo`, in place of
+    /// those kept before.
+    fn keep_handed(&self, photo: &Path, xml: &str) {
+        let hash = apertrust_library::index::hash(xml.as_bytes());
+        let mut state = self.state();
+        state.handed.retain(|(kept, ..)| kept != photo);
+        state
+            .handed
+            .push((photo.to_owned(), xml.len() as u64, hash));
+    }
+
+    /// The length and hash of the bytes last handed to the writer for `photo`, if any.
+    fn handed(&self, photo: &Path) -> Option<(u64, [u8; 32])> {
+        let state = self.state();
+        (state.handed.iter()).find_map(|(kept, len, hash)| (kept == photo).then_some((*len, *hash)))
     }
 
     /// The rating a rating's batch left on `photo`, if any.
@@ -1002,6 +1023,13 @@ impl Engine {
         self.step_pending();
         let moves = (self.open.as_ref()).is_some_and(|open| open.history.moves_batch(batch, redo));
         if !moves && matches!(pending.change, Change::Rate(_)) {
+            // Opened on the move's own write, as one that landed as it opened: reached.
+            if self.landed_as_opened(pending, photo) {
+                if pending.reach(photo, Outcome::Changed) {
+                    events.push(self.moved_event(pending, photo));
+                }
+                return Effect::default();
+            }
             return self.put_rated_live(pending, photo, redo, events);
         }
         if !moves {
@@ -1034,6 +1062,20 @@ impl Engine {
                 Effect::default()
             }
         }
+    }
+
+    /// Whether the open photo, `photo`, opened on the bytes the rating's move `pending`
+    /// handed the writer for it, by their length and hash, and its fields are as it read
+    /// them: the move's write landed as it opened, so it is where the move leaves it, where a
+    /// rating set back to the same value since, by hand or by another program, is not.
+    fn landed_as_opened(&self, pending: &Pending, photo: &Path) -> bool {
+        let Some((read, fields)) = self.open.as_ref().and_then(|open| {
+            let (stamp, fields) = open.opened.as_ref()?;
+            Some(((stamp.len, stamp.hash), open.fields() == fields.as_slice()))
+        }) else {
+            return false;
+        };
+        fields && pending.handed(photo) == Some(read)
     }
 
     /// A rating's batch `pending` taken back, or put back where `redo`, on the open photo,
@@ -1091,6 +1133,13 @@ impl Engine {
                 render |= effect.render;
                 Routed::Live
             } else {
+                // A rating's move: the bytes handed over, which tell its photo opening on them
+                // once they land, before the job hears of it.
+                if matches!(route.pending.change, Change::Rate(_))
+                    && route.pending.action != BatchAction::Applied
+                {
+                    route.pending.keep_handed(&route.photo, &route.xml);
+                }
                 Routed::Handed(self.writer.write_over(sidecar, route.xml, route.read))
             };
             // A job that has gone hears nothing.
