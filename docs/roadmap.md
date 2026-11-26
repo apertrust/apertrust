@@ -251,7 +251,7 @@ darktable's packed lines as one line row, and the buttons at a row's end as a cl
 
 The foundation of Phase 6's MCP, laid now so every command added from here on is ready for it (decision 108; [session-protocol.md](session-protocol.md#agents)), one pull request each:
 
-- [ ] 108.1 The session protocol's types serializable: every command and event to JSON and back unchanged in a test, built through exhaustive matches so a new variant must join it, `Frame`'s GPU buffer the known exception.
+- [x] 108.1 The session protocol's types serializable: every command and event to JSON and back unchanged in a test, built through exhaustive matches so a new variant must join it, `Frame`'s GPU buffer the known exception.
 - [ ] 108.2 `Command::access()`: each command's access for agents (View, Edit the open photo, Photos, Export or Organise, or `Access::Person` for the commands never granted to an agent, the one view, the live picker and the history's moves) through an exhaustive match, so each new command states where it belongs.
 
 ### Scopes
