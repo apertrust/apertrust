@@ -1662,6 +1662,9 @@ history-discard = Discard History
 # A reject cleared, as Undo and Redo name it; the rest of the rating's changes take their
 # action's name.
 history-unreject = Clear reject
+# Undo and Redo of a change of several Metadata fields at once, and of the copy's name.
+history-metadata = Metadata
+history-copy-name = Rename copy
 # A tool's preset applied, $name its name, and its Default settings.
 history-preset = Preset { $name }
 # A style's steps, its Clear's, $style its name, and the step that keeps the styles applied

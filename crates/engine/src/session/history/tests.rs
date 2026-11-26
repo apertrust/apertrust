@@ -302,7 +302,9 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
             | Move::Compress
             | Move::Truncate
             | Move::DiscardHistory
-            | Move::Field { .. },
+            | Move::Field { .. }
+            | Move::Metadata { .. }
+            | Move::CopyName,
         ) => {
             assert!(moved.is_some(), "{context}");
         }
@@ -1112,6 +1114,8 @@ fn json(history: &History) -> String {
         Some(Move::Truncate) => r#""Truncate""#.to_owned(),
         Some(Move::DiscardHistory) => r#""DiscardHistory""#.to_owned(),
         Some(Move::Field { photos, .. }) => format!(r#"{{"Field":{{"photos":{photos}}}}}"#),
+        Some(Move::Metadata { photos, .. }) => format!(r#"{{"Metadata":{{"photos":{photos}}}}}"#),
+        Some(Move::CopyName) => r#""CopyName""#.to_owned(),
         None => "null".to_owned(),
     };
     write!(

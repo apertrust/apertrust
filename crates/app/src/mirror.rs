@@ -59,9 +59,9 @@ use std::time::{Duration, Instant};
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ActionState, BatchEvent, ControlState, ControlValue, CoordinateState, Event, ExportPreview,
-    Frame, History, OpenPreview, Photo, PresetState, PreviewSource, Rating, RatingState,
-    ReadoutState, Selection, SelectionCommand, SessionError, ToolState, Values, ViewState,
-    WarningState,
+    Frame, History, MetadataState, OpenPreview, Photo, PresetState, PreviewSource, Rating,
+    RatingState, ReadoutState, Selection, SelectionCommand, SessionError, ToolState, Values,
+    ViewState, WarningState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -229,6 +229,9 @@ pub struct Mirror {
     /// The open photo's rating (decision 110), as the session last told it, the latest by
     /// its `through`; none before it tells one.
     pub rating: Option<RatingState>,
+    /// The open photo's Metadata fields, its copy's name and place (decision 110), as the
+    /// session last told them, the latest by its `through`; none before it tells them.
+    pub metadata: Option<MetadataState>,
     /// How many batches on several photos have ended, which the Metadata tool asks again
     /// after, their edits and ratings changing no selection.
     pub batches_ended: u64,
@@ -297,6 +300,7 @@ impl Mirror {
             selected: HashSet::new(),
             view: None,
             rating: None,
+            metadata: None,
             batches_ended: 0,
             orientation: crate::zoom::Orientation::default(),
             asked: Vec::new(),
@@ -897,6 +901,15 @@ impl Mirror {
                 }
             }
             Event::Rated { .. } => {}
+            // The open photo's Metadata fields, as its rating is kept.
+            Event::Metadata(state) => {
+                let newer = |kept: &MetadataState| {
+                    kept.photo != state.photo || state.through >= kept.through
+                };
+                if self.metadata.as_ref().is_none_or(newer) {
+                    self.metadata = Some(state);
+                }
+            }
             // The open photo's history, the latest by its `through`, which Undo and Redo
             // name; one numbered lower arrived late.
             Event::History(history) => {

@@ -42,13 +42,13 @@ use std::sync::{Arc, Mutex, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
 use apertrust_library::clock::wall_clock;
-use apertrust_library::fields::FieldEntry;
 use apertrust_library::listing;
+use apertrust_library::sidecar::VirtualCopy;
 use apertrust_plugin::Operation;
 use apertrust_tools::{ProcessingTool, ToolValues};
 use serde::{Deserialize, Serialize};
 
-use super::fields::{self, FieldRecord};
+use super::fields::{self, Changed, FieldRecord};
 use super::history::PhotoHistory;
 use super::styles::{Batch, Style, style_log};
 use super::{
@@ -385,12 +385,12 @@ impl Pending {
     fn put_rated(
         &self,
         photo: &Path,
-        entries: &mut Vec<FieldEntry>,
+        copy: &mut VirtualCopy,
         redo: bool,
         clock: Clock,
     ) -> Option<(FieldRecord, Rating)> {
         let mut record = self.rated(photo)?;
-        (record.put(entries, !redo, clock)).then(|| (record, Rating::of(entries)))
+        (record.put(copy, !redo, clock)).then(|| (record, Rating::of(&copy.fields)))
     }
 
     /// The record a rating's batch keeps for `photo`, if any.
@@ -1093,8 +1093,8 @@ impl Engine {
             return Effect::default();
         };
         let clock = open.history.stamp();
-        let entries = fields::first_mut(&mut open.file);
-        let Some((record, rating)) = pending.put_rated(photo, entries, redo, clock) else {
+        let copy = fields::copy_mut(&mut open.file);
+        let Some((record, rating)) = pending.put_rated(photo, copy, redo, clock) else {
             pending.reach(photo, Outcome::Skipped(Skip::ChangedSince));
             return Effect::default();
         };
@@ -1311,7 +1311,8 @@ fn read(run: &Run, context: &Context<'_>, photo: &Path) -> Result<Result<Read, S
         Ok(None) => {
             let mut file = Edits::new("");
             if let Ok(Some(darktable)) = apertrust_library::darktable::read_fields(photo) {
-                *fields::first_mut(&mut file) = darktable.fields;
+                let copy = fields::copy_mut(&mut file);
+                (copy.fields, copy.name) = (darktable.fields, darktable.name);
             }
             Ok((file, Log::default(), Vec::new(), stamp))
         }
@@ -1497,7 +1498,12 @@ fn rate(
         if changes.is_empty() {
             return Err(Outcome::Unchanged);
         }
-        let record = FieldRecord::new(change, changes, clock, Some(pending.batch.id));
+        let record = FieldRecord::new(
+            Changed::Rating(change),
+            changes,
+            clock,
+            Some(pending.batch.id),
+        );
         *rated.borrow_mut() = Some((record, Rating::of(fields::first_mut(file))));
         Ok(history.into_log())
     })?;
@@ -1541,7 +1547,7 @@ fn moved_rating(
     let reached = change_photo(run, context, photo, |file, log, clocks| {
         let mut history = PhotoHistory::read_at(log, clocks, &[], wall_clock());
         let clock = history.stamp();
-        let Some(kept) = pending.put_rated(photo, fields::first_mut(file), redo, clock) else {
+        let Some(kept) = pending.put_rated(photo, fields::copy_mut(file), redo, clock) else {
             return Err(Outcome::Skipped(Skip::ChangedSince));
         };
         *put.borrow_mut() = Some(kept);

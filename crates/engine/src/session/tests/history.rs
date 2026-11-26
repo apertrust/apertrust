@@ -2655,7 +2655,12 @@ fn another_program_s_change_to_another_copy_is_kept() {
     std::fs::write(&sidecar, file.to_xml()).unwrap();
     driven.run([set("grain", ControlValue::Number(30.0), true)]);
     assert!(driven.writes().is_empty());
-    assert!(driven.engine.newer_file(false).is_empty());
+    // Only the copies' count is told: the photo has two now.
+    let told = driven.engine.newer_file(false);
+    assert!(
+        matches!(&told[..], [Event::Metadata(m)] if m.copy.count == 2),
+        "{told:?}"
+    );
     driven.writes();
     let written = sidecar::Edits::parse(&std::fs::read_to_string(&sidecar).unwrap(), 0).unwrap();
     assert_eq!(written.copies.len(), 2);

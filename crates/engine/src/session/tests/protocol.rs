@@ -183,6 +183,15 @@ pub(super) fn every_command() -> Vec<Command> {
             photos: vec![photo(), other()],
             change: RatingChange::Label { label: 2, on: true },
         },
+        Command::SetMetadata {
+            fields: vec![
+                ("dc:title".to_owned(), Some("Morning market".to_owned())),
+                ("photoshop:City".to_owned(), None),
+            ],
+        },
+        Command::RenameCopy {
+            name: "Black and white".to_owned(),
+        },
         Command::GoTo { step: Some(STEP) },
         Command::Compress { up_to: None },
         Command::Truncate {
@@ -327,7 +336,7 @@ pub(super) fn every_command() -> Vec<Command> {
 }
 
 /// How many variants [`command_variant`] counts.
-const COMMAND_VARIANTS: usize = 36;
+const COMMAND_VARIANTS: usize = 38;
 
 /// Each command's variant, `None` for the tests' own. A new variant takes the next index
 /// and raises the count.
@@ -369,6 +378,8 @@ fn command_variant(command: &Command) -> Option<usize> {
         Command::Library(_) => 33,
         Command::Selection(_) => 34,
         Command::Cache(_) => 35,
+        Command::SetMetadata { .. } => 36,
+        Command::RenameCopy { .. } => 37,
         Command::Synthetic(_)
         | Command::HoldExport(_)
         | Command::HoldPreview(_)
@@ -1138,6 +1149,27 @@ fn every_event() -> Vec<Event> {
             photo: other(),
             rating,
         },
+        Event::Metadata(MetadataState {
+            through: 20,
+            photo: photo(),
+            fields: vec![
+                (
+                    "dc:title".to_owned(),
+                    Some(FieldValue::LangAlt(vec![(
+                        "x-default".to_owned(),
+                        "Morning market".to_owned(),
+                    )])),
+                ),
+                ("photoshop:City".to_owned(), None),
+            ],
+            copy: CopyState {
+                name: "Black and white".to_owned(),
+                number: 2,
+                count: 3,
+            },
+            preserved_file_name: Some("IMG_0001.CR2".to_owned()),
+            darktable: false,
+        }),
     ];
     events.extend(
         [
@@ -1255,6 +1287,13 @@ fn every_event() -> Vec<Event> {
             SessionError::Panicked("index out of bounds".to_owned()),
             SessionError::Stopped,
             SessionError::NoPhoto,
+            SessionError::UnknownField {
+                field: "dc:subject".to_owned(),
+            },
+            SessionError::FieldValue {
+                field: "photoshop:DateCreated".to_owned(),
+                reason: apertrust_library::fields::TypedError::NotADate,
+            },
         ]
         .into_iter()
         .map(session_error),
@@ -1263,7 +1302,7 @@ fn every_event() -> Vec<Event> {
 }
 
 /// How many variants [`event_variant`] counts.
-const EVENT_VARIANTS: usize = 19;
+const EVENT_VARIANTS: usize = 20;
 
 /// Each event's variant, `None` for a frame. A new variant takes the next index and raises
 /// the count.
@@ -1289,6 +1328,7 @@ fn event_variant(event: &Event) -> Option<usize> {
         Event::Rating(_) => 16,
         Event::Rated { .. } => 17,
         Event::Failed(_) => 18,
+        Event::Metadata(_) => 19,
     })
 }
 
@@ -1369,7 +1409,7 @@ fn batch_event_variant(event: &BatchEvent) -> usize {
 }
 
 /// How many variants [`session_error_variant`] counts.
-const SESSION_ERROR_VARIANTS: usize = 43;
+const SESSION_ERROR_VARIANTS: usize = 45;
 
 /// Each session error's variant; a new one takes the next index and raises the count.
 fn session_error_variant(error: &SessionError) -> usize {
@@ -1417,6 +1457,8 @@ fn session_error_variant(error: &SessionError) -> usize {
         SessionError::Panicked(_) => 40,
         SessionError::Stopped => 41,
         SessionError::NoPhoto => 42,
+        SessionError::UnknownField { .. } => 43,
+        SessionError::FieldValue { .. } => 44,
     }
 }
 

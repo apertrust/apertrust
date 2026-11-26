@@ -1148,8 +1148,20 @@ pub enum Move {
     /// Take back or put back a change of the photo's rating, its reject or a label
     /// (decision 110), no step of the log: `change` the last change the undo record holds,
     /// quick repeats of one key merged, on `photos` photos, a batch's count where it is one on
-    /// several photos (decision 109), else 1. The Metadata tool's fields join it (#643).
+    /// several photos (decision 109), else 1.
     Field { change: RatingChange, photos: usize },
+    /// Take back or put back a change of the Metadata tool's fields (decision 110), no step
+    /// of the log: `field` the property of the one field it set, quick commits of it
+    /// merged, `None` where it set several at once; on `photos` photos as
+    /// [`Move::Field`]'s.
+    Metadata {
+        #[serde(deserialize_with = "apertrust_base::wire::id::option", default)]
+        field: Option<Id>,
+        photos: usize,
+    },
+    /// Take back or put back a change of the open copy's name (decision 110), no step of
+    /// the log.
+    CopyName,
 }
 
 /// The modules darktable has on by default with no on/off button (`hide_enable_button`),
