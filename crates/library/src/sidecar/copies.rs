@@ -62,12 +62,12 @@
 //! clock vector is written in the order of its machine ids, so two machines writing the
 //! same copy write the same bytes (decision 52).
 //!
-//! A step that changed the styles applied to the photo holds the whole list after it in
-//! `apertrust:styles`, after its entries, newest first, closed at once where it emptied it
-//! (decision 106): each item a struct of `apertrust:name`, `apertrust:file`, and
-//! `apertrust:before` and `apertrust:after`, each an `rdf:Seq` of tool entries as version 1
-//! writes them, the same tools in the same order. A step holding the list alone writes its
-//! `apertrust:entries` empty.
+//! A step that changed the styles applied to the photo, or is a style's application's last
+//! step, holds the whole list after it in `apertrust:styles`, after its entries, newest
+//! first, closed at once where it emptied it (decision 106): each item a struct of
+//! `apertrust:name`, `apertrust:file`, and `apertrust:before` and `apertrust:after`, each an
+//! `rdf:Seq` of tool entries as version 1 writes them, the same tools in the same order. A
+//! step holding the list alone writes its `apertrust:entries` empty.
 //!
 //! A version 1 or 0 file reads as one virtual copy ([`Edits::parse`]): its history a step
 //! of each of the file's entries, or none, end empty, for a file holding nothing.
@@ -260,8 +260,8 @@ pub struct Step {
     /// after it, in the step's order; none for a step holding the styles applied alone.
     pub entries: Vec<Entry>,
     /// `apertrust:styles`: the whole list of styles applied after it, newest first, where it
-    /// changed the list, empty where it emptied it; `None` where it left the list as it was
-    /// (decision 106).
+    /// changed the list or is a style's application's last step, empty where it emptied it;
+    /// `None` where it left the list as it was and applied no style (decision 106).
     pub styles: Option<Vec<AppliedStyle>>,
 }
 
@@ -1105,7 +1105,7 @@ fn copy_node(copy: &VirtualCopy) -> Node {
 }
 
 /// A step as a struct: its id, clock, source, note and batch, then its note's arguments
-/// where it has any, then its entries, then the styles applied where it changed them.
+/// where it has any, then its entries, then the styles applied where it holds them.
 fn step_node(step: &Step) -> Node {
     let mut fields = vec![own("id", &step.id)];
     fields.extend(step.clock.iter().flat_map(clock_fields));

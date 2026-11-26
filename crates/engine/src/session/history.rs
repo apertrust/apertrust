@@ -390,8 +390,8 @@ impl PhotoHistory {
     }
 
     /// The change being completed leaves the list of styles applied `styles`: its last step
-    /// holds it, or, where it moves no tool, a step of its own, where it differs from the
-    /// list the log holds.
+    /// holds it, moved or not, or, where it moves no tool, a step of its own, where it
+    /// differs from the list the log holds.
     pub(super) fn leave_styles(&mut self, styles: Vec<AppliedStyle>) {
         self.styles = Some(styles);
     }
@@ -553,7 +553,8 @@ impl PhotoHistory {
                 }
             }
             // Every Reset laid empties the list, whether or not it stores one; a step that
-            // stores one replays what it differs by from the list before it.
+            // stores one replays what it differs by from the list before it, and a style's
+            // application, noted `history-style`, the style it applied though unchanged.
             let had = !rebuilt.is_empty();
             match (&step.change, &step.styles) {
                 (Change::Reset(_), _) => {
@@ -568,7 +569,9 @@ impl PhotoHistory {
                         (set.get(tool).cloned())
                             .unwrap_or_else(|| joined.tools.get(tool).cloned().unwrap_or_default())
                     };
-                    replay(&mut rebuilt, (before, after), &stepped, joined);
+                    let applied = matches!(&step.note,
+                        Some(Note::Message { id, .. }) if id == Note::STYLE);
+                    replay(&mut rebuilt, (before, after), applied, &stepped, joined);
                     step.styles = Some(rebuilt.clone());
                 }
                 (_, None) => {}
@@ -751,10 +754,10 @@ impl PhotoHistory {
             let count = changes.len();
             let at = self.log.end();
             let dropped = self.log.add_change(changes, source, note, batch, clock);
-            // The list it leaves, on its last step, where it moved it.
-            if let Some(styles) = styles
-                && styles.as_slice() != self.log.styles()
-            {
+            // The list it leaves, on its last step, where it moved it, and where a style
+            // applied again left it as it was: so a newer file taken in replays that
+            // application too ([`Self::take_in`]).
+            if let Some(styles) = styles {
                 self.log.hold_styles(styles);
             }
             let kept = self.log.end() - at - count;

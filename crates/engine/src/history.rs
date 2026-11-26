@@ -476,10 +476,12 @@ pub fn on_top(list: &[AppliedStyle], style: AppliedStyle) -> Vec<AppliedStyle> {
 /// or the earlier item's state before it where it still held that item's after; a tool it
 /// did not set keeps the earlier item's whole state, before and after it, as the newer file
 /// left it, else the session's; and the earlier item's tools it does not set stay, as they
-/// were.
+/// were. Where the step `applied` a style, the top of `after`, that style is applied again
+/// though its item and place are as they were, a style applied again at the top unchanged.
 pub(crate) fn replay(
     rebuilt: &mut Vec<AppliedStyle>,
     (before, after): (&[AppliedStyle], &[AppliedStyle]),
+    applied: bool,
     stepped: &BTreeSet<String>,
     joined: impl Fn(&str) -> ToolValues,
 ) {
@@ -493,7 +495,8 @@ pub(crate) fn replay(
     let top = before.iter().find(|style| !cleared(style));
     let moved: Vec<&AppliedStyle> = (after.iter().enumerate())
         .filter(|(at, style)| {
-            let topped = *at == 0 && !top.is_some_and(|top| top.is(&style.name, &style.file));
+            let topped =
+                *at == 0 && (applied || !top.is_some_and(|top| top.is(&style.name, &style.file)));
             was(style) != Some(*style) || topped
         })
         .map(|(_, style)| style)
@@ -545,8 +548,10 @@ pub struct Step {
     pub batch: Option<BatchId>,
     /// The tool it touched, with its whole state after it, or Reset's, or none.
     pub change: Change,
-    /// The whole list of styles applied after it, newest first, where it changed the list,
-    /// empty where it emptied it; `None` where it left the list as it was (decision 106).
+    /// The whole list of styles applied after it, newest first, where it changed the list
+    /// or is a style's application's last step, which a style applied again holds though it
+    /// left the list as it was; empty where it emptied it; `None` where it left the list as
+    /// it was and applied no style (decision 106).
     pub styles: Option<Vec<AppliedStyle>>,
 }
 
