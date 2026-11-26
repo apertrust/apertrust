@@ -6585,13 +6585,13 @@ impl App {
         let styling = holds(styles::tool::ID);
         let describing = holds(metadata::ID);
         // The styles are read as the tool first shows, and again after one is created,
-        // copied, renamed or deleted, or the language changes.
-        if styling
-            && self.shell.styles.listed.is_none()
-            && let Some(folder) = self.shell.presets.styles()
-        {
+        // copied, renamed or deleted, or the language changes: the built-ins whatever the
+        // user data folder, the person's only with one.
+        if styling && self.shell.styles.listed.is_none() {
+            let folder = self.shell.presets.styles();
             let (tools, words) = (self.mirror.tools(), translator(ui.ctx()));
-            self.shell.styles.listed = Some(styles::tool::read(&folder, tools, &words));
+            let read = styles::tool::read(folder.as_deref(), tools, &words);
+            self.shell.styles.listed = Some(read);
         }
         if collections && !self.shell.collections_shown {
             self.shell.recents.check();
@@ -6679,6 +6679,7 @@ impl App {
             alerts: dialog_host::platform::shows_alerts(ui.ctx().os()),
             photos: styled.max(1),
             clearable: styles::tool::unavailable(photo_open, view_only, takes.0, &words).is_none(),
+            custom: self.shell.presets.styles().is_some(),
         };
         let export = &mut self.export;
         let metadata_tool = &mut self.metadata;
@@ -23450,6 +23451,7 @@ mod tests {
                                 alerts: true,
                                 photos: 1,
                                 clearable: true,
+                                custom: true,
                             };
                             let mut metadata_tool =
                                 metadata::Metadata::new(metadata::View::default());
