@@ -134,6 +134,10 @@ rawler = "0.8.0"
 rfd = { version = "0.18.0", default-features = false, features = ["xdg-portal", "wayland"] }
 # SVG icons only: no text, system fonts or bitmap images.
 resvg = { version = "0.50.0", default-features = false }
+# The checked copy's read past the system's cache on Unix (apertrust-base's fs): macOS's
+# `F_NOCACHE` and `F_FULLFSYNC`, Linux's `posix_fadvise`, with no `unsafe`; tempfile
+# builds it already.
+rustix = { version = "1.1.6", default-features = false, features = ["fs", "std"] }
 # The session protocol's types (decision 108) and the design system's; `rc` for the `Arc`
 # fields they carry, each read back as an `Arc` of its own.
 serde = { version = "1.0.229", features = ["derive", "rc"] }
@@ -168,4 +172,9 @@ todo = "warn"
 # Decoding a 60 MP raw with an unoptimised decoder takes seconds, so rawler is
 # optimised in debug builds too.
 [profile.dev.package.rawler]
+opt-level = 3
+
+# Hashing 200 MB with an unoptimised BLAKE3 takes seconds, as the checked copy's test does,
+# so it is optimised in debug builds too.
+[profile.dev.package.blake3]
 opt-level = 3

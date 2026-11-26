@@ -26,8 +26,9 @@ folders = ["dep:directories", "dep:thiserror", "dep:tempfile"]
 # The design system and the golden harness never turn it on.
 jobs = []
 # The safe write (decision 53): a file replaced through a hidden temporary, for the
-# sidecar's writer, the export's and the library's listing. No `unsafe`.
-fs = ["dep:tempfile"]
+# sidecar's writer, the export's and the library's listing and checked copy, and the read
+# past the system's cache. No `unsafe`.
+fs = ["dep:tempfile", "dep:rustix"]
 # The disk cache (decision 76): its kinds, entries, walk, eviction and clearing, written
 # through the safe write, for the engine, the library and the CLI. No `unsafe`.
 cache = ["fs"]
@@ -48,6 +49,10 @@ toml_edit = { workspace = true, optional = true }
 tracing.workspace = true
 tracing-log = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+# The read past the system's cache, and macOS's sync where a share refuses `F_FULLFSYNC`.
+rustix = { workspace = true, optional = true }
 
 [dev-dependencies]
 # The generator's and the folders' tests, which build them without their features.

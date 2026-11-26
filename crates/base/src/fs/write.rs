@@ -88,6 +88,65 @@ pub fn persist_retrying(
     }
 }
 
+/// The rename that never replaces a file, for [`persist_retrying`]: tempfile's
+/// `persist_noclobber`, failing with [`io::ErrorKind::AlreadyExists`] where a file is at
+/// `path`. That is, on Linux `renameat2`'s exclusive rename, else, where the file system
+/// does not take it, a hard link; on Apple's systems `renamex_np`'s exclusive rename alone;
+/// on Windows `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`.
+///
+/// Where that is refused as unsupported (`ENOTSUP` or `EOPNOTSUPP`): on Apple's systems the
+/// exclusive rename, as macOS's SMB client refuses it, no hard link tried; on Linux the hard
+/// link after it, it looks for a file at `path` just before a plain rename instead. No
+/// portable call does better there, so another program's file made between the look and
+/// the rename is replaced all the same, the window narrowed to that, never closed, as
+/// [`write_if`]'s is.
+pub fn persist_noclobber(temp: NamedTempFile, path: &Path) -> Result<File, PersistError> {
+    noclobber_with(temp, path, |temp, path| temp.persist_noclobber(path))
+}
+
+/// [`persist_noclobber`] with its first rename given, so that a test can refuse it as a share
+/// does.
+fn noclobber_with(
+    temp: NamedTempFile,
+    path: &Path,
+    exclusive: impl FnOnce(NamedTempFile, &Path) -> Result<File, PersistError>,
+) -> Result<File, PersistError> {
+    match exclusive(temp, path) {
+        Err(failed) if unsupported(&failed.error) => match fs::symlink_metadata(path) {
+            Ok(_) => Err(PersistError {
+                error: io::ErrorKind::AlreadyExists.into(),
+                file: failed.file,
+            }),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => failed.file.persist(path),
+            Err(error) => Err(PersistError {
+                error,
+                file: failed.file,
+            }),
+        },
+        done => done,
+    }
+}
+
+/// The refusal of a file system that has no exclusive rename and no hard links: `ENOTSUP`
+/// or `EOPNOTSUPP`, which std gives no kind of its own.
+fn unsupported(error: &io::Error) -> bool {
+    #[cfg(unix)]
+    {
+        use rustix::io::Errno;
+        let codes = [
+            Errno::NOTSUP.raw_os_error(),
+            Errno::OPNOTSUPP.raw_os_error(),
+        ];
+        error
+            .raw_os_error()
+            .is_some_and(|code| codes.contains(&code))
+    }
+    #[cfg(not(unix))]
+    {
+        error.kind() == io::ErrorKind::Unsupported
+    }
+}
+
 /// What [`write()`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Written {
@@ -523,6 +582,42 @@ mod tests {
         assert_eq!(written.unwrap_err().kind(), io::ErrorKind::NotFound);
         assert_eq!(fs::read(&path).unwrap(), b"ours");
         assert_eq!(names(folder.path()), ["IMG.ARW.apxmp"]);
+    }
+
+    /// Where the exclusive rename is refused as a share refuses it, the look before a plain
+    /// rename still never replaces a file that is there.
+    #[test]
+    fn a_share_without_the_exclusive_rename_still_replaces_nothing() {
+        let folder = tempfile::tempdir().expect("a folder");
+        let path = folder.path().join("IMG.ARW");
+        #[cfg(unix)]
+        let refusal = || io::Error::from_raw_os_error(rustix::io::Errno::NOTSUP.raw_os_error());
+        #[cfg(not(unix))]
+        let refusal = || io::Error::from(io::ErrorKind::Unsupported);
+        let refused = |file, _: &Path| {
+            Err(PersistError {
+                error: refusal(),
+                file,
+            })
+        };
+        let temp = temporary::create(folder.path(), "IMG.ARW").unwrap();
+        fs::write(temp.path(), b"ours").unwrap();
+        noclobber_with(temp, &path, refused).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"ours");
+
+        let temp = temporary::create(folder.path(), "IMG.ARW").unwrap();
+        let failed = noclobber_with(temp, &path, refused).unwrap_err();
+        assert_eq!(failed.error.kind(), io::ErrorKind::AlreadyExists);
+        drop(failed);
+        assert_eq!(fs::read(&path).unwrap(), b"ours");
+        assert_eq!(names(folder.path()), ["IMG.ARW"]);
+
+        // Where the exclusive rename works, a file there is refused by it.
+        let temp = temporary::create(folder.path(), "IMG.ARW").unwrap();
+        let failed = persist_noclobber(temp, &path).unwrap_err();
+        assert_eq!(failed.error.kind(), io::ErrorKind::AlreadyExists);
+        drop(failed);
+        assert_eq!(names(folder.path()), ["IMG.ARW"]);
     }
 
     #[test]
