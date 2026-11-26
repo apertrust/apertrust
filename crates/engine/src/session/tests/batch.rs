@@ -607,6 +607,41 @@ fn undo_batch_from_a_view_only_photo_skips_it_and_takes_the_others_back() {
     remove(&active);
 }
 
+/// `UndoBatch` while the active photo, one of the batch's, opens, its history read and its
+/// decode not done: not refused, that photo left to the job, which takes the batch back
+/// there once it is live.
+#[test]
+fn undo_batch_while_the_active_photo_opens_takes_it_back_once_live() {
+    let active = scratch("batch-undo-opening");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 1);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([warm(40.0, &named)]);
+    until_let_go(&mut driven);
+    driven.writes();
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    driven.run([Command::HoldDecode(hold)]);
+    driven.run([Command::Open(others[0].clone())]);
+    driven.pump(|_, events| events.iter().any(|e| matches!(e, Event::History(_))));
+    begun.recv_timeout(TEST_WAIT).expect("the decode begins");
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    permit.send(()).unwrap();
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!((changed, skipped.len()), (&named, 0), "{skipped:?}");
+    let open = driven.engine.open.as_ref().unwrap();
+    assert!(open.edit.tool("grain").is_none());
+    driven.writes();
+    assert!(named.iter().all(|photo| !grained(photo)));
+    remove(&active);
+}
+
 /// A photo of the batch opened for viewing only while an Undo's job is under way, reached
 /// live by it, is skipped and named as view-only, its file untouched.
 #[test]
