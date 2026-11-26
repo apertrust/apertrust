@@ -417,12 +417,6 @@ toolbar-more = More actions
 action-toolbar-labels = Toolbar labels
 action-customise-toolbar = Customise toolbar…
 action-reset-toolbar = Reset toolbar
-# Hide "Undo", on the item the menu opened on, $item its name: it leaves the workspace's
-# Toolbar.
-action-toolbar-hide = Hide toolbar item
-toolbar-menu-hide = Hide “{ $item }”
-# What screen readers hear once Hide has taken the item away.
-toolbar-item-hidden = { $item } hidden
 # The Toolbar's customise mode (decision 92): its list box's name with nothing on it, and the
 # customise menu's items, which are also each item's actions for screen readers.
 toolbar-empty = Toolbar, empty
