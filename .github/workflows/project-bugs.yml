@@ -1,0 +1,135 @@
+name: Project bugs
+
+# An issue labelled bug, or of the type Bug, gets the type Bug and goes onto the planning
+# board (the organisation's project 1), in its Bugs column. One In Progress, Needs Review
+# or Done stays where it is.
+on:
+  issues:
+    types: [opened, reopened, labeled, typed]
+
+permissions:
+  contents: read
+
+# One run per issue at a time; a later event waits for the one before.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  bug:
+    if: >-
+      contains(github.event.issue.labels.*.name, 'bug') ||
+      github.event.issue.type.name == 'Bug'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Type Bug, on the board, in Bugs
+        env:
+          # The repository's own token can change neither an organisation's project nor
+          # an issue's type. PROJECT_TOKEN is a fine-grained token, or a GitHub App's,
+          # with the organisation's Projects read and write and the repository's Issues
+          # read and write.
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          ISSUE: ${{ github.event.issue.node_id }}
+          OWNER: ${{ github.repository_owner }}
+          PROJECT: 1
+          COLUMN: Bugs
+          # The statuses the run never moves an issue out of.
+          KEEP: In Progress|Needs Review|Done
+          # The board, its Status field and Bugs column, and the Bug type, by name.
+          BOARD: |
+            query($owner: String!, $number: Int!) {
+              organization(login: $owner) {
+                projectV2(number: $number) {
+                  id
+                  field(name: "Status") {
+                    ... on ProjectV2SingleSelectField { id options { id name } }
+                  }
+                }
+                issueTypes(first: 25) { nodes { id name } }
+              }
+            }
+          BOARD_FIELDS: >-
+            .data.organization as $o
+            | [$o.projectV2.id, $o.projectV2.field.id,
+               ([$o.projectV2.field.options[] | select(.name == $ENV.COLUMN) | .id] | first // ""),
+               ([$o.issueTypes.nodes[] | select(.name == "Bug") | .id] | first // "")]
+            | @tsv
+          # The issue's type, and its item and status on the board, if it is there.
+          ON_BOARD: |
+            query($issue: ID!) {
+              node(id: $issue) {
+                ... on Issue {
+                  issueType { id }
+                  projectItems(first: 50) {
+                    nodes {
+                      id
+                      project { id }
+                      fieldValueByName(name: "Status") {
+                        ... on ProjectV2ItemFieldSingleSelectValue { name }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ON_BOARD_FIELDS: >-
+            .data.node as $n
+            | ([$n.projectItems.nodes[] | select(.project.id == $ENV.PROJECT_ID)] | first) as $i
+            | [($n.issueType.id // "-"), ($i.id // "-"), ($i.fieldValueByName.name // "-")]
+            | @tsv
+          SET_TYPE: |
+            mutation($issue: ID!, $type: ID!) {
+              updateIssueIssueType(input: {issueId: $issue, issueTypeId: $type}) {
+                issue { number }
+              }
+            }
+          ADD: |
+            mutation($project: ID!, $issue: ID!) {
+              addProjectV2ItemById(input: {projectId: $project, contentId: $issue}) {
+                item { id }
+              }
+            }
+          MOVE: |
+            mutation($project: ID!, $item: ID!, $field: ID!, $column: String!) {
+              updateProjectV2ItemFieldValue(input: {
+                projectId: $project, itemId: $item, fieldId: $field,
+                value: {singleSelectOptionId: $column}
+              }) { projectV2Item { id } }
+            }
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::PROJECT_TOKEN is not set: nothing done"
+            exit 0
+          fi
+
+          IFS=$'\t' read -r project field column type < <(gh api graphql \
+            -f owner="$OWNER" -F number="$PROJECT" -f query="$BOARD" --jq "$BOARD_FIELDS")
+          if [ -z "$column" ] || [ -z "$type" ]; then
+            echo "::error::The board has no $COLUMN column, or the organisation no Bug issue type"
+            exit 1
+          fi
+
+          IFS=$'\t' read -r current item status < <(PROJECT_ID="$project" gh api graphql \
+            -f issue="$ISSUE" -f query="$ON_BOARD" --jq "$ON_BOARD_FIELDS")
+
+          if [ "$current" != "$type" ]; then
+            gh api graphql -f issue="$ISSUE" -f type="$type" -f query="$SET_TYPE" > /dev/null
+            echo "Type set to Bug"
+          fi
+
+          if [ "$item" = "-" ]; then
+            item=$(gh api graphql -f project="$project" -f issue="$ISSUE" -f query="$ADD" \
+              --jq '.data.addProjectV2ItemById.item.id')
+            status="-"
+            echo "Added to the board"
+          fi
+
+          case "|$KEEP|" in
+            *"|$status|"*)
+              echo "Left in $status"
+              exit 0 ;;
+          esac
+          gh api graphql -f project="$project" -f item="$item" -f field="$field" \
+            -f column="$column" -f query="$MOVE" > /dev/null
+          echo "Moved to $COLUMN"
