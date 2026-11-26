@@ -36,6 +36,52 @@ PLATFORM = re.compile(
     r"\b(windows|unix|target_(os|family|env|vendor|arch|pointer_width|endian))\b"
 )
 MARKED = re.compile(r"//\s*host-only:\s*\S")
+# The start of a string literal: "...", b"...", r#"..."#, br#"..."#, c"..." and the like.
+STRING = re.compile(r'(?<![\w])(b|c)?(r(#*))?"')
+# A character literal, as 'x', '"', '\'' or '\u{e9}', and not a lifetime's 'a.
+CHARACTER = re.compile(r"'(\\'|\\[^'\n]+|[^\\'\n])'")
+
+
+def code_only(text: str) -> str:
+    """`text` with its comments and literals blanked, every newline kept, so an offset or
+    a line in it is the same in `text`."""
+    out = list(text)
+    i = 0
+    while i < len(text):
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            end = len(text) if end < 0 else end
+        elif text.startswith("/*", i):
+            # Block comments nest.
+            depth, end = 1, i + 2
+            while end < len(text) and depth:
+                if text.startswith("/*", end):
+                    depth, end = depth + 1, end + 2
+                elif text.startswith("*/", end):
+                    depth, end = depth - 1, end + 2
+                else:
+                    end += 1
+        elif string := STRING.match(text, i):
+            if string.group(2):
+                # A raw string ends at its quote and as many #s, and has no escapes.
+                close = '"' + string.group(3)
+                end = text.find(close, string.end())
+                end = len(text) if end < 0 else end + len(close)
+            else:
+                end = string.end()
+                while end < len(text) and text[end] != '"':
+                    end += 2 if text[end] == "\\" else 1
+                end += 1
+        elif character := CHARACTER.match(text, i):
+            end = character.end()
+        else:
+            i += 1
+            continue
+        for k in range(i, min(end, len(text))):
+            if out[k] != "\n":
+                out[k] = " "
+        i = end
+    return "".join(out)
 
 
 def is_build_script(path: Path) -> bool:
@@ -60,13 +106,12 @@ def unmarked_cfgs(root: Path, name: str) -> list[str]:
     line before."""
     text = (root / name).read_text(encoding="utf-8")
     lines = text.splitlines()
+    # One a comment or a string holds is no attribute.
+    code = code_only(text)
     found = []
-    for attribute in ATTRIBUTE.finditer(text):
+    for attribute in ATTRIBUTE.finditer(code):
         start = attribute.start()
-        # One a line comment mentions is no attribute.
-        if "//" in text[text.rfind("\n", 0, start) + 1 : start]:
-            continue
-        if not PLATFORM.search(text, start, attribute_end(text, start)):
+        if not PLATFORM.search(code, start, attribute_end(code, start)):
             continue
         number = text.count("\n", 0, start) + 1
         previous = lines[number - 2] if number > 1 else ""
