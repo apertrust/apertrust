@@ -317,6 +317,41 @@ impl Pending {
         }
     }
 
+    /// A take-back's or a put-back's photo of `sidecar`, where the move before it changed it
+    /// and this one has not reached it, to come before it starts, with a rating's record of
+    /// it: as [`Self::take_from`] takes it, without letting that move go, whose job may
+    /// still be writing its other photos.
+    fn inherit(&self, sidecar: &Path) {
+        let Some(from) = self.state().from.clone() else {
+            return;
+        };
+        let (photo, rated) = {
+            let from = from.state();
+            let Some(photo) = (from.changed.iter())
+                .find(|photo| sidecar::path_for(photo) == sidecar)
+                .cloned()
+            else {
+                return;
+            };
+            let rated = (from.rated.iter())
+                .find(|(kept, ..)| *kept == photo)
+                .cloned();
+            (photo, rated)
+        };
+        let mut state = self.state();
+        let reached = state.changed.contains(&photo)
+            || state.skipped.iter().any(|(skipped, _)| *skipped == photo);
+        if reached || state.to_come.contains(&photo) {
+            return;
+        }
+        state.to_come.push(photo);
+        if let Some(kept) = rated
+            && !state.rated.iter().any(|(photo, ..)| *photo == kept.0)
+        {
+            state.rated.push(kept);
+        }
+    }
+
     /// Keeps `record`, a rating's on `photo`, and the rating it left, `rating`, for the
     /// batch's moves on it, in place of one kept before.
     fn keep_rated(&self, photo: &Path, record: FieldRecord, rating: Rating) {
@@ -489,7 +524,10 @@ impl Engine {
 
     /// Every earlier batch that still has the active photo to come applied to it, in the
     /// order sent, before a command on its edit (decision 109), but those of the batch `but`,
-    /// which the command takes back; what they did to it.
+    /// which the command takes back; what they did to it. A take-back or a put-back not yet
+    /// started has the photo to come where the move before it changed it, as it will once
+    /// it starts ([`Pending::inherit`]), so a move made while that one's job still wrote the
+    /// photo lands before the command too.
     pub(super) fn catch_up(&mut self, but: Option<BatchId>, events: &mut Vec<Event>) -> Effect {
         let mut effect = Effect::default();
         if self.opening.is_some() {
@@ -502,6 +540,7 @@ impl Engine {
             if Some(pending.batch.id) == but {
                 continue;
             }
+            pending.inherit(&active);
             if let Some(photo) = pending.to_come(&active) {
                 let reached = self.reach_live(&pending, &photo, events);
                 effect.render |= reached.render;

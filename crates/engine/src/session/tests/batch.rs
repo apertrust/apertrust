@@ -812,6 +812,76 @@ fn undo_of_a_running_batch_cancels_its_job_first() {
     remove(&active);
 }
 
+/// `UndoBatch` while the batch's write of a photo is handed over, landing after it: that
+/// photo, opened and edited before the Undo's job starts, has the Undo caught up first, as
+/// before any command on the edit, so the batch is taken back there before the edit, not
+/// left under it as changed since.
+#[test]
+fn a_take_back_made_as_its_batch_writes_a_photo_lands_there_before_an_edit() {
+    let active = scratch("batch-undo-in-flight");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    driven.run([warm(40.0, &others)]);
+    let batch = driven.engine.remembered.back().unwrap().batch.id;
+    // The first photo's write handed over and held, the Undo made meanwhile: the writer held
+    // once the job has read the file, so its read never waits behind the hold.
+    let route = next_route(&mut driven);
+    let permit = driven.engine.writer.hold();
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    // The write lands after it, and the batch's job hears of it.
+    drop(permit);
+    let deadline = Instant::now() + TEST_WAIT;
+    while !changed(&driven.saved.events()).contains(&others[0]) {
+        assert!(Instant::now() < deadline, "the write lands");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // The photo opens and is edited, the engine thread hearing of the batch job's end only
+    // after, so the Undo's job has not started.
+    driven.run([
+        Command::Open(others[0].clone()),
+        Command::Resize {
+            width: 40,
+            height: 40,
+        },
+    ]);
+    let mut held = false;
+    while driven.engine.opening.is_some() {
+        match (driven.inbox.recv_timeout(TEST_WAIT)).expect("the open goes on") {
+            Inbox::Open(stage) => {
+                driven.engine.stage(*stage);
+            }
+            Inbox::Task(waiting) => driven.engine.jobs.background.add(waiting),
+            Inbox::BatchEnded => held = true,
+            _ => {}
+        }
+    }
+    let events = driven.run([Command::SetTool {
+        tool: "soften".to_owned(),
+        values: on("amount", 10.0),
+    }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let mut heard = match held {
+        true => driven.engine.start_batches(),
+        false => Vec::new(),
+    };
+    let taken = |heard: &[Event]| {
+        (ends(heard).into_iter()).find(|(action, ..)| *action == BatchAction::TakenBack)
+    };
+    while taken(&heard).is_none() {
+        heard.extend(until_ended(&mut driven));
+    }
+    let (_, changed, skipped) = taken(&heard).unwrap();
+    assert_eq!((changed, skipped), (vec![others[0].clone()], Vec::new()));
+    let open = driven.engine.open.as_ref().unwrap();
+    assert!(open.edit.tool("grain").is_none());
+    assert!(open.edit.tool("soften").is_some());
+    remove(&active);
+}
+
 /// A photo that opens while its file is handed over waits, its job reading it again once it
 /// is live, where the engine thread applies the batch to it there, once.
 #[test]
