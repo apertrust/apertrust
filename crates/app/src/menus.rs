@@ -1181,6 +1181,116 @@ const fn rating_item(
     }
 }
 
+/// The customise menu's Add ▸, its id, and what its items' ids start with before the item
+/// they add ([`customise`], [`toolbar_added`]).
+pub const TOOLBAR_ADD: &str = "toolbar-add";
+
+/// The customise menu (decision 92; `docs/gui.md`, The customise mode), hung from `anchor`:
+/// on an item, `state.toolbar_place`, Move Left, Move Right and Remove from Toolbar, a line;
+/// then Add ▸, a line, Reset Toolbar, Toolbar Labels, checked while on, a line, and Done.
+/// Every item is its registry action's, but Add ▸'s, each the mode's own id ([`add_entry`]);
+/// none shows its keys, as context menus show none.
+pub fn customise(
+    keymap: &Keymap,
+    state: &State,
+    os: OperatingSystem,
+    tr: &Translator,
+    placed: &[&str],
+    anchor: Rect,
+) -> popup::Request {
+    let steps = Steps::default();
+    let item = |id: ActionId| -> Option<popup::Entry> {
+        let item = action_item(id, keymap, state, &steps, os, tr)?;
+        let item = popup::Item {
+            shortcut: None,
+            ..item
+        };
+        Some(item.into())
+    };
+    let mut entries: Vec<popup::Entry> = Vec::new();
+    if state.toolbar_place.is_some() {
+        let moves = [
+            ActionId::TOOLBAR_MOVE_LEFT,
+            ActionId::TOOLBAR_MOVE_RIGHT,
+            ActionId::TOOLBAR_REMOVE,
+        ];
+        entries.extend(moves.into_iter().filter_map(item));
+        entries.push(popup::Entry::Separator);
+    }
+    entries.push(add_entry(tr, placed));
+    entries.push(popup::Entry::Separator);
+    let rest = [ActionId::RESET_TOOLBAR, ActionId::TOOLBAR_LABELS];
+    entries.extend(rest.into_iter().filter_map(item));
+    entries.push(popup::Entry::Separator);
+    entries.extend(item(ActionId::TOOLBAR_DONE));
+    popup::Request::pull_down(anchor, tr.text("action-customise-toolbar"), entries)
+}
+
+/// Add ▸ (decision 92): what `placed`, the draft, does not hold of what can be placed, in
+/// its order: the parts, a line, the app's own actions; a line, then a submenu for each tool
+/// with an item not placed, titled by the tool's title; a line, then Space and Flexible
+/// Space, always. A group left empty is left out with its line.
+pub fn add_entry(tr: &Translator, placed: &[&str]) -> popup::Entry {
+    use crate::toolbar::{self, Kind, Placeable};
+    let open = |item: &&Placeable| item.kind == Kind::Spacing || !placed.contains(&item.id);
+    let add = |item: &Placeable| -> popup::Entry {
+        let id = format!("{TOOLBAR_ADD}{ADDED}{}", item.id);
+        popup::Item::new(id, add_words(tr, item.id)).into()
+    };
+    let of = |kind: Kind| -> Vec<popup::Entry> {
+        let items = toolbar::set().iter().filter(open);
+        items.filter(|item| item.kind == kind).map(add).collect()
+    };
+    // A submenu per tool with an item left, in the set's order.
+    let mut tools: Vec<&'static str> = Vec::new();
+    for item in toolbar::set().iter().filter(open) {
+        if let Kind::Tool(tool) = item.kind
+            && !tools.contains(&tool)
+        {
+            tools.push(tool);
+        }
+    }
+    let tools: Vec<popup::Entry> = (tools.into_iter())
+        .map(|tool| {
+            let id = format!("{TOOLBAR_ADD}{ADDED}tool-{tool}");
+            let title = crate::tools::title(tr, tool);
+            popup::Submenu::new(id, title, of(Kind::Tool(tool))).into()
+        })
+        .collect();
+    let groups = [of(Kind::Part), of(Kind::App), tools, of(Kind::Spacing)];
+    let mut entries: Vec<popup::Entry> = Vec::new();
+    for group in groups.into_iter().filter(|group| !group.is_empty()) {
+        if !entries.is_empty() {
+            entries.push(popup::Entry::Separator);
+        }
+        entries.extend(group);
+    }
+    popup::Submenu::new(TOOLBAR_ADD, tr.text("toolbar-add"), entries).into()
+}
+
+/// What Add ▸ calls the item `id`: a part or a spacing by its own words, Jobs Progress for
+/// the jobs, since Jobs is View › Jobs's; an action by its message.
+pub fn add_words(tr: &Translator, id: &str) -> String {
+    match id {
+        "jobs" => tr.text("toolbar-jobs-progress"),
+        "save-state" => tr.text("toolbar-save-state"),
+        "space" => tr.text("toolbar-space"),
+        "flexible-space" => tr.text("toolbar-flexible-space"),
+        id => crate::toolbar::words(id).map_or_else(|| id.to_owned(), |w| tr.text(w)),
+    }
+}
+
+/// The item the Add ▸ item `id` adds ([`add_entry`]); none for any other item, or one
+/// naming what cannot be placed.
+pub fn toolbar_added(id: &str) -> Option<&'static str> {
+    let (action, item) = id.split_once(ADDED)?;
+    if action != TOOLBAR_ADD {
+        return None;
+    }
+    let set = crate::toolbar::set().iter();
+    set.map(|placed| placed.id).find(|placed| *placed == item)
+}
+
 /// The app's items in the places open to tools' (decision 91), declared as the tools'
 /// are: the photo's and a thumbnail's Rating ▸ and Colour Label ▸ (decision 110), the
 /// photo's Export… and Background ▸, View › Background's items as a submenu, a
@@ -2298,7 +2408,7 @@ mod tests {
     /// on its job alone (decision 91); and the cursors', the well's and their keys' alone
     /// (decision 104); and the toolbar menu's Hide, which acts on its item alone (decision
     /// 92).
-    const LEFT_OUT: [ActionId; 65] = [
+    const LEFT_OUT: [ActionId; 69] = [
         ActionId::EDIT_VIEW,
         ActionId::NEXT_REGION,
         ActionId::PREVIOUS_REGION,
@@ -2373,6 +2483,12 @@ mod tests {
         ActionId::CURSOR_SELECT,
         ActionId::CURSOR_PAN,
         ActionId::TOOLBAR_HIDE,
+        // The customise menu's own, which act on the Toolbar's customise mode alone
+        // (decision 92).
+        ActionId::TOOLBAR_MOVE_LEFT,
+        ActionId::TOOLBAR_MOVE_RIGHT,
+        ActionId::TOOLBAR_REMOVE,
+        ActionId::TOOLBAR_DONE,
     ];
 
     /// The actions only the Mac's menus hold: Close Window, since Windows and Linux close
@@ -2471,6 +2587,8 @@ mod tests {
             toolbar_labels: true,
             toolbar_item: None,
             toolbar_kept: true,
+            customising: false,
+            toolbar_place: None,
             panel_tab: 0,
             workspace: actions::workspace(crate::layout::DEFAULT),
             workspace_given: false,
@@ -4886,13 +5004,174 @@ mod tests {
         }
     }
 
+    /// The ids of `entries`, a line `-`, a submenu its own id.
+    fn ids(entries: &[popup::Entry]) -> Vec<String> {
+        (entries.iter())
+            .map(|entry| match entry {
+                popup::Entry::Item(item) => item.id.clone(),
+                popup::Entry::Submenu(submenu) => submenu.id.clone(),
+                _ => "-".to_owned(),
+            })
+            .collect()
+    }
+
+    /// Decision 92: the customise menu on an item holds Move Left, Move Right and Remove
+    /// from Toolbar, a line, Add ▸, a line, Reset Toolbar, Toolbar Labels, a line and Done;
+    /// on empty space the first three are left out. Move Left rests on the first item and
+    /// Move Right on the last. No item shows its keys.
+    #[test]
+    fn the_customise_menu_holds_its_items_in_order() {
+        let tr = Translator::new(Locale::EnGb);
+        let keymap = Keymap::defaults(OperatingSystem::Nix);
+        let anchor = Rect::NOTHING;
+        let placed = ["import", "undo"];
+        let state = |place| State {
+            customising: true,
+            modal: true,
+            dialog: true,
+            toolbar_place: place,
+            ..everything()
+        };
+        let on = |place| {
+            let request = customise(
+                &keymap,
+                &state(place),
+                OperatingSystem::Nix,
+                &tr,
+                &placed,
+                anchor,
+            );
+            request.entries
+        };
+        let item = on(Some((0, 2)));
+        assert_eq!(
+            ids(&item),
+            [
+                "toolbar-move-left",
+                "toolbar-move-right",
+                "toolbar-remove",
+                "-",
+                TOOLBAR_ADD,
+                "-",
+                "reset-toolbar",
+                "toolbar-labels",
+                "-",
+                "toolbar-done",
+            ]
+        );
+        let enabled = |entries: &[popup::Entry], id: &str| {
+            entries.iter().any(
+                |entry| matches!(entry, popup::Entry::Item(item) if item.id == id && item.enabled),
+            )
+        };
+        assert!(!enabled(&item, "toolbar-move-left"));
+        assert!(enabled(&item, "toolbar-move-right"));
+        assert!(enabled(&item, "toolbar-remove"));
+        assert!(enabled(&item, "toolbar-done"));
+        assert!(enabled(&item, "toolbar-labels"));
+        let last = on(Some((1, 2)));
+        assert!(enabled(&last, "toolbar-move-left"));
+        assert!(!enabled(&last, "toolbar-move-right"));
+        let empty = on(None);
+        assert_eq!(
+            ids(&empty),
+            [
+                TOOLBAR_ADD,
+                "-",
+                "reset-toolbar",
+                "toolbar-labels",
+                "-",
+                "toolbar-done"
+            ]
+        );
+        let keyless = (item.iter()).all(|entry| match entry {
+            popup::Entry::Item(item) => item.shortcut.is_none(),
+            _ => true,
+        });
+        assert!(keyless);
+        // Reset rests under `--conf workspace`, saying why; Done still runs.
+        let given = State {
+            workspace_given: true,
+            ..state(None)
+        };
+        let request = customise(&keymap, &given, OperatingSystem::Nix, &tr, &placed, anchor);
+        assert!(!enabled(&request.entries, "reset-toolbar"));
+        assert!(enabled(&request.entries, "toolbar-done"));
+    }
+
+    /// Decision 92: Add ▸ lists what is not placed in the set's order, the parts, the app's
+    /// actions, a submenu per tool with items left, then the two spacings, always; what is
+    /// placed is left out, and a group left empty with its line, so with everything placed
+    /// it holds the spacings alone. No platform lists a menu button.
+    #[test]
+    fn add_lists_what_is_not_placed() {
+        let tr = Translator::new(Locale::EnGb);
+        let entries = |placed: &[&str]| match add_entry(&tr, placed) {
+            popup::Entry::Submenu(submenu) => submenu.entries,
+            other => panic!("{other:?}"),
+        };
+        let added = |entries: &[popup::Entry]| -> Vec<&'static str> {
+            let mut found = Vec::new();
+            for entry in entries {
+                match entry {
+                    popup::Entry::Item(item) => found.extend(toolbar_added(&item.id)),
+                    popup::Entry::Submenu(submenu) => {
+                        let inner = submenu.entries.iter().filter_map(|entry| match entry {
+                            popup::Entry::Item(item) => toolbar_added(&item.id),
+                            _ => None,
+                        });
+                        found.extend(inner);
+                    }
+                    _ => {}
+                }
+            }
+            found
+        };
+        let set: Vec<&'static str> = crate::toolbar::set().iter().map(|p| p.id).collect();
+        let nothing = entries(&[]);
+        assert_eq!(added(&nothing), set, "everything, in the set's order");
+        assert!(!added(&nothing).contains(&"menu-button"));
+        let placed = ["undo", "jobs", "import", "tool-flip-rotate_cw", "space"];
+        let some = added(&entries(&placed));
+        for id in ["undo", "jobs", "import", "tool-flip-rotate_cw"] {
+            assert!(!some.contains(&id), "{id} is placed");
+        }
+        assert!(some.contains(&"space") && some.contains(&"flexible-space"));
+        assert!(
+            some.contains(&"tool-flip-rotate_ccw"),
+            "Orientation keeps its submenu"
+        );
+        let everything: Vec<&str> = set.clone();
+        let all = entries(&everything);
+        assert_eq!(
+            ids(&all),
+            ["toolbar-add/space", "toolbar-add/flexible-space"]
+        );
+        // Every tool's submenu holds that tool's items and no other.
+        for entry in &nothing {
+            if let popup::Entry::Submenu(submenu) = entry {
+                let tool = submenu.id.trim_start_matches("toolbar-add/tool-");
+                for entry in &submenu.entries {
+                    let popup::Entry::Item(item) = entry else {
+                        continue;
+                    };
+                    let id = toolbar_added(&item.id).expect("an item of the set");
+                    let placed = crate::toolbar::set().iter().find(|p| p.id == id).unwrap();
+                    let of = matches!(placed.kind, crate::toolbar::Kind::Tool(t) if t == tool);
+                    assert!(of, "{id} is not {tool}'s");
+                }
+            }
+        }
+        assert_eq!(toolbar_added("toolbar-add/menu-button"), None);
+        assert_eq!(toolbar_added("toolbar-add/undo"), Some("undo"));
+    }
+
     /// Decision 92: the toolbar menu, named Toolbar, holds Hide "X" on an item with words,
-    /// named by them, then a line; Toolbar Labels, checked while the labels are on; Customise Toolbar…,
-    /// drawn disabled with its tip until its window is built; and Reset Toolbar, enabled
-    /// while the workspace's file holds a list. None shows keys.
+    /// named by them, then a line; Toolbar Labels, checked while the labels are on; Customise
+    /// Toolbar…, enabled; and Reset Toolbar, enabled while the workspace's file holds a
+    /// list. None shows keys.
     #[test]
     fn the_toolbar_menu_holds_its_items_as_their_states_say() {
-        let later = Some("Customise Toolbar comes in a later version".to_owned());
         let line = |id: &str, text: &str, enabled, checked, tip: &Option<String>| {
             (
                 id.to_owned(),
@@ -4911,13 +5190,7 @@ mod tests {
                     Some(labels),
                     &None,
                 ),
-                line(
-                    "customise-toolbar",
-                    "Customise toolbar…",
-                    false,
-                    None,
-                    &later,
-                ),
+                line("customise-toolbar", "Customise toolbar…", true, None, &None),
                 line("reset-toolbar", "Reset toolbar", true, None, &None),
             ]
         };
@@ -5042,10 +5315,9 @@ mod tests {
                     other => panic!("{other:?}"),
                 })
                 .collect();
-            let later = Some("Customise Toolbar comes in a later version".to_owned());
             let expected = vec![
                 ("toolbar-labels".into(), true, Some(false), None),
-                ("customise-toolbar".into(), false, None, later),
+                ("customise-toolbar".into(), true, None, None),
                 ("reset-toolbar".into(), true, None, None),
             ];
             assert_eq!(lines, expected, "{os:?}");

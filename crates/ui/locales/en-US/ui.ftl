@@ -22,7 +22,11 @@ theme-grey = Gray
 window-minimise = Minimize
 window-maximise = Maximize
 action-customise-toolbar = Customize toolbar…
-toolbar-customise-later = Customize Toolbar comes in a later version
+toolbar-customise-dialog = Customize Toolbar — { $workspace }
+toolbar-customise-entered = Customize Toolbar, { $workspace }. Toolbar, { $count ->
+    [one] { $count } item
+   *[other] { $count } items
+}
 
 ## The jobs
 

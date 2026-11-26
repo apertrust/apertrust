@@ -321,7 +321,6 @@ action-reset-toolbar = Resetuj pasek narzędzi
 action-toolbar-hide = Ukryj element paska narzędzi
 toolbar-menu-hide = Ukryj „{ $item }”
 toolbar-item-hidden = { $item }: ukryto
-toolbar-customise-later = Dostosowywanie paska narzędzi pojawi się w jednej z kolejnych wersji
 toolbar-empty = Pasek narzędzi, pusty
 action-toolbar-move-left = Przesuń w lewo
 action-toolbar-move-right = Przesuń w prawo
@@ -336,6 +335,28 @@ toolbar-customise-release = Stanie za „{ $item }”
 toolbar-customise-release-start = Stanie na początku
 toolbar-customise-done-tip = Zapisuje ten pasek narzędzi dla obszaru roboczego „{ $workspace }”
 toolbar-customise-newer = Ten obszar roboczy zapisała nowsza wersja Apertrust, więc zmiany będą obowiązywać do zamknięcia programu
+toolbar-customise-dialog = Dostosowywanie paska narzędzi — { $workspace }
+toolbar-customise-entered = Dostosowywanie paska narzędzi, { $workspace }. Pasek narzędzi, { $count ->
+    [one] { $count } element
+    [few] { $count } elementy
+    [many] { $count } elementów
+   *[other] { $count } elementu
+}
+toolbar-add = Dodaj
+toolbar-jobs-progress = Postęp zadań
+toolbar-guard-cursors = Po ukryciu każdy kursor zachowuje swój klawisz
+toolbar-guard-jobs = Po ukryciu nieudane zadanie nadal jest widoczne
+toolbar-guard-save-state = Po ukryciu nieudany zapis nadal jest widoczny
+toolbar-customise-added = { $item }: dodano za „{ $after }”, { $at } z { $of }
+toolbar-customise-added-start = { $item }: dodano na początku, { $at } z { $of }
+toolbar-customise-moved = { $item }: przesunięto za „{ $after }”, { $at } z { $of }
+toolbar-customise-moved-start = { $item }: przesunięto na początek, { $at } z { $of }
+toolbar-customise-removed = { $item }: usunięto
+toolbar-customise-reset = Pasek narzędzi przywrócono do domyślnego
+toolbar-customise-labels-on = Podpisy włączone
+toolbar-customise-labels-off = Podpisy wyłączone
+toolbar-customise-saved = Pasek narzędzi zapisano
+toolbar-customise-unchanged = Pasek narzędzi bez zmian
 status-saving = Zapisywanie…
 status-saving-tip = Edycja tego zdjęcia wciąż jest zapisywana obok niego
 status-not-saved = Nie zapisano

@@ -53,6 +53,7 @@ mod about;
 mod actions;
 mod alerts;
 mod cursors;
+mod customise;
 mod dialog_host;
 mod dialogs;
 mod dropped;
@@ -124,8 +125,8 @@ use apertrust_ui::components::{
     CaptionStyle, CellMenu, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle,
     PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction,
     Placed, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
-    ToolbarAction, ToolbarButton, ToolbarEntry, ToolsPanelPosition, ViewMarks, ViewerBar,
-    ViewerBarAction, Zoom, browser_lines, browser_thickness,
+    ToolbarAction, ToolbarButton, ToolbarEdit, ToolbarEntry, ToolbarSpot, ToolsPanelPosition,
+    ViewMarks, ViewerBar, ViewerBarAction, Zoom, browser_lines, browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -1612,6 +1613,8 @@ enum FromToolbar {
     Cursor(cursors::Cursor),
     /// The chosen cursor's face pressed again: a picker cursor's turns its picker off.
     CursorAgain(cursors::Cursor),
+    /// What was done to the Toolbar while it is customised (decision 92).
+    Edit(ToolbarEdit),
 }
 
 /// Where the toolbar menu was asked for (decision 92): the item it was asked on, by its id
@@ -1983,6 +1986,10 @@ struct Shell {
     /// (decision 92). Asked of the next frame's Toolbar, then taken; none left there, the
     /// focus goes where F6 goes next. None where Hide came from no key.
     toolbar_focus: Option<Vec<&'static str>>,
+    /// The Toolbar's customise mode's draft, while the mode is on (decision 92).
+    customising: Option<customise::CustomiseToolbar>,
+    /// Where the customise menu open adds an item, by its place in the draft.
+    adding_at: usize,
     /// The tab whose icon takes the focus at the next frame: where a section went.
     focus_tab: Option<usize>,
     /// The tool whose header takes the focus once drawn: the one after a hidden tool's in
@@ -2136,6 +2143,9 @@ struct Shell {
     /// Whether the menus are the menu button's, drawn: on Windows and Linux (decision 39),
     /// where the frameless window has no menu bar. The Mac has its own.
     drawn_menus: bool,
+    /// The style of the Toolbar's caption buttons, where it draws them: the platform's,
+    /// [`CAPTION_STYLE`], which a snapshot of another platform's frame sets to its own.
+    caption_style: CaptionStyle,
     /// Whether the menu button or F10 asked for its menu, opened after the frame, or closed
     /// there where it is open ([`Shell::open_menu`]).
     menu: bool,
@@ -2235,6 +2245,8 @@ impl Shell {
             newer_found: BTreeSet::new(),
             newer_shown: false,
             toolbar_focus: None,
+            customising: None,
+            adding_at: 0,
             focus_tab: None,
             focus_section: None,
             reveal_header: None,
@@ -2296,6 +2308,7 @@ impl Shell {
             create_style: false,
             tool_action: None,
             drawn_menus: os != OperatingSystem::Mac,
+            caption_style: CAPTION_STYLE,
             menu: false,
             close_menu: false,
             steps: menus::Steps::default(),
@@ -2599,6 +2612,13 @@ impl Shell {
             opener: asked.opener,
         });
         let chosen = context_popup(ctx, id, opened, &self.keymap, state, None)?;
+        // Customise Toolbar… opened on an item starts with that item selected.
+        if chosen == ActionId::CUSTOMISE_TOOLBAR {
+            if actions::action(chosen).is_some_and(|a| a.enabled(state)) {
+                self.start_customising(item, ctx);
+            }
+            return None;
+        }
         if chosen != ActionId::TOOLBAR_HIDE {
             return Some(chosen);
         }
@@ -3622,16 +3642,22 @@ impl Shell {
             fitted: self.zoom.scale == zoom::Scale::Fit,
             at_100: self.zoom.scale == zoom::Scale::Factor(1.0),
             zoomed: (self.room).is_some_and(|room| zoom::overflows(&room.place(&self.zoom))),
-            dialog: self.about.is_open(),
-            // About is modal over the window; the open dialog and the host's dialogs are the
-            // app's ([`with_dialogs`]).
-            modal: self.about.is_open(),
+            dialog: self.about.is_open() || self.customising.is_some(),
+            // About is modal over the window, and so is the Toolbar's customise mode; the
+            // open dialog and the host's dialogs are the app's ([`with_dialogs`]).
+            modal: self.about.is_open() || self.customising.is_some(),
             dialog_window: false,
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
-            toolbar_labels: self.toolbar_labels,
+            toolbar_labels: self.labels_shown(),
             // The toolbar menu's own, as it opens ([`Shell::toolbar_menu`]).
             toolbar_item: None,
-            toolbar_kept: self.workspace.keeps_toolbar(),
+            toolbar_kept: match &self.customising {
+                Some(draft) => draft.resettable(),
+                None => self.workspace.keeps_toolbar(),
+            },
+            customising: self.customising.is_some(),
+            toolbar_place: (self.customising.as_ref())
+                .and_then(|draft| Some((draft.selected()?, draft.list().len()))),
             panel_tab: self.panel_tab,
             workspace: actions::workspace(&self.workspace.id),
             workspace_given: self.workspace_given,
@@ -3783,6 +3809,9 @@ impl Shell {
             ActionId::REDO => state.redo && action.enabled(state),
             _ => action.enabled(state),
         };
+        if let Some(draft) = &self.customising {
+            return self.customising_toolbar(ui, draft, saved, title_bar, caption, jobs);
+        }
         // The workspace's list (decision 92), what this build lacks skipped.
         let listed = toolbar::listed(self.workspace.toolbar().iter().map(String::as_str));
         let mut tips: Vec<(ToolbarAction, String)> = Vec::new();
@@ -3846,7 +3875,7 @@ impl Shell {
         }
         if let Some(maximised) = caption {
             bar = bar
-                .caption_buttons(Some(CAPTION_STYLE))
+                .caption_buttons(Some(self.caption_style))
                 .maximised(maximised);
         }
         for (button, keys) in &tips {
@@ -3876,12 +3905,368 @@ impl Shell {
             ToolbarAction::Jobs => Some(FromToolbar::Jobs),
             ToolbarAction::NotSaved => Some(FromToolbar::NotSaved),
             ToolbarAction::Menu => Some(FromToolbar::Action(ActionId::MENU)),
-            // The edit state's, which the app draws only while customising.
+            // The edit state's, drawn only while customising ([`Shell::customising_toolbar`]).
             ToolbarAction::Edit(_) => None,
             ToolbarAction::Button(id) => {
                 actions::named(id).map(|action| FromToolbar::Action(action.id))
             }
         }
+    }
+
+    /// The Toolbar in its edit state, as the customise mode draws `draft` (decision 92;
+    /// `docs/gui.md`, The customise mode): every item enabled and at rest, its words and
+    /// tooltip, a part's guard on a line of its own, what a drag's release does at each gap,
+    /// and Done's tooltip naming the workspace. What the person did comes back as
+    /// [`FromToolbar::Edit`]; the caption buttons still act on the window.
+    fn customising_toolbar(
+        &self,
+        ui: &mut egui::Ui,
+        draft: &customise::CustomiseToolbar,
+        saved: SaveState<'_>,
+        title_bar: Option<f32>,
+        caption: Option<bool>,
+        jobs: &[apertrust_ui::components::Job],
+    ) -> Option<FromToolbar> {
+        let ctx = ui.ctx().clone();
+        let words = translator(&ctx);
+        let how = words.text("toolbar-customise-tip");
+        let mut entries = Vec::new();
+        let mut names = Vec::new();
+        let mut tips = Vec::new();
+        for id in draft.list() {
+            let Some(placed) = toolbar::set().iter().find(|placed| placed.id == *id) else {
+                continue;
+            };
+            let (entry, name, guard) = match (placed.kind, placed.id) {
+                (toolbar::Kind::Part, "jobs") => (
+                    ToolbarEntry::Jobs,
+                    words.text("jobs-name"),
+                    Some("toolbar-guard-jobs"),
+                ),
+                (toolbar::Kind::Part, "save-state") => (
+                    ToolbarEntry::SaveState,
+                    words.text("toolbar-save-state"),
+                    Some("toolbar-guard-save-state"),
+                ),
+                (toolbar::Kind::Part, _) => (
+                    ToolbarEntry::Cursors,
+                    words.text("cursor-well"),
+                    Some("toolbar-guard-cursors"),
+                ),
+                (toolbar::Kind::Spacing, "space") => {
+                    (ToolbarEntry::Space, words.text("toolbar-space"), None)
+                }
+                (toolbar::Kind::Spacing, _) => (
+                    ToolbarEntry::FlexibleSpace,
+                    words.text("toolbar-flexible-space"),
+                    None,
+                ),
+                (toolbar::Kind::App | toolbar::Kind::Tool(_), id) => {
+                    let (Some(action), Some(icon)) = (actions::named(id), placed.icon) else {
+                        continue;
+                    };
+                    let (name, word) = placed.words.map_or_default(|message| {
+                        (words.text(message), toolbar::word(&words, message))
+                    });
+                    // A tool's own action is prefixed by its tool's title, as its tooltip is.
+                    let name = match placed.kind {
+                        toolbar::Kind::Tool(tool) if id.starts_with("tool-") => {
+                            format!("{}: {name}", tools::title(&words, tool))
+                        }
+                        _ => name,
+                    };
+                    // Folding as at rest, so the fold marks are the Toolbar's own.
+                    let button = ToolbarButton::new(action.id.0, icon, name.clone())
+                        .label(word)
+                        .folds_first(placed.folds_first())
+                        .folds_last(TOOLBAR_LAST.contains(&action.id));
+                    (ToolbarEntry::Button(button), name, None)
+                }
+            };
+            let tip = match guard {
+                Some(guard) => format!("{name}\n{how}\n{}", words.text(guard)),
+                None => format!("{name}\n{how}"),
+            };
+            entries.push(entry);
+            names.push(name);
+            tips.push(tip);
+        }
+        // What a release does at each gap: to the start, or after the item before it.
+        let mut release = vec![words.text("toolbar-customise-release-start")];
+        release.extend(names.iter().map(|name| {
+            let mut args = apertrust_ui::i18n::Args::new();
+            args.set("item", name.as_str());
+            words.text_with("toolbar-customise-release", Some(&args))
+        }));
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("workspace", self.workspace_name(&ctx));
+        let mut done = words.text_with("toolbar-customise-done-tip", Some(&args));
+        if self.workspace.newer {
+            done = format!("{done}\n{}", words.text("toolbar-customise-newer"));
+        }
+        let since = ctx.input(|i| i.time) - draft.started_at;
+        let wiggle = f64::from(theme(&ctx).motion.wiggle_ms) / 1000.0;
+        if !draft.still && since < wiggle {
+            ctx.request_repaint();
+        }
+        let edit = apertrust_ui::components::Customising::new(names, tips)
+            .selected(draft.selected())
+            .marked(words.text("toolbar-customise-marked"))
+            .release(release)
+            .done(done, self.workspace.newer)
+            .since(since, draft.still)
+            .keep_focus(true);
+        let mut bar = Toolbar::new()
+            .entries(entries)
+            .labels(draft.labels())
+            .menu_button(self.drawn_menus)
+            .menu_button_style(self.menu_button)
+            .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))
+            .saved(saved)
+            .customising(edit);
+        if let Some(inset) = title_bar {
+            bar = bar.title_bar(true).start_inset(inset);
+        }
+        if let Some(maximised) = caption {
+            bar = bar
+                .caption_buttons(Some(self.caption_style))
+                .maximised(maximised);
+        }
+        let well = self.well(&ctx, false);
+        let window = |gesture| Some(FromToolbar::Window(gesture));
+        match well.with(|cursors| bar.cursors(cursors).show(ui))? {
+            ToolbarAction::Edit(edit) => Some(FromToolbar::Edit(edit)),
+            ToolbarAction::Minimise => window(TitleBar::Minimise),
+            ToolbarAction::MaximiseOrRestore => window(TitleBar::MaximiseOrRestore),
+            // Closing the window cancels the mode, then quits, through the app's way out.
+            ToolbarAction::Close => Some(FromToolbar::Action(ActionId::QUIT)),
+            _ => None,
+        }
+    }
+
+    /// The workspace shown's name in the interface's language.
+    fn workspace_name(&self, ctx: &egui::Context) -> String {
+        match self
+            .workspaces
+            .listed()
+            .iter()
+            .find(|w| w.id == self.workspace.id)
+        {
+            Some(listed) => match listed.name() {
+                layout::Title::Message(message) => tr(ctx, &message),
+                layout::Title::Own(name) => name,
+            },
+            None => self.workspace.id.clone(),
+        }
+    }
+
+    /// The labels the Toolbar shows: the draft's while customising, else `toolbar.labels`.
+    fn labels_shown(&self) -> bool {
+        (self.customising.as_ref()).map_or(self.toolbar_labels, |draft| draft.labels())
+    }
+
+    /// Puts the main window into the Toolbar's customise mode (decision 92), `item` the one
+    /// the toolbar menu opened on selected, and says so.
+    fn start_customising(&mut self, item: Option<&str>, ctx: &egui::Context) {
+        if self.customising.is_some() {
+            return;
+        }
+        let draft = customise::CustomiseToolbar::new(
+            self.workspace.toolbar(),
+            &self.workspace.default_toolbar(),
+            self.workspace.keeps_toolbar(),
+            self.toolbar_labels,
+            item,
+            ctx.input(|i| i.time),
+            apertrust_display::reduce_motion(),
+        );
+        let words = translator(ctx);
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("workspace", self.workspace_name(ctx));
+        args.set("count", draft.list().len());
+        self.say(words.text_with("toolbar-customise-entered", Some(&args)));
+        self.customising = Some(draft);
+        ctx.request_repaint();
+    }
+
+    /// Leaves the customise mode: Done writes the draft once, the list through the
+    /// workspace's file and the labels through the setting, only what changed; a cancel,
+    /// from Esc, closing the window or Quit, writes nothing.
+    fn finish_customising(&mut self, done: bool, ctx: &egui::Context) {
+        let Some(draft) = self.customising.take() else {
+            return;
+        };
+        popup::dismiss(ctx, Self::customise_menu_id());
+        let words = translator(ctx);
+        if !done {
+            self.say(words.text("toolbar-customise-unchanged"));
+            return;
+        }
+        let written = draft.written();
+        if let Some(change) = written.list {
+            self.move_toolbar(change, ctx);
+        }
+        if let Some(labels) = written.labels {
+            self.toolbar_labels = labels;
+        }
+        self.say(words.text("toolbar-customise-saved"));
+        ctx.request_repaint();
+    }
+
+    /// The customise menu's popup (decision 92).
+    fn customise_menu_id() -> egui::Id {
+        egui::Id::unique("customise menu")
+    }
+
+    /// What the Toolbar's edit state reported this frame, `edit`, made into a change of the
+    /// draft, and the customise menu, opened as it asks and drawn while open, `state` what
+    /// its items can do: the actions chosen in it are returned, to run as any action, but
+    /// Add ▸'s, which change the draft here.
+    fn customise(
+        &mut self,
+        ctx: &egui::Context,
+        edit: Option<ToolbarEdit>,
+        state: &State,
+    ) -> Vec<ActionId> {
+        let mut run = Vec::new();
+        match edit {
+            Some(ToolbarEdit::Select(at)) => {
+                if let Some(draft) = &mut self.customising {
+                    draft.select(Some(at));
+                }
+            }
+            Some(ToolbarEdit::Move { from, to }) => self.move_item(from, to, ctx),
+            Some(ToolbarEdit::Remove(at)) => self.remove_item(at, ctx),
+            Some(ToolbarEdit::Done) => self.finish_customising(true, ctx),
+            Some(ToolbarEdit::Cancel) => self.finish_customising(false, ctx),
+            Some(ToolbarEdit::Menu(menu)) => self.open_customise_menu(ctx, menu, state),
+            None => {}
+        }
+        let id = Self::customise_menu_id();
+        if popup::is_open(ctx, id) {
+            popup::show(ctx);
+        }
+        if let Some(popup::Answer::Chosen(chosen)) = popup::answer(ctx, id) {
+            if let Some(item) = menus::toolbar_added(&chosen) {
+                self.add_item(item, ctx);
+            } else if let Some(action) = menus::chosen(&chosen) {
+                run.push(action);
+            }
+        }
+        run
+    }
+
+    /// Opens the customise menu where the edit state asked: on an item, which it selects,
+    /// Add ▸ adding after it; in a gap, nothing selected, Add ▸ adding there.
+    fn open_customise_menu(
+        &mut self,
+        ctx: &egui::Context,
+        menu: apertrust_ui::components::EditMenu,
+        state: &State,
+    ) {
+        let Some(draft) = &mut self.customising else {
+            return;
+        };
+        let at = match menu.at {
+            ToolbarSpot::Entry(at) => {
+                draft.select(Some(at));
+                at + 1
+            }
+            ToolbarSpot::Gap(at) => {
+                // From the keys with nothing selected, at the start.
+                draft.select(None);
+                at
+            }
+        };
+        self.adding_at = at;
+        let state = State {
+            toolbar_place: (draft.selected()).map(|at| (at, draft.list().len())),
+            toolbar_kept: draft.resettable(),
+            toolbar_labels: draft.labels(),
+            ..*state
+        };
+        let words = translator(ctx);
+        let anchor = egui::Rect::from_min_size(menu.pos, egui::Vec2::ZERO);
+        let request =
+            menus::customise(&self.keymap, &state, ctx.os(), &words, draft.list(), anchor);
+        let request = match menu.opener {
+            Some(opener) => request.opened_by(opener),
+            None => request,
+        };
+        popup::open(ctx, Self::customise_menu_id(), request);
+    }
+
+    /// Moves the draft's item at `from` to `to`, and says so: "Undo moved after Redo, 5 of
+    /// 15".
+    fn move_item(&mut self, from: usize, to: usize, ctx: &egui::Context) {
+        let Some(draft) = &mut self.customising else {
+            return;
+        };
+        if !draft.move_item(from, to) {
+            return;
+        }
+        let list = draft.list().to_vec();
+        self.say(placed_words(ctx, "toolbar-customise-moved", &list, to));
+    }
+
+    /// Takes the draft's item at `at` out, and says so: "Undo removed".
+    fn remove_item(&mut self, at: usize, ctx: &egui::Context) {
+        let Some(draft) = &mut self.customising else {
+            return;
+        };
+        let Some(id) = draft.remove(at) else {
+            return;
+        };
+        let words = translator(ctx);
+        let mut args = apertrust_ui::i18n::Args::new();
+        args.set("item", menus::add_words(&words, id));
+        self.say(words.text_with("toolbar-customise-removed", Some(&args)));
+    }
+
+    /// Adds `item` where the customise menu opened, and says so: "Open… added after Redo, 7
+    /// of 16".
+    fn add_item(&mut self, item: &'static str, ctx: &egui::Context) {
+        let Some(draft) = &mut self.customising else {
+            return;
+        };
+        let Some(at) = draft.add(item, self.adding_at) else {
+            return;
+        };
+        let list = draft.list().to_vec();
+        self.say(placed_words(ctx, "toolbar-customise-added", &list, at));
+    }
+
+    /// The scrim over the window below the Toolbar, `toolbar`, while customising (decision
+    /// 92): an area of its own, never `egui::Modal`, which would block the Toolbar too,
+    /// taking every press and drop there so the dimmed window takes no input, fading in over
+    /// `open_ms`, at once with reduced motion.
+    fn scrim(&self, ctx: &egui::Context, toolbar: egui::Rect) {
+        let Some(draft) = &self.customising else {
+            return;
+        };
+        let t = theme(ctx);
+        let window = ctx.content_rect();
+        let below =
+            egui::Rect::from_min_max(egui::pos2(window.left(), toolbar.bottom()), window.max);
+        let length = f64::from(t.motion.open_ms) / 1000.0;
+        let since = ctx.input(|i| i.time) - draft.started_at;
+        let shown = if draft.still || length <= 0.0 {
+            1.0
+        } else {
+            (since / length).clamp(0.0, 1.0) as f32
+        };
+        if shown < 1.0 {
+            ctx.request_repaint();
+        }
+        egui::Area::new(egui::Id::unique("customise scrim"))
+            .order(egui::Order::Middle)
+            .fixed_pos(below.min)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let (rect, _) = ui.allocate_exact_size(below.size(), egui::Sense::click_and_drag());
+                ui.painter()
+                    .rect_filled(rect, 0.0, t.colors.scrim.gamma_multiply(shown));
+            });
     }
 
     /// Chooses `cursor`, as its face, its line in its group's list or its key asks; a
@@ -4251,11 +4636,50 @@ impl Shell {
             Intent::CreateStyle => self.create_style = true,
             Intent::ToolAction { tool, action } => self.tool_action = Some((tool, action)),
             Intent::Menu => self.menu = true,
-            Intent::ToolbarLabels => self.toolbar_labels = !self.toolbar_labels,
+            // While customising, the draft's (decision 92).
+            Intent::ToolbarLabels => match &mut self.customising {
+                Some(draft) => {
+                    draft.flip_labels();
+                    let on = if draft.labels() {
+                        "toolbar-customise-labels-on"
+                    } else {
+                        "toolbar-customise-labels-off"
+                    };
+                    self.say(tr(ctx, on));
+                }
+                None => self.toolbar_labels = !self.toolbar_labels,
+            },
+            Intent::CustomiseToolbar => self.start_customising(None, ctx),
+            Intent::ToolbarMoveLeft | Intent::ToolbarMoveRight => {
+                let at = self.customising.as_ref().and_then(|draft| draft.selected());
+                if let Some(at) = at {
+                    let to = if intent == Intent::ToolbarMoveLeft {
+                        at.checked_sub(1)
+                    } else {
+                        Some(at + 1)
+                    };
+                    if let Some(to) = to {
+                        self.move_item(at, to, ctx);
+                    }
+                }
+            }
+            Intent::ToolbarRemove => {
+                let at = self.customising.as_ref().and_then(|draft| draft.selected());
+                if let Some(at) = at {
+                    self.remove_item(at, ctx);
+                }
+            }
+            Intent::ToolbarDone => self.finish_customising(true, ctx),
             // Run on its item by the toolbar menu alone ([`Shell::toolbar_menu`]): with no
             // item it never runs from here.
             Intent::ToolbarHide => {}
-            Intent::ResetToolbar => self.move_toolbar(layout::Move::ResetToolbar, ctx),
+            Intent::ResetToolbar => match &mut self.customising {
+                Some(draft) => {
+                    draft.reset();
+                    self.say(tr(ctx, "toolbar-customise-reset"));
+                }
+                None => self.move_toolbar(layout::Move::ResetToolbar, ctx),
+            },
             Intent::View(view) => self.view = view,
             // A tab bar's menu lists tools under the tab shown as it opened.
             Intent::PanelTab(tab) => {
@@ -4320,6 +4744,8 @@ impl Shell {
             // the app leaves by, never the start window's own. Restart is Quit by now
             // (`App::run_actions`).
             Intent::CloseWindow | Intent::Quit | Intent::Restart => {
+                // The customise mode cancelled first: its draft is never written.
+                self.finish_customising(false, ctx);
                 self.leaving = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -7280,8 +7706,11 @@ impl App {
         // frame of its input, in the photo area it gives.
         self.shell.pointed = None;
         let mut placed = placed;
+        // Nothing under the customise mode's scrim, a touch screen's pinch included, which
+        // the scrim's hit test never sees.
         if let (Some(room), Some(area)) = (&room, placed.as_ref().map(|p| p.photo))
             && open
+            && self.shell.customising.is_none()
         {
             let before = self.shell.zoom;
             let gesture = &mut self.shell.gesture;
@@ -7973,13 +8402,18 @@ impl App {
     /// cannot change, it changes nothing and the notice stays, saying so; Try again
     /// restarts with them, `--safe-mode` left out (`recovery`).
     fn show_notice(&mut self, ctx: &egui::Context) {
-        let Some(notice) = self.notice.clone() else {
+        // Hidden while customising, so the window below the Toolbar takes no input.
+        let Some(notice) = self
+            .notice
+            .clone()
+            .filter(|_| self.shell.customising.is_none())
+        else {
             return;
         };
         let top = if self.start.shown {
             start::STRIP
         } else {
-            Toolbar::height(&theme(ctx), self.shell.toolbar_labels)
+            Toolbar::height(&theme(ctx), self.shell.labels_shown())
         };
         match notice.show(ctx, top, self.notice_held) {
             Some(recovery::Pressed::Keep) if recovery::held(&self.keeper) => {
@@ -8678,6 +9112,44 @@ struct Opened {
     opener: Option<egui::Id>,
 }
 
+/// Draws the Toolbar with `draw`, inside the customise mode's modal dialog to screen readers
+/// while `shell` customises it (decision 92): "Customise Toolbar — Default".
+fn customise_dialog<R>(
+    ui: &mut egui::Ui,
+    shell: &Shell,
+    draw: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    if shell.customising.is_none() {
+        return draw(ui);
+    }
+    let ctx = ui.ctx().clone();
+    let mut args = apertrust_ui::i18n::Args::new();
+    args.set("workspace", shell.workspace_name(&ctx));
+    let name = translator(&ctx).text_with("toolbar-customise-dialog", Some(&args));
+    let dialog = ui.scope_builder(egui::UiBuilder::new().sense(egui::Sense::hover()), draw);
+    (dialog.response)
+        .widget_info(|| egui::WidgetInfo::labeled(egui::accesskit::Role::Dialog, true, &name));
+    ctx.accesskit_node_builder(dialog.response.id, |node| node.set_modal());
+    dialog.inner
+}
+
+/// What screen readers hear of an item of `list` added or moved to `at` (decision 92), the
+/// message `message`: "Undo moved after Redo, 5 of 15", or to the start.
+fn placed_words(ctx: &egui::Context, message: &str, list: &[&'static str], at: usize) -> String {
+    let words = translator(ctx);
+    let mut args = apertrust_ui::i18n::Args::new();
+    args.set("item", menus::add_words(&words, list[at]));
+    args.set("at", at + 1);
+    args.set("of", list.len());
+    match at.checked_sub(1).map(|before| list[before]) {
+        Some(before) => {
+            args.set("after", menus::add_words(&words, before));
+            words.text_with(message, Some(&args))
+        }
+        None => words.text_with(&format!("{message}-start"), Some(&args)),
+    }
+}
+
 /// The context menu `opened` this frame, if any, as the popup `id`, built from `keymap` and
 /// `state` (`menus::context`), and the action of the item chosen in it.
 ///
@@ -8790,7 +9262,7 @@ impl eframe::App for App {
         let t = theme(&ctx);
         // The Toolbar's height, taller with its labels, which the window's own buttons are
         // centred in and the panels below start under.
-        let toolbar_height = Toolbar::height(&t, self.shell.toolbar_labels);
+        let toolbar_height = Toolbar::height(&t, self.shell.labels_shown());
         let title_bar = self.window_buttons(frame, &ctx, toolbar_height);
         let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         let caption = (CAPTION_BUTTONS && title_bar.is_some()).then_some(maximised);
@@ -8833,8 +9305,10 @@ impl eframe::App for App {
                     ui.ctx().request_repaint_after(from - now);
                 }
                 let saved = self.mirror.saving.state(now);
-                self.shell
-                    .toolbar(ui, &drawn, saved, title_bar, caption, &self.jobs_view)
+                let (shell, jobs) = (&self.shell, &self.jobs_view);
+                customise_dialog(ui, shell, |ui| {
+                    shell.toolbar(ui, &drawn, saved, title_bar, caption, jobs)
+                })
             });
         // A picker turning on and off, said politely (decision 104).
         let said_at = toolbar.response.rect.left_bottom();
@@ -8842,8 +9316,10 @@ impl eframe::App for App {
         self.follow_window_min(&ctx, frame);
         let mut window = None;
         let mut toolbar_asked = None;
+        let mut edited = None;
         match toolbar.inner {
             Some(FromToolbar::Action(id)) => run.push(id),
+            Some(FromToolbar::Edit(edit)) => edited = Some(edit),
             Some(FromToolbar::Window(gesture)) => window = Some(gesture),
             Some(FromToolbar::Menu(asked)) => toolbar_asked = Some(asked),
             Some(FromToolbar::Jobs) => {
@@ -8866,6 +9342,8 @@ impl eframe::App for App {
         // The focus the Toolbar was asked to move this frame, before Hide asks again.
         let refocus = self.shell.toolbar_focus.take().is_some();
         run.extend(self.shell.toolbar_menu(&ctx, toolbar_asked, &drawn));
+        // The customise mode's draft, changed as its Toolbar asked, and its menu.
+        run.extend(self.shell.customise(&ctx, edited, &drawn));
         // The Tools panel is as wide as its edge was dragged, a drag in progress included.
         // While the edge moves, the photo's size is held as it is while the window resizes.
         let edge_name = tr(&ctx, "tools-panel-width");
@@ -8905,6 +9383,8 @@ impl eframe::App for App {
         if let Some(action) = browser_edge.show(ui, browser) {
             self.shell.resize_browser(action);
         }
+        // While customising, the window below the Toolbar dims and takes no input.
+        self.shell.scrim(&ctx, toolbar.response.rect);
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
 
@@ -9104,6 +9584,8 @@ impl eframe::App for App {
         // that close; the close Quit asks for still ends the app.
         if raw_input.viewport().close_requested() {
             let quitting = std::mem::take(&mut self.shell.leaving);
+            // The customise mode holds no close: it cancels, then the close runs as at rest.
+            self.shell.finish_customising(false, ctx);
             // The main window's own state, whichever window has the focus, as AppKit checks
             // a window's buttons against that window.
             let state = self.state_in_window(ctx);
@@ -9706,6 +10188,11 @@ fn run_action(
         return None;
     }
     let leaves = id == ActionId::QUIT || id == ActionId::CLOSE_WINDOW;
+    // The customise mode cancelled before anything may hold the leaving, so a refused Quit
+    // leaves no draft for Done to write.
+    if leaves && enabled {
+        shell.finish_customising(false, ctx);
+    }
     if leaves && enabled && !dialogs.quit() {
         return None;
     }
@@ -23403,12 +23890,25 @@ mod tests {
 
     /// The bench with the shell as `settings` leave it.
     fn bench_with(os: OperatingSystem, settings: &Settings) -> Harness<'static, Bench> {
+        let size = egui::vec2(1200.0, 600.0);
+        bench_in(os, settings, size, Theme::default(), 1.0)
+    }
+
+    /// The bench `size` points large, in `theme`, at `scale` pixels a point.
+    fn bench_in(
+        os: OperatingSystem,
+        settings: &Settings,
+        size: egui::Vec2,
+        theme: Theme,
+        scale: f32,
+    ) -> Harness<'static, Bench> {
         let host = FakeHost::on(os);
         Harness::builder()
-            .with_size(egui::vec2(1200.0, 600.0))
+            .with_size(size)
+            .with_pixels_per_point(scale)
             .with_os(os)
             .with_context_setup(move |ctx| {
-                apertrust_ui::install(ctx, Theme::default());
+                apertrust_ui::install(ctx, theme.clone());
                 registry_keys_only(ctx);
                 ctx.global_style_mut(|style| style.interaction.tooltip_delay = 0.0);
             })
@@ -23433,14 +23933,17 @@ mod tests {
                     let mut run = keys.pressed;
                     let top = ui.scope(|ui| {
                         let (title_bar, caption) = (bench.title_bar, bench.caption);
-                        bench
-                            .shell
-                            .toolbar(ui, &state, SaveState::None, title_bar, caption, &[])
+                        let shell = &bench.shell;
+                        customise_dialog(ui, shell, |ui| {
+                            shell.toolbar(ui, &state, SaveState::None, title_bar, caption, &[])
+                        })
                     });
                     let mut window = None;
                     let mut asked = None;
+                    let mut edited = None;
                     match top.inner {
                         Some(FromToolbar::Action(id)) => run.push(id),
+                        Some(FromToolbar::Edit(edit)) => edited = Some(edit),
                         Some(FromToolbar::Window(gesture)) => window = Some(gesture),
                         Some(FromToolbar::Menu(menu)) => asked = Some(menu),
                         Some(FromToolbar::Cursor(cursor)) => {
@@ -23456,6 +23959,8 @@ mod tests {
                     }
                     let refocus = bench.shell.toolbar_focus.take().is_some();
                     run.extend(bench.shell.toolbar_menu(&ctx, asked, &state));
+                    run.extend(bench.shell.customise(&ctx, edited, &state));
+                    bench.shell.scrim(&ctx, top.response.rect);
                     let name = tr(&ctx, "tools-panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
                     let width = edge.width(&ctx);
@@ -23922,6 +24427,306 @@ mod tests {
         harness.run();
     }
 
+    /// The bench with a person's own Default workspace written into `folder`, Undo's place
+    /// right-clicked and Customise Toolbar… chosen: the mode on, Undo selected.
+    fn customising_bench(folder: &settings::testing::Folder) -> Harness<'static, Bench> {
+        let files = folder.0.join("workspaces");
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().title_bar = Some(0.0);
+        harness.state_mut().shell.workspace_files = layout::Files::new(files);
+        harness.run();
+        let undo = harness
+            .get_by_role_and_label(Role::Button, "Undo")
+            .rect()
+            .center();
+        right_click_bench(&mut harness, undo);
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Customise toolbar…")
+            .click();
+        harness.run();
+        harness
+    }
+
+    /// The Toolbar list the workspace's own file holds as the writer left it, flushed, which
+    /// ends the writer; none where it holds none.
+    fn written(
+        harness: &mut Harness<'_, Bench>,
+        folder: &settings::testing::Folder,
+    ) -> Option<Vec<String>> {
+        harness.state_mut().shell.workspace_files.flush();
+        let files = folder.0.join("workspaces");
+        let (read, _) = layout::Workspace::open(Some(&files), layout::DEFAULT);
+        read.keeps_toolbar().then(|| read.toolbar().to_vec())
+    }
+
+    /// Decision 92: Customise Toolbar… from the toolbar menu on Undo enters the mode with
+    /// Undo selected: a modal dialog named with the workspace, holding the Toolbar as a list
+    /// box; the photo's Undo, Open… and View › Workspace rest. Esc leaves it, its Toolbar role
+    /// back, nothing written.
+    #[test]
+    fn customise_toolbar_enters_the_mode_on_the_item_it_opened_on() {
+        let folder = settings::testing::Folder::new("customise-enter");
+        let mut harness = customising_bench(&folder);
+        assert!(harness.state().shell.customising.is_some());
+        let dialog = harness.get_by_role(Role::Dialog);
+        assert_eq!(
+            dialog.accesskit_node().label().as_deref(),
+            Some("Customise Toolbar — Default")
+        );
+        let undo = harness.get_by_role_and_label(Role::ListBoxOption, "Undo");
+        assert_eq!(undo.accesskit_node().is_selected(), Some(true));
+        let state = harness.state().shell.state(&harness.ctx, true, true);
+        for id in [ActionId::UNDO, ActionId::OPEN, ActionId::CUSTOMISE_TOOLBAR] {
+            let action = actions::action(id).unwrap();
+            assert!(!action.enabled(&state), "{} runs in the mode", id.0);
+        }
+        let workspace = actions::workspace(layout::DEFAULT);
+        assert!(!actions::action(workspace).unwrap().enabled(&state));
+        assert!(
+            harness
+                .state()
+                .shell
+                .announced
+                .starts_with("Customise Toolbar, Default.")
+        );
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.state().shell.customising.is_none());
+        harness.get_by_role(Role::Toolbar);
+        assert!(harness.query_by_role(Role::ListBox).is_none());
+        assert_eq!(written(&mut harness, &folder), None);
+    }
+
+    /// Decision 92: Alt+→ moves the selected item in the draft; Esc restores the list and
+    /// writes nothing; the same then Done writes `Move::Toolbar` once, the whole list.
+    #[test]
+    fn done_writes_the_draft_once_and_esc_writes_nothing() {
+        let folder = settings::testing::Folder::new("customise-done");
+        let mut harness = customising_bench(&folder);
+        let before = harness.state().shell.workspace.toolbar().to_vec();
+        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowRight);
+        harness.run();
+        let draft = harness.state().shell.customising.clone().unwrap();
+        let at = before.iter().position(|id| id == "undo").unwrap();
+        assert_eq!(draft.list()[at + 1], "undo");
+        assert_eq!(harness.state().shell.workspace.toolbar(), before);
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert_eq!(harness.state().shell.workspace.toolbar(), before);
+        assert!(!harness.state().shell.workspace.keeps_toolbar());
+        // Again, then Done.
+        let undo = harness
+            .get_by_role_and_label(Role::Button, "Undo")
+            .rect()
+            .center();
+        right_click_bench(&mut harness, undo);
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Customise toolbar…")
+            .click();
+        harness.run();
+        harness.key_press_modifiers(Modifiers::ALT, Key::ArrowRight);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::DefaultButton, "Done")
+            .click();
+        harness.run();
+        assert!(harness.state().shell.customising.is_none());
+        let mut after = before.clone();
+        after.swap(at, at + 1);
+        assert_eq!(harness.state().shell.workspace.toolbar(), after.as_slice());
+        assert_eq!(written(&mut harness, &folder), Some(after));
+        assert_eq!(harness.state().shell.announced, "Toolbar saved");
+    }
+
+    /// Decision 92: Toolbar Labels in the mode flips the draft's labels, the Toolbar at once;
+    /// Esc puts them back and Done writes them; Reset then Done on a file with no list
+    /// writes nothing.
+    #[test]
+    fn the_labels_are_the_draft_s_until_done() {
+        let folder = settings::testing::Folder::new("customise-labels");
+        let mut harness = customising_bench(&folder);
+        assert!(harness.state().shell.toolbar_labels);
+        let customise = |harness: &mut Harness<'_, Bench>, id: ActionId| {
+            let state = harness.state().shell.state(&harness.ctx, false, false);
+            let ctx = harness.ctx.clone();
+            let shell = &mut harness.state_mut().shell;
+            shell.run(id, &state, &ctx, &[]);
+            harness.run();
+        };
+        customise(&mut harness, ActionId::TOOLBAR_LABELS);
+        assert!(!harness.state().shell.labels_shown());
+        assert!(harness.state().shell.toolbar_labels, "not written yet");
+        let bar = harness.get_by_role(Role::ListBox).rect();
+        assert_eq!(Toolbar::height(&theme(&harness.ctx), false), bar.height());
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.state().shell.labels_shown());
+        customise(&mut harness, ActionId::CUSTOMISE_TOOLBAR);
+        customise(&mut harness, ActionId::TOOLBAR_LABELS);
+        customise(&mut harness, ActionId::RESET_TOOLBAR);
+        customise(&mut harness, ActionId::TOOLBAR_DONE);
+        assert!(!harness.state().shell.toolbar_labels);
+        assert_eq!(written(&mut harness, &folder), None);
+    }
+
+    /// Decision 92: the window under the scrim takes no input in the mode: a click on the
+    /// Tools panel's tabs chooses none.
+    #[test]
+    fn the_dimmed_window_takes_no_input() {
+        let folder = settings::testing::Folder::new("customise-scrim");
+        let mut harness = customising_bench(&folder);
+        let tab = harness.state().shell.panel_tab;
+        let other = (harness.query_all_by_role(Role::Tab))
+            .find(|node| node.accesskit_node().is_selected() != Some(true))
+            .map(|node| node.rect().center())
+            .expect("another tab");
+        harness.hover_at(other);
+        harness.event(egui::Event::PointerButton {
+            pos: other,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        harness.event(egui::Event::PointerButton {
+            pos: other,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, tab);
+        assert!(harness.state().shell.customising.is_some());
+    }
+
+    /// Decision 92: Add ▸ adds after the item its menu opened on and selects it; Remove from
+    /// Toolbar takes the selected item out, the next selected; Quit cancels the mode and
+    /// writes nothing.
+    #[test]
+    fn add_and_remove_change_the_draft_and_quit_cancels() {
+        let folder = settings::testing::Folder::new("customise-add");
+        let mut harness = customising_bench(&folder);
+        let undo = harness
+            .get_by_role_and_label(Role::ListBoxOption, "Undo")
+            .rect()
+            .center();
+        right_click_bench(&mut harness, undo);
+        harness.get_by_label("Add").click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::MenuItem, "Open…")
+            .click();
+        harness.run();
+        let ctx = harness.ctx.clone();
+        let draft = harness.state().shell.customising.clone().unwrap();
+        let at = draft.list().iter().position(|id| *id == "undo").unwrap();
+        assert_eq!(draft.list()[at + 1], "open");
+        assert_eq!(draft.selected(), Some(at + 1));
+        assert!(
+            harness.state().shell.announced.starts_with("Open"),
+            "{}",
+            harness.state().shell.announced
+        );
+        harness.key_press(Key::Delete);
+        harness.run();
+        let draft = harness.state().shell.customising.clone().unwrap();
+        assert!(!draft.list().contains(&"open"));
+        assert_eq!(draft.selected(), Some(at + 1));
+        let shell = &mut harness.state_mut().shell;
+        shell.apply(Intent::Quit, &ctx, &[]);
+        assert!(harness.state().shell.customising.is_none());
+        assert_eq!(written(&mut harness, &folder), None);
+    }
+
+    /// The customise mode photographed, the window dimmed under the Toolbar, its customise
+    /// menu open on Undo with Add ▸ open: on Linux's frame, with the menu button and the
+    /// caption buttons, and on the Mac's, with room for the traffic lights; in the dark and
+    /// light themes; 1440 and 960 points wide; and at 200% in the dark theme.
+    #[test]
+    fn the_customise_mode_is_photographed() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        let frames = [
+            ("linux", OperatingSystem::Nix),
+            ("mac", OperatingSystem::Mac),
+        ];
+        let looks = [
+            (Builtin::Dark, "dark", 1440.0, 1.0),
+            (Builtin::Light, "light", 1440.0, 1.0),
+            (Builtin::Dark, "dark", 960.0, 1.0),
+            (Builtin::Light, "light", 960.0, 1.0),
+            (Builtin::Dark, "dark", 1440.0, 2.0),
+        ];
+        for (frame, os) in frames {
+            for (which, theme_name, width, scale) in looks {
+                let folder = settings::testing::Folder::new("customise-snapshot");
+                let size = egui::vec2(width, 600.0);
+                let settings = Settings::default();
+                let mut harness = bench_in(os, &settings, size, Theme::builtin(which), scale);
+                let bench = harness.state_mut();
+                if os == OperatingSystem::Mac {
+                    bench.title_bar = Some(78.0);
+                } else {
+                    // Linux's frame on whatever machine draws it, libadwaita's buttons too.
+                    bench.title_bar = Some(0.0);
+                    bench.caption = Some(false);
+                    bench.shell.caption_style = CaptionStyle::Linux;
+                }
+                bench.shell.workspace_files = layout::Files::new(folder.0.join("workspaces"));
+                harness.run();
+                let ctx = harness.ctx.clone();
+                let state = harness.state().shell.state(&ctx, false, false);
+                let shell = &mut harness.state_mut().shell;
+                shell.run(ActionId::CUSTOMISE_TOOLBAR, &state, &ctx, &[]);
+                harness.run_steps(30);
+                let undo = harness
+                    .get_by_role_and_label(Role::ListBoxOption, "Undo")
+                    .rect()
+                    .center();
+                right_click_bench(&mut harness, undo);
+                harness.get_by_label("Add").click();
+                harness.run();
+                let at = if scale > 1.0 { "-200" } else { "" };
+                harness.snapshot(format!(
+                    "customise-toolbar-{frame}-{theme_name}-{width}{at}"
+                ));
+                results.extend_harness(&mut harness);
+            }
+        }
+    }
+
+    /// Decision 92: the Tools panel's keys rest while customising, the panel dimmed: Ctrl+1
+    /// and L choose no tab, Ctrl+Shift+F opens no search, and the tab kept is unchanged;
+    /// at rest Ctrl+1 still chooses Photos.
+    #[test]
+    fn the_tools_panel_s_keys_rest_while_customising() {
+        let folder = settings::testing::Folder::new("customise-panel-keys");
+        let mut harness = customising_bench(&folder);
+        let tab = harness.state().shell.panel_tab;
+        assert_ne!(tab, PHOTOS, "Photos chosen already");
+        for (modifiers, key) in [
+            (Modifiers::COMMAND, Key::Num1),
+            (Modifiers::NONE, Key::L),
+            (Modifiers::COMMAND | Modifiers::SHIFT, Key::F),
+        ] {
+            harness.key_press_modifiers(modifiers, key);
+            harness.run();
+            assert_eq!(
+                harness.state().shell.panel_tab,
+                tab,
+                "{modifiers:?} {key:?}"
+            );
+            assert!(
+                harness.state().shell.find.is_none(),
+                "{modifiers:?} {key:?}"
+            );
+            assert!(harness.state().shell.customising.is_some());
+        }
+        harness.key_press(Key::Escape);
+        harness.run();
+        harness.key_press_modifiers(Modifiers::COMMAND, Key::Num1);
+        harness.run();
+        assert_eq!(harness.state().shell.panel_tab, PHOTOS);
+    }
+
     /// Decision 92: the toolbar menu's Hide takes the item it opened on, by a right-click,
     /// out of the workspace's Toolbar, the whole list written into the workspace's file
     /// from its bundled one, the rest of the list as it was. Shift+F10 on the menu button,
@@ -24206,7 +25011,7 @@ mod tests {
     /// Decision 92: a right-click on the Toolbar's empty area opens the toolbar menu, never
     /// the window's, which stays on the system's own key; its Toolbar Labels turns the
     /// labels off, and on again, at once, the Toolbar 44 points tall without them and 62
-    /// with, and Customise Toolbar… is drawn disabled.
+    /// with, and Customise Toolbar… is enabled.
     #[test]
     fn a_right_click_on_the_toolbar_opens_the_toolbar_menu_and_never_the_window_s() {
         let mut harness = bench(OperatingSystem::Nix);
@@ -24230,7 +25035,7 @@ mod tests {
             harness.run();
             assert!(harness.state().system.menus.is_empty());
             let customise = harness.get_by_label("Customise toolbar…");
-            assert!(customise.accesskit_node().is_disabled());
+            assert!(!customise.accesskit_node().is_disabled());
             harness
                 .get_by_role_and_label(Role::MenuItemCheckBox, "Toolbar labels")
                 .click();
