@@ -126,6 +126,13 @@ repos:
         entry: tools/check-windows-paths.sh
         language: system
         files: \.(rs|toml)$
+      # A build script's platform code chosen with cfg!(), so clippy compiles it on every
+      # machine, or its #[cfg] marked `// host-only: <reason>` (decision 70).
+      - id: build-script-cfgs
+        name: Build scripts' platform cfgs
+        entry: tools/check-build-script-cfgs.py
+        language: system
+        files: (^|/)build\.rs$
       # The documentation that skips CI's code checks, none of it read by code: the list,
       # the files it matches, and the code and tools that could name them.
       - id: docs-paths
