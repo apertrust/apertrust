@@ -208,20 +208,13 @@ fn a_photo_still_opening_applies_no_style() {
 #[test]
 fn the_mode_is_chosen_from_options_and_import_and_export_wait() {
     let words = Translator::new(Locale::EnGb);
-    let entries = options(&words, StyleMode::Replace);
-    let Entry_::Submenu(mode) = &entries[0] else {
-        panic!("Mode ▸ first: {entries:?}");
-    };
-    assert_eq!(mode.text, "Mode");
-    let checked: Vec<(String, bool)> = (mode.entries.iter())
-        .filter_map(|entry| match entry {
-            Entry_::Item(item) => Some((item.text.clone(), item.checked == Some(true))),
-            _ => None,
-        })
-        .collect();
+    let entries = options(&words, StyleMode::Replace, false);
     assert_eq!(
-        checked,
-        [("Append".to_owned(), false), ("Replace".to_owned(), true)]
+        mode_items(&entries),
+        [
+            ("Append".to_owned(), false, true, None),
+            ("Replace".to_owned(), true, true, None)
+        ]
     );
     for (at, words) in [(1, "Import Style…"), (2, "Export Style…")] {
         let Entry_::Item(item) = &entries[at] else {
@@ -234,6 +227,41 @@ fn the_mode_is_chosen_from_options_and_import_and_export_wait() {
         Some(Action::Mode(StyleMode::Append))
     );
     assert_eq!(pressed(&Pressed::Toggle), None);
+}
+
+/// Where `--conf` gives `styles.mode` for the run, Mode's items show it, both disabled,
+/// saying why, as a Settings row does (decision 43).
+#[test]
+fn a_mode_given_by_conf_shows_and_cannot_be_changed() {
+    let words = Translator::new(Locale::EnGb);
+    let why = Some("Set by --conf for this run".to_owned());
+    assert_eq!(
+        mode_items(&options(&words, StyleMode::Replace, true)),
+        [
+            ("Append".to_owned(), false, false, why.clone()),
+            ("Replace".to_owned(), true, false, why)
+        ]
+    );
+}
+
+/// Mode ▸'s items, the first of `entries`: each one's words, whether it is checked, whether
+/// it is enabled and its tip.
+fn mode_items(entries: &[Entry_]) -> Vec<(String, bool, bool, Option<String>)> {
+    let Entry_::Submenu(mode) = &entries[0] else {
+        panic!("Mode ▸ first: {entries:?}");
+    };
+    assert_eq!(mode.text, "Mode");
+    (mode.entries.iter())
+        .filter_map(|entry| match entry {
+            Entry_::Item(item) => Some((
+                item.text.clone(),
+                item.checked == Some(true),
+                item.enabled,
+                item.tip.clone(),
+            )),
+            _ => None,
+        })
+        .collect()
 }
 
 use apertrust_ui::popup::Entry as Entry_;
@@ -288,7 +316,7 @@ fn drawn_with(which: Builtin, state: Drawn, alerts: bool) -> Harness<'static, Dr
                 };
                 let head = Head {
                     open: true,
-                    options: options(&words, StyleMode::Append),
+                    options: options(&words, StyleMode::Append, false),
                     ..Head::default()
                 };
                 let mut actions = Vec::new();
