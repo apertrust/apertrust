@@ -36,6 +36,10 @@
 )]
 mod common;
 mod corpus;
+#[expect(
+    dead_code,
+    reason = "Soften's rows are its own, none of switched::Rows"
+)]
 mod switched;
 
 use apertrust_engine::compute::GpuImage;

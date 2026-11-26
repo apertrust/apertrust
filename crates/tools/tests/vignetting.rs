@@ -37,6 +37,10 @@
 )]
 mod common;
 mod corpus;
+#[expect(
+    dead_code,
+    reason = "Vignetting's rows are its own, none of switched::Rows"
+)]
 mod switched;
 
 use apertrust_engine::edit::{self, Edit};
