@@ -37,6 +37,9 @@ cache = ["fs"]
 tempfile = { workspace = true, optional = true }
 # The platform's user data and cache folders, the folders' defaults.
 directories = { workspace = true, optional = true }
+# The session protocol's serde helpers, `wire`, and the jobs' and the cache's commands and
+# events, which the protocol carries (decision 108).
+serde.workspace = true
 thiserror = { workspace = true, optional = true }
 # The settings file's reading and writing, the store's (decision 43).
 toml.workspace = true
@@ -52,6 +55,8 @@ directories.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 toml_edit.workspace = true
+# The wire helpers' tests.
+serde_json.workspace = true
 
 [lints]
 workspace = true

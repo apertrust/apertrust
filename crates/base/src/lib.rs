@@ -50,6 +50,8 @@
 //!   `settings.toml` through a [`Storage`] (`settings::Storage`); and, behind the `codegen`
 //!   feature, the generator that each owner's build script runs on the schema,
 //!   `data/settings.schema.toml` in the workspace's top-level `data/` (decision 45).
+//! - [`wire`]: serde helpers for the session protocol's types (decision 108): ids read
+//!   from text, `io::Error`, `io::ErrorKind` and NaN.
 //!
 //! [`Choice`]: settings::Choice
 //! [`Store`]: settings::Store
@@ -68,3 +70,4 @@ pub mod jobs;
 #[cfg(feature = "log")]
 pub mod log;
 pub mod settings;
+pub mod wire;

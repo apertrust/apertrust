@@ -134,7 +134,12 @@ rawler = "0.8.0"
 rfd = { version = "0.18.0", default-features = false, features = ["xdg-portal", "wayland"] }
 # SVG icons only: no text, system fonts or bitmap images.
 resvg = { version = "0.50.0", default-features = false }
-serde = { version = "1.0.229", features = ["derive"] }
+# The session protocol's types (decision 108) and the design system's; `rc` for the `Arc`
+# fields they carry, each read back as an `Arc` of its own.
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+# JSON, for the session protocol's round-trip tests (apertrust-engine and apertrust-base);
+# later the MCP adapter's (decision 108).
+serde_json = "1.0.154"
 # The export's temporary files, made exclusively beside their names and renamed into place
 # (apertrust-export's disk, decision 56).
 tempfile = "3.27.0"
