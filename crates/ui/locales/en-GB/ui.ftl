@@ -238,6 +238,9 @@ styles-view-only = The photo is open for viewing only
 # A style file this build can't apply, its tooltip.
 styles-parked = Made by a newer Apertrust
 styles-parked-retired = Holds only tools Apertrust has retired
+# A style's row where another of the person's styles has its name, $name its name and
+# $file its file's, "Warm film (Warm film 2.apstyle)".
+styles-same-name = { $name } ({ $file })
 # The menus of an applied style and of a style in the tree, $name its name.
 styles-row-menu = { $name } menu
 styles-apply = Apply

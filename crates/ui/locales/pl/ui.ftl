@@ -164,6 +164,7 @@ styles-no-photo = Otwórz zdjęcie, by zastosować styl
 styles-view-only = Zdjęcie jest otwarte tylko do podglądu
 styles-parked = Utworzony przez nowszy Apertrust
 styles-parked-retired = Zawiera tylko narzędzia, których Apertrust już nie ma
+styles-same-name = { $name } ({ $file })
 styles-row-menu = Menu „{ $name }”
 styles-apply = Zastosuj
 styles-clear = Usuń

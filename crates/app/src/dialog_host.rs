@@ -325,11 +325,12 @@ pub enum Output {
     Preset(crate::presets::Asked),
     /// What Create a Style… asked as Create was pressed.
     Style(crate::styles::Asked),
-    /// What Rename Style… asked as Rename was pressed: the style `from` named `to`; or,
-    /// `copy`, what Copy to Custom Styles… asked as Copy was pressed: the built-in style
-    /// shown as `from` copied as `to`.
+    /// What Rename Style… asked as Rename was pressed: the style `from`, in `file`
+    /// (`styles::tool::Listed::file`), named `to`; or, `copy`, what Copy to Custom Styles…
+    /// asked as Copy was pressed: the built-in style shown as `from` copied as `to`.
     StyleRename {
         from: String,
+        file: String,
         to: String,
         copy: bool,
     },

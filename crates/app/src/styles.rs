@@ -290,6 +290,8 @@ impl SheetContent for StyleDialog {
 #[derive(Debug)]
 pub struct RenameDialog {
     from: String,
+    /// The style's file ([`tool::Listed::file`]), which two styles of one name do not share.
+    file: String,
     /// Whether it copies the built-in style `from` into Custom Styles, rather than renaming
     /// the person's.
     copy: bool,
@@ -300,26 +302,28 @@ pub struct RenameDialog {
 }
 
 impl RenameDialog {
-    /// Rename Style… for the style `from`, `taken` every name refused ([`refused`]), its
-    /// own among them, which it may keep.
-    pub fn new(from: String, taken: Vec<String>) -> Self {
+    /// Rename Style… for the style `from` in `file`, `taken` every name refused
+    /// ([`refused`]), its own among them, which it may keep.
+    pub fn new(from: String, file: String, taken: Vec<String>) -> Self {
         let taken = taken.into_iter().filter(|name| *name != from).collect();
         RenameDialog {
             name: from.clone(),
             from,
+            file,
             copy: false,
             taken,
             focused: false,
         }
     }
 
-    /// Copy to Custom Styles… for the built-in style `from`, as shown, `taken` every name
-    /// refused ([`refused`]), the built-in's own among them; its name at first is the
-    /// copy's ([`copy_name`]), which Copy takes at once.
-    pub fn copy(from: String, taken: Vec<String>, words: &Translator) -> Self {
+    /// Copy to Custom Styles… for the built-in style `from`, as shown, in `file`, `taken`
+    /// every name refused ([`refused`]), the built-in's own among them; its name at first is
+    /// the copy's ([`copy_name`]), which Copy takes at once.
+    pub fn copy(from: String, file: String, taken: Vec<String>, words: &Translator) -> Self {
         RenameDialog {
             name: copy_name(&from, &taken, words),
             from,
+            file,
             copy: true,
             taken,
             focused: false,
@@ -364,6 +368,7 @@ impl SheetContent for RenameDialog {
     fn output(&self) -> Output {
         Output::StyleRename {
             from: self.from.clone(),
+            file: self.file.clone(),
             to: self.name.trim().to_owned(),
             copy: self.copy,
         }
@@ -384,17 +389,10 @@ pub fn copy_name(from: &str, taken: &[String], words: &Translator) -> String {
     }
 }
 
-/// Renames the style `from` in `folder` to `to`, its file named from its new name, refusing
-/// a name another style holds. Returns its new path.
-pub fn rename(folder: &Path, from: &str, to: &str) -> Result<PathBuf, PresetError> {
-    let to = to.trim();
-    if taken(folder)
-        .iter()
-        .any(|taken| taken == to && taken != from)
-    {
-        return Err(PresetError::NameTaken(to.to_owned()));
-    }
-    files::rename(&path_of(folder, from)?, to)
+/// Renames the style in `file` in `folder` to `to`, its file named from its new name,
+/// refusing a name another style holds (`presets::rename`). Returns its new path.
+pub fn rename(folder: &Path, file: &str, to: &str) -> Result<PathBuf, PresetError> {
+    files::rename(&path_of(folder, file)?, to)
 }
 
 /// Copies the style built in as `id` into `folder` as `to`, its entries and description as
@@ -415,15 +413,15 @@ pub fn copy(folder: &Path, id: &str, to: &str, build: &str) -> Result<PathBuf, P
     files::write(folder, &stored, build)
 }
 
-/// Deletes the style `name` in `folder`.
-pub fn delete(folder: &Path, name: &str) -> Result<(), PresetError> {
-    files::delete(&path_of(folder, name)?)
+/// Deletes the style in `file` in `folder`.
+pub fn delete(folder: &Path, file: &str) -> Result<(), PresetError> {
+    files::delete(&path_of(folder, file)?)
 }
 
-/// The file of the style `name` in `folder`.
-fn path_of(folder: &Path, name: &str) -> Result<PathBuf, PresetError> {
+/// The path of the style in `file`, its file's name, in `folder`.
+fn path_of(folder: &Path, file: &str) -> Result<PathBuf, PresetError> {
     (stored(folder).into_iter())
-        .find(|stored| stored.name.trim() == name)
+        .find(|stored| stored.path.file_name().is_some_and(|name| *name == *file))
         .map(|stored| stored.path)
         .ok_or(PresetError::NotAPreset)
 }
