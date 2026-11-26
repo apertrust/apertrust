@@ -603,6 +603,46 @@ fn undo_batch_from_a_view_only_photo_skips_it_and_takes_the_others_back() {
     remove(&active);
 }
 
+/// A photo of the batch opened for viewing only while an Undo's job is under way, reached
+/// live by it, is skipped and named as view-only, its file untouched.
+#[test]
+fn a_view_only_photo_reached_live_by_an_undo_is_named_view_only() {
+    let active = scratch("batch-undo-live-view-only");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([warm(40.0, &named)]);
+    until_let_go(&mut driven);
+    driven.writes();
+    driven.run([Command::Undo]);
+    // The job holds the first other photo's route; that photo, made view-only, opens.
+    let route = next_route(&mut driven);
+    let sidecar = sidecar::path_for(&others[0]);
+    let xml = std::fs::read_to_string(&sidecar).unwrap().replace(
+        r#"apertrust:toolVersion="2""#,
+        r#"apertrust:toolVersion="3""#,
+    );
+    std::fs::write(&sidecar, &xml).unwrap();
+    driven.open(&others[0]);
+    assert!(driven.engine.open.as_ref().unwrap().view_only.is_some());
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!(changed, &[active.clone(), others[1].clone()]);
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ViewOnly(_))] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), xml);
+    remove(&active);
+}
+
 /// Undo of a batch whose job still runs cancels the job first, then takes the batch back on
 /// the photos it reached.
 #[test]

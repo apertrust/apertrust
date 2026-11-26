@@ -890,7 +890,7 @@ impl Engine {
 
     /// The batch `pending` taken back, or put back where `redo`, on the open photo, `photo`,
     /// by its own Undo or Redo where that would move over it, and recorded; skipped and
-    /// named as changed since otherwise.
+    /// named as open for viewing only, before its history is read, or as changed since.
     fn move_live(
         &mut self,
         pending: &Arc<Pending>,
@@ -898,6 +898,10 @@ impl Engine {
         redo: bool,
         events: &mut Vec<Event>,
     ) -> Effect {
+        if let Some(view_only) = self.open.as_ref().and_then(|open| open.view_only.clone()) {
+            pending.reach(photo, Outcome::Skipped(Skip::ViewOnly(view_only)));
+            return Effect::default();
+        }
         let batch = pending.batch.id;
         // A change not yet a step, a gesture's among them, is a later change: made one first.
         self.step_pending();
@@ -931,8 +935,7 @@ impl Engine {
     /// A rating's batch `pending` taken back, or put back where `redo`, on the open photo,
     /// `photo`, whose own Undo or Redo would not move it, opened since in a session of its
     /// own or changed since in its edit: from the record the batch kept, as its job does for
-    /// a photo not open ([`Pending::put_rated`]); skipped and named as changed since, or as
-    /// open for viewing only.
+    /// a photo not open ([`Pending::put_rated`]); skipped and named as changed since.
     fn put_rated_live(
         &mut self,
         pending: &Arc<Pending>,
@@ -943,10 +946,6 @@ impl Engine {
         let Some(open) = &mut self.open else {
             return Effect::default();
         };
-        if let Some(view_only) = &open.view_only {
-            pending.reach(photo, Outcome::Skipped(Skip::ViewOnly(view_only.clone())));
-            return Effect::default();
-        }
         let clock = open.history.stamp();
         let entries = fields::first_mut(&mut open.file);
         let Some((record, rating)) = pending.put_rated(photo, entries, redo, clock) else {
