@@ -35,9 +35,9 @@ use crate::components::{
     PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup, Quad, Rail, RailLine,
     RailNode, ReadoutRow, Reference, ReferenceRow, RowField, SaveState, Scale, Scope, ScopeView,
     Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch, SwatchFill, Swatches,
-    Switch, TabBar, TabBarAction, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction,
-    ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction,
-    WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
+    Switch, TabBar, TabBarAction, Tag, Thumb, Toggle, ToggleRow, ToolButton, Toolbar,
+    ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks, ViewerBar,
+    ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -251,6 +251,9 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Fact list");
         fact_lists(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Tag");
+        tags(ui, &t);
         ui.add_space(t.spacing.l);
         heading(ui, "Timeline rail");
         rails(ui, &t);
@@ -740,6 +743,31 @@ fn fields_row(ui: &mut Ui, demo: &mut [f64; 2], fold: Fold) {
             }
         });
     });
+}
+
+/// The Info tool's tags, on the panel and in its well, each saying in its tooltip what it
+/// stands for, and its flash beside them, fired and not.
+fn tags(ui: &mut Ui, t: &Theme) {
+    let line = |ui: &mut Ui| {
+        ui.horizontal(|ui| {
+            Tag::new("AWB").tip("White balance: Auto").show(ui);
+            Tag::new("WB").tip("White balance: Manual").show(ui);
+            Tag::new("DNG").tip("Digital Negative").show(ui);
+            Tag::new("CR3").tip("Canon Raw 3").show(ui);
+            let side = vec2(crate::Icon::Flash.size(), crate::Icon::Flash.size());
+            let (rect, _) = ui.allocate_exact_size(side, Sense::hover());
+            crate::Icon::Flash.paint(ui.painter(), rect, t.colors.text);
+            let (rect, _) = ui.allocate_exact_size(side, Sense::hover());
+            crate::Icon::FlashOff.paint(ui.painter(), rect, t.colors.text_disabled);
+        });
+    };
+    line(ui);
+    ui.add_space(t.spacing.s);
+    Frame::new()
+        .fill(t.colors.sunken)
+        .corner_radius(t.shape.radius)
+        .inner_margin(t.spacing.s)
+        .show(ui, line);
 }
 
 /// The Metadata tool's facts (decision 110): a file name cut in its middle keeping its

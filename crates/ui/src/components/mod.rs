@@ -66,6 +66,7 @@ mod steps;
 mod swatches;
 mod switch;
 mod tabs;
+mod tag;
 mod text_field;
 mod toggle_row;
 mod toolbar;
@@ -128,6 +129,7 @@ pub use slider::{Mark, Quad, SliderAction, SliderRow, Track, takes_digits};
 pub use swatches::{Swatch, SwatchFill, Swatches};
 pub use switch::Switch;
 pub use tabs::Tabs;
+pub use tag::Tag;
 pub use text_field::{PathField, PathOutput, TextField, Variable};
 pub use toggle_row::ToggleRow;
 pub use toolbar::{
