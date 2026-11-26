@@ -60,6 +60,12 @@ pub const NOT_CREATED: &str = "style-not-created";
 /// The messages that say why a name cannot be taken: empty, and another style's.
 const REFUSED: (&str, &str) = ("styles-name-empty", "styles-name-taken");
 
+/// Why a dialog refuses the name typed, `name`, as it would be written ([`tidy`]), in
+/// `words`: empty, or one of `taken`; none where it can take it.
+fn refused_name(name: &str, taken: &[String], words: &Translator) -> Option<String> {
+    refusal(&tidy(name), taken, REFUSED, &Args::new(), words)
+}
+
 /// Whether the edit holds `state`'s tool (decision 106): a value off its default or a
 /// switched tool on (`ToolState::edited`), or a mark. A switched tool off holds its marks
 /// alone, as the edit keeps it.
@@ -105,12 +111,23 @@ pub fn lines(tools: &[&dyn ProcessingTool], states: &[ToolState], words: &Transl
     lines
 }
 
-/// The styles' names in `folder`, trimmed, which a new style cannot take; a file that
-/// cannot be read is left out with a warning under `-d settings`.
+/// The styles' names in `folder`, as the tree reads them ([`tidy`]), which a new style
+/// cannot take; a file that cannot be read is left out with a warning under `-d settings`.
 pub fn taken(folder: &Path) -> Vec<String> {
     (stored(folder).into_iter())
-        .map(|stored| stored.name.trim().to_owned())
+        .map(|stored| tidy(&stored.name))
         .collect()
+}
+
+/// A style's `name` as the tree reads it and a new one is written: each of its names between
+/// `|` trimmed, as the tree's folders are, and the blank ones dropped, so `|Film|Cool`,
+/// `Film||Cool` and `Film |Cool` are `Film|Cool`, one Film folder with `Film|Warm`'s.
+pub fn tidy(name: &str) -> String {
+    let parts: Vec<&str> = (name.split('|'))
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect();
+    parts.join("|")
 }
 
 /// The names a dialog refuses a person's style: those `folder`'s styles hold ([`taken`]),
@@ -135,7 +152,7 @@ pub fn stored(folder: &Path) -> Vec<Stored> {
 /// What the dialog asked of the app as Create was pressed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Asked {
-    /// Trimmed, never empty.
+    /// As it is written ([`tidy`]), never empty.
     pub name: String,
     pub description: Option<String>,
     /// The tools checked, in the dialog's order.
@@ -154,7 +171,7 @@ pub fn create(
     asked: &Asked,
     build: &str,
 ) -> Result<PathBuf, PresetError> {
-    let name = asked.name.trim();
+    let name = &tidy(&asked.name);
     if taken(folder).iter().any(|taken| taken == name) {
         return Err(PresetError::NameTaken(name.to_owned()));
     }
@@ -192,7 +209,7 @@ pub fn said(words: &Translator, name: &str, error: Option<&PresetError>) -> Stri
 /// disabling Create.
 #[derive(Debug)]
 pub struct StyleDialog {
-    /// The names it cannot take, trimmed.
+    /// The names it cannot take, tidied ([`tidy`]).
     taken: Vec<String>,
     lines: Vec<Line>,
     name: String,
@@ -216,7 +233,7 @@ impl StyleDialog {
 
     /// Whether Create can be pressed: a name it can take, and a tool checked.
     fn able(&self, words: &Translator) -> bool {
-        let refused = refusal(&self.name, &self.taken, REFUSED, &Args::new(), words);
+        let refused = refused_name(&self.name, &self.taken, words);
         refused.is_none() && self.lines.iter().any(|line| line.checked)
     }
 
@@ -224,7 +241,7 @@ impl StyleDialog {
     fn asked(&self) -> Asked {
         let description = self.description.trim();
         Asked {
-            name: self.name.trim().to_owned(),
+            name: tidy(&self.name),
             description: (!description.is_empty()).then(|| description.to_owned()),
             tools: (self.lines.iter())
                 .filter(|line| line.checked)
@@ -246,7 +263,7 @@ impl SheetContent for StyleDialog {
     fn rows(&mut self, ui: &mut egui::Ui, words: &Translator) -> bool {
         let t = theme(ui.ctx());
         let taken = &self.taken;
-        let refused = |name: &str| refusal(name, taken, REFUSED, &Args::new(), words);
+        let refused = |name: &str| refused_name(name, taken, words);
         let enter = name_rows(ui, &mut self.name, &mut self.focused, refused);
         description_rows(ui, &mut self.description);
         ui.add(Label::new(words.text("styles-tools")).selectable(false));
@@ -295,7 +312,7 @@ pub struct RenameDialog {
     /// Whether it copies the built-in style `from` into Custom Styles, rather than renaming
     /// the person's.
     copy: bool,
-    /// The names it refuses, trimmed.
+    /// The names it refuses, tidied ([`tidy`]).
     taken: Vec<String>,
     name: String,
     focused: bool,
@@ -356,12 +373,12 @@ impl SheetContent for RenameDialog {
 
     fn rows(&mut self, ui: &mut egui::Ui, words: &Translator) -> bool {
         let taken = &self.taken;
-        let refused = |name: &str| refusal(name, taken, REFUSED, &Args::new(), words);
+        let refused = |name: &str| refused_name(name, taken, words);
         name_rows(ui, &mut self.name, &mut self.focused, refused)
     }
 
     fn button(&self, words: &Translator) -> (String, bool) {
-        let refused = refusal(&self.name, &self.taken, REFUSED, &Args::new(), words);
+        let refused = refused_name(&self.name, &self.taken, words);
         (words.text(self.words()[2]), refused.is_none())
     }
 
@@ -369,7 +386,7 @@ impl SheetContent for RenameDialog {
         Output::StyleRename {
             from: self.from.clone(),
             file: self.file.clone(),
-            to: self.name.trim().to_owned(),
+            to: tidy(&self.name),
             copy: self.copy,
         }
     }
@@ -389,17 +406,18 @@ pub fn copy_name(from: &str, taken: &[String], words: &Translator) -> String {
     }
 }
 
-/// Renames the style in `file` in `folder` to `to`, its file named from its new name,
-/// refusing a name another style holds (`presets::rename`). Returns its new path.
+/// Renames the style in `file` in `folder` to `to` ([`tidy`]), its file named from its new
+/// name, refusing a name another style holds (`apertrust_library::presets::rename`).
+/// Returns its new path.
 pub fn rename(folder: &Path, file: &str, to: &str) -> Result<PathBuf, PresetError> {
-    files::rename(&path_of(folder, file)?, to)
+    files::rename(&path_of(folder, file)?, &tidy(to))
 }
 
-/// Copies the style built in as `id` into `folder` as `to`, its entries and description as
-/// they are, `build` recorded in it, refusing a name a style in the folder holds. Returns
-/// its path.
+/// Copies the style built in as `id` into `folder` as `to` ([`tidy`]), its entries and
+/// description as they are, `build` recorded in it, refusing a name a style in the folder
+/// holds. Returns its path.
 pub fn copy(folder: &Path, id: &str, to: &str, build: &str) -> Result<PathBuf, PresetError> {
-    let to = to.trim();
+    let to = &tidy(to);
     if taken(folder).iter().any(|taken| taken == to) {
         return Err(PresetError::NameTaken(to.to_owned()));
     }

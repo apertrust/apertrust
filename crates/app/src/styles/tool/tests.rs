@@ -88,6 +88,32 @@ fn the_tree_makes_folders_of_the_bar_in_names_each_level_in_order() {
     assert_eq!(names(children), ["Cool film", "Warm film"]);
 }
 
+/// A blank folder name is dropped, and each name trimmed, as a style is read and as one is
+/// written: `|Film |Cool film` is in the one Film folder with `Film|Warm film`, sharing its
+/// open or closed key.
+#[test]
+fn a_blank_folder_name_is_dropped_as_styles_are_read_and_written() {
+    assert_eq!(super::super::tidy(" |Film| |Cool film "), "Film|Cool film");
+    assert_eq!(super::super::tidy("Film||Warm film"), "Film|Warm film");
+    assert_eq!(super::super::tidy(" Film | Warm film"), "Film|Warm film");
+    let read = |name: &str| super::listed(&files::Stored::new(Kind::Style, name), TOOLS);
+    let styles = [read("Film|Warm film"), read("|Film |Cool film")];
+    let shown: Vec<&Listed> = styles.iter().collect();
+    let tree = tree_of(&shown, CUSTOM);
+    let [Node::Folder { path, children, .. }] = &tree[..] else {
+        panic!("one Film folder: {tree:?}");
+    };
+    assert_eq!((path.as_str(), children.len()), ("custom|Film", 2));
+    let folder = std::env::temp_dir().join(format!("apertrust-styles-tidy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&folder);
+    super::super::copy(&folder, "lomo", "|Film||My lomo", "0.1.0").unwrap();
+    // Written so: the file holds the tidied name, not only read as it.
+    let written = files::list(&folder, Kind::Style).files;
+    let names: Vec<&str> = written.iter().map(|stored| stored.name.as_str()).collect();
+    assert_eq!(names, ["Film|My lomo"]);
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
 #[test]
 fn find_style_keeps_the_styles_whose_names_hold_its_text() {
     let listed = listed();
