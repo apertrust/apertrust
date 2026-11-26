@@ -14,7 +14,7 @@ People want the actions they use on every photo within reach, and tools want but
 
 ## Decision
 
-**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the menu button, the caption buttons and the Mac's traffic lights may be moved or hidden. The menu button is fixed at the Toolbar's start on Windows and Linux, no item of the list. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, the toolbar menu with View › Panels' items, Reset Toolbar among them, and an action's own menu, Guides' the first. Planned: the Customise Toolbar window, much later.
+**The Toolbar is one a person customises.** It is an ordered list of item ids, kept for each workspace and drawn by the app from the registry. Everything but the menu button, the caption buttons and the Mac's traffic lights may be moved, removed or added, in the customise mode alone, within the Toolbar itself, or in the workspace's file. The menu button is fixed at the Toolbar's start on Windows and Linux, no item of the list. Built: tools' items, the set of what can be placed, and the list, kept in each workspace's file and drawn from that set, with the guards but the assistant's, the overflow with the window's minimum width, the labels with their setting, the toolbar menu with View › Panels' items, and an action's own menu, Guides' the first. Planned: the customise mode (The customise mode, below).
 
 ### The list and its defaults
 
@@ -26,7 +26,7 @@ There is one ordered list of item ids for each workspace. The menu button, the c
 | Windows, Linux | (the menu button) the same, then 16 points (`spacing.xl`) before minimise, maximise and close |
 
 - There is one list for every platform.
-- **The menu button** stands first on Windows and Linux, before every item, whatever the list holds, drawn as the app's icon or ☰ as the setting Menu button, `toolbar.menu_button`, says ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is the one way to the menus by the pointer there, so nothing moves, removes or adds it, the workspace's file and the Customise Toolbar window alike; the Mac draws none. A file's `menu-button`, written by an older build, is an id this build does not know: skipped where it stands, and kept in the file.
+- **The menu button** stands first on Windows and Linux, before every item, whatever the list holds, drawn as the app's icon or ☰ as the setting Menu button, `toolbar.menu_button`, says ([0039](0039-one-top-bar-native-menus-on-the-mac-one-menu-button-elsewhere.md)). It is the one way to the menus by the pointer there, so nothing moves, removes or adds it, the workspace's file and the customise mode alike; the Mac draws none. A file's `menu-button`, written by an older build, is an id this build does not know: skipped where it stands, and kept in the file.
 - Before and After, Clipping Warnings and Zoom to 100% are offered but not in the default, since the viewer bar has them. So is Settings….
 - **The cursors' well,** `cursors`, stands between two flexible spaces at the start of the middle group, the jobs spinner and the save state after it, which they centre in the room between the actions at the start and Guides, Copy edit and Apply edit at the end ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md), [cursors.md](../cursors.md#the-well)). Hidden, it leaves every cursor with a key reachable by it, and every cursor's work by its tool's own button, so a cursor with no key, as Exposure's, waits for the well or a key the person gives it: Select on Esc, Pan on A held, a picker's work by its tool's picker button, a mask's by the Layers section's buttons, Copy and apply's by Copy edit and Apply edit.
 
@@ -50,7 +50,7 @@ There is one ordered list of item ids for each workspace. The menu button, the c
   - `icon` names one of `apertrust-ui`'s icons, `export`, or is none for an icon `Action` end item's action, which takes its button's icon ([0107](0107-packed-lines-one-line-row-with-end-items.md)).
 - The definition's check refuses an empty action, an action a processing tool does not have, the same action twice, no icon on an action that is no icon end item's, a utility's always, and more than two items on a processing tool; a utility has no limit. App tests fail on a declared action the registry does not hold and on an icon name `apertrust-ui` does not have.
 - Offering an action only makes it a candidate: it is on the toolbar only where a person places it.
-- The app lists every candidate in one stable order, the parts, the app's own actions, every tool's items in the tools' order, then `space` and `flexible-space`, each with its id, its kind, its icon and its words' id: the Toolbar draws from that list and the Customise Toolbar window lists it.
+- The app lists every candidate in one stable order, the parts, the app's own actions, every tool's items in the tools' order, then `space` and `flexible-space`, each with its id, its kind, its icon and its words' id: the Toolbar draws from that list and the customise mode's Add ▸ lists it.
 
 The items declared:
 
@@ -90,15 +90,12 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 ### The toolbar menu
 
-**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, the caption buttons apart, and the menu button while the Toolbar is the title bar, on every platform, as does Shift+F10 or the Menu key on a focused item or on the menu button, which opens it with no Hide, as on empty space. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
+**A right-click anywhere on the toolbar opens the toolbar menu,** on an item or on empty space, the caption buttons apart, and the menu button while the Toolbar is the title bar, on every platform, as does Shift+F10 or the Menu key on a focused item or on the menu button, which opens it as on empty space. It is an app-only place of decision 91's, `Place::Toolbar`. It holds:
 
-1. Hide "Undo", on an item;
-2. a separator;
-3. Toolbar Labels, checked while on;
-4. Customise Toolbar…, drawn disabled until its window is built, its tip "Customise Toolbar comes in a later version";
-5. Reset Toolbar, the registry's `reset-toolbar`, with no default key: it takes the `toolbar` list out of the workspace's file, so the Toolbar follows each build's default again, a hidden item back. It is enabled only while the file holds a list, drawn disabled otherwise and, saying why, while `--conf` sets the workspace, as Workspace ▸ is. It asks for no confirmation: only the Toolbar's order is lost, and the default is what most people have.
+1. Toolbar Labels, checked while on;
+2. Customise Toolbar…, which puts the main window into the customise mode, the item it opened on selected (The customise mode, below).
 
-**Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: Hide "Undo" from Shift+F10 or the Menu key on that item, which is focusable while it is shown; the others in View › Panels, which F10 opens on Windows and Linux, and the system's Ctrl+F2 reaches in the Mac's menu bar. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone.
+**Every item is reachable from the keys,** as decision 91 asks, whatever the toolbar shows: both are in View › Panels, which F10 opens on Windows and Linux, and the system's Ctrl+F2 reaches in the Mac's menu bar. A toolbar with nothing focusable needs no keyboard route of its own, since nothing in its menu acts on it alone. Nothing in the toolbar menu changes the arrangement: moving, adding, removing and Reset Toolbar happen in the customise mode alone.
 
 **The system's window menu** is no longer on a right-click on the toolbar's empty space on Windows and Linux. It stays on the system's own key, Alt+Space on Windows and GNOME, and on a right-click on the menu button while the toolbar is the title bar, as on a title bar's icon; X11 still has none, and the Mac's conventions are unchanged.
 
@@ -108,7 +105,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 - **Declared as data,** as decision 91's menus are, in the app's list of the Toolbar's actions with a menu, `menus::ACTION_MENUS`: its own registry actions, and a setting's choices as a checked list, each choice an action of its own, the one in use checked; a submenu one level deep. The app builds the menu, and only the action chosen runs.
 - **Opened** by a right-click, a Control-click on the Mac, Shift+F10, the Menu key or a screen reader's ShowContextMenu on that item, labels on or off.
-- **It holds** its own items first, a separator, then the toolbar menu's entries, Hide "Guides" first, so the toolbar menu stays reachable from every item.
+- **It holds** its own items first, a separator, then the toolbar menu's entries, so the toolbar menu stays reachable from every item.
 - **An item without one** opens the toolbar menu, as a right-click anywhere else on the Toolbar does.
 - **In »,** such an item is a submenu under its words: the action itself, checked while on, a separator, then its own items, so a folded item still runs with a click.
 - **Every item is reachable elsewhere,** as decision 91 asks: Guides' in View › Guides ▸, which holds the action, a separator, its types, a separator and Flip ▸.
@@ -118,7 +115,7 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 ### Customising
 
-- **The workspace's file** is the full way to customise until a window exists, and stays one after it (83, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)): `toolbar` in `<user data>/workspaces/<id>.toml`, and the labels app-wide in `settings.toml`:
+- **The workspace's file** is a full way to customise beside the customise mode, and stays one (83, [0096](0096-workspaces-as-files-hidden-tools-and-finding-a-tool.md)): `toolbar` in `<user data>/workspaces/<id>.toml`, and the labels app-wide in `settings.toml`:
 
   ```toml
   # workspaces/default.toml: the toolbar is one key of the workspace's whole file, beside its tabs
@@ -138,9 +135,40 @@ The overflow always keeps 24 points of them. On Windows the hit map's `HTCAPTION
 
 - A workspace whose file has no `toolbar`, a built-in nobody changed among them, follows each build's default toolbar, so later default items reach anyone who never changed theirs. Only a change to the toolbar writes `toolbar`, the whole list as it then is; a write for a change to the tabs leaves a missing list missing.
 - An id this build does not know, a tool or an action removed or from a newer build, is skipped and kept in the file.
-- **Reset Toolbar,** from the toolbar menu and View › Panels, takes `toolbar` out of the file as a Toolbar change writes it, read again first, the tabs, `pinned`, `order`, `hidden` and every other key kept as the file has them; a built-in's file then holding nothing its bundled file does not stays as it is. Named after the tab bar's Reset Tab (96).
+- **Reset Toolbar,** the registry's `reset-toolbar`, in the customise mode alone, makes the draft the default; Done then takes `toolbar` out of the file as a Toolbar change writes it, read again first, the tabs, `pinned`, `order`, `hidden` and every other key kept as the file has them; a built-in's file then holding nothing its bundled file does not stays as it is. Named after the tab bar's Reset Tab (96).
 - A new workspace from the visual editor copies the list, and Workspace ▸'s Restore Defaults, deleting a built-in's file, puts the default back.
-- **Customise Toolbar…**, from the toolbar menu and View › Panels, opens a dedicated window of the dialog host ([0041](0041-dialogs-as-native-modal-windows.md)), built much later; its design is settled when it is built. There is no palette inside the main window.
+- **Customise Toolbar…**, from the toolbar menu and View › Panels, puts the main window into the customise mode (below).
+
+### The customise mode
+
+**Every change to the arrangement happens only in the customise mode,** or in the workspace's file: moving, adding and removing. At rest the toolbar menu and View › Panels hold Toolbar Labels and Customise Toolbar… alone: the arrangement, and its reset, belong only to the mode.
+
+**The mode stays within the Toolbar.** Customise Toolbar… puts the main window into it, with no palette and no panel, for the workspace shown alone. It is a modal state, `State::modal` and `State::dialog` set as under About, with one exception to the modal gate: the Toolbar's region and its menus take input. So it is not `egui::Modal`, which blocks everything under it: the rest of the window, the Tools panel, the Viewer, the Browser and any floating panel, dims under `scrim` on an `Area` of its own and takes no input, and every action that opens a dialog, the view's keys, View › Workspace, Open… and the photo's Undo rest. Jobs, saving and the engine keep running. Customise Toolbar… is disabled while a modal is up, so the mode never opens over a dialog.
+
+**The Toolbar becomes editable:**
+
+- each item on a `raised` plate, `button` under the pointer and `accent_subtle` selected; the spacings as `sunken` tiles, a flexible space with Lucide's `move-horizontal` and a fixed space a 16-point tile with a bar; the parts that are invisible at rest with faces, the still spinner and "Saving…"; every item drawn enabled and at rest, since disabled and on states are the photo's;
+- the items wiggle once as the mode starts, a translation of up to 1.5 points over `wiggle_ms` (360 ms), none with reduced motion or the motion tokens at zero;
+- Done, a primary text button, at its end, outside what scrolls;
+- at most one item selected, by a click, a right-click or ← and →.
+
+**The menu button** (Windows and Linux) stays fixed at the start, outside the list: drawn as at rest with no plate, it does not wiggle, is never selected, dragged, moved, removed or listed in Add ▸, and takes no click, the menus resting as under any modal. A right-click on it opens the customise menu as at the list's start, so Add ▸ adds first.
+
+**The customise menu,** on a right-click on an item, which selects it, the cursors' well and the spacing tiles included, or on empty space, a Control-click on the Mac, or Shift+F10, the Menu key or ShowContextMenu on the focused Toolbar: Move Left, Move Right, Remove from Toolbar (on an item alone), —, Add ▸, —, Reset Toolbar, Toolbar Labels, —, Done. Add ▸ lists only what the draft does not hold, in the set's order: the parts and the app's own actions, a submenu per tool with an item left, titled by the tool's title, then Space and Flexible Space, always. Its items are registry actions, as decision 91 asks: Move Left, Move Right, Remove from Toolbar and Done are actions available only while customising, with no default keys; `reset-toolbar` keeps its id, available only while customising and disabled, saying why, while `--conf` sets the workspace, and `toolbar-labels` keeps its id; both act on the draft in the mode; Add ▸'s items are compound ids, an action and the placeable's id joined, as Add Tool ▸'s are. Never on the caption buttons, the traffic lights or Done.
+
+**Moving** is also by a drag along the Toolbar, a press moving 6 points, with an insertion line at the nearest gap, and by Alt+← and Alt+→ (Option on the Mac). Every drag has a single-pointer way, the menu's Move Left and Move Right, and a key, so WCAG 2.2's 2.5.7 is met. A release off the Toolbar does nothing. Delete and Backspace remove.
+
+**No window gestures while customising:** no part of the Toolbar moves the window or takes a double-click. The caption buttons and the traffic lights stay live; the resize bands too.
+
+**It is a draft,** of the list, the labels and whether the list is Reset's:
+
+- Esc (Cmd+. too on the Mac) cancels, as do closing the window and Quit, which then close or quit as they would: nothing is written.
+- Done, the button, the menu's Done or Enter, writes once: `Move::ResetToolbar` after a Reset, the list still the default, where the file holds a list; else nothing where the list is unchanged; otherwise `Move::Toolbar` with the whole list. `toolbar.labels` is written only if the labels were flipped. None of it is an edit.
+- An id this build does not know is anchored to the known id before it at the mode's start and written back after that anchor, or after the nearest earlier known id still there, or at the start; an old list's `menu-button` is dropped. A Reset drops them with the list.
+
+**While customising, the Toolbar never folds.** It is one line that scrolls sideways between its start and Done, the flexible spaces shrinking to 40-point tiles, with a fold mark, a small », on what » would take at rest at this width and on each fixed space it would drop; » itself is drawn as a face before Done. `Toolbar::least_width` still records the at-rest fold, so the window's minimum width does not jump.
+
+**Screen readers** meet one modal `Dialog` named with the workspace, holding the Toolbar as a horizontal `ListBox` whose options carry their names, positions, selection and fold marks, with Move Left, Move Right and Remove from Toolbar as custom actions, and Done a default button; the Toolbar's `Toolbar` role comes back as the mode ends. Entering, each change and leaving are announced politely.
 
 ### The overflow
 
@@ -191,7 +219,11 @@ The toolbar is measured every frame at the current scale and language, and gives
 ## Options considered
 
 - **A fixed Toolbar, as built.** No room for a person's own actions or a tool's.
-- **A palette inside the main window,** from which items are dragged onto the toolbar. Drags on a title bar compete with moving the window, and it is a second mode of the main window. A dedicated window is one place, and it can wait while the file serves.
+- **A dedicated window of the dialog host, holding a copy of the Toolbar.** A drag cannot cross from the dialog host's window into the main window, so every drag would land on a copy, and the person would watch two drawings of one list.
+- **A palette hanging under the Toolbar inside the window,** from which items are dragged onto it. More visible, but bigger to build, a palette, a hanging panel and a drag across two surfaces, with no single-pointer way. That no part of the Toolbar moves the window in the mode, and that the mode is one more modal state like About, answer the drag on a title bar and a second mode of the main window.
+- **A dialog with two lists,** what is placed and what can be. Abstract: a vertical list standing for a horizontal bar.
+- **Reset Toolbar at rest,** in the toolbar menu and View › Panels. It changes the arrangement outside the mode, all at once, with no draft for Esc to cancel.
+- **Hide on the toolbar menu at rest,** beside the mode. Arrangement would then happen in two places, one of them without Add.
 - **F6 landing on the toolbar itself when nothing in it is focusable,** with Shift+F10 there opening the toolbar menu. A focus stop with no control is a new kind of stop for one case; View › Panels holds the toolbar menu's items on the route F10 already keeps.
 - **The menu button an item of the list,** moved or hidden as the others are, with Show Menu Button to put it back. On Windows and Linux it is the one way to the menus by the pointer, so hiding it is never what a person wants, and a guard and an action to restore it would serve that one case alone.
 - **A limit on fixed spaces.** A number would be arbitrary and still depend on the window's width; removing them as the bar narrows fits any number.
@@ -200,7 +232,7 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **Labels per workspace, or per item.** Labels are about reading the bar, not about the task. One setting is simpler and folds as one step.
 - **The word beside its icon,** 6 points after it at the body's size. Each item is wider, so the bar folds sooner, and it reads unlike the Tools panel's tab names, which sit under their icons.
 - **A badge or a chevron on an item with a menu of its own,** as the cursors' well's groups have. It widens the item and sets it apart from its neighbours for a menu the tooltip can name, as darktable's guides button's does.
-- **The action's menu in place of the toolbar menu on its item.** Hide and Toolbar Labels would then need another way from the pointer there.
+- **The action's menu in place of the toolbar menu on its item.** Toolbar Labels and Customise Toolbar… would then need another way from the pointer there.
 - **darktable's popover of guide settings on the right-click.** A menu of registry actions keeps every choice reachable from the menu bar and the keys; the overlay's colour, its contrast and the grid's lines come later, in Settings or a popover.
 - **The labels inside the 44-point bar,** 6 points above the icon and 3 below it. It squeezes icon and word together and leaves no room below the word.
 - **Action icons at 16 points,** the viewer bar's size. Beside the Tools panel's 22-point tab icons they read small.
@@ -226,16 +258,17 @@ The toolbar is measured every frame at the current scale and language, and gives
 - **Decision 39:** the Mac's traffic lights are centred in the Toolbar at whichever height it has, so the close button's centre is 31 points from the window's left and top edges with labels on and 22 with them off.
 - **`apertrust-ui`:** `Toolbar` draws a list of items, with spaces, the overflow and labels, in place of its fixed parts, and » in place of ⋯ More actions. It knows parts and items only as plain data. `Toolbar::height` gives its height for the labels setting, which the app sizes the Toolbar's panel and places the traffic lights by; `IconButton::icon_size` draws an action's icon at 22 points.
 - **The app:**
-  - the placeable set, the parts, the app's own actions, the tools' items and the spacings, which the Toolbar and the Customise Toolbar window read;
+  - the placeable set, the parts, the app's own actions, the tools' items and the spacings, which the Toolbar and the customise mode read;
   - the list from the workspace in place of `TOOLBAR`;
   - the guards;
-  - the toolbar menu, with Reset Toolbar, `reset-toolbar`, and `layout::Move::ResetToolbar`;
+  - the toolbar menu; Reset Toolbar, `reset-toolbar`, in the customise mode, and `layout::Move::ResetToolbar`;
   - `toolbar.labels` in the settings schema;
-  - Reset Toolbar in View › Panels on every platform;
+  - Toolbar Labels and Customise Toolbar… in View › Panels on every platform;
   - the window's minimum width raised to what the toolbar never folds;
   - the tests: of the overflow at 500 points, of the parts' ids, of the declared actions and the icon names, and of the words' width.
 - **`apertrust-tools`:** `ToolbarItem` and `ToolDefinition::toolbar`, with their checks.
 - **An action's own menu** (built): in the app, `menus::ActionMenu` in `ACTION_MENUS`, its own menu and the one » shows, built with the toolbar menu's entries after it, with a test that every item is reachable elsewhere; the `guides` action, an action for each guide type and flip, View › Guides ▸, and `guides.type` and `guides.flip` in the settings schema. In `apertrust-ui`, `ToolbarButton::menu`, shown as a submenu in », its tooltip with the menu's line (`IconButton::tip_line`). Decision 91's Toolbar place holds it.
 - **The cursors' well** ([0104](0104-cursors-one-chosen-at-a-time-in-a-well-on-the-toolbar.md)) is a part of the list, `cursors`, by default between two flexible spaces; the built narrowing folds the actions before it.
 - **Windows' native hit testing** (planned, `apertrust-display`): it takes a right-click on an `HTCAPTION` rectangle itself (`WM_NCRBUTTONUP`) and reports it, so Windows does not open its menu there.
+- **The customise mode** (planned): in `apertrust-ui`, the Toolbar's edit state, reporting what was done as data, with the motion token `wiggle_ms` and Lucide's `move-horizontal`; in the app, the draft beside `toolbar.rs`, the scrim as its own `Area`, the customise menu as menu data, its registry actions, and `customise-toolbar` enabled; the toolbar menu's Hide and its action `toolbar-hide` gone.
 - **The default changes:** every item shows its word under its icon by default, and the narrowing's thresholds change with it.
