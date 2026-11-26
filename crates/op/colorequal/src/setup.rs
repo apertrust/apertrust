@@ -601,23 +601,74 @@ fn blur(buffer: usize, grid: [u32; 2], channels: u32, sigma: f32, whole: [u32; 2
         .deriche(sigma)
     };
     [
-        pass(
-            columns,
-            PassKind::Reduction,
-            uniforms(0),
-            Vec::new(),
-            lines(grid[0]),
-            &[UNIFORMS, at(line_in, buffer), at(line_out, scratch::TEMP)],
-        ),
-        pass(
-            rows,
-            PassKind::Reduction,
-            uniforms(1),
-            Vec::new(),
-            lines(grid[1]),
-            &[UNIFORMS, at(line_in, scratch::TEMP), at(line_out, buffer)],
-        ),
+        if spike_lines().ends_with("narrow") {
+            pass(
+                if channels == 1 {
+                    "blur_columns1_narrow"
+                } else {
+                    "blur_columns2_narrow"
+                },
+                PassKind::Reduction,
+                uniforms(0),
+                Vec::new(),
+                Some([16, 16 * grid[0].div_ceil(32)]),
+                &[UNIFORMS, at(line_in, buffer), at(line_out, scratch::TEMP)],
+            )
+        } else {
+            pass(
+                columns,
+                PassKind::Reduction,
+                uniforms(0),
+                Vec::new(),
+                lines(grid[0]),
+                &[UNIFORMS, at(line_in, buffer), at(line_out, scratch::TEMP)],
+            )
+        },
+        staged_rows(rows, channels, uniforms(1), grid, scratch::TEMP, buffer),
     ]
+}
+
+/// Experiment (#702), temporary: which line passes `prepare` plans, from
+/// `APERTRUST_SPIKE_LINES`: `single` (one buffer a pass, main's), `staged` (single,
+/// float2 rows staged through workgroup memory), `staged-narrow` (staged, the columns
+/// in workgroups of 32), `fused` (the triples' columns and rows fused), and
+/// `staged-fusedcols`, the default (the triples' columns fused, every float2 row
+/// staged).
+fn spike_lines() -> String {
+    std::env::var("APERTRUST_SPIKE_LINES").unwrap_or_else(|_| "staged-fusedcols".into())
+}
+
+/// A rows pass of `channels` from `from` into `to`, staged where the experiment says.
+fn staged_rows(
+    rows: &'static str,
+    channels: u32,
+    uniforms: Uniforms,
+    grid: [u32; 2],
+    from: usize,
+    to: usize,
+) -> Pass {
+    let (line_in, line_out) = match channels {
+        1 => (binding::LINE1_IN, binding::LINE1_OUT),
+        _ => (binding::LINE2_IN, binding::LINE2_OUT),
+    };
+    if channels == 2 && spike_lines().starts_with("staged") {
+        return pass(
+            "blur_rows2_staged",
+            PassKind::Reduction,
+            uniforms,
+            Vec::new(),
+            Some([16, 16 * grid[1].div_ceil(32)]),
+            &[UNIFORMS, at(line_in, from), at(line_out, to)],
+        );
+    }
+    pass(
+        rows,
+        PassKind::Reduction,
+        uniforms,
+        Vec::new(),
+        lines(grid[1]),
+        &[UNIFORMS, at(line_in, from), at(line_out, to)],
+    )
 }
 
 /// [`blur`] of three float2 buffers of the same grid at the same σ, in two line passes
@@ -628,7 +679,14 @@ fn blur3(
     grid: [u32; 2],
     sigma: f32,
     whole: [u32; 2],
-) -> [Pass; 2] {
+) -> Vec<Pass> {
+    let mode = spike_lines();
+    if mode == "single" || mode == "staged" || mode == "staged-narrow" {
+        return buffers
+            .iter()
+            .flat_map(|&buffer| blur(buffer, grid, 2, sigma, whole))
+            .collect();
+    }
     let uniforms = |axis: u32| {
         Uniforms {
             size: [whole[0], whole[1], grid[0], grid[1]],
@@ -639,7 +697,30 @@ fn blur3(
     };
     let [a, b, c] = buffers;
     let [ta, tb, tc] = temps;
-    [
+    if mode == "staged-fusedcols" {
+        let columns = pass(
+            "blur_columns2x3",
+            PassKind::Reduction,
+            uniforms(0),
+            Vec::new(),
+            lines(grid[0]),
+            &[
+                UNIFORMS,
+                at(binding::LINE2_IN, a),
+                at(binding::LINE2_OUT, ta),
+                at(binding::LINE2_IN_B, b),
+                at(binding::LINE2_OUT_B, tb),
+                at(binding::LINE2_IN_C, c),
+                at(binding::LINE2_OUT_C, tc),
+            ],
+        );
+        let mut passes = vec![columns];
+        for (from, to) in [(ta, a), (tb, b), (tc, c)] {
+            passes.push(staged_rows("blur_rows2", 2, uniforms(1), grid, from, to));
+        }
+        return passes;
+    }
+    vec![
         pass(
             "blur_columns2x3",
             PassKind::Reduction,

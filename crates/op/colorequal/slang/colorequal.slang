@@ -574,6 +574,31 @@ void blur_columns2(uint3 id: SV_DispatchThreadID)
     walk2(column, p.size.z, p.size.w, deriche_of(p));
 }
 
+// Experiment (#702): blur_columns2 and blur_columns1 in workgroups of 32 invocations, a
+// column each, so a narrow grid's columns spread over every compute unit: the pass's
+// size is 16 × 16 times the groups, one group a row of the dispatch.
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void blur_columns2_narrow(uint3 group: SV_GroupID, uint3 local: SV_GroupThreadID)
+{
+    ColorEqualParams p = params.ce;
+    uint column = group.y * 32 + local.x;
+    if (column >= p.size.z)
+        return;
+    walk2(column, p.size.z, p.size.w, deriche_of(p));
+}
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void blur_columns1_narrow(uint3 group: SV_GroupID, uint3 local: SV_GroupThreadID)
+{
+    ColorEqualParams p = params.ce;
+    uint column = group.y * 32 + local.x;
+    if (column >= p.size.z)
+        return;
+    walk1(column, p.size.z, p.size.w, deriche_of(p));
+}
+
 // Its horizontal pass, one invocation per row.
 [shader("compute")]
 [numthreads(16, 16, 1)]
@@ -584,6 +609,150 @@ void blur_rows2(uint3 id: SV_DispatchThreadID)
     if (row >= p.size.w)
         return;
     walk2(row * p.size.z, 1, p.size.z, deriche_of(p));
+}
+
+// Experiment (#702): blur_rows2 with its rows staged through workgroup memory, so the
+// reads and writes of a workgroup's rows are coalesced. A workgroup of ROWS_PER_GROUP
+// invocations walks as many rows, a chunk of CHUNK values of each at a time: the chunk
+// loaded into `stage_in` across the workgroup, each invocation walking its own row through
+// it into `stage_out`, then stored across the workgroup. The anticausal sweep loads the
+// causal sums back, each invocation reading only what it stored itself. Each row's sums
+// are walk2()'s, in its order.
+static const uint ROWS_PER_GROUP = 32;
+static const uint CHUNK = 16;
+static const uint STAGE_STRIDE = CHUNK + 1;
+groupshared float2 stage_in[ROWS_PER_GROUP * STAGE_STRIDE];
+groupshared float2 stage_out[ROWS_PER_GROUP * STAGE_STRIDE];
+
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void blur_rows2_staged(uint3 group: SV_GroupID, uint3 local: SV_GroupThreadID)
+{
+    ColorEqualParams p = params.ce;
+    Deriche d = deriche_of(p);
+    uint width = p.size.z;
+    uint rows = p.size.w;
+    uint t = local.x;
+    uint first_row = group.y * ROWS_PER_GROUP;
+    uint row = first_row + t;
+    bool walks = row < rows;
+    uint start = row * width;
+    uint chunks = (width + CHUNK - 1) / CHUNK;
+    float2 low = float2(-MEAN_BLUR_RANGE);
+    float2 high = float2(MEAN_BLUR_RANGE);
+
+    // The causal sweep, chunk by chunk from the start.
+    float2 xp = float2(0.0);
+    float2 yb = float2(0.0);
+    float2 yp = float2(0.0);
+    for (uint chunk = 0; chunk < chunks; chunk++)
+    {
+        uint c0 = chunk * CHUNK;
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint e = k * ROWS_PER_GROUP + t;
+            uint r = e / CHUNK;
+            uint c = e % CHUNK;
+            uint lrow = first_row + r;
+            float2 v = float2(0.0);
+            if (lrow < rows && c0 + c < width)
+                v = line2_in[lrow * width + c0 + c];
+            stage_in[r * STAGE_STRIDE + c] = v;
+            stage_out[r * STAGE_STRIDE + c] = float2(0.0);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (walks)
+        {
+            uint n_end = min(CHUNK, width - c0);
+            for (uint c = 0; c < n_end; c++)
+            {
+                float2 xc = clampf(stage_in[t * STAGE_STRIDE + c], low, high);
+                if (chunk == 0 && c == 0)
+                {
+                    xp = xc;
+                    yb = xp * d.coefp;
+                    yp = yb;
+                }
+                float2 yc = causal(d, xc, xp, yp, yb);
+                stage_out[t * STAGE_STRIDE + c] = yc;
+                xp = xc;
+                yb = yp;
+                yp = yc;
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint e = k * ROWS_PER_GROUP + t;
+            uint r = e / CHUNK;
+            uint c = e % CHUNK;
+            uint lrow = first_row + r;
+            if (lrow < rows && c0 + c < width)
+                line2_out[lrow * width + c0 + c] = stage_out[r * STAGE_STRIDE + c];
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    // The anticausal sweep, chunk by chunk from the end, adding to the causal sums.
+    float2 xn = float2(0.0);
+    float2 xa = float2(0.0);
+    float2 yn = float2(0.0);
+    float2 ya = float2(0.0);
+    for (uint left = chunks; left > 0; left--)
+    {
+        uint chunk = left - 1;
+        uint c0 = chunk * CHUNK;
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint e = k * ROWS_PER_GROUP + t;
+            uint r = e / CHUNK;
+            uint c = e % CHUNK;
+            uint lrow = first_row + r;
+            float2 v = float2(0.0);
+            float2 o = float2(0.0);
+            if (lrow < rows && c0 + c < width)
+            {
+                v = line2_in[lrow * width + c0 + c];
+                o = line2_out[lrow * width + c0 + c];
+            }
+            stage_in[r * STAGE_STRIDE + c] = v;
+            stage_out[r * STAGE_STRIDE + c] = o;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (walks)
+        {
+            uint n_end = min(CHUNK, width - c0);
+            for (uint n = n_end; n > 0; n--)
+            {
+                uint c = n - 1;
+                float2 xc = clampf(stage_in[t * STAGE_STRIDE + c], low, high);
+                if (left == chunks && n == n_end)
+                {
+                    xn = xc;
+                    xa = xn;
+                    yn = xn * d.coefn;
+                    ya = yn;
+                }
+                float2 yc = anticausal(d, xn, xa, yn, ya);
+                xa = xn;
+                xn = xc;
+                ya = yn;
+                yn = yc;
+                stage_out[t * STAGE_STRIDE + c] = stage_out[t * STAGE_STRIDE + c] + yc;
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint e = k * ROWS_PER_GROUP + t;
+            uint r = e / CHUNK;
+            uint c = e % CHUNK;
+            uint lrow = first_row + r;
+            if (lrow < rows && c0 + c < width)
+                line2_out[lrow * width + c0 + c] = stage_out[r * STAGE_STRIDE + c];
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
 }
 
 // blur_columns2 and blur_rows2 over three buffers at once (walk2x3).
