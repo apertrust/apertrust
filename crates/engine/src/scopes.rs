@@ -34,6 +34,7 @@ use std::time::Instant;
 use apertrust_color::illuminants::D50_XY;
 use apertrust_color::{Mat3, SRGB_PRIMARIES, apply, profile_rgb_to_xyz_d50, to_f32};
 use apertrust_plugin::{Kernel, PassHeader};
+use serde::{Deserialize, Serialize};
 
 use crate::compute::{ComputeError, GpuImage, GpuTimer, ImageKernel, POLL_INTERVAL};
 use crate::gpu::GpuContext;
@@ -75,7 +76,7 @@ const WORKGROUP_PIXELS: u32 = 64;
 /// The graphs to count besides the totals, which every count gives: only the graph a
 /// client shows, since the waveform takes 512 KiB a frame to read back and the
 /// vectorscope 64 KiB.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Graphs {
     pub histogram: bool,
     /// For the waveform and the RGB parade.
@@ -107,7 +108,7 @@ impl Graphs {
 
 /// How many pixels were counted, and how many clip: with any of red, green and blue at or
 /// below 0, and with any at or above 1. A pixel may count in both.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Totals {
     pub pixels: u32,
     pub shadows: u32,
@@ -116,7 +117,7 @@ pub struct Totals {
 
 /// For each channel, [`BINS`] counts evenly spaced from 0 to 1, black first; a value below
 /// 0 counts in the first, one at 1 or above in the last.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Histogram {
     pub red: Vec<u32>,
     pub green: Vec<u32>,
@@ -128,7 +129,7 @@ pub struct Histogram {
 
 /// For each channel, `levels` counts for each of `columns` columns of the frame, column
 /// after column from its left, the darkest level first.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Waveform {
     pub columns: usize,
     pub levels: usize,
@@ -144,7 +145,7 @@ pub struct Waveform {
 /// the right, saturation out from the centre on darktable's logarithmic scale to sRGB's
 /// most saturated colour at the edge. Each sample is the mean of a 2 × 2 block of the
 /// frame, a last odd row or column left out; one off the grid counts nowhere.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Vectorscope {
     pub size: usize,
     pub counts: Vec<u32>,
@@ -155,7 +156,7 @@ pub struct Vectorscope {
 }
 
 /// What one frame holds, as counted. Plain data, so it can move into the protocol.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Reading {
     /// The frame it counts, by the commands it includes, as its frame event says.
     pub through: u64,
@@ -170,6 +171,7 @@ pub struct Reading {
     pub vectorscope: Option<Box<Vectorscope>>,
     /// The count's GPU time; NaN where the device has no timestamp queries, or gave none,
     /// or there was nothing to count.
+    #[serde(with = "apertrust_base::wire::nan_as_null")]
     pub gpu_ms: f64,
     /// From the count's submission to the reading being picked up.
     pub latency_ms: f64,

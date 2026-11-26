@@ -47,6 +47,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 
+use serde::{Deserialize, Serialize};
+
 use super::library::{EditState, Shot};
 use super::summary::Known;
 use super::{Engine, Event, LibraryEvent, SessionError};
@@ -56,7 +58,8 @@ use super::{Engine, Event, LibraryEvent, SessionError};
 /// open's as listed so far, or the active photo, else the command is refused, as
 /// [`SessionError::NotInCollection`], and changes nothing; any other photo `Remove` or
 /// `Range`'s `order` names is passed over.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum SelectionCommand {
     /// These photos in place of the selection; the active photo closes unless it is among
     /// them.
@@ -96,7 +99,7 @@ pub enum SelectionCommand {
 }
 
 /// The selection and the active photo, the whole of [`super::Fact::Selection`].
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Selection {
     /// The photos selected: the collection's in the listing's order, each its folder's
     /// path as opened joined with its name, then the active photo where it is not one of

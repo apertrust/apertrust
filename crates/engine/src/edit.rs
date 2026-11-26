@@ -24,12 +24,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use apertrust_base::wire::Id;
 use apertrust_plugin::{ImageContext, Operation, Param, ParamError, ParamValues, Value};
 use apertrust_tools::check::{self, ToolError};
 use apertrust_tools::{
     Base, Control, ControlError, ControlKind, ControlValue, Controls, Coordinate, LabelValue, Mark,
     Picker, ProcessingTool, Range, ToolValues, Unit, View,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::pipeline::Instance;
@@ -51,46 +53,67 @@ pub struct Edit {
 }
 
 /// A change an edit refuses, or a binding that sets what it may not.
-#[derive(Debug, Clone, PartialEq, Error)]
+#[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum EditError {
     #[error("no tool {0}")]
     UnknownTool(String),
     #[error("{tool} has no control {control}")]
-    UnknownControl { tool: &'static str, control: String },
+    UnknownControl {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        control: String,
+    },
     #[error("{tool}: {source}")]
     Control {
-        tool: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
         source: ControlError,
     },
     /// An option of the choice that this photo does not list (decision 30), as
     /// demosaic's other sensor's methods: only an edit from another photo holds one.
     #[error("{tool}.{control}: this photo does not list {option}")]
     NotListed {
-        tool: &'static str,
-        control: &'static str,
-        option: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        option: Id,
     },
     #[error("{tool} has no preset row {preset}")]
-    UnknownPreset { tool: &'static str, preset: String },
+    UnknownPreset {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        preset: String,
+    },
     #[error("{tool}.{preset} has no option {option}")]
     UnknownOption {
-        tool: &'static str,
-        preset: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        preset: Id,
         option: String,
     },
     #[error("{tool}.{preset}: this photo cannot have {option}")]
     Unavailable {
-        tool: &'static str,
-        preset: &'static str,
-        option: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        preset: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        option: Id,
     },
     /// The tool's own fault, never the user's: its preset panicked for `option`, gave a
     /// value its control cannot take, or gave none for a control the row writes.
     #[error("{tool}.{preset}: {option} failed: {message}")]
     PresetFailed {
-        tool: &'static str,
-        preset: &'static str,
-        option: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        preset: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        option: Id,
         message: String,
     },
     /// A tool's colour picker's pick (decision 79) the tool got wrong: a write of a
@@ -99,16 +122,20 @@ pub enum EditError {
     /// fault; nothing is written.
     #[error("{tool}'s picker {picker} failed: {message}")]
     PickFailed {
-        tool: &'static str,
-        picker: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        picker: Id,
         message: String,
     },
     /// A coordinate's value, within its own range, that would put one of its view's
     /// controls outside its range.
     #[error("{tool}.{coordinate} refused: {source}")]
     Coordinate {
-        tool: &'static str,
-        coordinate: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        coordinate: Id,
         source: ControlError,
     },
     /// The tool's own fault, never the user's: its view or its inverse panicked, gave no
@@ -116,8 +143,10 @@ pub enum EditError {
     /// covers.
     #[error("{tool}.{view} failed: {message}")]
     ViewFailed {
-        tool: &'static str,
-        view: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        view: Id,
         message: String,
     },
     /// The tool's own fault, never the user's: its follow writes for `control` panicked,
@@ -125,43 +154,58 @@ pub enum EditError {
     /// cannot take (decision 27).
     #[error("{tool}: following {control} failed: {message}")]
     FollowFailed {
-        tool: &'static str,
-        control: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
         message: String,
     },
     /// The tool's own fault, never the user's: a change moved the range of a control it
     /// wrote itself, the command's or a follow write's, leaving it outside (decision 30).
     #[error("{tool}: the change moved {control}'s range away from the value it wrote")]
     ClampFailed {
-        tool: &'static str,
-        control: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        control: Id,
     },
     #[error("no operation {0}")]
     UnknownOperation(String),
     #[error("{operation}: {source}")]
     Param {
-        operation: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
         source: ParamError,
     },
     #[error("{operation}.{param} belongs to the tool {tool}, which sets it")]
     Owned {
-        operation: &'static str,
-        param: &'static str,
-        tool: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        param: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
     },
     /// A parameter its tool owns with no control, holding it at the operation's value
     /// for the photo (`ProcessingTool::fixed`), as Raw black/white point holds the crop.
     #[error("{operation}.{param} is fixed by the tool {tool}")]
     Fixed {
-        operation: &'static str,
-        param: &'static str,
-        tool: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        param: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
     },
     #[error("{operation} runs only while a tool sets it, so only tools set its parameters")]
-    Optional { operation: &'static str },
+    Optional {
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        operation: Id,
+    },
     #[error("the tool {tool}: {source}")]
     Binding {
-        tool: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
         source: ToolError,
     },
 }

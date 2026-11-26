@@ -43,9 +43,11 @@
 use std::num::NonZeroU64;
 use std::time::Instant;
 
+use apertrust_base::wire::Id;
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Kernel, PassHeader};
 use apertrust_tools::ControlValue;
 pub use apertrust_tools::pick::{PickKeys, Reading, Region, Shown, Stats};
+use serde::{Deserialize, Serialize};
 
 use crate::compute::{ComputeError, GpuImage, GpuTimer, ImageKernel, POLL_INTERVAL};
 use crate::gpu::GpuContext;
@@ -88,13 +90,16 @@ pub const DEFAULT_POINT: Region = Region::Point([0.5, 0.5]);
 pub const DEFAULT_AREA: Region = Region::Area([0.02, 0.02, 0.98, 0.98]);
 
 /// A picker, by its owner.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum PickerRef {
     /// A tool's picker, by its tool's id and the picker's id in its definition
     /// (`ProcessingDefinition::pickers`).
     Tool {
-        tool: &'static str,
-        picker: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        picker: Id,
     },
     /// The Colour picker's, darktable's primary picker with no module.
     ColourPicker,
@@ -102,7 +107,8 @@ pub enum PickerRef {
 
 /// What a client asks of the active colour picker (decision 79): view state, never a
 /// command on the edit. Points are in the photo's coordinates, each clamped to 0 to 1.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum PickerCommand {
     /// Turns `picker` on, the one on before it off: an area with `area` where the picker
     /// takes both, else a point; a picker of one kind, that kind. It starts at the
@@ -116,12 +122,15 @@ pub enum PickerCommand {
         picker: PickerRef,
         area: bool,
         keys: PickKeys,
+        #[serde(deserialize_with = "apertrust_base::wire::id::pairs")]
         settings: Vec<(&'static str, ControlValue)>,
-        channel: Option<&'static str>,
+        #[serde(default, deserialize_with = "apertrust_base::wire::id::option")]
+        channel: Option<Id>,
     },
     /// The active picker's point moved, a click or a drag's step, `done` on the release;
     /// a picker measuring an area measures this point from then on.
     Point {
+        #[serde(deserialize_with = "apertrust_base::wire::finite")]
         at: [f32; 2],
         done: bool,
         keys: PickKeys,
@@ -130,7 +139,9 @@ pub enum PickerCommand {
     /// step or, with `done`, its release; a picker measuring a point measures this area
     /// from then on.
     Area {
+        #[serde(deserialize_with = "apertrust_base::wire::finite")]
         from: [f32; 2],
+        #[serde(deserialize_with = "apertrust_base::wire::finite")]
         to: [f32; 2],
         done: bool,
         keys: PickKeys,
@@ -146,13 +157,18 @@ pub enum PickerCommand {
     /// (`Shown::settings` empty), since the client has just sent its own. Refused for a
     /// setting none of its pickers reads.
     Settings {
-        tool: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
+        #[serde(deserialize_with = "apertrust_base::wire::id::pairs")]
         settings: Vec<(&'static str, ControlValue)>,
     },
     /// The channel tab the active picker's tool shows changed: kept for its next pick,
     /// applying nothing, as darktable's tab switch applies nothing; with no picker on,
     /// nothing.
-    Channel { channel: Option<&'static str> },
+    Channel {
+        #[serde(default, deserialize_with = "apertrust_base::wire::id::option")]
+        channel: Option<Id>,
+    },
     /// The active picker off, its point and area kept for its next `On`; with none on,
     /// nothing.
     Off,
@@ -168,13 +184,15 @@ pub enum PickerCommand {
         picker: PickerRef,
         region: Region,
         keys: PickKeys,
+        #[serde(deserialize_with = "apertrust_base::wire::id::pairs")]
         settings: Vec<(&'static str, ControlValue)>,
-        channel: Option<&'static str>,
+        #[serde(default, deserialize_with = "apertrust_base::wire::id::option")]
+        channel: Option<Id>,
     },
 }
 
 /// The active picker's reading, `Event::Picker`'s: a fact, `None` while no picker is on.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PickerReading {
     /// Every command the session had applied when it measured: the frame's, and any after
     /// it that rendered nothing, so a client knows its moves are in it. A command that
@@ -196,7 +214,7 @@ pub struct PickerReading {
 /// What a tool's picker measured at its operation, darktable's `picked_color`,
 /// `picked_color_min` and `picked_color_max` of its input and output, each in the
 /// picker's space.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolReading {
     /// `None` where the region misses the operation's image, as darktable's empty box.
     pub input: Option<Stats>,
@@ -209,7 +227,7 @@ pub struct ToolReading {
 
 /// darktable's `display` and `lab` of a sample (`_pixelpipe_pick_samples`): mean, min
 /// and max.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct FrameReading {
     /// The frame's RGB, as the window shows it and the scopes count it: sRGB, darktable's
     /// default display and histogram profile, so both its `display` and its `scope`.

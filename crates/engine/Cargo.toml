@@ -30,6 +30,8 @@ chrono.workspace = true
 # A history step's random id (decision 78).
 getrandom.workspace = true
 pollster.workspace = true
+# The session's commands and events, in decision 59's JSON shape (decision 108).
+serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
@@ -51,6 +53,8 @@ apertrust-tools = { workspace = true, features = ["testing"] }
 # Its `testing` hooks, a raw marked as not on the disk and the raws' reads counted, for the
 # thumbnail tests.
 apertrust-library = { workspace = true, features = ["testing"] }
+# The session protocol's round-trip test (`session/tests/protocol.rs`).
+serde_json.workspace = true
 
 [lints]
 workspace = true

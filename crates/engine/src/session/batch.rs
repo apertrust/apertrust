@@ -46,6 +46,7 @@ use apertrust_library::fields::FieldEntry;
 use apertrust_library::listing;
 use apertrust_plugin::Operation;
 use apertrust_tools::{ProcessingTool, ToolValues};
+use serde::{Deserialize, Serialize};
 
 use super::fields::{self, FieldRecord};
 use super::history::PhotoHistory;
@@ -60,7 +61,8 @@ use crate::sidecar::{self, Edits};
 
 /// What a batch on several photos does to each, as its `Ended` names it: a style applied,
 /// by its name (decision 109), or a rating set (decision 110).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Batched {
     Style(String),
     Rating(RatingChange),
@@ -68,7 +70,8 @@ pub enum Batched {
 
 /// What a batch on several photos tells (decision 109): notices, apart from the session's
 /// batches of commands, naming the batch by its id.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum BatchEvent {
     /// A photo's change landed: the active photo's in the command's turn, another's as its
     /// write lands. `edit` is its edit's state after it, so a client marks the Browser's
@@ -94,7 +97,7 @@ pub enum BatchEvent {
 }
 
 /// What a batch did to its photos.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BatchAction {
     /// The style applied.
     Applied,
@@ -105,7 +108,8 @@ pub enum BatchAction {
 }
 
 /// Why a batch left a photo as it was, which a client names (decision 109).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Skip {
     /// Its raw is not on the disk, a cloud placeholder: no batch downloads it.
     NotOnDisk,

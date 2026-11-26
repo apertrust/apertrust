@@ -66,6 +66,7 @@ use apertrust_export::variables::{DateTime, Size};
 use apertrust_export::{ExportSettings, Format, Image, Places};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation};
 use apertrust_tools::ProcessingTool;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::compute::GpuImage;
@@ -84,7 +85,8 @@ use crate::sidecar::{self, FileStamp};
 /// What the session reports of an export job's photos, as `Event::Export`, in order: each
 /// photo's start and result, then the job's counts. The job itself, queued, running, its
 /// progress, title and end, comes as `Event::Job`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum ExportStatus {
     /// Photo `index` of the job's photos, the raw at `source`, begins.
     Started { index: usize, source: PathBuf },
@@ -95,7 +97,8 @@ pub enum ExportStatus {
 }
 
 /// What became of one photo.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum PhotoResult {
     /// Its file, renamed into place: its size, in how many tiles it rendered, and whether
     /// a newer Apertrust wrote its edit, exported as this build shows it (decision 43).
@@ -115,7 +118,7 @@ pub enum PhotoResult {
 }
 
 /// What became of a job's photos.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Summary {
     pub written: usize,
     pub skipped: usize,
@@ -137,7 +140,7 @@ impl Summary {
 }
 
 /// Why a photo was not written, or a job ended failed.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Failure {
     /// What failed, as a code for a client to word ([`Cause::id`]).
     pub cause: Cause,
@@ -208,7 +211,7 @@ impl Failure {
 
 /// What failed, as a code a client words: the activity's cause (`docs/gui.md`, The jobs
 /// window).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Cause {
     /// The raw is missing or cannot be decoded.
     Unreadable,

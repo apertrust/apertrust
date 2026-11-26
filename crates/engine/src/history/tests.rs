@@ -1096,3 +1096,33 @@ fn a_built_in_style_is_matched_by_its_file() {
         ["Lomo", "Warm film", "Lomo"]
     );
 }
+
+#[test]
+fn a_step_id_is_sixteen_hex_digits() {
+    // Above 2^53, which a JSON number would round.
+    let id = StepId(0x0012_3456_789a_bcde);
+    let json = serde_json::to_string(&id).unwrap();
+    assert_eq!(json, r#""00123456789abcde""#);
+    assert_eq!(serde_json::from_str::<StepId>(&json).unwrap(), id);
+    assert_eq!(
+        serde_json::from_str::<BatchId>(r#""ffffffffffffffff""#).unwrap(),
+        BatchId(u64::MAX)
+    );
+    // Only 16 lowercase hex digits: neither a number, upper case, a sign nor another length.
+    for refused in [
+        "1311768467463790",
+        r#""00123456789ABCDE""#,
+        r#""+0123456789abcde""#,
+        r#""123456789abcde""#,
+        r#""000123456789abcde""#,
+    ] {
+        assert!(
+            serde_json::from_str::<StepId>(refused).is_err(),
+            "{refused}"
+        );
+        assert!(
+            serde_json::from_str::<BatchId>(refused).is_err(),
+            "{refused}"
+        );
+    }
+}

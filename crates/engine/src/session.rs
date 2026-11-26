@@ -110,6 +110,8 @@
 //! the margin renders nothing; at Fit and Small every frame is the whole photo at Fit.
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
+//! Each derives serde in decision 59's JSON shape, `Frame` excepted, and `tests/protocol.rs`
+//! round-trips every variant.
 
 mod batch;
 mod cache;
@@ -136,6 +138,7 @@ use std::time::{Duration, Instant};
 pub use apertrust_base::cache::{CacheCommand, CacheEvent};
 use apertrust_base::cache::{Kind, Policy};
 use apertrust_base::jobs::Control;
+use apertrust_base::wire::Id;
 pub use apertrust_export::{ExportSettings, Places};
 /// The library's commands and events and what they carry (decision 54, layer 4).
 pub use apertrust_library::ops as library;
@@ -150,6 +153,7 @@ use apertrust_tools::{Base, ControlKind, Controls, Moment, ProcessingTool};
 pub use apertrust_tools::{
     ControlValue, LabelValue, Mark, Range, Setting, ToolValues, ValueFormat,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::compute::{ComputeError, GpuImage, POLL_INTERVAL, Timings};
@@ -194,7 +198,8 @@ pub use selection::{Selection, SelectionCommand};
 use thumbnail::Tally;
 
 /// What a client asks of the session. Plain data, so it can move into the protocol.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Command {
     /// Open a raw, with the edit saved beside it or none, in three stages (decision 77):
     /// its picture, [`Event::OpenPreview`]; [`Event::Opened`] and its values, not yet live,
@@ -577,38 +582,47 @@ pub enum Command {
     Cache(CacheCommand),
     /// A test's synthetic GPU job, started as a command starts a job.
     #[cfg(test)]
+    #[serde(skip)]
     Synthetic(crate::jobs::testing::Synthetic),
     /// Holds the first render step of each photo of the next export for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldExport(export_job::testing::Hold),
     /// Holds the next export preview before it looks, for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldPreview(export_job::testing::Hold),
     /// Holds the next summary before it is built, for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldSummary(export_job::testing::Hold),
     /// Holds the next folder's reading before it begins, or the job of the next photos opened
     /// alone once it has sent their edit states, for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldFolder(export_job::testing::Hold),
     /// Holds the next tree's walk once its root is listed, before it walks, for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldWalk(export_job::testing::Hold),
     /// Holds each thumbnail the next [`LibraryCommand::Thumbnails`] or
     /// [`LibraryCommand::PhotoThumbnails`] asks for before it is read, for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldThumbnails(export_job::testing::Hold),
     /// Holds the next open's decode, the decode slot taken, for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldDecode(export_job::testing::Hold),
     /// Holds the next [`CacheCommand::Clear`] at each progress it tells, before each
     /// removal, for a test.
     #[cfg(test)]
+    #[serde(skip)]
     HoldClear(export_job::testing::Hold),
 }
 
 /// How [`Command::ApplyStyle`] applies a style (decision 106), as the person chooses it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum StyleMode {
     /// Sets the style's tools alone.
     #[default]
@@ -822,7 +836,8 @@ pub fn raw_extensions() -> &'static [&'static str] {
 }
 
 /// What the session tells its client.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Event {
     /// The opening photo's picture until its first live frame (decision 77): from its
     /// open's job, so only its number orders it against the engine thread's events.
@@ -835,6 +850,11 @@ pub enum Event {
     /// Every tool's controls and the unowned parameters, after an open or a change.
     Values(Values),
     /// A new frame to show.
+    ///
+    /// The one event with no data form, as it holds a GPU buffer: serializing it is
+    /// serde's error, and deserializing never gives it. The remote protocol sends a frame
+    /// as a binary message (decision 59; `docs/session-protocol.md`, Where it lives).
+    #[serde(skip)]
     Frame(Frame),
     /// What a frame holds, counted for the scopes, about a frame after it; `through`
     /// names the frame by the commands it includes.
@@ -925,7 +945,7 @@ pub enum Event {
 }
 
 /// The open photo's rating: [`Event::Rating`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RatingState {
     /// How many commands it includes, as [`Values::through`] counts them.
     pub through: u64,
@@ -1028,7 +1048,7 @@ impl Event {
 
 /// The opening photo's picture (decision 77), the open photo's until its first live
 /// frame: a client takes it only for its latest open and before that open's live frame.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OpenPreview {
     /// The number of the [`Command::Open`] it is the picture of.
     pub open: u64,
@@ -1041,7 +1061,7 @@ pub struct OpenPreview {
 }
 
 /// Where an opening photo's picture comes from (decision 77).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PreviewSource {
     /// The largest of the photo's rendered thumbnails the cache holds, stale or not.
     Rendered,
@@ -1051,7 +1071,7 @@ pub enum PreviewSource {
 
 /// The photo the session opened, from its raw's metadata and its sidecar, before its
 /// decode (decision 77).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Photo {
     pub path: PathBuf,
     /// The number [`Session::send`] gave the [`Command::Open`] that opened it, so a client
@@ -1089,7 +1109,7 @@ pub struct Photo {
     pub image: Box<ImageContext>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Values {
     /// Every tool's controls, in the tools' order.
     pub tools: Vec<ToolState>,
@@ -1116,7 +1136,7 @@ pub struct Values {
 }
 
 /// A style applied to the photo, as a client lists it (decision 106).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StyleState {
     /// Its name as applied.
     pub name: String,
@@ -1138,9 +1158,10 @@ impl Values {
 }
 
 /// One tool's controls.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolState {
-    pub tool: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub tool: Id,
     /// Whether the tool renders (decision 32): true for a tool that is not switched,
     /// but while the history's end lies before its default step and darktable leaves it off
     /// until its workflow applies it (decision 78), and for a switched one while it is on;
@@ -1177,9 +1198,10 @@ pub struct ToolState {
 /// A warning at a slider's end ([`apertrust_tools::End::Warning`]): whether it shows on
 /// the values reported, by the tool's `warning` check on the photo's image context; off
 /// where the check panics (decision 107).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WarningState {
-    pub id: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub id: Id,
     pub on: bool,
 }
 
@@ -1187,18 +1209,20 @@ pub struct WarningState {
 /// values reported, by the tool's `available` rule asked with its id on the photo's image
 /// context, as a control's availability is (decision 107). Never while the photo is open
 /// for viewing only, nor for an action not ported; available where the tool's rule panics.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActionState {
-    pub id: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub id: Id,
     pub available: bool,
 }
 
 /// A readout at a line of pickers' start ([`apertrust_tools::ReadoutDef`]): what the tool
 /// gives for the values reported ([`ProcessingTool::readout`]), on the photo's image
 /// context, as its preset rows' matching is; `None` where it gives none, or panics.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReadoutState {
-    pub id: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub id: Id,
     pub readout: Option<apertrust_tools::pick::Readout>,
 }
 
@@ -1206,18 +1230,21 @@ pub struct ReadoutState {
 /// computes from the photo as the edit renders it, as `prepare` computes it
 /// (`Operation::computed`), asked only while the tool's controls show the row; `None`
 /// while hidden, and while the operation computes none, as without a raw's histogram.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComputedState {
-    pub id: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub id: Id,
     pub value: Option<f32>,
 }
 
 /// One coordinate of a lossless view (decision 2), which a client sets, resets and keeps
 /// as a control, and shows as the session reports it, computing nothing.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CoordinateState {
-    pub view: &'static str,
-    pub coordinate: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub view: Id,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub coordinate: Id,
     /// The coordinate held through a gesture, else the tool's view of the controls'
     /// values; it may lie outside its range, where the controls put it.
     pub value: f32,
@@ -1234,23 +1261,27 @@ pub struct CoordinateState {
 
 /// A preset row's state (decision 2): which of its options the controls hold, and
 /// which the photo can have.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PresetState {
-    pub preset: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub preset: Id,
     /// The option whose values the controls hold (`ProcessingTool::matching`); `None` for
     /// Custom.
-    pub matching: Option<&'static str>,
+    #[serde(default, deserialize_with = "apertrust_base::wire::id::option")]
+    pub matching: Option<Id>,
     /// The options this photo can have, in the row's order, none while it is open for
     /// viewing only; a panel draws the others disabled, and [`Command::ApplyPreset`]
     /// refuses them. An option that turns a picker on (`PresetRow::pickers`) is listed
     /// wherever the photo can be edited, as a picker can start there: a client sends
     /// `PickerCommand::On` for it, and `ApplyPreset` refuses it.
+    #[serde(deserialize_with = "apertrust_base::wire::id::vec")]
     pub available: Vec<&'static str>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ControlState {
-    pub control: &'static str,
+    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    pub control: Id,
     pub value: ControlValue,
     /// Its untouched value for the photo, which a reset goes back to.
     pub default: ControlValue,
@@ -1267,6 +1298,7 @@ pub struct ControlState {
     /// option where the tool's code panics or gives a list that does not hold together. The
     /// session refuses any other; `value` may still hold one, from another photo's edit.
     /// Empty for a control that is no choice.
+    #[serde(deserialize_with = "apertrust_base::wire::id::vec")]
     pub options: Vec<&'static str>,
     /// For a number, its range while the tool's controls hold the values reported with
     /// it (`ProcessingTool::range`, decision 30): what a value may hold, what the track
@@ -1341,7 +1373,7 @@ impl Frame {
 }
 
 /// The session's one view, as every client of it shares it (decision 99): [`Event::View`].
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ViewState {
     /// How many commands it includes, as [`Values::through`] counts them.
     pub through: u64,
@@ -1366,7 +1398,8 @@ fn kind_words(kind: &apertrust_tools::PickerKind) -> &'static str {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum SessionError {
     /// The [`Command::Open`] that [`Session::send`] numbered `open` failed, as `error`
     /// says: the photo before it is closed, its edit saved, and none is open.
@@ -1423,7 +1456,8 @@ pub enum SessionError {
     /// left out of the render until it binds again.
     #[error("the tool {tool} is left out: {source}")]
     Tool {
-        tool: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        tool: Id,
         source: ToolError,
     },
     /// The edit as it stood after the first `through` commands could not be written to
@@ -1433,6 +1467,7 @@ pub enum SessionError {
     Save {
         path: PathBuf,
         through: u64,
+        #[serde(with = "apertrust_base::wire::io_error")]
         source: io::Error,
     },
     /// Another program changed the live photo's sidecar at `path`, and the session cannot
@@ -1485,7 +1520,7 @@ pub enum SessionError {
     /// [`PickerCommand::On`], [`PickerCommand::Once`] or [`PickerCommand::Settings`] named
     /// a setting none of the tool's pickers reads.
     #[error("no colour picker of the tool reads the setting {0}")]
-    UnknownSetting(&'static str),
+    UnknownSetting(#[serde(deserialize_with = "apertrust_base::wire::id")] Id),
     /// A colour picker's point, area, switch or reset with no picker on, or with only a
     /// one-shot pick's ([`PickerCommand::Once`]), which takes no moves.
     #[error("no colour picker is on")]
@@ -1547,7 +1582,11 @@ pub enum SessionError {
     /// The walk for the [`CacheCommand::Sizes`] numbered `command` failed: the cache's
     /// folder, or a kind's, cannot be listed.
     #[error("the cache cannot be walked: {source}")]
-    CacheWalk { command: u64, source: io::Error },
+    CacheWalk {
+        command: u64,
+        #[serde(with = "apertrust_base::wire::io_error")]
+        source: io::Error,
+    },
     /// A bug in the engine: what it was doing is dropped, the photo with it.
     #[error("the engine failed: {0}")]
     Panicked(String),
@@ -7260,6 +7299,7 @@ mod tests {
     mod batch;
     mod fields;
     mod history;
+    mod protocol;
     mod selection;
     mod set_tool;
     mod styles;

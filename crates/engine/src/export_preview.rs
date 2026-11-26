@@ -44,12 +44,14 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use apertrust_base::wire::Id;
 use apertrust_export::disk::{self, Claimed, Disk, Foreseen};
 pub use apertrust_export::disk::{Action, Blocked, Preflight, Why};
 use apertrust_export::variables::{DateTime, Pattern, PatternError, Size, Unavailable, Values};
 use apertrust_export::{ExportSettings, Places};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation};
 use apertrust_tools::ProcessingTool;
+use serde::{Deserialize, Serialize};
 
 use crate::edit::{self, Edit};
 use crate::export_job::{self, Live, SizeError};
@@ -60,7 +62,7 @@ use crate::session::{Event, Outbox};
 use crate::sidecar;
 
 /// What the Export dialog shows under its rows, for the latest settings and photos.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExportPreview {
     /// What stops the path (D8), shown at the field; no names then.
     pub problem: Option<PathProblem>,
@@ -78,7 +80,8 @@ pub struct ExportPreview {
 }
 
 /// What stops the path before any photo (D8).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum PathProblem {
     /// The path is empty.
     Empty,
@@ -88,7 +91,7 @@ pub enum PathProblem {
 }
 
 /// One photo's file as the export would write it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PhotoName {
     /// The raw.
     pub source: PathBuf,
@@ -101,7 +104,8 @@ pub struct PhotoName {
 }
 
 /// What the export does with a photo's file.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum Fate {
     /// It writes `file`.
     File {
@@ -118,14 +122,14 @@ pub enum Fate {
 }
 
 /// The open photo's output size.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActiveSize {
     pub source: PathBuf,
     pub size: Result<OutputSize, SizeProblem>,
 }
 
 /// An export's size, as `apertrust_export::size` computes it.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OutputSize {
     /// The photo at full resolution after its geometry.
     pub extent: [u32; 2],
@@ -138,11 +142,13 @@ pub struct OutputSize {
 }
 
 /// Why the size stops the export (D8).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
 pub enum SizeProblem {
     /// A side larger than the format's largest.
     TooLarge {
-        format: &'static str,
+        #[serde(deserialize_with = "apertrust_base::wire::id")]
+        format: Id,
         largest: u32,
         width: u32,
         height: u32,
@@ -154,7 +160,7 @@ pub enum SizeProblem {
 }
 
 /// A folder the files go to, and whether it can be made or written.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FolderCheck {
     pub folder: PathBuf,
     pub preflight: Preflight,
