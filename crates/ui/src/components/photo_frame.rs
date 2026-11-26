@@ -46,7 +46,7 @@ use egui::{
 };
 
 use super::focus_ring;
-use super::grid_cell::{CellAction, CellRating, ColourLabel};
+use super::grid_cell::{CellAction, CellRating, ColourLabel, RatingNotes, rating_notes};
 use crate::i18n::Args;
 use crate::theme::{Theme, contrast};
 use crate::{Icon, fonts, theme, tr, translator};
@@ -322,7 +322,8 @@ pub(super) fn cut(stem: &str, tail: &str, chars: usize) -> String {
 
 /// The tooltips of the caption's controls, which name what a click does and its key
 /// (`docs/gui.md`, The caption under the photo): the caller's, who knows the keys and how
-/// many photos the action takes; [`CaptionTips::plain`] has the words alone.
+/// many photos the action takes, each ending in the person's note for its mark
+/// ([`CaptionTips::noted`]); [`CaptionTips::plain`] has the words and the notes alone.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CaptionTips {
     /// Reject's while the photo is not rejected, and while it is.
@@ -337,9 +338,10 @@ pub struct CaptionTips {
 }
 
 impl CaptionTips {
-    /// The words alone, with no key.
+    /// The words alone, with no key, and the notes `ctx` has ([`rating_notes`]).
     pub fn plain(ctx: &egui::Context) -> Self {
-        Self::plain_with(&translator(ctx))
+        let words = translator(ctx);
+        Self::plain_with(&words).noted(&rating_notes(ctx), &words)
     }
 
     /// The words alone in `words`' language.
@@ -357,6 +359,20 @@ impl CaptionTips {
             stars,
             clear: words.text("caption-clear-rating"),
             labels,
+        }
+    }
+
+    /// Each tooltip with the person's note for its mark after it, in `words`' language
+    /// ([`RatingNotes::noted`]): Reject's both, each star's and each label's; the current
+    /// star's, which clears the rating, none.
+    pub fn noted(self, notes: &RatingNotes, words: &crate::Translator) -> Self {
+        let noted = |tip: &str, note: &str| RatingNotes::noted(tip.to_owned(), note, words);
+        CaptionTips {
+            reject: noted(&self.reject, &notes.reject),
+            unreject: noted(&self.unreject, &notes.reject),
+            stars: std::array::from_fn(|i| noted(&self.stars[i], &notes.stars[i])),
+            clear: self.clear,
+            labels: std::array::from_fn(|i| noted(&self.labels[i], &notes.labels[i])),
         }
     }
 }
@@ -636,16 +652,21 @@ impl<'a> PhotoCaption<'a> {
 /// What screen readers and the tooltip say of `rating`: its stars, whether it is rejected
 /// and its labels.
 fn rating_words(ctx: &egui::Context, rating: CellRating) -> Vec<String> {
-    let words = translator(ctx);
+    let (words, notes) = (translator(ctx), rating_notes(ctx));
+    let noted = |said: String, note: &str| RatingNotes::noted(said, note, &words);
     let mut args = Args::new();
     args.set("count", rating.stars);
-    let mut said = vec![words.text_with("grid-cell-rating", Some(&args))];
+    let stars = words.text_with("grid-cell-rating", Some(&args));
+    let mut said = vec![noted(stars, notes.star(rating.stars))];
     if rating.rejected {
-        said.push(words.text("grid-cell-rejected"));
+        said.push(noted(words.text("grid-cell-rejected"), &notes.reject));
     }
     if !rating.labels.is_empty() {
         let names: Vec<String> = (rating.labels.iter())
-            .map(|label| words.text(&format!("colour-label-{}", label.id())))
+            .map(|label| {
+                let colour = words.text(&format!("colour-label-{}", label.id()));
+                noted(colour, notes.label(label))
+            })
             .collect();
         let mut args = Args::new();
         args.set("labels", names.join(", "));
@@ -748,7 +769,9 @@ impl Centre<'_> {
         folded: bool,
     ) -> Option<CellAction> {
         let ctx = ui.ctx().clone();
-        let words = translator(&ctx);
+        let (words, notes) = (translator(&ctx), rating_notes(&ctx));
+        // Each control's name ends in the person's note for its mark, as its tooltip does.
+        let noted = |said: String, note: &str| RatingNotes::noted(said, note, &words);
         let (rating, line) = (self.rating, self.line);
         let target = |x: f32, side: f32| {
             Rect::from_center_size(pos2(x + side / 2.0, line.center().y), vec2(side, side))
@@ -774,7 +797,7 @@ impl Centre<'_> {
                 colour,
             );
         }
-        let name = words.text("caption-reject");
+        let name = noted(words.text("caption-reject"), &notes.reject);
         pressed.widget_info(|| WidgetInfo::selected(Role::Button, true, rating.rejected, &name));
         if pressed.has_focus() {
             focus_ring(painter, reject, t);
@@ -857,7 +880,8 @@ impl Centre<'_> {
             );
             let mut args = Args::new();
             args.set("count", points);
-            let name = words.text_with("grid-cell-rating", Some(&args));
+            let stars = words.text_with("grid-cell-rating", Some(&args));
+            let name = noted(stars, notes.star(points));
             let checked = points == rating.stars;
             star.widget_info(|| WidgetInfo::selected(Role::RadioButton, true, checked, &name));
             if star.clicked() {
@@ -890,7 +914,8 @@ impl Centre<'_> {
                 button.hovered(),
                 LABEL_RADIUS,
             );
-            let name = words.text(&format!("caption-label-{}", label.id()));
+            let colour = words.text(&format!("caption-label-{}", label.id()));
+            let name = noted(colour, notes.label(label));
             button.widget_info(|| WidgetInfo::selected(Role::Button, true, on, &name));
             if button.has_focus() {
                 focus_ring(painter, rect, t);

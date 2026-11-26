@@ -37,7 +37,8 @@ use egui::{FontId, Key, Modifiers, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo,
 
 use super::grid_cell::paint_labels;
 use super::{
-    ColourLabel, ColourLabels, IconButton, copy_asked, focus_ring_centred, middle_cut, truncated,
+    ColourLabel, ColourLabels, IconButton, RatingNotes, copy_asked, focus_ring_centred, middle_cut,
+    rating_notes, truncated,
 };
 use crate::{Icon, theme, translator};
 
@@ -371,8 +372,9 @@ pub enum Marks {
 /// A row of five marks laid out as a [`FactList`]'s rows, its label in their column: the
 /// Metadata tool's Rating and Colour labels. Enabled, each mark is a button, a click on it
 /// reported by its index for the app to run the rating's action; disabled, drawn in
-/// `text_disabled`. Words may stand in place of the marks, "Rejected" or "Different". Not a
-/// Tab stop: the keys rate. Screen readers read "Label: tip" and each mark by its name.
+/// `text_disabled`, each mark still named, as a picture. Words may stand in place of the
+/// marks, "Rejected" or "Different". Not a Tab stop: the keys rate. Screen readers read "Label: tip" and each mark by its name, the
+/// person's note for it after its own ([`RatingNotes`]).
 pub struct FactMarks<'a> {
     label: &'a str,
     tip: &'a str,
@@ -419,7 +421,7 @@ impl<'a> FactMarks<'a> {
     /// Draws the row; the index of the mark clicked, 0 to 4.
     pub fn show(self, ui: &mut Ui) -> Option<usize> {
         let t = theme(ui.ctx());
-        let tr = translator(ui.ctx());
+        let (tr, notes) = (translator(ui.ctx()), rating_notes(ui.ctx()));
         let (rect, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::hover());
         let value = (self.said.or(self.words)).unwrap_or(self.tip);
@@ -457,18 +459,25 @@ impl<'a> FactMarks<'a> {
         } else {
             let side = t.sizes.icon;
             let mut x = left;
-            let base = response.id;
+            // Apart from the row's own tooltip, whose layer egui notes `id.with(0)`.
+            let base = response.id.with("mark");
             for at in 0..5 {
                 let mark = Rect::from_min_size(pos2(x, middle - side / 2.0), vec2(side, side));
                 x += side + t.spacing.xs;
-                let hovered = self.enabled && {
+                // Named either way, with its note: a button while enabled, else a picture
+                // that takes no click.
+                let name = self.mark_name(at, &notes, &tr);
+                let hovered = if self.enabled {
                     let button = ui.interact(mark, base.with(at), Sense::CLICK);
-                    let name = self.mark_name(at, &tr);
                     button.widget_info(|| WidgetInfo::labeled(Role::Button, true, &name));
                     if button.clicked() {
                         clicked = Some(at);
                     }
                     button.hovered()
+                } else {
+                    let shown = ui.interact(mark, base.with(at), Sense::hover());
+                    shown.widget_info(|| WidgetInfo::labeled(Role::Image, false, &name));
+                    false
                 };
                 self.paint(&painter, &t, mark, at, hovered);
             }
@@ -484,15 +493,21 @@ impl<'a> FactMarks<'a> {
         clicked
     }
 
-    /// The name of the mark at `at`: its stars, or its label.
-    fn mark_name(&self, at: usize, tr: &crate::Translator) -> String {
+    /// The name of the mark at `at`: its stars, or its label, then the person's note for
+    /// it, as the caption's controls are noted.
+    fn mark_name(&self, at: usize, notes: &RatingNotes, tr: &crate::Translator) -> String {
         match self.marks {
             Marks::Stars(_) => {
                 let mut args = crate::i18n::Args::new();
                 args.set("count", at as f64 + 1.0);
-                tr.text_with("grid-cell-rate", Some(&args))
+                let stars = tr.text_with("grid-cell-rate", Some(&args));
+                RatingNotes::noted(stars, &notes.stars[at], tr)
             }
-            Marks::Labels { .. } => tr.text(&format!("colour-label-{}", ColourLabel::ALL[at].id())),
+            Marks::Labels { .. } => {
+                let label = ColourLabel::ALL[at];
+                let colour = tr.text(&format!("colour-label-{}", label.id()));
+                RatingNotes::noted(colour, notes.label(label), tr)
+            }
         }
     }
 

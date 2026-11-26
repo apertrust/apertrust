@@ -20,7 +20,7 @@
 
 use apertrust_ui::components::{
     CaptionCentre, CaptionFit, CaptionMark, CaptionName, CaptionTips, CellAction, CellRating,
-    ColourLabel, ColourLabels, Margin, PhotoCaption, PhotoFrame,
+    ColourLabel, ColourLabels, Margin, PhotoCaption, PhotoFrame, RatingNotes, set_rating_notes,
 };
 use apertrust_ui::{Builtin, Theme};
 use egui::accesskit::{Role, Toggled};
@@ -201,9 +201,22 @@ fn three_stars() -> CellRating {
 /// A caption line `width` points wide on the photo's surround, in `theme`, rated `rating`,
 /// its centre's last action kept as the harness's state.
 fn rated(theme: Builtin, width: f32, rating: CellRating) -> Harness<'static, Option<CellAction>> {
+    rated_named(theme, width, rating, RatingNotes::default())
+}
+
+/// [`rated`] with the person's `notes` for the ratings and labels.
+fn rated_named(
+    theme: Builtin,
+    width: f32,
+    rating: CellRating,
+    notes: RatingNotes,
+) -> Harness<'static, Option<CellAction>> {
     Harness::builder()
         .with_size(vec2(width, 32.0))
-        .with_context_setup(move |ctx| apertrust_ui::install(ctx, Theme::builtin(theme)))
+        .with_context_setup(move |ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(theme));
+            set_rating_notes(ctx, notes);
+        })
         .build_ui_state(
             move |ui, action: &mut Option<CellAction>| {
                 let surround = apertrust_ui::theme(ui.ctx()).colors.photo_surround;
@@ -254,6 +267,31 @@ fn the_caption_s_controls_report_what_was_clicked() {
     };
     assert_eq!(checked("3 stars"), Some(Toggled::True));
     assert_eq!(checked("4 stars"), Some(Toggled::False));
+}
+
+/// The person's notes follow the controls they name, to screen readers and in their
+/// tooltips, as the caption's line says them; controls with none keep their words.
+#[test]
+fn the_caption_s_controls_carry_the_person_s_notes() {
+    let mut notes = RatingNotes::default();
+    notes.stars[3] = "Keepers".to_owned();
+    notes.labels[4] = "Sent to client".to_owned();
+    notes.reject = "Out".to_owned();
+    let mut harness = rated_named(Builtin::Dark, 640.0, three_stars(), notes);
+    harness.run();
+    harness.get_by_role_and_label(Role::RadioButton, "3 stars");
+    let four = harness.get_by_role_and_label(Role::RadioButton, "4 stars · Keepers");
+    four.hover();
+    harness.run();
+    let shown = |harness: &Harness<'_, _>, said: &str| {
+        harness.output().shapes.iter().any(|clipped| {
+            matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.text() == said)
+        })
+    };
+    assert!(shown(&harness, "Rate 4 stars · Keepers"));
+    harness.get_by_role_and_label(Role::Button, "Reject · Out");
+    harness.get_by_role_and_label(Role::Button, "Purple label · Sent to client");
+    harness.get_by_role_and_label(Role::Button, "Red label");
 }
 
 /// The stars are one Tab stop after Reject, a radio group: → rates one more, ← one fewer,

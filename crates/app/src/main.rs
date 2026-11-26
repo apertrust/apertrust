@@ -124,9 +124,10 @@ use apertrust_ui::components::{
     ActivityAction, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
     CaptionStyle, CellMenu, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle,
     PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction,
-    Placed, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle, Toolbar,
-    ToolbarAction, ToolbarButton, ToolbarEdit, ToolbarEntry, ToolbarSpot, ToolsPanelPosition,
-    ViewMarks, ViewerBar, ViewerBarAction, Zoom, browser_lines, browser_thickness,
+    Placed, RatingNotes, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle,
+    Toolbar, ToolbarAction, ToolbarButton, ToolbarEdit, ToolbarEntry, ToolbarSpot,
+    ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom, browser_lines,
+    browser_thickness,
 };
 use apertrust_ui::{
     Background, Builtin, Locale, Theme, Translator, components, popup, theme, tr, translator,
@@ -2126,6 +2127,9 @@ struct Shell {
     /// Whether `--conf` sets `styles.mode` for this run, so ⋯ › Mode's items are disabled,
     /// saying why, as the settings store refuses the change (decision 43).
     style_mode_given: bool,
+    /// The person's notes for the ratings and colour labels, `ratings.note.*` and
+    /// `labels.note.*`, which the components read from the context.
+    rating_notes: RatingNotes,
     /// The Styles tool's own state: the styles read, Find style's text, the folders open.
     styles: styles::tool::Kept,
     /// Whether Discard History… ran, for the app to ask first, or send it.
@@ -2297,6 +2301,7 @@ impl Shell {
             discard: alerts::Question::discard(settings.ask_before_discard, false),
             style_mode: settings.style_mode,
             style_mode_given: false,
+            rating_notes: settings.rating_notes.clone(),
             styles: styles::tool::Kept::default(),
             discard_history: false,
             create_style: false,
@@ -2892,6 +2897,7 @@ impl Shell {
             ask_before_overwrite: self.overwrite.asks(),
             ask_before_discard: self.discard.asks(),
             style_mode: self.style_mode,
+            rating_notes: self.rating_notes.clone(),
         }
     }
 
@@ -4906,6 +4912,8 @@ impl Shell {
             alerts::Question::overwrite(settings.ask_before_overwrite, self.overwrite.held());
         self.discard = alerts::Question::discard(settings.ask_before_discard, self.discard.held());
         self.style_mode = settings.style_mode;
+        self.rating_notes.clone_from(&settings.rating_notes);
+        apertrust_ui::components::set_rating_notes(ctx, self.rating_notes.clone());
         ctx.request_repaint();
     }
 }
@@ -7816,7 +7824,14 @@ impl App {
             let rating = self.mirror.rateable();
             // With several selected, on all of them (decision 37).
             let batched = selection::batched(&self.mirror);
-            let tips = rating::tips(&self.shell.keymap, ui.ctx().os(), &words, batched.len());
+            let notes = &self.shell.rating_notes;
+            let tips = rating::tips(
+                &self.shell.keymap,
+                ui.ctx().os(),
+                &words,
+                batched.len(),
+                notes,
+            );
             let shown = PhotoCaption::new(&file_name(&photo.path))
                 .view_only(photo.view_only.is_some())
                 .exposure(&values)
@@ -9491,7 +9506,9 @@ impl eframe::App for App {
         // Named only while the photo takes edits, as Undo and Redo run only then.
         let history = (self.mirror.history.as_ref()).filter(|_| self.mirror.takes_edits());
         let tools = self.mirror.tools();
-        let steps = history::steps(history, tools, &translator(ctx));
+        let mut steps = history::steps(history, tools, &translator(ctx));
+        // And the person's notes, which the rating's and the labels' items carry.
+        steps.notes = apertrust_ui::components::rating_notes(ctx);
         self.shell.steps = steps;
     }
 
@@ -11087,6 +11104,7 @@ fn prepare(ctx: &egui::Context, shell: &Shell, scale: f32) {
     apertrust_ui::install(ctx, shell.look());
     apertrust_ui::components::set_marker(ctx, shell.marker);
     apertrust_ui::components::set_wheel_scrolls_panel(ctx, shell.wheel_scrolls_panel);
+    apertrust_ui::components::set_rating_notes(ctx, shell.rating_notes.clone());
     registry_keys_only(ctx);
     apertrust_ui::set_locale(ctx, shell.locale);
     ctx.options_mut(|o| o.zoom_factor = scale);

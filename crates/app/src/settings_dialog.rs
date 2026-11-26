@@ -61,11 +61,11 @@
 use apertrust_base::settings::{
     Applies, CONF_FLAG, Choice as _, Control, Declared, Kind, Page, Platform,
 };
-use apertrust_ui::components::group_label_text;
 use apertrust_ui::components::settings::{
-    Chips, Combo, Folder, Note, Number, Search, Segmented, SettingRow, Slider, Switch, Text,
-    TextArea,
+    Chips, Combo, Folder, Note, Number, RowGlyph, Search, Segmented, SettingRow, Slider, Switch,
+    Text, TextArea,
 };
+use apertrust_ui::components::{ColourLabel, group_label_text};
 use apertrust_ui::popup;
 use apertrust_ui::{Builtin, Icon, Locale, Theme, Translator, fonts, theme, tr, translator};
 use eframe::egui::os::OperatingSystem;
@@ -896,11 +896,13 @@ fn label_of(words: &Translator, row: &Row) -> String {
 const HARDWARE_GROUP: &str = "hardware_acceleration";
 
 /// What a row of the Hardware acceleration group draws in place of its kind's (decision
-/// 82): the graphics card's list for its text, and what is said under it or the API's.
+/// 82): the graphics card's list for its text, and what is said under it or the API's; and
+/// the mark before a Ratings and labels row's label.
 #[derive(Clone, Copy, Debug, Default)]
 struct Extra<'a> {
     card: Option<&'a hardware::Card>,
     note: Option<&'a hardware::Note>,
+    glyph: Option<RowGlyph>,
 }
 
 impl<'a> Extra<'a> {
@@ -910,14 +912,31 @@ impl<'a> Extra<'a> {
             Some(gpu) if row.id == ENGINE_ADAPTER.id => Extra {
                 card: Some(&gpu.card),
                 note: gpu.card.note.as_ref(),
+                ..Extra::default()
             },
             Some(gpu) if row.id == ENGINE_BACKEND.id => Extra {
                 note: gpu.api_note.as_ref(),
                 ..Extra::default()
             },
-            _ => Extra::default(),
+            _ => Extra {
+                glyph: glyph(row.id),
+                ..Extra::default()
+            },
         }
     }
+}
+
+/// The mark before the label of a row that names a rating or a colour label, drawn as the
+/// caption draws it: the reject's, a star, or the label's dot.
+fn glyph(id: &str) -> Option<RowGlyph> {
+    if id == settings::registry::RATINGS_NOTE_REJECT.id {
+        return Some(RowGlyph::Icon(Icon::Reject));
+    }
+    if settings::STARS_NOTES.iter().any(|setting| setting.id == id) {
+        return Some(RowGlyph::Icon(Icon::StarFilled));
+    }
+    let at = (settings::LABELS_NOTES.iter()).position(|setting| setting.id == id)?;
+    Some(RowGlyph::Label(ColourLabel::ALL[at]))
 }
 
 /// Draws `row` as a [`SettingRow`]: its label, its help as its tooltip, the changed mark
@@ -945,6 +964,9 @@ fn draw_row(
         .matched(matched);
     if let Some(help) = &help {
         setting = setting.help(help);
+    }
+    if let Some(glyph) = extra.glyph {
+        setting = setting.glyph(glyph);
     }
     if let Some(default) = &default {
         setting = setting.changed(default);
@@ -1442,6 +1464,75 @@ mod tests {
 
     fn dialog() -> Harness<'static, Bench> {
         dialog_of(&Keeper::nowhere().0, Builtin::Dark)
+    }
+
+    /// The keeper's settings with the 3 stars' and the purple label's notes given.
+    fn noted() -> Keeper {
+        let (mut keeper, settings) = Keeper::nowhere();
+        let three = "Print candidates".into();
+        let settings = keeper.apply(&settings, "ratings.note.stars_3", Some(&three));
+        keeper.apply(
+            &settings,
+            "labels.note.purple",
+            Some(&"Sent to client".into()),
+        );
+        keeper
+    }
+
+    /// Photos' Ratings and labels, after Thumbnails: a text row for the reject, each rating
+    /// and each colour label, in that order, each with its help naming it and Add a note in
+    /// its field while empty; a note typed is set at once, and one given shows in its field.
+    #[test]
+    fn the_photos_page_takes_a_note_for_each_rating_and_label() {
+        let mut harness = dialog_of(&noted(), Builtin::Dark);
+        harness.get_by_label("Photos").click();
+        harness.run();
+        let titles: Vec<String> = (harness.get_all_by_role(Role::Label))
+            .filter_map(|node| node.accesskit_node().value())
+            .filter(|name| ["Thumbnails", "Ratings and labels"].contains(&name.as_str()))
+            .collect();
+        assert_eq!(titles, ["Thumbnails", "Ratings and labels"]);
+        let rows: Vec<String> = (harness.get_all_by_role(Role::TextInput))
+            .filter_map(|node| node.accesskit_node().label())
+            .filter(|name| name != "Find a setting")
+            .collect();
+        let labels = [
+            "Reject", "1 star", "2 stars", "3 stars", "4 stars", "5 stars", "Red", "Yellow",
+            "Green", "Blue", "Purple",
+        ];
+        assert_eq!(rows, labels);
+        let words = translator(&harness.ctx);
+        for (id, what) in [
+            ("ratings-note-reject", "Reject"),
+            ("ratings-note-stars-3", "3 stars"),
+            ("labels-note-red", "Red"),
+        ] {
+            let help = format!(
+                "A note of your own for {what}, shown in tooltips and menus. It is never \
+                 written to your photos."
+            );
+            assert_eq!(words.text(&format!("setting-{id}-help")), help);
+        }
+        // Add a note in each empty field: all but the two given.
+        let hints = (harness.output().shapes.iter())
+            .filter(|clipped| {
+                matches!(&clipped.shape, egui::Shape::Text(text) if text.galley.text() == "Add a note")
+            })
+            .count();
+        assert_eq!(hints, 9);
+        let three = harness.get_by_role_and_label(Role::TextInput, "3 stars");
+        let shown = three.accesskit_node().value();
+        assert_eq!(shown.as_deref(), Some("Print candidates"));
+        harness.state_mut().changes.clear();
+        let field = harness.get_by_role_and_label(Role::TextInput, "1 star");
+        field.click();
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::TextInput, "1 star")
+            .type_text("Maybe");
+        harness.run();
+        let set = Change::Set("ratings.note.stars_1", "Maybe".into());
+        assert_eq!(harness.state().changes.last(), Some(&set));
     }
 
     fn press(harness: &mut Harness<'_, Bench>, pos: egui::Pos2, button: PointerButton) {
@@ -3177,6 +3268,25 @@ mod tests {
         harness.event(Event::PointerGone);
         harness.run();
         harness.snapshot("settings-restart-waiting-dark");
+    }
+
+    /// Photos' Ratings and labels, two notes given: each row's glyph, star or dot, before
+    /// its words, the notes in their fields and Add a note in the others.
+    #[test]
+    fn the_photos_page_in_both_themes() {
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (which, name) in [
+            (Builtin::Dark, "settings-photos-dark"),
+            (Builtin::Light, "settings-photos-light"),
+        ] {
+            let mut harness = dialog_of(&noted(), which);
+            harness.get_by_label("Photos").click();
+            harness.event(Event::PointerGone);
+            harness.run();
+            harness.snapshot(name);
+            results.extend_harness(&mut harness);
+        }
+        results.unwrap();
     }
 
     #[test]

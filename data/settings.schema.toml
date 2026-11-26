@@ -513,6 +513,100 @@ applies = "at-once"
 page = "photos"
 group = "thumbnails"
 
+# The person's own notes for the ratings and colour labels (docs/settings.md, Ratings and
+# labels): app-wide, never translated and never written to a photo, its sidecar, a
+# workspace or a Library. Each is shown after its rating's or label's words where that is
+# shown or set, in tooltips, menus and to screen readers ("3 stars · Print candidates");
+# empty adds nothing. The reject's, then the stars', 1 to 5.
+[ratings.note.reject]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[ratings.note.stars_1]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[ratings.note.stars_2]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[ratings.note.stars_3]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[ratings.note.stars_4]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[ratings.note.stars_5]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+# Each colour label's, red to purple, darktable's order.
+[labels.note.red]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[labels.note.yellow]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[labels.note.green]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[labels.note.blue]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
+[labels.note.purple]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+page = "photos"
+group = "ratings_and_labels"
+
 # Where the Browser is: along the bottom, or a column at the left or right, from the
 # browser bar's options menu and View › Browser Position (docs/gui.md, Its position).
 [browser.position]

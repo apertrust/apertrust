@@ -812,6 +812,9 @@ colour-label-yellow = Yellow
 colour-label-green = Green
 colour-label-blue = Blue
 colour-label-purple = Purple
+# A rating's or a colour label's words, then the person's own note for it from Settings ›
+# Photos, never translated: "3 stars · Print candidates", "Purple · Sent to client".
+rating-noted = { $words } · { $note }
 # The caption under the photo's controls: Reject's name and its tooltip while set, the
 # stars' group, the current star's tooltip, and each label's name.
 caption-reject = Reject
@@ -1091,6 +1094,7 @@ settings-group-interface = Interface
 settings-group-start = Start
 settings-group-confirmations = Confirmations
 settings-group-thumbnails = Thumbnails
+settings-group-ratings-and-labels = Ratings and labels
 settings-group-tools-panel = Tools panel
 settings-group-hardware-acceleration = Hardware acceleration
 settings-group-diagnostics = Diagnostics
@@ -1136,6 +1140,43 @@ setting-library-raw-thumbnails-from-option-6K = 6K
 setting-library-raw-thumbnails-from-option-8K = 8K
 setting-library-raw-thumbnails-from-option-never = Never
 setting-library-raw-thumbnails-from-option-auto = Auto
+# Ratings and labels' rows, each a note of the person's own for a rating or a colour
+# label, its label the rating's or the colour's words after its star or dot; each field
+# says Add a note while empty, and its help names its rating or colour.
+rating-note-hint = Add a note
+setting-ratings-note-reject-label = Reject
+setting-ratings-note-reject-hint = { rating-note-hint }
+setting-ratings-note-reject-help = A note of your own for Reject, shown in tooltips and menus. It is never written to your photos.
+setting-ratings-note-stars-1-label = 1 star
+setting-ratings-note-stars-1-hint = { rating-note-hint }
+setting-ratings-note-stars-1-help = A note of your own for 1 star, shown in tooltips and menus. It is never written to your photos.
+setting-ratings-note-stars-2-label = 2 stars
+setting-ratings-note-stars-2-hint = { rating-note-hint }
+setting-ratings-note-stars-2-help = A note of your own for 2 stars, shown in tooltips and menus. It is never written to your photos.
+setting-ratings-note-stars-3-label = 3 stars
+setting-ratings-note-stars-3-hint = { rating-note-hint }
+setting-ratings-note-stars-3-help = A note of your own for 3 stars, shown in tooltips and menus. It is never written to your photos.
+setting-ratings-note-stars-4-label = 4 stars
+setting-ratings-note-stars-4-hint = { rating-note-hint }
+setting-ratings-note-stars-4-help = A note of your own for 4 stars, shown in tooltips and menus. It is never written to your photos.
+setting-ratings-note-stars-5-label = 5 stars
+setting-ratings-note-stars-5-hint = { rating-note-hint }
+setting-ratings-note-stars-5-help = A note of your own for 5 stars, shown in tooltips and menus. It is never written to your photos.
+setting-labels-note-red-label = Red
+setting-labels-note-red-hint = { rating-note-hint }
+setting-labels-note-red-help = A note of your own for Red, shown in tooltips and menus. It is never written to your photos.
+setting-labels-note-yellow-label = Yellow
+setting-labels-note-yellow-hint = { rating-note-hint }
+setting-labels-note-yellow-help = A note of your own for Yellow, shown in tooltips and menus. It is never written to your photos.
+setting-labels-note-green-label = Green
+setting-labels-note-green-hint = { rating-note-hint }
+setting-labels-note-green-help = A note of your own for Green, shown in tooltips and menus. It is never written to your photos.
+setting-labels-note-blue-label = Blue
+setting-labels-note-blue-hint = { rating-note-hint }
+setting-labels-note-blue-help = A note of your own for Blue, shown in tooltips and menus. It is never written to your photos.
+setting-labels-note-purple-label = Purple
+setting-labels-note-purple-hint = { rating-note-hint }
+setting-labels-note-purple-help = A note of your own for Purple, shown in tooltips and menus. It is never written to your photos.
 setting-tools-panel-tab-names-label = Show tab names
 setting-tools-panel-wheel-scrolls-panel-label = Mouse wheel scrolls the Tools panel
 setting-tools-panel-wheel-scrolls-panel-help = On, the wheel changes a slider or a choice under the pointer only with Ctrl held, Option on the Mac. Off, as in darktable, it changes one plain, a slider by a tenth of a step with that key held.

@@ -20,7 +20,9 @@
 //!
 //! - **The label** at the start, in `text`, its help the row's tooltip. A label too long
 //!   for its room wraps; a row that grows, as chips or a text area make it, keeps its label
-//!   on its first line.
+//!   on its first line. A row that names a thing drawn by a mark elsewhere, a rating's star,
+//!   the reject or a colour label, draws that mark before its label ([`RowGlyph`]), an
+//!   icon `sizes.icon` square in the label's colour or the label's dot.
 //! - **The control** in one column at the end, `sizes.setting_column` wide (260), a box
 //!   centred on the first line: the caller draws it in the `Ui` it is handed. A read-only
 //!   row's value may take the room its label leaves too ([`SettingRow::read_only`]).
@@ -56,9 +58,10 @@ use egui::{
     pos2, vec2,
 };
 
-use super::super::{context_menu, paint_keep_marker};
+use super::super::grid_cell::paint_labels;
+use super::super::{ColourLabel, ColourLabels, context_menu, paint_keep_marker};
 use crate::popup::{Entry, Item};
-use crate::{theme, translator};
+use crate::{Icon, theme, translator};
 
 /// One setting's row.
 pub struct SettingRow<'a> {
@@ -73,6 +76,15 @@ pub struct SettingRow<'a> {
     read_only: bool,
     matched: bool,
     note: Option<Note<'a>>,
+    glyph: Option<RowGlyph>,
+}
+
+/// The mark before a row's label, the thing it notes drawn as everywhere else: a rating's
+/// star or the reject, an icon, or a colour label's dot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowGlyph {
+    Icon(Icon),
+    Label(ColourLabel),
 }
 
 /// What a row's owner says under its control.
@@ -114,6 +126,7 @@ impl<'a> SettingRow<'a> {
             read_only: false,
             matched: false,
             note: None,
+            glyph: None,
         }
     }
 
@@ -168,6 +181,12 @@ impl<'a> SettingRow<'a> {
         self
     }
 
+    /// The mark drawn before its label.
+    pub fn glyph(mut self, glyph: RowGlyph) -> Self {
+        self.glyph = Some(glyph);
+        self
+    }
+
     /// Whether the right-click menu of the row `id` is open, which Escape closes first.
     pub fn menu_open(ctx: &egui::Context, id: impl Hash + std::fmt::Debug) -> bool {
         let target = Id::unique(("setting row", id)).with("label");
@@ -208,7 +227,9 @@ impl<'a> SettingRow<'a> {
             job.append(said, t.spacing.xs, format);
             ui.painter().layout_job(job)
         });
-        let start = top.x + inset;
+        // The label after the glyph, where it has one.
+        let glyph_at = top.x + inset;
+        let start = glyph_at + self.glyph.map_or(0.0, |_| t.sizes.icon + t.spacing.s);
         let room = column_left - t.spacing.l - start;
         let after = if marked { t.sizes.marker_column } else { 0.0 }
             + note_galley
@@ -272,6 +293,18 @@ impl<'a> SettingRow<'a> {
             super::ring(ui.painter(), label_rect.expand(t.spacing.xxs), &t);
         }
         ui.painter().galley(label_at, label, text);
+        if let Some(glyph) = self.glyph {
+            let side = t.sizes.icon;
+            let centre = pos2(glyph_at + side / 2.0, top.y + line / 2.0);
+            let rect = Rect::from_center_size(centre, vec2(side, side));
+            match glyph {
+                RowGlyph::Icon(icon) => icon.paint(ui.painter(), rect, text),
+                RowGlyph::Label(label) => {
+                    let dot = rect.shrink(t.spacing.xxs);
+                    paint_labels(ui.painter(), &t, dot, ColourLabels::of([label]));
+                }
+            }
+        }
         let mut x = label_end + t.spacing.xs;
         let mut reset = false;
         // The mark, a button.

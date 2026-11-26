@@ -99,7 +99,7 @@ pub use fact_list::{Fact, FactCut, FactEnd, FactList, FactListOutput, FactMarks,
 pub use fields_row::{FieldsRow, RowField};
 pub use grid_cell::{
     CellAction, CellPicture, CellRating, CellStatus, ColourLabel, ColourLabels, GridCell,
-    GridCellOutput,
+    GridCellOutput, RatingNotes, rating_notes, set_rating_notes,
 };
 pub use group::{PlainGroup, group_label_text};
 pub use histogram::{
