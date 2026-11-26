@@ -297,7 +297,13 @@ fn checked(history: &mut PhotoHistory, edit: &Edit, redo: bool, context: &str) -
     let after = ids(history);
     match next {
         None => assert_eq!(moved, None, "{context}"),
-        Some(Move::GoTo | Move::Compress | Move::Truncate | Move::DiscardHistory) => {
+        Some(
+            Move::GoTo
+            | Move::Compress
+            | Move::Truncate
+            | Move::DiscardHistory
+            | Move::Field { .. },
+        ) => {
             assert!(moved.is_some(), "{context}");
         }
         Some(Move::Steps { first, count, .. }) => {
@@ -1105,6 +1111,7 @@ fn json(history: &History) -> String {
         Some(Move::Compress) => r#""Compress""#.to_owned(),
         Some(Move::Truncate) => r#""Truncate""#.to_owned(),
         Some(Move::DiscardHistory) => r#""DiscardHistory""#.to_owned(),
+        Some(Move::Field { photos, .. }) => format!(r#"{{"Field":{{"photos":{photos}}}}}"#),
         None => "null".to_owned(),
     };
     write!(

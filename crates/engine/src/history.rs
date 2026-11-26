@@ -59,6 +59,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use apertrust_library::clock::{Clock, MachineId};
+pub use apertrust_library::fields::RatingChange;
 use apertrust_plugin::{ImageContext, Operation, ParamValues, Value};
 use apertrust_tools::{Base, ControlValue, Controls, Mark, ProcessingTool, ToolValues};
 
@@ -1092,6 +1093,11 @@ pub enum Move {
     /// Take back or put back a Discard History: the log as it was before it, or discarded
     /// again, the photo given its default steps.
     DiscardHistory,
+    /// Take back or put back a change of the photo's rating, its reject or a label
+    /// (decision 110), no step of the log: `change` the last change the undo record holds,
+    /// quick repeats of one key merged, on `photos` photos, the active one alone until the
+    /// batch (decision 109). The Metadata tool's fields join it (#643).
+    Field { change: RatingChange, photos: usize },
 }
 
 /// The modules darktable has on by default with no on/off button (`hide_enable_button`),

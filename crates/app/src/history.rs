@@ -2369,6 +2369,8 @@ fn named(
         Move::Compress => Some(tr.text("history-compress")),
         Move::Truncate => Some(tr.text("history-truncate")),
         Move::DiscardHistory => Some(tr.text("history-discard")),
+        // A rating's change, never a step: unnamed until the app rates (decision 110).
+        Move::Field { .. } => None,
         Move::Steps {
             first,
             count,

@@ -277,6 +277,84 @@ impl Rating {
     }
 }
 
+/// A change of a photo's rating (decision 110), the value given, never a toggle, so a
+/// script's command means one thing; a client works out which way a toggle goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RatingChange {
+    /// So many stars, 0 to 5, and the reject taken back, as a star's click does.
+    Stars(u8),
+    /// The reject set or taken back, the stars kept beneath it.
+    Rejected(bool),
+    /// One label, 0 red to 4 purple, on or off.
+    Label { label: u8, on: bool },
+    /// Every label off.
+    ClearLabels,
+}
+
+/// One field a change set: its value before and after it, `None` where unset or cleared.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldChange {
+    pub field: String,
+    pub before: Option<FieldValue>,
+    pub after: Option<FieldValue>,
+}
+
+impl RatingChange {
+    /// Whether `self` and `other` change the same thing, so quick repeats of one key are
+    /// one undo: stars and stars, the reject and the reject, one label and the same label,
+    /// a clear and a clear.
+    pub fn same_kind(&self, other: &RatingChange) -> bool {
+        match (self, other) {
+            (RatingChange::Label { label: a, .. }, RatingChange::Label { label: b, .. }) => a == b,
+            _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+        }
+    }
+
+    /// Sets what it changes among `entries` at `clock`: each field whose value it changes,
+    /// unset counting as no stars, no reject and no label, and none that it leaves as it
+    /// is. What it changed, in the order of the properties.
+    pub fn apply(&self, entries: &mut Vec<FieldEntry>, clock: Clock) -> Vec<FieldChange> {
+        let rating = Rating::of(entries);
+        let labels = |bits: u8| (COLOUR_LABELS, FieldValue::Labels(bits));
+        let wanted = match *self {
+            RatingChange::Stars(stars) => vec![
+                (REJECTED, FieldValue::Marked(false)),
+                (RATING, FieldValue::Stars(stars.min(MAX_STARS))),
+            ],
+            RatingChange::Rejected(on) => vec![(REJECTED, FieldValue::Marked(on))],
+            RatingChange::Label { label, on } if label < LABELS => {
+                let bit = 1 << label;
+                let bits = if on {
+                    rating.labels | bit
+                } else {
+                    rating.labels & !bit
+                };
+                vec![labels(bits)]
+            }
+            RatingChange::Label { .. } => Vec::new(),
+            RatingChange::ClearLabels => vec![labels(0)],
+        };
+        let now = |field: &str| match field {
+            RATING => FieldValue::Stars(rating.stars),
+            REJECTED => FieldValue::Marked(rating.rejected),
+            _ => FieldValue::Labels(rating.labels),
+        };
+        let mut changed = Vec::new();
+        for (field, after) in wanted {
+            if now(field) == after {
+                continue;
+            }
+            changed.push(FieldChange {
+                field: field.to_owned(),
+                before: value(entries, field),
+                after: Some(after),
+            });
+            set(entries, field, Some(after), clock);
+        }
+        changed
+    }
+}
+
 /// `entries` as the copy's `apertrust:fields`, an `rdf:Bag` of structs in the order of
 /// their properties: each its field, its clock and its value where it has one.
 pub(crate) fn node(entries: &[FieldEntry]) -> Node {
@@ -483,6 +561,49 @@ mod tests {
         // In the order of their properties, whatever the order set.
         let order: Vec<&str> = entries.iter().map(|e| e.field.as_str()).collect();
         assert_eq!(order, [REJECTED, COLOUR_LABELS, RATING]);
+    }
+
+    #[test]
+    fn a_change_sets_only_what_it_changes() {
+        let mut entries = Vec::new();
+        let changed = |entries: &mut Vec<FieldEntry>, change: RatingChange, when| {
+            let changes = change.apply(entries, clock(when));
+            changes.into_iter().map(|c| c.field).collect::<Vec<_>>()
+        };
+        // No stars on a photo with none changes nothing.
+        assert!(changed(&mut entries, RatingChange::Stars(0), 1).is_empty());
+        assert_eq!(changed(&mut entries, RatingChange::Stars(3), 2), [RATING]);
+        assert_eq!(
+            changed(&mut entries, RatingChange::Rejected(true), 3),
+            [REJECTED]
+        );
+        // A star takes the reject back, the stars as they were.
+        assert_eq!(changed(&mut entries, RatingChange::Stars(3), 4), [REJECTED]);
+        let label = |label, on| RatingChange::Label { label, on };
+        assert_eq!(changed(&mut entries, label(0, true), 5), [COLOUR_LABELS]);
+        assert!(changed(&mut entries, label(0, true), 6).is_empty());
+        assert!(changed(&mut entries, label(9, true), 6).is_empty());
+        assert_eq!(changed(&mut entries, label(4, true), 7), [COLOUR_LABELS]);
+        assert_eq!(Rating::of(&entries).labels, 0b1_0001);
+        assert_eq!(
+            changed(&mut entries, RatingChange::ClearLabels, 8),
+            [COLOUR_LABELS]
+        );
+        assert_eq!(
+            Rating::of(&entries),
+            Rating {
+                stars: 3,
+                rejected: false,
+                labels: 0
+            }
+        );
+        // Each changed field takes the change's clock.
+        assert_eq!(entries.iter().map(|e| e.clock).max(), Some(Some(clock(8))));
+        let stars = RatingChange::Stars(1);
+        assert!(stars.same_kind(&RatingChange::Stars(4)));
+        assert!(label(1, true).same_kind(&label(1, false)));
+        assert!(!label(1, true).same_kind(&label(2, true)));
+        assert!(!stars.same_kind(&RatingChange::Rejected(true)));
     }
 
     #[test]
