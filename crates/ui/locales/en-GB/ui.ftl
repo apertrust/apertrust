@@ -2151,11 +2151,16 @@ tool-metadata-kind = Writes the photos’ metadata, never their edit
 metadata-copy-information = Copy Information
 metadata-copy-coordinates = Copy Coordinates
 metadata-select-a-photo = Select a photo
-metadata-several-later = Several photos come in a later version
 metadata-fact-unread = Apertrust does not read this from { $format } files yet
 metadata-folder-open = This folder is open
-metadata-rating-later = Ratings come in a later version
-metadata-labels-later = Colour labels come in a later version
+metadata-label-some = { $label } (some photos)
+metadata-rejected = Rejected
+metadata-stars =
+    { $count ->
+        [0] No stars
+        [one] { $count } star
+       *[other] { $count } stars
+    }
 metadata-map = Show on Map
 metadata-map-later = Coming with the map
 preset-metadata-essentials = Essentials
@@ -2168,6 +2173,45 @@ metadata-edited = { $when } · { $steps ->
        *[other] { $steps } steps
     }
 metadata-edited-never = Never
+# Several photos selected (decision 110): a value they differ in, its tooltip's lines, a
+# range from the lowest to the highest, a total, and the rows while the summary is read.
+metadata-different = Different
+metadata-value-count = { $value } · { $count }
+metadata-this-photo = { $value } (this photo)
+metadata-more-values =
+    { $count ->
+        [one] and { $count } more value
+       *[other] and { $count } more values
+    }
+metadata-photos-none =
+    { $count ->
+        [one] { $count } photo has none
+       *[other] { $count } photos have none
+    }
+metadata-shared-some =
+    { $count ->
+        [one] { $count } photo
+       *[other] { $count } photos
+    }: { $value }; { $none ->
+        [one] { $none } has none
+       *[other] { $none } have none
+    }
+metadata-covers =
+    { $count ->
+        [one] Of { $count } photo
+       *[other] Of { $count } photos
+    }
+metadata-size-total = { $size } in all
+metadata-reading = Reading { $read } of { $of } photos
+metadata-several-folders = The photos are in several folders
+metadata-edited-count = { $count } of { $of } photos edited
+metadata-and-more = and { $count } more
+metadata-different-places = The photos were taken in different places
+metadata-range = { $low } – { $high }
+metadata-range-day = { $date }, { $low } – { $high }
+metadata-day-time = { $date }, { $time }
+metadata-range-exposure = { $low } – { $high } s
+metadata-range-iso = ISO { $low } – { $high }
 metadata-resolution = { $x } × { $y }
 metadata-resolution-inches = { $x } × { $y } ppi
 metadata-resolution-centimetres = { $x } × { $y } pixels per cm

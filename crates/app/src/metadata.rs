@@ -29,10 +29,11 @@
 //!   98's generated actions.
 
 pub mod format;
+pub mod several;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
 use apertrust_base::settings::Store;
@@ -47,10 +48,14 @@ use apertrust_ui::popup::{Entry, Item, Submenu};
 use apertrust_ui::{Icon, Translator, theme};
 use eframe::egui;
 
+use crate::actions::ActionId;
 use crate::library;
 use crate::mirror::Mirror;
 use crate::presets::{self, Item as PresetItem, Line, Menu, Settings};
 use crate::utility::{Context, UtilityTool};
+use apertrust_engine::session::facts::{FactSummary, FactValue, Key, Summary};
+use apertrust_engine::session::{Command, Rating};
+use std::sync::Arc;
 
 /// The tool's id.
 pub const ID: &str = "metadata";
@@ -262,6 +267,14 @@ pub struct Metadata {
     home: Option<PathBuf>,
     /// The labels' column and the pass it was measured in, measured once a pass.
     column: Option<(u64, f32)>,
+    /// The described photos' ratings and the pass they were gathered in, once a pass for
+    /// Rating's and Colour labels' rows.
+    rated: Option<(u64, Rated)>,
+    /// The summary of several photos asked for, and the one held.
+    asking: several::Asking,
+    /// The rating's actions a click on Rating's stars or a label's dot asked for, which the
+    /// app runs as the keys run them ([`Metadata::take_ran`]).
+    ran: Vec<ActionId>,
 }
 
 impl Metadata {
@@ -275,6 +288,9 @@ impl Metadata {
                 .collect(),
             home: crate::export::places().home,
             column: None,
+            rated: None,
+            asking: several::Asking::default(),
+            ran: Vec::new(),
         }
     }
 
@@ -345,48 +361,168 @@ impl Metadata {
         settings
     }
 
-    /// ⋯'s own items in `words`: Copy Information, and Copy Coordinates while `photo` has
-    /// a location; neither without a photo.
-    pub fn options(words: &Translator, photo: Option<&Photo>) -> Vec<Entry> {
-        let located = photo.is_some_and(|photo| format::coordinates(&photo.exif).is_some());
+    /// ⋯'s own items in `words` for what the tool describes of `mirror`: Copy Information,
+    /// and Copy Coordinates while the photo described has a location, or every photo
+    /// selected the same one, disabled where they were taken in different places; neither
+    /// without a photo, nor before several photos' summary comes.
+    pub fn options(&self, words: &Translator, mirror: &Mirror) -> Vec<Entry> {
         let information = Item::new(COPY_INFORMATION, words.text(COPY_INFORMATION));
         let coordinates = Item::new(COPY_COORDINATES, words.text(COPY_COORDINATES));
+        let (described, located) = match self.coordinates(mirror) {
+            Located::Here(_) => (true, true),
+            Located::Nowhere(described) => (described, false),
+            Located::Apart => {
+                let apart = words.text("metadata-different-places");
+                return vec![
+                    Entry::Item(information),
+                    Entry::Item(coordinates.enabled(false).tip(apart)),
+                ];
+            }
+        };
         vec![
-            Entry::Item(information.enabled(photo.is_some())),
+            Entry::Item(information.enabled(described)),
             Entry::Item(coordinates.enabled(located)),
         ]
     }
 
-    /// What ⋯'s own item `id` copies of the photo the tool describes ([`described`]):
-    /// every row shown, "Label: value" a line, or its coordinates.
+    /// Where the photos the tool describes were taken, as Copy Coordinates copies it.
+    fn coordinates(&self, mirror: &Mirror) -> Located {
+        if mirror.selected_count() <= 1 {
+            let photo = described(mirror);
+            return match photo.and_then(|photo| format::coordinates(&photo.exif)) {
+                Some(here) => Located::Here(here),
+                None => Located::Nowhere(photo.is_some()),
+            };
+        }
+        let Some(summary) = self.held(mirror) else {
+            return Located::Nowhere(false);
+        };
+        let same = |id| match summary.get(id) {
+            Some(FactSummary::Same(value)) => value.shot.clone(),
+            _ => None,
+        };
+        let (latitude, longitude) = (summary.get("latitude"), summary.get("longitude"));
+        match (same("latitude"), same("longitude")) {
+            (Some(shot), Some(_)) => match format::coordinates(&shot.exif) {
+                Some(here) => Located::Here(here),
+                None => Located::Nowhere(true),
+            },
+            // None recorded, or still being read: disabled, saying nothing of places.
+            _ if [latitude, longitude]
+                .iter()
+                .any(|fact| matches!(fact, Some(FactSummary::Waiting { .. }))) =>
+            {
+                Located::Nowhere(true)
+            }
+            _ if matches!(latitude, Some(FactSummary::None))
+                && matches!(longitude, Some(FactSummary::None)) =>
+            {
+                Located::Nowhere(true)
+            }
+            // Two places or more on either axis; one, with photos that have none, says
+            // nothing of places.
+            _ if [latitude, longitude].iter().any(|fact| {
+                matches!(fact, Some(FactSummary::Different { values, more, .. })
+                    if values.len() + more > 1)
+            }) =>
+            {
+                Located::Apart
+            }
+            _ => Located::Nowhere(true),
+        }
+    }
+
+    /// What ⋯'s own item `id` copies of what the tool describes: every row shown as it is
+    /// drawn, "Label: value" a line, or the coordinates.
     pub fn copied(&self, id: &str, cx: &Context<'_>) -> Option<String> {
-        let photo = described(cx.mirror)?;
         match id {
-            COPY_INFORMATION => Some(self.information(photo, cx)),
-            COPY_COORDINATES => format::coordinates(&photo.exif),
+            COPY_INFORMATION => Some(self.information(cx)),
+            COPY_COORDINATES => match self.coordinates(cx.mirror) {
+                Located::Here(here) => Some(here),
+                _ => None,
+            },
             _ => None,
         }
     }
 
-    /// Every row shown of `photo`, in the groups' order, "Label: value" a line, "—" for
+    /// Every row shown, in the groups' order, as it is drawn, "Label: value" a line, "—" for
     /// none.
-    fn information(&self, photo: &Photo, cx: &Context<'_>) -> String {
-        let source = self.source(photo, cx);
+    fn information(&self, cx: &Context<'_>) -> String {
+        let subject = Subject::of(cx);
         let mut lines = Vec::new();
         for row in ROWS.iter().flat_map(|group| group.rows.iter()) {
             if !self.view.shows(row.id) {
                 continue;
             }
             let label = cx.words.text(&label_id(row.id));
-            let value = format::fact(row.id, &source).value;
+            let marks = [Widget::MetadataRating, Widget::MetadataLabels]
+                .into_iter()
+                .find(|widget| widget_row(*widget) == Some(row.id));
+            let value = match marks {
+                Some(widget) => Rated::of(cx).text(widget, cx.words),
+                None => self.worded(row.id, &subject, cx).value,
+            };
+            let value = value.filter(|value| !value.is_empty());
             lines.push(format!("{label}: {}", value.as_deref().unwrap_or("—")));
         }
         lines.join("\n")
     }
 
+    /// What to send the session while the tool is `shown` and open: a `Summarise` of the
+    /// selection when two or more photos are, once for each selection ([`several::Asking`]).
+    pub fn ask(&mut self, shown: bool, mirror: &Mirror) -> Option<Command> {
+        let selection = &mirror.selection;
+        // Again as the open photo's edit turns, or a batch ends: neither tells a new
+        // selection.
+        let edited = (mirror.values.edited, mirror.batches_ended);
+        (self.asking).ask(shown, selection.through, edited, &selection.photos)
+    }
+
+    /// The described photos' ratings, gathered once a pass for both rows.
+    fn rated(&mut self, pass: u64, cx: &Context<'_>) -> Rated {
+        if let Some((at, rated)) = &self.rated
+            && *at == pass
+        {
+            return rated.clone();
+        }
+        let rated = Rated::of(cx);
+        self.rated = Some((pass, rated.clone()));
+        rated
+    }
+
+    /// The rating's actions Rating's and Colour labels' marks asked for since, to run.
+    pub fn take_ran(&mut self) -> Vec<ActionId> {
+        std::mem::take(&mut self.ran)
+    }
+
+    /// The `Summarise` went out as the command numbered `number`.
+    pub fn sent(&mut self, number: u64) {
+        self.asking.sent(number);
+    }
+
+    /// The session's summary for the command numbered `through`.
+    pub fn receive(&mut self, through: u64, summary: Arc<Summary>) {
+        self.asking.receive(through, summary);
+    }
+
+    /// The summary of the selection `mirror` shows, where that is the session's and the
+    /// summary is of it: none while a selection command is on its way, or the summary held is
+    /// an earlier selection's, so nothing of another selection is ever drawn.
+    fn held(&self, mirror: &Mirror) -> Option<&Summary> {
+        if !mirror.selection_settled() {
+            return None;
+        }
+        self.asking.held(mirror.selection.through)
+    }
+
+    /// How long until the rows waiting for a summary show "…"; none where nothing waits.
+    pub fn until_dotted(&self) -> Option<std::time::Duration> {
+        self.asking.until_dotted()
+    }
+
     fn source<'a>(&'a self, photo: &'a Photo, cx: &'a Context<'_>) -> format::Source<'a> {
         format::Source {
-            photo,
+            of: format::Of::photo(photo),
             history: cx.mirror.history.as_ref(),
             home: self.home.as_deref(),
             words: cx.words,
@@ -419,8 +555,7 @@ impl Metadata {
         facts
             .iter()
             .map(|fact| {
-                let [label, tag, none] =
-                    messages::fact_words(ID, fact.id).map(|id| words.text(&id));
+                let [label, tag, _] = messages::fact_words(ID, fact.id).map(|id| words.text(&id));
                 let mut row = Drawn {
                     label,
                     value: None,
@@ -433,38 +568,23 @@ impl Metadata {
                     end: None,
                     enabled: true,
                 };
-                match &subject {
-                    Subject::None => {
-                        row.enabled = false;
-                        row.tip = words.text("metadata-select-a-photo");
-                    }
-                    Subject::Several { count, names } if fact.id == "file_name" => {
-                        let mut args = Args::new();
-                        args.set("count", *count as f64);
-                        row.value = Some(words.text_with("photo-count", Some(&args)));
-                        row.tip = names.join("\n");
-                    }
-                    Subject::Several { .. } => {
-                        row.enabled = false;
-                        row.tip = words.text("metadata-several-later");
-                    }
-                    Subject::One(photo) => {
-                        let shown = format::fact(fact.id, &self.source(photo, cx));
-                        let why = if photo.exif.unread.contains(&exif_field(fact.id)) {
-                            let mut args = Args::new();
-                            args.set("format", photo.format.as_str());
-                            words.text_with("metadata-fact-unread", Some(&args))
-                        } else {
-                            none
-                        };
-                        let first = shown.value.clone().unwrap_or(why);
-                        let lines = [Some(first), shown.note, Some(tag)];
-                        row.tip = lines.into_iter().flatten().collect::<Vec<_>>().join("\n");
-                        row.value = shown.value;
-                        if fact.end == Some(FactEndDef::OpenFolder) {
-                            row.end = Some(open_folder(photo, cx));
+                let worded = self.worded(fact.id, &subject, cx);
+                row.enabled = worded.enabled;
+                row.value = worded.value;
+                row.tip = [Some(worded.tip), Some(tag)]
+                    .into_iter()
+                    .flatten()
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if fact.end == Some(FactEndDef::OpenFolder) {
+                    row.end = match &subject {
+                        Subject::One(photo) => {
+                            photo.path.parent().map(|folder| open_folder(folder, cx))
                         }
-                    }
+                        Subject::Several { .. } => Some(self.shared_folder(cx)),
+                        Subject::None => None,
+                    };
                 }
                 row
             })
@@ -482,6 +602,326 @@ fn kept(mut view: View, now: &View, given: &BTreeSet<String>) -> View {
     view
 }
 
+/// The ratings of the photos the tool describes, for Rating's and Colour labels' rows
+/// (decision 110): the open photo's, as the caption's, or several photos' from their listing,
+/// each rating with how many photos have it; enabled while the rating's actions can run.
+#[derive(Clone, Debug)]
+struct Rated {
+    ratings: Vec<(Rating, usize)>,
+    /// How many photos are described.
+    photos: usize,
+    enabled: bool,
+    /// The rating a click on its stars toggles against, as the caption's: the open photo's.
+    open: Option<Rating>,
+}
+
+/// A row of marks as [`Rated`] words it.
+struct MarksRow {
+    marks: Marks,
+    words: Option<String>,
+    tip: String,
+}
+
+impl Rated {
+    fn of(cx: &Context<'_>) -> Rated {
+        let mirror = cx.mirror;
+        let open = mirror.rateable();
+        let shown = mirror.rating.as_ref().map(|state| state.rating);
+        let mut ratings: Vec<(Rating, usize)> = Vec::new();
+        let mut photos = 0;
+        let mut count = |rating: Rating| match ratings.iter_mut().find(|(kept, _)| *kept == rating)
+        {
+            Some((_, n)) => *n += 1,
+            None => ratings.push((rating, 1)),
+        };
+        if mirror.selected_count() > 1 && mirror.selection_settled() {
+            let lookup = Lookup::of(mirror);
+            for path in &mirror.selection.photos {
+                photos += 1;
+                count(lookup.rating(path).unwrap_or_default());
+            }
+        } else if let Some(rating) = (open.or(shown))
+            // While a selection command is untold, no photo, as the other rows.
+            .filter(|_| open_photo(cx).is_some() && mirror.selection_settled())
+        {
+            photos = 1;
+            count(rating);
+        }
+        ratings.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        Rated {
+            enabled: open.is_some() && photos > 0,
+            ratings,
+            photos,
+            open,
+        }
+    }
+
+    /// Rating's or Colour labels' row as text, as Copy Information copies it: the words the
+    /// row shows, else its stars as ★ and ☆, or the labels every photo has by name and those
+    /// some have marked so; none with no photo.
+    fn text(&self, widget: Widget, words: &Translator) -> Option<String> {
+        if self.photos == 0 {
+            return None;
+        }
+        let row = self.row(widget, words);
+        if let Some(said) = row.words {
+            return Some(said);
+        }
+        Some(match row.marks {
+            Marks::Stars(stars) => (0..5u8)
+                .map(|at| if at < stars { '★' } else { '☆' })
+                .collect(),
+            Marks::Labels { on, some } => {
+                let name = |at: usize| words.text(&format!("colour-label-{}", LABELS[at]));
+                let mut names: Vec<String> =
+                    (0..5).filter(|at| on & (1 << at) != 0).map(name).collect();
+                names.extend((0..5).filter(|at| some & (1 << at) != 0).map(|at| {
+                    let mut args = Args::new();
+                    args.set("label", name(at));
+                    words.text_with("metadata-label-some", Some(&args))
+                }));
+                if names.is_empty() {
+                    "—".to_owned()
+                } else {
+                    names.join(", ")
+                }
+            }
+        })
+    }
+
+    /// Rating's or Colour labels' row: the stars of the rating every photo has, "Rejected",
+    /// or "Different" with each rating and its count in the tooltip; the labels every photo
+    /// has, filled, and those some have, ringed.
+    fn row(&self, widget: Widget, words: &Translator) -> MarksRow {
+        let tip = match self.photos {
+            0 => words.text("metadata-select-a-photo"),
+            _ => String::new(),
+        };
+        if widget == Widget::MetadataLabels {
+            let all = (self.ratings.iter()).fold(0x1f, |all, (rating, _)| all & rating.labels);
+            let any = (self.ratings.iter()).fold(0, |any, (rating, _)| any | rating.labels);
+            return MarksRow {
+                marks: Marks::Labels {
+                    on: if self.photos > 0 { all } else { 0 },
+                    some: any & !all,
+                },
+                words: None,
+                tip,
+            };
+        }
+        let stars = |rating: &Rating| {
+            if rating.rejected {
+                words.text("metadata-rejected")
+            } else {
+                let mut args = Args::new();
+                args.set("count", f64::from(rating.stars));
+                words.text_with("metadata-stars", Some(&args))
+            }
+        };
+        // As shown: a rejected photo reads Rejected whatever its stars.
+        let shared =
+            |a: &Rating, b: &Rating| a.rejected == b.rejected && (a.rejected || a.stars == b.stars);
+        match self.ratings.as_slice() {
+            [] => MarksRow {
+                marks: Marks::Stars(0),
+                words: None,
+                tip,
+            },
+            [(first, _), rest @ ..] if rest.iter().all(|(other, _)| shared(first, other)) => {
+                MarksRow {
+                    marks: Marks::Stars(first.stars),
+                    words: first.rejected.then(|| words.text("metadata-rejected")),
+                    tip,
+                }
+            }
+            several => {
+                let mut counted: Vec<(String, usize)> = Vec::new();
+                for (rating, n) in several {
+                    let said = stars(rating);
+                    match counted.iter_mut().find(|(kept, _)| *kept == said) {
+                        Some((_, total)) => *total += n,
+                        None => counted.push((said, *n)),
+                    }
+                }
+                counted.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+                let lines: Vec<String> = (counted.into_iter())
+                    .map(|(said, n)| {
+                        let mut args = Args::new();
+                        args.set("value", said);
+                        args.set("count", n as f64);
+                        words.text_with("metadata-value-count", Some(&args))
+                    })
+                    .collect();
+                MarksRow {
+                    marks: Marks::Stars(0),
+                    words: Some(words.text("metadata-different")),
+                    tip: lines.join("\n"),
+                }
+            }
+        }
+    }
+
+    /// The rating's action a click on the mark at `at` runs, as the keys and the caption
+    /// run it: so many stars, the open photo's own star clearing it; a label.
+    fn action(&self, widget: Widget, at: usize) -> ActionId {
+        if widget == Widget::MetadataLabels {
+            return ActionId::LABEL[at.min(4)];
+        }
+        let stars = (at + 1).min(5);
+        let own = self.photos == 1
+            && self
+                .open
+                .is_some_and(|open| usize::from(open.stars) == stars);
+        ActionId::RATING[if own { 0 } else { stars }]
+    }
+}
+
+/// The colour labels' ids in darktable's order, as their words name them.
+const LABELS: [&str; 5] = ["red", "yellow", "green", "blue", "purple"];
+
+/// The ratings the open folder's listing, or the photos alone, hold, by photo: built once,
+/// then read for each selected photo.
+enum Lookup<'a> {
+    Folder {
+        folder: Option<PathBuf>,
+        names: HashMap<&'a std::ffi::OsStr, Rating>,
+    },
+    Alone(HashMap<&'a Path, Rating>),
+}
+
+impl<'a> Lookup<'a> {
+    fn of(mirror: &'a Mirror) -> Lookup<'a> {
+        let folder = &mirror.folder;
+        let photos = folder.photos();
+        match &folder.folder {
+            crate::folder::Folder::Open(listing) => Lookup::Folder {
+                folder: std::path::absolute(&listing.path).ok(),
+                names: (photos.iter())
+                    .map(|photo| (std::ffi::OsStr::new(photo.name.as_str()), photo.rating))
+                    .collect(),
+            },
+            _ => Lookup::Alone(
+                (folder.alone_paths().iter().zip(photos))
+                    .map(|(path, photo)| (path.as_path(), photo.rating))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// The rating of the photo at `path`, where the listing holds it.
+    fn rating(&self, path: &Path) -> Option<Rating> {
+        match self {
+            Lookup::Folder { folder, names } => {
+                let parent = std::path::absolute(path.parent()?).ok();
+                (parent.is_some() && parent == *folder)
+                    .then(|| names.get(path.file_name()?).copied())
+                    .flatten()
+            }
+            Lookup::Alone(paths) => paths.get(path).copied(),
+        }
+    }
+}
+
+/// Where the photos described were taken, as Copy Coordinates copies it.
+enum Located {
+    /// One place: its coordinates.
+    Here(String),
+    /// None recorded; whether there is a photo described at all.
+    Nowhere(bool),
+    /// Several places.
+    Apart,
+}
+
+/// A row's words: its value, `None` for "—", the first line of its tooltip, and whether it
+/// is enabled.
+struct Worded {
+    value: Option<String>,
+    tip: String,
+    enabled: bool,
+}
+
+impl Metadata {
+    /// The row `id` of `subject`: one photo's fact, several photos' summary, or none.
+    fn worded(&self, id: &str, subject: &Subject<'_>, cx: &Context<'_>) -> Worded {
+        let words = cx.words;
+        let none = words.text(&messages::fact_words(ID, id)[2]);
+        match subject {
+            Subject::None => Worded {
+                value: None,
+                tip: words.text("metadata-select-a-photo"),
+                enabled: false,
+            },
+            Subject::Several { count, names } if id == "file_name" => {
+                let mut tip = names.join("\n");
+                if *count > names.len() {
+                    let more = (*count - names.len()) as f64;
+                    let mut args = Args::new();
+                    args.set("count", more);
+                    tip = format!(
+                        "{tip}\n{}",
+                        words.text_with("metadata-and-more", Some(&args))
+                    );
+                }
+                let mut args = Args::new();
+                args.set("count", *count as f64);
+                Worded {
+                    value: Some(words.text_with("photo-count", Some(&args))),
+                    tip,
+                    enabled: true,
+                }
+            }
+            Subject::Several { .. } => {
+                let active = open_photo(cx).map(format::Of::photo);
+                let several = several::Words {
+                    words,
+                    home: self.home.as_deref(),
+                    active,
+                };
+                let held = self.held(cx.mirror);
+                let row = several::row(id, held, &none, &several);
+                let row = several::waiting(row, held.is_some(), &self.asking);
+                Worded {
+                    value: row.value,
+                    tip: row.tip,
+                    enabled: true,
+                }
+            }
+            Subject::One(photo) => {
+                let shown = format::fact(id, &self.source(photo, cx));
+                let why = if photo.exif.unread.contains(&exif_field(id)) {
+                    let mut args = Args::new();
+                    args.set("format", photo.format.as_str());
+                    words.text_with("metadata-fact-unread", Some(&args))
+                } else {
+                    none
+                };
+                let first = shown.value.clone().unwrap_or(why);
+                let tip = [Some(first), shown.note].into_iter().flatten();
+                Worded {
+                    value: shown.value,
+                    tip: tip.collect::<Vec<_>>().join("\n"),
+                    enabled: true,
+                }
+            }
+        }
+    }
+
+    /// Open This Folder over several photos: on the folder they share, disabled where they
+    /// are in several, and with no word while their summary has not come.
+    fn shared_folder(&self, cx: &Context<'_>) -> (bool, String, Option<library::Action>) {
+        let Some(summary) = self.held(cx.mirror) else {
+            return (false, String::new(), None);
+        };
+        match summary.get("folder") {
+            Some(FactSummary::Same(FactValue {
+                key: Key::Text(folder),
+                ..
+            })) => open_folder(Path::new(folder), cx),
+            _ => (false, cx.words.text("metadata-several-folders"), None),
+        }
+    }
+}
+
 /// The active photo, where one is open.
 fn open_photo<'a>(cx: &'a Context<'_>) -> Option<&'a Photo> {
     match &cx.mirror.photo {
@@ -494,7 +934,11 @@ fn open_photo<'a>(cx: &'a Context<'_>) -> Option<&'a Photo> {
 /// are selected, whose facts the tool does not read yet.
 pub fn described(mirror: &Mirror) -> Option<&Photo> {
     match &mirror.photo {
-        crate::mirror::PhotoState::Open(photo) if mirror.selected_count() <= 1 => Some(photo),
+        crate::mirror::PhotoState::Open(photo)
+            if mirror.selected_count() <= 1 && mirror.selection_settled() =>
+        {
+            Some(photo)
+        }
         _ => None,
     }
 }
@@ -535,14 +979,18 @@ impl<'a> Subject<'a> {
     fn of(cx: &'a Context<'_>) -> Subject<'a> {
         let count = cx.mirror.selected_count();
         if count > 1 {
+            // The session's names, once its selection is the one shown.
+            let settled = cx.mirror.selection_settled();
             let names = (cx.mirror.selection.photos.iter())
+                .filter(|_| settled)
                 .take(5)
                 .filter_map(|path| path.file_name())
                 .map(|name| name.to_string_lossy().into_owned())
                 .collect();
             return Subject::Several { count, names };
         }
-        match open_photo(cx) {
+        // The selection on its way may leave the active photo out: nothing until it is told.
+        match open_photo(cx).filter(|_| cx.mirror.selection_settled()) {
             Some(photo) => Subject::One(photo),
             None => Subject::None,
         }
@@ -559,14 +1007,12 @@ struct Drawn {
     enabled: bool,
 }
 
-/// Open This Folder on `photo`'s folder: whether it can run, its tooltip, and what it does.
-/// In folder mode it chooses the folder in Collections' tree, for photos opened alone it
-/// opens it, as Collections' own does; it rests where the folder is the one open.
-fn open_folder(photo: &Photo, cx: &Context<'_>) -> (bool, String, Option<library::Action>) {
+/// Open This Folder on `folder`: whether it can run, its tooltip, and what it does. In
+/// folder mode it chooses the folder in Collections' tree, for photos opened alone it opens
+/// it, as Collections' own does; it rests where the folder is the one open.
+fn open_folder(folder: &Path, cx: &Context<'_>) -> (bool, String, Option<library::Action>) {
     let words = cx.words;
-    let Some(folder) = photo.path.parent().map(Path::to_owned) else {
-        return (false, String::new(), None);
-    };
+    let folder = folder.to_owned();
     let open = match &cx.mirror.folder.folder {
         crate::folder::Folder::Open(listing) => Some(listing.path.as_path()),
         _ => None,
@@ -589,8 +1035,9 @@ impl UtilityTool for Metadata {
         definition()
     }
 
-    /// Rating and Colour labels in Basic, and Show on Map after GPS, each drawn disabled
-    /// until what it calls is built.
+    /// Rating and Colour labels in Basic, enabled while the rating's actions can run, a click
+    /// on a mark running its action; and Show on Map after GPS, drawn disabled until the map
+    /// is built.
     fn body(
         &mut self,
         widget: Widget,
@@ -602,12 +1049,17 @@ impl UtilityTool for Metadata {
             Widget::MetadataRating | Widget::MetadataLabels => {
                 let column = self.column(ui, words);
                 let id = widget_row(widget).unwrap_or_default();
-                let (later, marks) = match widget {
-                    Widget::MetadataRating => ("metadata-rating-later", Marks::Stars),
-                    _ => ("metadata-labels-later", Marks::Labels),
-                };
-                let (label, tip) = (words.text(&label_id(id)), words.text(later));
-                FactMarks::new(&label, &tip, marks, column).show(ui);
+                let label = words.text(&label_id(id));
+                let rated = self.rated(ui.ctx().cumulative_pass_nr(), cx);
+                let row = rated.row(widget, words);
+                let said = rated.text(widget, words);
+                let marks = FactMarks::new(&label, &row.tip, row.marks, column)
+                    .enabled(rated.enabled)
+                    .words(row.words.as_deref())
+                    .said(said.as_deref());
+                if let Some(at) = marks.show(ui) {
+                    self.ran.push(rated.action(widget, at));
+                }
             }
             // At the row's end, where a fact's end item sits.
             Widget::MetadataMap => {

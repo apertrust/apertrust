@@ -79,21 +79,17 @@ impl Exposure {
 }
 
 /// An exposure time by darktable's rule (`dt_util_format_exposure`), with `s` for its ″: a
-/// fraction of a second below 0.29 s or where the fraction is whole, else in seconds.
+/// fraction of a second below 0.29 s or where the fraction is whole, else in seconds; the
+/// rule is the library's, which the Metadata tool's summary compares times by.
 pub(crate) fn shutter(seconds: f32, words: &Translator) -> String {
+    use apertrust_engine::session::facts::{Shutter, shutter};
     let number = |value: f32, decimals| words.format_number(f64::from(value), decimals, false);
-    if seconds >= 1.0 {
-        if seconds.round() == seconds {
-            number(seconds, 0)
-        } else {
-            number(seconds, 1)
-        }
-    } else if seconds < 0.29 || (1.0 / seconds).round() == 1.0 / seconds {
-        format!("1/{}", number(1.0 / seconds, 0))
-    } else if 10.0 * (10.0 / seconds).round() == (100.0 / seconds).round() {
-        format!("1/{}", number(1.0 / seconds, 1))
-    } else {
-        number(seconds, 1)
+    match shutter(seconds) {
+        Shutter::Seconds { value, decimals } => number(value, decimals),
+        Shutter::Fraction {
+            denominator,
+            decimals,
+        } => format!("1/{}", number(denominator, decimals)),
     }
 }
 

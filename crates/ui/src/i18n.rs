@@ -301,6 +301,18 @@ impl Translator {
         to_second(self.locale, at, false).unwrap_or_default()
     }
 
+    /// `date` in the locale's medium date, with its year or without: "4 Jul 2026", "4 Jul"
+    /// in British English. Empty for a date the calendar cannot place.
+    pub fn format_date(&self, date: chrono::NaiveDate, year: bool) -> String {
+        medium_date(self.locale, date, year).unwrap_or_default()
+    }
+
+    /// `at`'s time to the minute, as the locale writes it after a medium date: "08:10" in
+    /// British English, "8:10 AM" in American. Empty for a time the calendar cannot place.
+    pub fn format_time(&self, at: chrono::NaiveDateTime) -> String {
+        to_minute(self.locale, at).unwrap_or_default()
+    }
+
     /// A size on disk, `size` with `decimals` decimals in `unit`, `kb`, `mb` or `gb` of 10³,
     /// 10⁶ and 10⁹ bytes, as the engine's `size_in_unit` gives it: "32 MB", "4.5 MB", in the
     /// language's numbers, the words Settings › Storage and a cache's Clear write a size in.
@@ -584,6 +596,78 @@ fn to_second(locale: Locale, at: chrono::NaiveDateTime, weekday: bool) -> Option
         formatter.format(&at).to_string()
     };
     Some(words)
+}
+
+/// The CLDR formatters of a medium date, with its year and without, and of one with its
+/// time to the minute, for British English, Ukrainian, Polish and American English, made
+/// when first used.
+static MEDIUM_DAYS: [OnceLock<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::YMD>>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+static MEDIUM_MONTH_DAYS: [OnceLock<FixedCalendarDateTimeFormatter<Gregorian, fieldsets::MD>>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+static DAYS_TO_MINUTE: [OnceLock<DateTimes>; 4] = [
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+    OnceLock::new(),
+];
+
+fn language_of(locale: Locale) -> icu_locale_core::Locale {
+    (locale.language().parse()).expect("the locales' ids are valid; tested")
+}
+
+/// `date` in `locale`'s medium date, its year where `year`.
+fn medium_date(locale: Locale, date: chrono::NaiveDate, year: bool) -> Option<String> {
+    use chrono::Datelike as _;
+    let at = Date::try_new_gregorian(date.year(), date.month() as u8, date.day() as u8).ok()?;
+    // The formatter in `slot` for `fields`, made once a locale, writing `at`: one per field
+    // set, each its own type.
+    macro_rules! written {
+        ($slot:expr, $fields:expr) => {{
+            let formatter = $slot[locale.numbers()].get_or_init(|| {
+                FixedCalendarDateTimeFormatter::try_new((&language_of(locale)).into(), $fields)
+                    .expect("CLDR data for every locale's language is compiled in")
+            });
+            formatter.format(&at).to_string()
+        }};
+    }
+    Some(if year {
+        written!(MEDIUM_DAYS, fieldsets::YMD::medium())
+    } else {
+        written!(MEDIUM_MONTH_DAYS, fieldsets::MD::medium())
+    })
+}
+
+/// `at`'s time to the minute as `locale` writes it after its medium date: the medium date
+/// and time's words with the date's and the separator after it taken off.
+fn to_minute(locale: Locale, at: chrono::NaiveDateTime) -> Option<String> {
+    use chrono::Timelike as _;
+    let day = medium_date(locale, at.date(), true)?;
+    let date = {
+        use chrono::Datelike as _;
+        Date::try_new_gregorian(at.year(), at.month() as u8, at.day() as u8).ok()?
+    };
+    let time = Time::try_new(at.hour() as u8, at.minute() as u8, 0, 0).ok()?;
+    let formatter = DAYS_TO_MINUTE[locale.numbers()].get_or_init(|| {
+        let language = language_of(locale);
+        let fields = fieldsets::YMD::medium().with_time_hm();
+        FixedCalendarDateTimeFormatter::try_new((&language).into(), fields)
+            .expect("CLDR data for every locale's language is compiled in")
+    });
+    let whole = formatter.format(&DateTime { date, time }).to_string();
+    let time = match whole.strip_prefix(&day) {
+        Some(rest) => rest.trim_start_matches(|c: char| c == ',' || c.is_whitespace()),
+        None => whole.as_str(),
+    };
+    Some(time.to_owned())
 }
 
 /// The local calendar day `at` falls on, milliseconds since 1970 in UTC on the local
@@ -1336,6 +1420,11 @@ mod tests {
                 args.set("mode", "auto");
                 args.set("fired", "yes");
                 args.set("red_eye", "no");
+                // Several photos: a range's ends, how many are read and how many have none.
+                args.set("low", "1/2000");
+                args.set("high", "1/60");
+                args.set("read", "2,140");
+                args.set("none", 3);
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

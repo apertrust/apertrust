@@ -16,15 +16,18 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
-use apertrust_engine::session::library::DateTime;
+use apertrust_engine::session::Event;
+use apertrust_engine::session::facts::{Facts, Summed, build};
+use apertrust_engine::session::library::{DateTime, Shot};
 use apertrust_engine::session::{Exif, Photo, Selection};
 use apertrust_ui::{Builtin, Locale, Theme, translator};
 use egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 
-use super::format::{Shown, Source, fact, flash};
+use super::format::{Of, Shown, Source, fact, flash};
 use super::*;
 use crate::folder::{Folder, Listing};
 use crate::mirror::{Mirror, PhotoState};
@@ -92,7 +95,7 @@ fn photo() -> Photo {
 fn shown(id: &str, photo: &Photo, locale: Locale) -> Shown {
     let words = Translator::new(locale);
     let source = Source {
-        photo,
+        of: Of::photo(photo),
         history: None,
         home: Some(Path::new(HOME)),
         words: &words,
@@ -115,7 +118,7 @@ fn edited_counts_the_steps_applied_but_the_defaults() {
     let photo = photo();
     let edited = |history: &History| {
         let source = Source {
-            photo: &photo,
+            of: Of::photo(&photo),
             history: Some(history),
             home: None,
             words: &words,
@@ -272,7 +275,7 @@ fn the_flash_reads_from_its_bits() {
     let words = Translator::new(Locale::EnGb);
     let photo = photo();
     let source = Source {
-        photo: &photo,
+        of: Of::photo(&photo),
         history: None,
         home: None,
         words: &words,
@@ -419,6 +422,10 @@ struct Scene {
     folder: PathBuf,
     actions: Vec<library::Action>,
     copied: Vec<String>,
+    /// The commands it sent, the first numbered 1.
+    asked: Vec<Command>,
+    /// The registry actions it ran: the rating's, from Rating's and Colour labels' marks.
+    ran: Vec<crate::actions::ActionId>,
 }
 
 fn scene(photo: Option<Photo>) -> Scene {
@@ -432,6 +439,8 @@ fn scene(photo: Option<Photo>) -> Scene {
         folder: std::env::temp_dir().join("apertrust-metadata-tests-presets"),
         actions: Vec::new(),
         copied: Vec::new(),
+        asked: Vec::new(),
+        ran: Vec::new(),
     }
 }
 
@@ -446,10 +455,9 @@ fn drawn(which: Builtin, width: f32, state: Scene) -> Harness<'static, Scene> {
             |ui, scene: &mut Scene| {
                 let settings = Settings::default();
                 let (words, mut commands) = (translator(ui.ctx()), Vec::new());
-                let photo = described(&scene.mirror);
                 let head = Head {
                     open: true,
-                    options: Metadata::options(&words, photo),
+                    options: scene.tool.options(&words, &scene.mirror),
                     enabled: true,
                     presets: Some(presets::Menu {
                         folder: scene.folder.clone(),
@@ -474,6 +482,12 @@ fn drawn(which: Builtin, width: f32, state: Scene) -> Harness<'static, Scene> {
                 }
                 scene.copied.extend(out.copied);
                 scene.actions.extend(out.actions);
+                scene.ran.extend(out.run);
+                // Shown and open, it asks once drawn, as the app does.
+                if let Some(command) = scene.tool.ask(true, &scene.mirror) {
+                    scene.asked.push(command);
+                    scene.tool.sent(scene.asked.len() as u64);
+                }
             },
             state,
         )
@@ -625,20 +639,16 @@ fn copy_information_lists_every_row_shown() {
 
 #[test]
 fn copy_coordinates_rests_without_a_location() {
+    let enabled = |state: &Scene| -> Vec<bool> {
+        let words = Translator::new(Locale::EnGb);
+        (state.tool.options(&words, &state.mirror).iter())
+            .map(|entry| matches!(entry, Entry::Item(item) if item.enabled))
+            .collect()
+    };
     let mut photo = photo();
     photo.exif.latitude = None;
-    let words = Translator::new(Locale::EnGb);
-    let options = Metadata::options(&words, Some(&photo));
-    let enabled: Vec<bool> = (options.iter())
-        .map(|entry| matches!(entry, Entry::Item(item) if item.enabled))
-        .collect();
-    assert_eq!(enabled, [true, false]);
-    assert_eq!(
-        (Metadata::options(&words, None).iter())
-            .filter(|entry| matches!(entry, Entry::Item(item) if item.enabled))
-            .count(),
-        0
-    );
+    assert_eq!(enabled(&scene(Some(photo))), [true, false]);
+    assert_eq!(enabled(&scene(None)), [false, false]);
 }
 
 #[test]
@@ -667,31 +677,282 @@ fn open_this_folder_opens_the_photo_s_folder_and_rests_on_the_open_one() {
     assert!(open.accesskit_node().is_disabled());
 }
 
-#[test]
-fn several_photos_read_how_many_and_the_rest_wait() {
+/// Twelve photos selected, the first active.
+fn twelve() -> Scene {
     let mut state = scene(Some(photo()));
     let photos: Vec<PathBuf> = (0..12)
         .map(|n| PathBuf::from(format!("{FOLDER}/R00012{n:02}.DNG")))
         .collect();
-    state
+    state.mirror.apply(Event::Selection(Selection {
+        photos: photos.clone(),
+        active: Some(photos[0].clone()),
+        previous: false,
+        through: 0,
+    }));
+    // Their listing's ratings: seven three stars, five one star; red on all, green on
+    // three.
+    let listed = (0..12)
+        .map(|n| apertrust_engine::session::library::Photo {
+            name: format!("R00012{n:02}.DNG"),
+            size: 32_000_000,
+            modified: None,
+            edit: apertrust_engine::session::library::EditState::None,
+            rating: apertrust_engine::session::Rating {
+                stars: if n < 7 { 3 } else { 1 },
+                rejected: false,
+                labels: if n < 3 { 0b101 } else { 0b001 },
+            },
+        })
+        .collect();
+    state.mirror.folder.folder = Folder::Open(Listing {
+        name: "2026-07 Lisbon".to_owned(),
+        path: PathBuf::from(FOLDER),
+        subfolders: Vec::new(),
+        photos: listed,
+        done: true,
+        taken: None,
+        thumbnails: HashMap::new(),
+    });
+    // The open photo rated as the first of them, so the rating's actions can run.
+    let open = apertrust_engine::session::Rating {
+        stars: 3,
+        rejected: false,
+        labels: 0b101,
+    };
+    rated(state, open)
+}
+
+/// Several photos' Rating reads Different, its tooltip each rating's count, and their
+/// labels show red on all.
+#[test]
+fn several_photos_rating_reads_different() {
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    assert!(harness.query_by_label("Rating: Different").is_some());
+}
+
+/// The twelve photos' summary, as the session sends it: taken over one morning, at three
+/// exposure times and apertures, the last three with another lens, seven edited; in two
+/// places where `apart`.
+fn twelve_summarised(apart: bool) -> Arc<Summary> {
+    twelve_located(apart.then_some(Some(40.0)))
+}
+
+/// The twelve photos' summary, the odd photos' latitude `odd` where it is given: another
+/// place, or none.
+fn twelve_located(odd: Option<Option<f64>>) -> Arc<Summary> {
+    let shots: Vec<Arc<Shot>> = (0..12u8)
+        .map(|n| {
+            let mut exif = (*photo().exif).clone();
+            if let Some(taken) = &mut exif.taken {
+                taken.hour = 8 + n / 6;
+                taken.minute = 10 + n;
+            }
+            exif.exposure_time = Some([1.0 / 2000.0, 1.0 / 500.0, 1.0 / 60.0][usize::from(n % 3)]);
+            exif.aperture = Some([2.8, 5.6, 8.0][usize::from(n % 3)]);
+            if n >= 9 {
+                exif.lens = Some("GR Lens 26.1mm F2.8".to_owned());
+            }
+            if let Some(latitude) = odd
+                && n % 2 == 1
+            {
+                exif.latitude = latitude;
+            }
+            Arc::new(Shot {
+                exif,
+                iso: Some(200.0),
+                size: [6000, 4000],
+                sensor: [6064, 4040],
+                format: "DNG".to_owned(),
+                make: "Ricoh".to_owned(),
+                alias: "GR IV".to_owned(),
+                file_size: 32_000_000,
+            })
+        })
+        .collect();
+    let names: Vec<String> = (0..12).map(|n| format!("R00012{n:02}.DNG")).collect();
+    let folder = Path::new(FOLDER);
+    let photos: Vec<Summed<'_>> = (0..12)
+        .map(|n| Summed {
+            name: &names[n],
+            folder,
+            size: 32_000_000,
+            edited: n < 7,
+            facts: Facts::Read(&shots[n]),
+        })
+        .collect();
+    Arc::new(build(&photos))
+}
+
+/// The summary the app asked for last, by its number.
+fn answer(harness: &mut Harness<'_, Scene>, apart: bool) {
+    let through = harness.state().asked.len() as u64;
+    harness
+        .state_mut()
+        .tool
+        .receive(through, twelve_summarised(apart));
+    harness.run();
+}
+
+#[test]
+fn several_photos_show_what_they_share_their_ranges_and_where_they_differ() {
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    let asked = &harness.state().asked;
+    assert!(matches!(&asked[..], [Command::Summarise { photos }] if photos.len() == 12));
+    assert!(fact_named(&harness, "File name: 12 photos"));
+    // Nothing until the summary comes.
+    assert!(fact_named(&harness, "Aperture: "));
+    assert!(!fact_named(&harness, "Aperture: f"));
+    answer(&mut harness, false);
+    for row in [
+        "Folder: ~/Pictures/2026-07 Lisbon",
+        "Size on disk: 384 MB in all",
+        "Dimensions: 6000 × 4000 · 24.0 MP",
+        "Edited: Different",
+        "Date taken: 4 Jul 2026, 08:10 – 09:21",
+        "Exposure time: 1/2000 – 1/60 s",
+        "Aperture: f/2.8 – f/8.0",
+        "ISO: ISO 200",
+    ] {
+        assert!(fact_named(&harness, row), "{row}");
+    }
+}
+
+#[test]
+fn a_new_selection_blanks_the_rows_and_an_older_summary_is_not_drawn() {
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    answer(&mut harness, false);
+    assert!(fact_named(&harness, "Aperture: f/2.8 – f/8.0"));
+    let photos: Vec<PathBuf> = (0..11)
+        .map(|n| PathBuf::from(format!("{FOLDER}/R00012{n:02}.DNG")))
+        .collect();
+    harness
+        .state_mut()
         .mirror
-        .apply(apertrust_engine::session::Event::Selection(Selection {
+        .apply(Event::Selection(Selection {
             photos: photos.clone(),
             active: Some(photos[0].clone()),
             previous: false,
-            through: 0,
+            through: 1,
         }));
-    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    // The frame drawn before the new selection is asked for shows nothing of the old.
+    harness.step();
+    assert!(!fact_named(&harness, "Aperture: f"));
     harness.run();
-    assert!(fact_named(&harness, "File name: 12 photos"));
-    let aperture = harness.get_by_label("Aperture: None");
-    assert!(aperture.accesskit_node().is_disabled());
-    // ⋯ copies nothing of the active photo under "12 photos".
-    assert!(described(&harness.state().mirror).is_none());
+    assert_eq!(harness.state().asked.len(), 2);
+    assert!(!fact_named(&harness, "Aperture: f"));
+    // The first request's answer, late, is not this selection's.
+    harness
+        .state_mut()
+        .tool
+        .receive(1, twelve_summarised(false));
+    harness.run();
+    assert!(!fact_named(&harness, "Aperture: f"));
+    answer(&mut harness, false);
+    assert!(fact_named(&harness, "Aperture: f/2.8 – f/8.0"));
+}
+
+/// A photo taken out of the selection, the session not told yet: the rows show nothing of
+/// the summary of the selection before.
+#[test]
+fn a_selection_on_its_way_shows_no_summary() {
+    use apertrust_engine::session::SelectionCommand;
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    answer(&mut harness, false);
+    assert!(fact_named(&harness, "Aperture: f/2.8 – f/8.0"));
+    let out = PathBuf::from(format!("{FOLDER}/R0001211.DNG"));
+    (harness.state_mut().mirror).selecting(&SelectionCommand::Remove(out), 2);
+    harness.step();
+    assert!(fact_named(&harness, "File name: 11 photos"));
+    assert!(!fact_named(&harness, "Aperture: f"));
+}
+
+#[test]
+fn rows_waiting_show_dots_after_150_ms() {
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    std::thread::sleep(several::BLANK + Duration::from_millis(20));
+    harness.run();
+    assert!(fact_named(&harness, "Aperture: …"));
+}
+
+#[test]
+fn copy_information_and_coordinates_with_several_photos() {
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    answer(&mut harness, false);
     harness.get_by_label("Metadata options").click();
     harness.run();
-    let copy = harness.get_by_label("Copy Information");
-    assert!(copy.accesskit_node().is_disabled());
+    harness.get_by_label("Copy Information").click();
+    harness.run();
+    let copied = harness.state().copied.first().cloned().unwrap_or_default();
+    let lines: Vec<&str> = copied.lines().collect();
+    assert_eq!(lines[0], "File name: 12 photos");
+    assert!(lines.contains(&"Lens: Different"), "{lines:?}");
+    // Rating and Colour labels as their rows show them.
+    assert!(lines.contains(&"Rating: Different"), "{lines:?}");
+    assert!(
+        lines.contains(&"Colour labels: Red, Green (some photos)"),
+        "{lines:?}"
+    );
+    assert!(lines.contains(&"Aperture: f/2.8 – f/8.0"));
+    // One place: its coordinates.
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    harness.get_by_label("Copy Coordinates").click();
+    harness.run();
+    assert_eq!(
+        harness.state().copied.last().unwrap(),
+        "38.710000, -9.130000"
+    );
+    // Two places: disabled.
+    answer(&mut harness, true);
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    let coordinates = harness.get_by_label("Copy Coordinates");
+    assert!(coordinates.accesskit_node().is_disabled());
+}
+
+/// Copy Coordinates' tooltip says the photos were taken in different places only where
+/// they were: one place, some photos with none, disables it saying nothing of places.
+#[test]
+fn copy_coordinates_says_different_places_only_for_two() {
+    let tip = |summary: Arc<Summary>| {
+        let mut state = twelve();
+        assert!(state.tool.ask(true, &state.mirror).is_some());
+        state.tool.sent(1);
+        state.tool.receive(1, summary);
+        let words = Translator::new(Locale::EnGb);
+        let options = state.tool.options(&words, &state.mirror);
+        match &options[1] {
+            Entry::Item(item) => (item.enabled, item.tip.clone()),
+            other => panic!("{other:?}"),
+        }
+    };
+    let (enabled, apart) = tip(twelve_located(Some(Some(40.0))));
+    assert!(!enabled);
+    assert_eq!(
+        apart.as_deref(),
+        Some("The photos were taken in different places")
+    );
+    let (enabled, some_none) = tip(twelve_located(Some(None)));
+    assert_eq!((enabled, some_none), (false, None));
+}
+
+/// Every fact row of the declaration has its summary, and every summary is a row.
+#[test]
+fn every_fact_row_is_summarised() {
+    use apertrust_engine::session::facts::FACTS;
+    let marks = [Widget::MetadataRating, Widget::MetadataLabels].map(widget_row);
+    let rows: BTreeSet<&str> = (ROWS.iter())
+        .flat_map(|group| group.rows.iter())
+        .map(|row| row.id)
+        .filter(|id| !marks.contains(&Some(*id)))
+        .collect();
+    assert_eq!(rows, FACTS.iter().copied().collect());
 }
 
 /// Photographs the tool at `width` in the dark and light themes, `name-dark` and
@@ -753,25 +1014,22 @@ fn no_photo_is_photographed() {
     photograph("metadata-no-photo", 320.0, || scene(None), |_| {});
 }
 
-/// Several photos selected: File name counts them, the rest wait.
+/// Twelve photos selected, Basic and Exposure open: what they share, the ranges, and
+/// Different (the board's "Twelve photos selected" frame).
 #[test]
 fn several_photos_are_photographed() {
-    fn several() -> Scene {
-        let mut state = with_photo();
-        let photos: Vec<PathBuf> = (0..12)
-            .map(|n| PathBuf::from(format!("{FOLDER}/R00012{n:02}.DNG")))
-            .collect();
-        state
-            .mirror
-            .apply(apertrust_engine::session::Event::Selection(Selection {
-                photos: photos.clone(),
-                active: Some(photos[0].clone()),
-                previous: false,
-                through: 0,
-            }));
-        state
-    }
-    photograph("metadata-several", 320.0, several, |_| {});
+    photograph("metadata-several", 320.0, twelve, |harness| {
+        answer(harness, false);
+    });
+}
+
+/// Twelve photos selected, their summary not come after 150 ms: "…".
+#[test]
+fn several_photos_waiting_are_photographed() {
+    photograph("metadata-several-waiting", 320.0, twelve, |harness| {
+        std::thread::sleep(several::BLANK + Duration::from_millis(20));
+        harness.run();
+    });
 }
 
 /// At the Tools panel's narrowest, 240 points, a long label cut at its cap.
@@ -784,4 +1042,130 @@ fn the_narrowest_panel_is_photographed() {
         scene
     }
     photograph("metadata-240", 240.0, shown, |_| {});
+}
+
+/// The open photo `photo` rated `rating`, as the session tells it.
+fn rated(mut state: Scene, rating: apertrust_engine::session::Rating) -> Scene {
+    use apertrust_engine::session::RatingState;
+    let path = match &state.mirror.photo {
+        PhotoState::Open(photo) => photo.path.clone(),
+        _ => unreachable!("a photo is open"),
+    };
+    state.mirror.apply(Event::Rating(RatingState {
+        through: 0,
+        photo: path,
+        rating,
+    }));
+    state
+}
+
+/// Rating's stars and the labels' dots run the rating's actions, as the keys and the
+/// caption do: a star its count, the photo's own star clearing it, a dot its label.
+#[test]
+fn rating_and_labels_run_the_rating_s_actions() {
+    use crate::actions::ActionId;
+    let rating = apertrust_engine::session::Rating {
+        stars: 3,
+        rejected: false,
+        labels: 0b100,
+    };
+    let mut harness = drawn(Builtin::Dark, 320.0, rated(scene(Some(photo())), rating));
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Rate 4 stars")
+        .click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::Button, "Rate 3 stars")
+        .click();
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, "Red").click();
+    harness.run();
+    assert_eq!(
+        harness.state().ran,
+        [ActionId::RATING[4], ActionId::RATING[0], ActionId::LABEL[0]]
+    );
+    // A rejected photo's Rating reads Rejected.
+    let rejected = apertrust_engine::session::Rating {
+        rejected: true,
+        ..rating
+    };
+    let mut harness = drawn(Builtin::Dark, 320.0, rated(scene(Some(photo())), rejected));
+    harness.run();
+    assert!(harness.query_by_label("Rating: Rejected").is_some());
+}
+
+/// Rating's and Colour labels' rows read their value to screen readers, as Copy
+/// Information words it; and while a selection command is untold they describe no photo.
+#[test]
+fn the_rating_rows_read_their_value_and_wait_for_the_selection() {
+    use apertrust_engine::session::SelectionCommand;
+    let rating = apertrust_engine::session::Rating {
+        stars: 3,
+        rejected: false,
+        labels: 0b100,
+    };
+    let mut harness = drawn(Builtin::Dark, 320.0, rated(scene(Some(photo())), rating));
+    harness.run();
+    assert!(harness.query_by_label("Rating: ★★★☆☆").is_some());
+    assert!(harness.query_by_label("Colour labels: Green").is_some());
+    let path = PathBuf::from(format!("{FOLDER}/R0001225.DNG"));
+    (harness.state_mut().mirror).selecting(&SelectionCommand::Remove(path), 2);
+    harness.step();
+    assert!(harness.query_by_label("Rating: Select a photo").is_some());
+    assert!(harness.query_by_label("Rating: ★★★☆☆").is_none());
+}
+
+/// The open photo rated three stars, green, as the Basic rows show it.
+#[test]
+fn a_rated_photo_is_photographed() {
+    fn three_green() -> Scene {
+        let rating = apertrust_engine::session::Rating {
+            stars: 3,
+            rejected: false,
+            labels: 0b100,
+        };
+        rated(with_photo(), rating)
+    }
+    photograph("metadata-rated", 320.0, three_green, |_| {});
+}
+
+/// A batch's end, which tells no new selection, asks for the summary again, keeping the
+/// rows meanwhile: Edited follows what the batch changed.
+#[test]
+fn a_batch_s_end_asks_for_the_summary_again() {
+    let mut harness = drawn(Builtin::Dark, 320.0, twelve());
+    harness.run();
+    answer(&mut harness, false);
+    assert_eq!(harness.state().asked.len(), 1);
+    harness.state_mut().mirror.batches_ended += 1;
+    harness.run();
+    assert_eq!(harness.state().asked.len(), 2);
+    assert!(fact_named(&harness, "Aperture: f/2.8 – f/8.0"));
+}
+
+/// Rejected photos read Rejected whatever stars they keep, in the row and in Copy
+/// Information.
+#[test]
+fn rejected_photos_read_rejected_whatever_their_stars() {
+    let mut state = twelve();
+    if let crate::folder::Folder::Open(listing) = &mut state.mirror.folder.folder {
+        for (n, photo) in listing.photos.iter_mut().enumerate() {
+            photo.rating.rejected = true;
+            photo.rating.stars = (n % 3) as u8;
+        }
+    }
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    assert!(harness.query_by_label("Rating: Rejected").is_some());
+    answer(&mut harness, false);
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    harness.get_by_label("Copy Information").click();
+    harness.run();
+    let copied = harness.state().copied.first().cloned().unwrap_or_default();
+    assert!(
+        copied.lines().any(|line| line == "Rating: Rejected"),
+        "{copied}"
+    );
 }

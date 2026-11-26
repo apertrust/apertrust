@@ -38,7 +38,7 @@ use egui::{
 };
 
 use super::grid_cell::paint_labels;
-use super::{ColourLabels, IconButton, focus_ring_centred, middle_cut, truncated};
+use super::{ColourLabel, ColourLabels, IconButton, focus_ring_centred, middle_cut, truncated};
 use crate::{Icon, theme, translator};
 
 /// A row's height, in points: a fact's line, shorter than a tool's rows (`panel_line`),
@@ -362,45 +362,80 @@ impl Row<'_> {
     }
 }
 
-/// What a [`FactMarks`] row shows: Rating's five stars or Colour labels' five rings.
+/// What a [`FactMarks`] row shows: Rating's five stars, so many filled, or Colour labels'
+/// five dots, each a label's: filled where every photo described has it, ringed in its
+/// colour where some do, an empty ring where none does; both bits by label, red first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Marks {
-    Stars,
-    Labels,
+    Stars(u8),
+    Labels { on: u8, some: u8 },
 }
 
-/// A row of five marks laid out as a [`FactList`]'s rows, its label in their column, drawn
-/// disabled until what the marks call is built: a grid cell's empty stars and its ring of no
-/// labels. Not a Tab stop; screen readers read "Label: tip".
+/// A row of five marks laid out as a [`FactList`]'s rows, its label in their column: the
+/// Metadata tool's Rating and Colour labels. Enabled, each mark is a button, a click on it
+/// reported by its index for the app to run the rating's action; disabled, drawn in
+/// `text_disabled`. Words may stand in place of the marks, "Rejected" or "Different". Not a
+/// Tab stop: the keys rate. Screen readers read "Label: tip" and each mark by its name.
 pub struct FactMarks<'a> {
     label: &'a str,
     tip: &'a str,
     marks: Marks,
     column: f32,
+    enabled: bool,
+    words: Option<&'a str>,
+    said: Option<&'a str>,
 }
 
 impl<'a> FactMarks<'a> {
     /// The row `label`, translated, saying `tip` on hover, in the labels' `column`
-    /// ([`FactList::column`]).
+    /// ([`FactList::column`]), enabled.
     pub fn new(label: &'a str, tip: &'a str, marks: Marks, column: f32) -> Self {
         FactMarks {
             label,
             tip,
             marks,
             column,
+            enabled: true,
+            words: None,
+            said: None,
         }
     }
 
-    pub fn show(self, ui: &mut Ui) {
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    /// `words` drawn in place of the marks, which then take no click.
+    /// The row's value in words for screen readers, "★★★☆☆" or "Red, Green", read after
+    /// its label; else its words, else its tooltip.
+    pub fn said(mut self, said: Option<&'a str>) -> Self {
+        self.said = said;
+        self
+    }
+
+    pub fn words(mut self, words: Option<&'a str>) -> Self {
+        self.words = words;
+        self
+    }
+
+    /// Draws the row; the index of the mark clicked, 0 to 4.
+    pub fn show(self, ui: &mut Ui) -> Option<usize> {
         let t = theme(ui.ctx());
+        let tr = translator(ui.ctx());
         let (rect, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::hover());
-        let said = format!("{}: {}", self.label, self.tip);
-        response.widget_info(|| WidgetInfo::labeled(Role::Label, false, &said));
+        let value = (self.said.or(self.words)).unwrap_or(self.tip);
+        let said = format!("{}: {}", self.label, value);
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, self.enabled, &said));
         let painter = ui.painter_at(rect);
         let font = FontId::proportional(t.text.small);
-        let colour = t.colors.text_disabled;
-        let label = painter.layout_job(truncated(self.label, font, self.column, colour));
+        let muted = if self.enabled {
+            t.colors.text_secondary
+        } else {
+            t.colors.text_disabled
+        };
+        let label = painter.layout_job(truncated(self.label, font.clone(), self.column, muted));
         let label_cut = label.elided;
         let middle = rect.center().y;
         painter.galley(
@@ -409,27 +444,96 @@ impl<'a> FactMarks<'a> {
                 middle - label.size().y / 2.0,
             ),
             label,
-            colour,
+            muted,
         );
-        let side = t.sizes.icon;
-        let mut x = rect.left() + self.column + t.spacing.m;
-        for _ in 0..5 {
-            let mark = Rect::from_min_size(pos2(x, middle - side / 2.0), vec2(side, side));
-            match self.marks {
-                Marks::Stars => Icon::Star.paint(&painter, mark, colour),
-                // A ring a star's inner size, as the grid cell's beside its stars.
-                Marks::Labels => {
-                    let ring = mark.shrink(t.spacing.xxs);
-                    paint_labels(&painter, &t, ring, ColourLabels::default());
-                }
+        let left = rect.left() + self.column + t.spacing.m;
+        let mut clicked = None;
+        if let Some(words) = self.words {
+            let colour = if self.enabled {
+                t.colors.text
+            } else {
+                t.colors.text_disabled
+            };
+            let room = (rect.right() - left).max(0.0);
+            let words = painter.layout_job(truncated(words, font, room, colour));
+            painter.galley(pos2(left, middle - words.size().y / 2.0), words, colour);
+        } else {
+            let side = t.sizes.icon;
+            let mut x = left;
+            let base = response.id;
+            for at in 0..5 {
+                let mark = Rect::from_min_size(pos2(x, middle - side / 2.0), vec2(side, side));
+                x += side + t.spacing.xs;
+                let hovered = self.enabled && {
+                    let button = ui.interact(mark, base.with(at), Sense::CLICK);
+                    let name = self.mark_name(at, &tr);
+                    button.widget_info(|| WidgetInfo::labeled(Role::Button, true, &name));
+                    if button.clicked() {
+                        clicked = Some(at);
+                    }
+                    button.hovered()
+                };
+                self.paint(&painter, &t, mark, at, hovered);
             }
-            x += side + t.spacing.xs;
         }
         let tip = if label_cut {
             format!("{}\n{}", self.label, self.tip)
         } else {
             self.tip.to_owned()
         };
-        response.on_hover_text(tip);
+        if !tip.is_empty() {
+            response.on_hover_text(tip);
+        }
+        clicked
+    }
+
+    /// The name of the mark at `at`: its stars, or its label.
+    fn mark_name(&self, at: usize, tr: &crate::Translator) -> String {
+        match self.marks {
+            Marks::Stars(_) => {
+                let mut args = crate::i18n::Args::new();
+                args.set("count", at as f64 + 1.0);
+                tr.text_with("grid-cell-rate", Some(&args))
+            }
+            Marks::Labels { .. } => tr.text(&format!("colour-label-{}", ColourLabel::ALL[at].id())),
+        }
+    }
+
+    fn paint(&self, painter: &egui::Painter, t: &crate::Theme, mark: Rect, at: usize, hot: bool) {
+        let bit = 1u8 << at;
+        match self.marks {
+            Marks::Stars(stars) => {
+                let colour = match (self.enabled, hot) {
+                    (false, _) => t.colors.text_disabled,
+                    (true, true) => t.colors.text,
+                    (true, false) => t.colors.text_secondary,
+                };
+                let icon = if (at as u8) < stars {
+                    Icon::StarFilled
+                } else {
+                    Icon::Star
+                };
+                icon.paint(painter, mark, colour);
+            }
+            // A ring a star's inner size, as the grid cell's beside its stars.
+            Marks::Labels { on, some } => {
+                let ring = mark.shrink(t.spacing.xxs);
+                let label = ColourLabel::ALL[at];
+                if on & bit != 0 {
+                    paint_labels(painter, t, ring, ColourLabels::of([label]));
+                } else if some & bit != 0 {
+                    // Ringed, thicker than an absent label's, in its colour while enabled.
+                    let colour = if self.enabled {
+                        label.colour(t)
+                    } else {
+                        t.colors.text_disabled
+                    };
+                    let stroke = egui::Stroke::new(t.shape.focus_width, colour);
+                    painter.circle_stroke(ring.center(), ring.width() / 2.0 - 0.5, stroke);
+                } else {
+                    paint_labels(painter, t, ring, ColourLabels::default());
+                }
+            }
+        }
     }
 }

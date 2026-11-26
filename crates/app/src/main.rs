@@ -5446,6 +5446,9 @@ impl App {
                     Reaction::Preview { through, preview } => {
                         self.export.receive(through, *preview);
                     }
+                    Reaction::Summary { through, summary } => {
+                        self.metadata.receive(through, summary);
+                    }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     // Settings a pick measured, kept as the user's own.
                     // A reference's L comes with the photo it was measured on (decision 88).
@@ -6735,6 +6738,19 @@ impl App {
         }
         // ＋, a group opened or closed, or a preset applied, as the settings keep them.
         self.shell.metadata = self.metadata.view().clone();
+        // Several photos' summary, asked as the selection changes while the tool is shown
+        // and open, its rows showing "…" if it has not come in 150 ms.
+        let open = self.shell.section_open(&metadata::definition().tool);
+        if let Some(command) = self
+            .metadata
+            .ask(photos.metadata_drawn && open, &self.mirror)
+        {
+            let number = self.session.send(command);
+            self.metadata.sent(number);
+        }
+        if let Some(wait) = self.metadata.until_dotted() {
+            ui.ctx().request_repaint_after(wait);
+        }
         self.styles_asked(photos.styles, ui.ctx());
         self.export(export.asked, ui.ctx());
         if export.show_jobs {
@@ -6772,8 +6788,7 @@ impl App {
     fn metadata_head(&self, ctx: &egui::Context, state: &State) -> tools::Head {
         let definition = &metadata::definition().tool;
         let head = self.shell.head(ctx, definition, state, false);
-        let photo = metadata::described(&self.mirror);
-        let mut options = metadata::Metadata::options(&translator(ctx), photo);
+        let mut options = self.metadata.options(&translator(ctx), &self.mirror);
         if !head.options.is_empty() {
             options.push(apertrust_ui::popup::Entry::Separator);
         }
@@ -10212,6 +10227,8 @@ struct PhotosDrawn {
     metadata_toggle: bool,
     metadata_preset: Option<presets::Item>,
     copied: Option<String>,
+    /// Whether the Metadata tool was drawn, which asks for several photos' summary.
+    metadata_drawn: bool,
 }
 
 /// Routes the change of a utility's setting row, `key` in full set to `value` (decision
@@ -10324,6 +10341,7 @@ fn metadata_section(
     head: tools::Head,
     out: &mut PhotosDrawn,
 ) {
+    out.metadata_drawn = true;
     let section = utility::section(ui, metadata, cx, head, false);
     for pressed in &section.pressed {
         match pressed {
@@ -10336,6 +10354,8 @@ fn metadata_section(
     }
     out.actions.extend(section.actions);
     out.changes.extend(section.changes);
+    // Rating's stars and the labels' dots run the rating's actions, as the keys do.
+    out.run.extend(metadata.take_ran());
 }
 
 /// What the tab shown's sections asked for, as [`panel_body`] returns it: Scopes', the
