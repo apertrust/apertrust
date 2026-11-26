@@ -292,29 +292,13 @@ impl Pending {
         self.state().job
     }
 
-    /// A take-back's or a put-back's photos, those its batch changed, as it starts, that
-    /// batch's job having ended.
+    /// A take-back's or a put-back's photos, those the move before it changed, as it starts,
+    /// that move's job having ended ([`Self::join`]).
     fn take_from(&self) {
         let Some(from) = self.state().from.take() else {
             return;
         };
-        let (changed, rated) = {
-            let from = from.state();
-            (from.changed.clone(), from.rated.clone())
-        };
-        let mut state = self.state();
-        for kept in rated {
-            if !state.rated.iter().any(|(photo, ..)| *photo == kept.0) {
-                state.rated.push(kept);
-            }
-        }
-        for photo in changed {
-            let reached = state.changed.contains(&photo)
-                || state.skipped.iter().any(|(skipped, _)| *skipped == photo);
-            if !reached && !state.to_come.contains(&photo) {
-                state.to_come.push(photo);
-            }
-        }
+        self.join(&from, None);
     }
 
     /// A take-back's or a put-back's photo of `sidecar`, where the move before it changed it
@@ -325,30 +309,59 @@ impl Pending {
         let Some(from) = self.state().from.clone() else {
             return;
         };
-        let (photo, rated) = {
+        self.join(&from, Some(sidecar));
+    }
+
+    /// The photos of `from`, the move before this take-back or put-back, that this one
+    /// moves, those of `sidecar` alone where given, with a rating's records of them: each
+    /// `from` changed and, where `from` moved the batch the same way, each whose write failed
+    /// or kept changing, tried again, and, once it has ended, each a cancel left it short of
+    /// (decision 109). Where it moved the same way, those it changed are left as this one
+    /// would leave them, so they count as reached. A photo this one has reached or has to
+    /// come already is left as it is.
+    fn join(&self, from: &Pending, sidecar: Option<&Path>) {
+        let same = from.action == self.action;
+        let ours = |photo: &Path| sidecar.is_none_or(|sidecar| sidecar::path_for(photo) == sidecar);
+        let (changed, retried, rated) = {
             let from = from.state();
-            let Some(photo) = (from.changed.iter())
-                .find(|photo| sidecar::path_for(photo) == sidecar)
+            let changed: Vec<PathBuf> = (from.changed.iter())
+                .filter(|photo| ours(photo))
                 .cloned()
-            else {
-                return;
-            };
-            let rated = (from.rated.iter())
-                .find(|(kept, ..)| *kept == photo)
-                .cloned();
-            (photo, rated)
+                .collect();
+            let retried: Vec<PathBuf> = (from.skipped.iter())
+                .filter(|(photo, skip)| {
+                    same && ours(photo) && matches!(skip, Skip::Failed(_) | Skip::KeptChanging)
+                })
+                .map(|(photo, _)| photo.clone())
+                .chain(
+                    (from.to_come.iter())
+                        .filter(|photo| same && from.ended && ours(photo))
+                        .cloned(),
+                )
+                .collect();
+            let rated: Vec<_> = (from.rated.iter())
+                .filter(|(photo, ..)| ours(photo))
+                .cloned()
+                .collect();
+            (changed, retried, rated)
         };
         let mut state = self.state();
-        let reached = state.changed.contains(&photo)
-            || state.skipped.iter().any(|(skipped, _)| *skipped == photo);
-        if reached || state.to_come.contains(&photo) {
-            return;
+        for kept in rated {
+            if !state.rated.iter().any(|(photo, ..)| *photo == kept.0) {
+                state.rated.push(kept);
+            }
         }
-        state.to_come.push(photo);
-        if let Some(kept) = rated
-            && !state.rated.iter().any(|(photo, ..)| *photo == kept.0)
-        {
-            state.rated.push(kept);
+        let photos = (changed.into_iter().map(|photo| (photo, same)))
+            .chain(retried.into_iter().map(|photo| (photo, false)));
+        for (photo, left) in photos {
+            let known = state.changed.contains(&photo)
+                || state.skipped.iter().any(|(skipped, _)| *skipped == photo)
+                || state.to_come.contains(&photo);
+            match (known, left) {
+                (true, _) => {}
+                (false, true) => state.changed.push(photo),
+                (false, false) => state.to_come.push(photo),
+            }
         }
     }
 
@@ -896,7 +909,9 @@ impl Engine {
         events: &mut Vec<Event>,
     ) {
         // The batch's latest move, its applying or a take-back or put-back since, whose
-        // changed photos this one moves: a photo an Undo skipped is none Redo puts back.
+        // changed photos this one moves, and where it moved the batch the same way those
+        // whose write failed or kept changing: a photo an Undo skipped is none Redo puts
+        // back.
         let source = (pending.state().latest.clone()).unwrap_or_else(|| Arc::clone(pending));
         let (job, ended) = {
             let state = source.state();
@@ -915,15 +930,12 @@ impl Engine {
             true => BatchAction::PutBack,
             false => BatchAction::TakenBack,
         };
-        // The photos it reached so far; a running job's are read again as this one's job
-        // starts, after it.
-        let photos = source.state().changed.clone();
+        // The photos it reached so far, with a rating's records, which it moves; a running
+        // job's are read again as this one's job starts, after it.
         let what = (pending.batch, pending.change.clone(), action);
-        let mut moving = Pending::new(what, self.applied, photos);
+        let mut moving = Pending::new(what, self.applied, Vec::new());
         moving.count = pending.count;
-        // A rating's records, which it moves, those a running job keeps adding read again
-        // as it starts.
-        moving.state().rated = source.state().rated.clone();
+        moving.join(&source, None);
         moving.state().from = Some(source);
         let moving = Arc::new(moving);
         pending.state().latest = Some(Arc::clone(&moving));
