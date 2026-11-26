@@ -2021,6 +2021,12 @@ struct Shell {
     /// Whether the mouse wheel scrolls the Tools panel, a row taking it only with Ctrl,
     /// Option on the Mac; off, a row under the pointer takes it plain.
     wheel_scrolls_panel: bool,
+    /// Whether opening a processing tool's section closes the tab shown's other processing
+    /// tools' sections, Open one processing tool at a time ([`Shell::open_section`]).
+    single_tool: bool,
+    /// The processing tools' sections another's opening closed since the app last looked
+    /// ([`Shell::closed_picker`]), for their pickers to turn off as their own close does.
+    closed: Vec<&'static str>,
     /// The Tools panel's width as the user dragged it, in points; None for the theme's.
     /// Kept while a narrower window shows the panel narrower ([`panel_widths`]).
     panel_width: Option<f32>,
@@ -2235,6 +2241,8 @@ impl Shell {
             find: None,
             tab_names: settings.tab_names,
             wheel_scrolls_panel: settings.wheel_scrolls_panel,
+            single_tool: settings.single_tool,
+            closed: Vec::new(),
             panel_width: settings.panel_width,
             panel_position: settings.panel_position,
             guides: false,
@@ -2887,6 +2895,7 @@ impl Shell {
             log: self.log.clone(),
             tab_names: self.tab_names,
             wheel_scrolls_panel: self.wheel_scrolls_panel,
+            single_tool: self.single_tool,
             show_hidden: self.show_hidden,
             panel_position: self.panel_position,
             panel_width: self.panel_width,
@@ -3098,15 +3107,44 @@ impl Shell {
             .unwrap_or(tool.open_at_first)
     }
 
-    /// Opens `tool`'s section if it is closed, or closes it, for this run and the next.
-    fn toggle_section(&mut self, tool: &ToolDefinition) {
+    /// Opens `tool`'s section if it is closed, or closes it, for this run and the next;
+    /// `shift`, Shift held on its header, doing the opposite of Open one processing tool at
+    /// a time ([`Shell::open_section`]).
+    fn toggle_section(&mut self, tool: &ToolDefinition, shift: bool) {
         let open = self.section_open(tool);
-        self.set_section_open(tool.id, !open);
+        self.open_section(tool.id, !open, shift);
     }
 
-    /// Keeps the section `id` open or closed, for this run and the next; while Find Tool…
-    /// is open, for the search alone, so the tab comes back as it was (decision 96).
+    /// Keeps the section `id` open or closed, as [`Shell::open_section`] does with no Shift.
     fn set_section_open(&mut self, id: &str, open: bool) {
+        self.open_section(id, open, false);
+    }
+
+    /// Keeps the section `id` open or closed, for this run and the next. Opening a
+    /// processing tool's closes the other processing tools' sections in the tab shown,
+    /// where Open one processing tool at a time is on, or off with `shift`, as darktable's
+    /// Shift-click on a header (`dt_iop_gui_set_expanded`): never a utility's, nor another
+    /// tab's, and a section closed closes alone.
+    fn open_section(&mut self, id: &str, open: bool, shift: bool) {
+        if open && self.single_tool != shift && layout::processing(id) {
+            let shown = self.shown_tab();
+            let others: Vec<&'static str> = (apertrust_tools::TOOLS.iter())
+                .map(|tool| &tool.definition().tool)
+                .filter(|tool| tool.id != id && shown.is_some_and(|tab| tab.holds(tool.id)))
+                .filter(|tool| self.section_open(tool))
+                .map(|tool| tool.id)
+                .collect();
+            for other in others {
+                self.keep_section_open(other, false);
+                self.closed.push(other);
+            }
+        }
+        self.keep_section_open(id, open);
+    }
+
+    /// Keeps the section `id` open or closed alone; while Find Tool… is open, for the search
+    /// alone, so the tab comes back as it was (decision 96).
+    fn keep_section_open(&mut self, id: &str, open: bool) {
         if let Some(search) = &mut self.find {
             match open {
                 true => search.opened.insert(id.to_owned()),
@@ -3117,6 +3155,14 @@ impl Shell {
         if self.sections.get(id) != Some(&open) {
             self.sections.insert(id.to_owned(), open);
         }
+    }
+
+    /// Why the picker `active` turns off, where another's opening closed its tool's section
+    /// since the last call, by the rule its own header's close follows ([`cursors::closed`];
+    /// decision 104): a header's toggle, a reveal or Find Tool…'s, whichever opened it.
+    fn closed_picker(&mut self, active: Option<PickerRef>) -> Option<cursors::Ended> {
+        let closed = std::mem::take(&mut self.closed);
+        closed.iter().find_map(|tool| cursors::closed(tool, active))
     }
 
     /// Opens `tool`'s section where a tab lists it, as Shift-click on a step's History
@@ -3236,7 +3282,7 @@ impl Shell {
         let mut run = None;
         for pressed in pressed {
             match pressed {
-                tools::Pressed::Toggle => self.toggle_section(&history::declared().tool),
+                tools::Pressed::Toggle => self.toggle_section(&history::declared().tool, false),
                 tools::Pressed::Run(id) => run = Some(id),
                 tools::Pressed::Tab(_)
                 | tools::Pressed::Reset
@@ -3416,7 +3462,7 @@ impl Shell {
     /// Applies what the Scopes section asked for, for this run and the next.
     fn scopes_change(&mut self, change: scopes::Change) {
         match change {
-            scopes::Change::Toggle => self.toggle_section(&scopes::declared().tool),
+            scopes::Change::Toggle => self.toggle_section(&scopes::declared().tool, false),
             scopes::Change::View(action) => self.scopes.apply(action),
         }
     }
@@ -4439,9 +4485,10 @@ impl Shell {
 
     /// Takes in what the Settings dialog's rows show of `settings` and shows it in the main
     /// window, `ctx`'s: the theme, the language, the interface's size, the sliders' marker,
-    /// the menu button, the tab names, what the wheel does over the Tools panel, square
-    /// thumbnails and whether Export asks before overwriting. The engine's settings are the
-    /// session's at its next start, and nothing of the shell's.
+    /// the menu button, the tab names, what the wheel does over the Tools panel, whether one
+    /// processing tool is open at a time, square thumbnails and whether Export asks before
+    /// overwriting. The engine's settings are the session's at its next start, and nothing
+    /// of the shell's.
     fn follow(&mut self, settings: &Settings, ctx: &egui::Context) {
         if settings.theme != self.theme {
             self.theme = settings.theme;
@@ -4467,6 +4514,7 @@ impl Shell {
         self.tab_names = settings.tab_names;
         self.wheel_scrolls_panel = settings.wheel_scrolls_panel;
         apertrust_ui::components::set_wheel_scrolls_panel(ctx, self.wheel_scrolls_panel);
+        self.single_tool = settings.single_tool;
         self.browser.square_thumbnails = settings.browser.square_thumbnails;
         self.log.keep = settings.log.keep;
         self.log.domains.clone_from(&settings.log.domains);
@@ -5585,14 +5633,14 @@ impl App {
                     self.set_control(tool, control, value, done);
                 }
             }
-            Change::Toggle { tool } => {
+            Change::Toggle { tool, shift } => {
                 let mut tools = self
                     .mirror
                     .tools()
                     .iter()
                     .map(|tool| &tool.definition().tool);
                 match tools.find(|declared| declared.id == tool) {
-                    Some(declared) => self.shell.toggle_section(declared),
+                    Some(declared) => self.shell.toggle_section(declared, shift),
                     // Only a section the mirror's tools drew asks; any other is a bug.
                     None => tracing::warn!(target: "control", "no tool {tool} to open or close"),
                 }
@@ -6611,7 +6659,7 @@ impl App {
             self.preset(export::ID, item, ui.ctx());
         }
         if export.toggle {
-            self.shell.toggle_section(&export::definition().tool);
+            self.shell.toggle_section(&export::definition().tool, false);
         }
         if export.toggle_summary {
             let open = self
@@ -6622,7 +6670,8 @@ impl App {
         }
         self.carry_out(photos.actions, ui.ctx());
         if photos.styles_toggle {
-            self.shell.toggle_section(&styles::tool::declared().tool);
+            self.shell
+                .toggle_section(&styles::tool::declared().tool, false);
         }
         self.styles_asked(photos.styles, ui.ctx());
         self.export(export.asked, ui.ctx());
@@ -8734,6 +8783,11 @@ impl eframe::App for App {
         self.run_actions(run, &ctx, &regions);
         self.shell.pointed = pointed;
         self.follow_chosen_cursor(&ctx);
+        // A picker whose tool another's opening closed this frame turns off, as its own
+        // close turns it off.
+        if let Some(why) = self.shell.closed_picker(self.mirror.pickers.active()) {
+            self.picker_off(why, &ctx);
+        }
         // The scopes count what the section now shows: its tab, whether it is open, the
         // graph.
         if let Some(command) = self.mirror.scopes.ask(self.shell.scopes_wanted()) {
@@ -22002,11 +22056,129 @@ mod tests {
         assert_eq!(at_first(&shell), [true, false, false, false, true]);
         // Toggled, the kept state flips and is kept, whichever way the tool started.
         let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Mac);
-        shell.toggle_section(exposure);
-        shell.toggle_section(collections);
+        shell.toggle_section(exposure, false);
+        shell.toggle_section(collections, false);
         assert!(shell.section_open(exposure) && !shell.section_open(collections));
         assert_eq!(shell.sections.get("exposure"), Some(&true));
         assert_eq!(shell.sections.get("collections"), Some(&false));
+    }
+
+    /// The Default workspace's Adjust shown, Open one processing tool at a time `on` or
+    /// off, with White balance there and Grain, in Effects, open, and Scopes open as
+    /// declared.
+    fn one_tool_at_a_time(on: bool) -> Shell {
+        let settings = Settings {
+            single_tool: on,
+            ..Settings::default()
+        };
+        let mut shell = Shell::new(&settings, Locale::EnGb, OperatingSystem::Mac);
+        shell.open_workspace(layout::Workspace::builtin_default());
+        shell.choose_tab(ADJUST);
+        for tool in ["temperature", "grain"] {
+            shell.sections.insert(tool.to_owned(), true);
+        }
+        shell
+    }
+
+    /// Whether White balance, Exposure, Grain and Scopes are open, in that order.
+    fn four_open(shell: &Shell) -> [bool; 4] {
+        let tools = [
+            processing("temperature"),
+            processing("exposure"),
+            processing("grain"),
+            &scopes::declared().tool,
+        ];
+        tools.map(|tool| shell.section_open(tool))
+    }
+
+    /// Off, a processing tool opens and closes alone; on, opening one closes the tab shown's
+    /// other processing tools, never a utility nor another tab's, and closing one closes it
+    /// alone. Shift on its header does the opposite either way, as darktable's
+    /// `single_module` and Shift-click.
+    #[test]
+    fn one_tool_at_a_time_closes_the_tab_s_other_processing_tools_and_shift_inverts_it() {
+        let exposure = processing("exposure");
+        let mut shell = one_tool_at_a_time(false);
+        shell.toggle_section(exposure, false);
+        assert_eq!(four_open(&shell), [true, true, true, true]);
+        // Shift: the others in Adjust close.
+        let mut shell = one_tool_at_a_time(false);
+        shell.toggle_section(exposure, true);
+        assert_eq!(four_open(&shell), [false, true, true, true]);
+
+        let mut shell = one_tool_at_a_time(true);
+        shell.toggle_section(exposure, false);
+        assert_eq!(four_open(&shell), [false, true, true, true]);
+        // Closed, alone: nothing opens again.
+        shell.toggle_section(exposure, false);
+        assert_eq!(four_open(&shell), [false, false, true, true]);
+        // A utility opened or closed leaves the processing tools as they are.
+        shell.sections.insert("temperature".to_owned(), true);
+        let scopes = &scopes::declared().tool;
+        shell.toggle_section(scopes, true);
+        shell.toggle_section(scopes, false);
+        assert_eq!(four_open(&shell), [true, false, true, true]);
+        // Shift: the others stay.
+        shell.toggle_section(exposure, true);
+        assert_eq!(four_open(&shell), [true, true, true, true]);
+        // Closed sections are not written as closed: only those that were open.
+        assert_eq!(shell.sections.get("agx"), None);
+    }
+
+    /// White balance's picker on, opening Exposure with Open one processing tool at a time
+    /// on closes White balance and turns its picker off, as its own close would; with the
+    /// setting off, or another tool's picker on, it stays (decision 104).
+    #[test]
+    fn a_picker_turns_off_as_one_tool_at_a_time_closes_its_tool() {
+        let exposure = processing("exposure");
+        let mut shell = one_tool_at_a_time(true);
+        shell.toggle_section(exposure, false);
+        assert_eq!(
+            shell.closed_picker(Some(SPOT_PICKER)),
+            Some(cursors::Ended::Closed("temperature".to_owned()))
+        );
+        // Taken once.
+        assert_eq!(shell.closed_picker(Some(SPOT_PICKER)), None);
+        let exposure_picker = PickerRef::Tool {
+            tool: "exposure",
+            picker: "spot",
+        };
+        let mut shell = one_tool_at_a_time(true);
+        shell.toggle_section(exposure, false);
+        assert_eq!(shell.closed_picker(Some(exposure_picker)), None);
+        let mut shell = one_tool_at_a_time(false);
+        shell.toggle_section(exposure, false);
+        assert_eq!(shell.closed_picker(Some(SPOT_PICKER)), None);
+    }
+
+    /// A reveal, as Add Tool ▸'s and History's Shift-click, and a tool opened in Find
+    /// Tool…'s results follow Open one processing tool at a time in the tab they show it in.
+    #[test]
+    fn a_reveal_and_find_tool_follow_one_tool_at_a_time() {
+        let mut shell = one_tool_at_a_time(true);
+        shell.reveal("vignette");
+        assert_eq!(shown_id(&shell), "effects");
+        assert!(shell.section_open(processing("vignette")));
+        assert_eq!(four_open(&shell), [true, false, false, true]);
+        // Off, Grain stays open beside it.
+        let mut shell = one_tool_at_a_time(false);
+        shell.reveal("vignette");
+        assert_eq!(four_open(&shell), [true, false, true, true]);
+
+        // Find Tool…: among the tools found, for the search alone.
+        let mut shell = one_tool_at_a_time(true);
+        shell.toggle_find();
+        let search = shell.find.as_mut().expect("open");
+        search.text = "e".to_owned();
+        search.refresh(&Translator::new(Locale::EnGb));
+        assert!(search.found().holds("exposure") && search.found().holds("toneequal"));
+        search.opened.insert("toneequal".to_owned());
+        shell.set_section_open("exposure", true);
+        let search = shell.find.as_ref().expect("open");
+        assert!(search.opened.contains("exposure") && !search.opened.contains("toneequal"));
+        // The tab beneath comes back as it was.
+        shell.toggle_find();
+        assert_eq!(four_open(&shell), [true, false, true, true]);
     }
 
     /// The tab `state.toml` keeps for the workspace.
@@ -23130,7 +23302,9 @@ mod tests {
                                 bench.shell.reveal = None;
                             }
                             if drawn.toggle {
-                                bench.shell.toggle_section(&export::definition().tool);
+                                bench
+                                    .shell
+                                    .toggle_section(&export::definition().tool, false);
                             }
                             return tab;
                         }
@@ -25165,6 +25339,7 @@ mod tests {
                 "tools_panel.wheel_scrolls_panel",
                 false.into(),
             )),
+            dialog_host::Output::Settings(Change::Set("tools_panel.single_tool", true.into())),
             dialog_host::Output::Settings(Change::Set("engine.memory_budget", 4096.into())),
         ];
         harness.step();
@@ -25172,6 +25347,7 @@ mod tests {
         assert!(d.shell.browser.square_thumbnails);
         assert!(!d.shell.tab_names);
         assert!(!d.shell.wheel_scrolls_panel);
+        assert!(d.shell.single_tool);
         assert!(!apertrust_ui::components::wheel_scrolls_panel(&harness.ctx));
         assert_eq!(d.keeper.engine().budget, 4096 << 20);
         assert_eq!(d.keeper.page(), apertrust_base::settings::Page::Photos);

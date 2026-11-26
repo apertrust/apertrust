@@ -137,8 +137,9 @@ pub enum Change {
         preset: &'static str,
         option: &'static str,
     },
-    /// The section opened or closed: the app's own state.
-    Toggle { tool: &'static str },
+    /// The section opened or closed: the app's own state; `shift`, Shift held on the
+    /// header, does the opposite of Open one processing tool at a time.
+    Toggle { tool: &'static str, shift: bool },
     /// Another of the section's tabs: the app's own state.
     Tab { tool: &'static str, tab: usize },
     /// One of its collapsible groups opened or closed: the app's own state, kept in
@@ -1175,7 +1176,10 @@ pub fn section(
     });
     for pressed in pressed(ui, &definition.tool, &out, photo, layout) {
         changes.push(match pressed {
-            Pressed::Toggle => Change::Toggle { tool: id },
+            Pressed::Toggle => Change::Toggle {
+                tool: id,
+                shift: crate::history::shift_clicked(ui),
+            },
             Pressed::Tab(tab) => Change::Tab { tool: id, tab },
             Pressed::Reset => Change::ResetTool { tool: id },
             Pressed::Run(action) => Change::Run(action),
@@ -4169,6 +4173,36 @@ mod tests {
                 },
                 Change::ResetTool { tool: "exposure" }
             ]
+        );
+    }
+
+    /// A click on the header opens or closes the section, and says whether Shift was held,
+    /// which does the opposite of Open one processing tool at a time; Shift+Return or Shift+Space
+    /// on the focused header as Shift-click.
+    #[test]
+    fn the_header_s_toggle_says_whether_shift_was_held() {
+        let mut harness = panel(&Exposure, untouched(&Exposure));
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Button, "Exposure")
+            .click();
+        harness.run();
+        (harness.get_by_role_and_label(Role::Button, "Exposure"))
+            .click_modifiers(egui::Modifiers::SHIFT);
+        harness.run();
+        harness
+            .get_by_role_and_label(Role::Button, "Exposure")
+            .focus();
+        harness.run();
+        harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
+        harness.run();
+        let toggle = |shift| Change::Toggle {
+            tool: "exposure",
+            shift,
+        };
+        assert_eq!(
+            harness.state().changes,
+            [toggle(false), toggle(true), toggle(true)]
         );
     }
 

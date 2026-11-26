@@ -61,6 +61,7 @@
 //! [tools_panel]
 //! tab_names = false
 //! wheel_scrolls_panel = false
+//! single_tool = true
 //! show_hidden = true
 //! position = "left"
 //! width = 480
@@ -219,6 +220,9 @@ pub struct Settings {
     /// Whether the mouse wheel scrolls the Tools panel, a row taking it only with Ctrl
     /// (Option on the Mac); off, darktable's default, a row under the pointer takes it.
     pub wheel_scrolls_panel: bool,
+    /// Whether opening a processing tool closes the tab shown's other processing tools,
+    /// Open one processing tool at a time; off by default, unlike darktable's.
+    pub single_tool: bool,
     /// Whether the Tools panel shows the Hidden tab, Show Hidden Tools (decision 96).
     pub show_hidden: bool,
     /// Where the Tools panel is, at the window's right or left, `tools_panel.position`.
@@ -280,6 +284,7 @@ impl Default for Settings {
             log: Log::default(),
             tab_names: TOOLS_PANEL_TAB_NAMES.default(),
             wheel_scrolls_panel: TOOLS_PANEL_WHEEL_SCROLLS_PANEL.default(),
+            single_tool: TOOLS_PANEL_SINGLE_TOOL.default(),
             show_hidden: TOOLS_PANEL_SHOW_HIDDEN.default(),
             panel_position: TOOLS_PANEL_POSITION.default(),
             panel_width: None,
@@ -353,6 +358,7 @@ impl Settings {
             },
             tab_names: store.get(&TOOLS_PANEL_TAB_NAMES),
             wheel_scrolls_panel: store.get(&TOOLS_PANEL_WHEEL_SCROLLS_PANEL),
+            single_tool: store.get(&TOOLS_PANEL_SINGLE_TOOL),
             show_hidden: store.get(&TOOLS_PANEL_SHOW_HIDDEN),
             panel_position: store.get(&TOOLS_PANEL_POSITION),
             panel_width: store.kept(&TOOLS_PANEL_WIDTH),
@@ -472,6 +478,9 @@ impl Settings {
         }
         if s.wheel_scrolls_panel != was.wheel_scrolls_panel {
             store.set(&TOOLS_PANEL_WHEEL_SCROLLS_PANEL, s.wheel_scrolls_panel);
+        }
+        if s.single_tool != was.single_tool {
+            store.set(&TOOLS_PANEL_SINGLE_TOOL, s.single_tool);
         }
         if s.show_hidden != was.show_hidden {
             store.set(&TOOLS_PANEL_SHOW_HIDDEN, s.show_hidden);
@@ -1437,6 +1446,7 @@ mod tests {
             },
             tab_names: false,
             wheel_scrolls_panel: false,
+            single_tool: true,
             show_hidden: true,
             panel_position: ToolsPanelPosition::Left,
             panel_width: Some(480.0),
@@ -1617,6 +1627,7 @@ mod tests {
                 },
                 tab_names: true,
                 wheel_scrolls_panel: true,
+                single_tool: false,
                 show_hidden: false,
                 panel_position: ToolsPanelPosition::Right,
                 panel_width: None,
@@ -1869,6 +1880,7 @@ target = \"lightness\"
 [tools_panel]
 position = \"left\"
 show_hidden = true
+single_tool = true
 tab_names = false
 wheel_scrolls_panel = false
 width = 480

@@ -1546,6 +1546,10 @@ mod tests {
         harness.run();
         assert_eq!(harness.state().content.page, Page::Editing);
         harness.get_by_role_and_label(Role::Switch, "Show tab names");
+        // Open one processing tool at a time, off as darktable's single module is not.
+        let single =
+            harness.get_by_role_and_label(Role::Switch, "Open one processing tool at a time");
+        assert_eq!(single.accesskit_node().toggled(), Some(Toggled::False));
         // And the dialog opens on the page kept, or General where it holds nothing.
         let (mut keeper, settings) = Keeper::nowhere();
         keeper.apply(

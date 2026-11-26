@@ -645,7 +645,7 @@ Photo › Next Photo (`next-photo`, Space and →) and Previous Photo (`previous
 | Effects | Vignetting, Grain, Soften |
 | Raw | Raw black/white point, Highlight reconstruction, Demosaic, Input colour profile, Output colour profile |
 
-- The sections' open state is kept in settings, by the tool's id in `[edit.sections]`, once the person opens or closes one; until then each starts as its tool declares (`ToolDefinition::open_at_first`), read by `Shell::section_open` for every header: every processing tool closed, Collections, Scopes and History open, Export closed.
+- The sections' open state is kept in settings, by the tool's id in `[edit.sections]`, once the person opens or closes one; until then each starts as its tool declares (`ToolDefinition::open_at_first`), read by `Shell::section_open` for every header: every processing tool closed, Collections, Scopes and History open, Export closed. Every opening goes through `Shell::open_section`, which, for a processing tool's opening where Open one processing tool at a time (`tools_panel.single_tool`, off) is on, or off with Shift on the header (`Change::Toggle`'s `shift`), closes the tab shown's other open processing tools first; a utility's opening closes nothing ([docs/gui.md](gui.md#one-tool-model)).
 - **The Scopes section** (`src/scopes.rs`) is pinned over the editing tabs' tools, not the Photos tab's nor History's. Its `Histogram` is fed by the session's latest reading (the histogram, the waveform, the RGB parade and the vectorscope, and what clips). It asks the session with `Command::Scopes` for the totals while it shows and for the graph while it is open. Its view and open state are kept in settings.
 
 ### The tool panel renderer
