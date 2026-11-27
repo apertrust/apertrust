@@ -639,6 +639,18 @@ decimals = 0
 default = 1
 applies = "at-once"
 
+# The width of a sheet's tool column in points, Import's, as its edge was dragged
+# (decision 86; docs/gui.md, Sheets): 296 to 600, never more than half the sheet where that
+# leaves more than 296; a narrow window shows it narrower and keeps this width.
+[import.column_width]
+owner = "app"
+kind = "number"
+min = 296
+max = 600
+decimals = 0
+default = 440
+applies = "at-once"
+
 # The Scopes section's graph.
 [scopes.graph]
 owner = "app"

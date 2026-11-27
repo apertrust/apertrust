@@ -273,6 +273,8 @@ pub struct Settings {
     /// The person's notes for the ratings and colour labels, `ratings.note.*` and
     /// `labels.note.*`: app-wide, never written to a photo.
     pub rating_notes: RatingNotes,
+    /// A sheet's tool column's width, `import.column_width` (decision 86).
+    pub sheet_column: f32,
 }
 
 impl Default for Settings {
@@ -322,6 +324,7 @@ impl Default for Settings {
             ask_before_discard: HISTORY_ASK_BEFORE_DISCARD.default(),
             style_mode: STYLES_MODE.default(),
             rating_notes: RatingNotes::default(),
+            sheet_column: IMPORT_COLUMN_WIDTH.default(),
         }
     }
 }
@@ -424,6 +427,7 @@ impl Settings {
                 stars: STARS_NOTES.map(|setting| store.get(setting)),
                 labels: LABELS_NOTES.map(|setting| store.get(setting)),
             },
+            sheet_column: store.get(&IMPORT_COLUMN_WIDTH),
         }
     }
 
@@ -512,6 +516,9 @@ impl Settings {
         }
         if s.panel_width != was.panel_width {
             keep(store, &TOOLS_PANEL_WIDTH, s.panel_width);
+        }
+        if s.sheet_column != was.sheet_column {
+            store.set(&IMPORT_COLUMN_WIDTH, s.sheet_column);
         }
         if s.viewer.margin != was.viewer.margin {
             store.set(&VIEWER_MARGIN, s.viewer.margin);
@@ -1600,6 +1607,7 @@ mod tests {
                     .map(str::to_owned),
                 labels: ["Urgent", "Waiting", "Done", "Sky", "Sent to client"].map(str::to_owned),
             },
+            sheet_column: 512.0,
         }
     }
 
@@ -1760,6 +1768,7 @@ mod tests {
                 style_mode: StyleMode::Append,
                 // No notes until the person gives them.
                 rating_notes: RatingNotes::default(),
+                sheet_column: 440.0,
             }
         );
         // What the app takes where nothing is kept.
@@ -1898,6 +1907,9 @@ type = \"golden-spiral\"
 
 [history]
 ask_before_discard = false
+
+[import]
+column_width = 512
 
 [jobs_window]
 position = [1200, 160]
