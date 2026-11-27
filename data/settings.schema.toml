@@ -11,7 +11,8 @@
 # A setting's fields:
 # - owner: "app", read by the desktop app alone; "engine", by every process that runs the
 #   engine; "export", the Export dialog's last settings, which the app keeps and the CLI's
-#   export reads (decision 56); "tool:<id>", a tool's setting.
+#   export reads (decision 56); "import", Import's, which the app keeps and the CLI's
+#   import reads (decision 85); "tool:<id>", a tool's setting.
 # - kind, with its own fields:
 #   "boolean";
 #   "number": min, max, step and decimals (how many it is kept and shown with), or in
@@ -963,6 +964,46 @@ default = true
 applies = "at-once"
 page = "general"
 group = "confirmations"
+
+# Import's settings (decision 85; docs/library.md, Import in folder mode), each darktable's
+# conf key under its default: the app keeps them as darktable keeps its conf, the CLI's
+# import reads them, as its export reads the export settings, and each comes with the slice
+# that first uses it. Patterns of darktable's variables, a leading ~ the home folder.
+
+# Folder, darktable's session/base_directory_pattern, this import's base folder, its
+# folder Apertrust where darktable's says Darktable: the tree a check for photos imported
+# before walks, expanded up to its first variable that is not the person's own folder.
+[import.base_folder]
+owner = "import"
+kind = "text"
+default = "$(PICTURES_FOLDER)/Apertrust"
+applies = "at-once"
+
+# The person's usual base folder, Settings › Import's Base folder, which picking an
+# existing folder for one import never loses; its tree is checked too wherever Folder's
+# does not hold it. darktable keeps one key for both, session/base_directory_pattern.
+[import.default_folder]
+owner = "import"
+kind = "text"
+default = "$(PICTURES_FOLDER)/Apertrust"
+applies = "at-once"
+
+# Subfolder, darktable's session/sub_directory_pattern, worked out for each photo once its
+# capture date is read; empty puts the photos straight into the folder.
+# $(IMPORT_NAME) is Apertrust's name for darktable's $(JOBCODE), which stays its alias.
+[import.subfolder]
+owner = "import"
+kind = "text"
+default = "$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)"
+applies = "at-once"
+
+# Import name, darktable's ui_last/import_jobcode, which fills $(IMPORT_NAME) and
+# $(JOBCODE).
+[import.job_code]
+owner = "import"
+kind = "text"
+default = "no_name"
+applies = "at-once"
 
 # Whether Discard History asks first, darktable's "ask before discarding history"
 # (ask_before_discard; docs/history.md, In the app): its Don't ask again turns it off. An

@@ -46,7 +46,14 @@ Patterns written for darktable keep working (D7), and a pattern darktable would 
   The time is taken once, as the storage's parameters are made (`dt_variables_params_init()`: `g_date_time_new_now_local()`), so every photo of one export has the same.
 
   Before it expands: with more than one photo and no `$` in the pattern, `_$(SEQUENCE)` is added, and a leading `~` is the home folder (`dt_util_fix_path()`). After it, a result ending in a separator takes `$(FILE_NAME)` after the original pattern. Apertrust's File on disk (`apertrust-export`'s `disk`) does these.
-- darktable's image information, overlays and watermarks expand with the job code "infos", which a few variables take ([Variables](#the-variables)); the import with its own. Apertrust expands for exports only.
+- **The import** (`import_session.c`, `_import_session_path()`; `control_jobs.c`, `_control_import_image_copy()`): `session/base_directory_pattern` and `session/sub_directory_pattern` joined by a separator and expanded with `dt_variables_expand(vp, pattern, FALSE)` for each photo, with
+  - the job code the import's name, `ui_last/import_jobcode`;
+  - the photo's file name as `filename`;
+  - the time taken once as the import's session starts, local;
+  - the photo's EXIF time, maker and model (`dt_variables_set_exif_basic_info()`), its EXIF time from the file's modified time on the local clock where its EXIF holds none (`dt_datetime_unix_to_exif()`), and the import's time where the file has neither, as `_get_base_value` falls back to `time`.
+
+  Apertrust's import (`apertrust-library`'s `destination`, decision 85) does the same, Folder and Subfolder each expanded and joined, a leading `~` the home folder, an empty Subfolder straight into Folder, and Subfolder kept under Folder, a separator it starts with dropped.
+- darktable's image information, overlays and watermarks expand with the job code "infos", which a few variables take ([Variables](#the-variables)). Apertrust expands for exports and the import only.
 
 ## The grammar
 
@@ -123,7 +130,7 @@ Formats are C's, in the C locale ([Deliberate differences](#deliberate-differenc
 | `IMAGE.EXIF` | `dt_image_print_exif()`: "1/250 f/8.0 18mm ISO 500", its `/` kept | the same |
 | `VERSION.NAME`, `VERSION_NAME` | the duplicate's version name, `Xmp.darktable.version_name` | the exported copy's name, empty for none, darktable's version name read into it (decision 110) |
 | `VERSION.IF_MULTI`, `VERSION_IF_MULTI`; `VERSION` | `%d` of the duplicate's version, 0 for the first, where the photo has several duplicates, else nothing; the version always | the exported copy's number from 0, where the photo has several copies |
-| `JOBCODE`, `IMPORT_NAME` | the job code, "export" | the same; `IMPORT_NAME` is Apertrust's own name for it, which Import's patterns use, `JOBCODE` kept so darktable's patterns work unchanged (decision 85; planned with Import's 20a1) |
+| `JOBCODE`, `IMPORT_NAME` | the job code, "export" | the same; `IMPORT_NAME` is Apertrust's own name for it, which Import's patterns use, `JOBCODE` kept so darktable's patterns work unchanged (decision 85); Import's job code is its Import name |
 | `ROLL.NAME`, `ROLL_NAME` | the folder's last `[n]` parts, 1 by default | the same |
 | `FILE.DIRECTORY`, `FILE_DIRECTORY`, `FILE.FOLDER`, `FILE_FOLDER` | `g_path_get_dirname()` of the path | the same |
 | `IMAGE.FILENAME` | the path | the same |

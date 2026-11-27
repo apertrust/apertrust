@@ -18,8 +18,9 @@ testing = []
 # thumbnail; no GPU or engine (decision 54).
 apertrust-raw.workspace = true
 # Its `fs` part: removes the temporaries of writes that never ended from a folder it lists
-# (decision 53); and its `variables`, darktable's variables and `Places`, which Import's
-# folder patterns expand (decision 85).
+# (decision 53); its `variables`, darktable's variables and `Places`, which Import's
+# folder patterns expand (decision 85); and its settings part, for the types of Import's
+# generated statics and the store a client reads them from (decision 43).
 apertrust-base = { workspace = true, features = ["fs", "variables"] }
 # The hash of a sidecar's bytes and of the machine id, and later the photo's fingerprint
 # (decisions 47 and 53).
@@ -39,6 +40,10 @@ serde.workspace = true
 sysinfo.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[build-dependencies]
+# The settings generator, which writes Import's settings' statics from the schema.
+apertrust-base = { workspace = true, features = ["codegen"] }
 
 [dev-dependencies]
 tempfile.workspace = true

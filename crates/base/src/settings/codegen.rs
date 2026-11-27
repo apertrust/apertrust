@@ -83,7 +83,7 @@ const CONTROLS: [(&str, &str, &str); 4] = [
 ];
 
 /// For an owner's build script: writes the settings `owner` reads (`app`, `engine`,
-/// `export` or `tool:<id>`) into `OUT_DIR/settings.rs`, or fails the build with each error in the
+/// `export`, `import` or `tool:<id>`) into `OUT_DIR/settings.rs`, or fails the build with each error in the
 /// schema, naming its line.
 pub fn build(owner: &str) {
     build_all(&[owner]);
@@ -287,7 +287,7 @@ impl Reader<'_> {
         let string = |field| table.get(field).and_then(Item::as_str);
         let owner = string("owner")
             .filter(|owner| is_owner(owner))
-            .ok_or_else(|| fail("owner", "owner is app, engine, export or tool:<id>"))?;
+            .ok_or_else(|| fail("owner", "owner is app, engine, export, import or tool:<id>"))?;
         let applies = APPLIES
             .into_iter()
             .find(|(name, _)| string("applies") == Some(name))
@@ -366,6 +366,7 @@ impl Reader<'_> {
             Some(tool) => format!("Tool({tool:?})"),
             None if owner == "engine" => "Engine".to_owned(),
             None if owner == "export" => "Export".to_owned(),
+            None if owner == "import" => "Import".to_owned(),
             None => "App".to_owned(),
         };
         let mut code = self.notes(table);
@@ -868,7 +869,7 @@ fn is_unit(unit: &str) -> bool {
 fn is_owner(owner: &str) -> bool {
     match owner.strip_prefix("tool:") {
         Some(tool) => is_snake(tool),
-        None => matches!(owner, "app" | "engine" | "export"),
+        None => matches!(owner, "app" | "engine" | "export" | "import"),
     }
 }
 
@@ -910,7 +911,7 @@ impl Schema {
         for owner in owners {
             assert!(
                 is_owner(owner),
-                "no owner {owner}: one is app, engine, export or tool:<id>"
+                "no owner {owner}: one is app, engine, export, import or tool:<id>"
             );
         }
         let owner = owners
@@ -1042,11 +1043,13 @@ mod tests {
             owned("app")
                 + owned("engine")
                 + owned("export")
+                + owned("import")
                 + tools.map(owned).iter().sum::<usize>(),
             schema.settings.len()
         );
         let (app, engine) = (schema.generate("app"), schema.generate("engine"));
         let (export, tool) = (schema.generate("export"), schema.generate_all(&tools));
+        let import = schema.generate("import");
         assert_eq!(
             ids(&tool),
             [
@@ -1067,7 +1070,14 @@ mod tests {
         // One owner's alone, and both in the one registry.
         assert_eq!(ids(&schema.generate(tools[0])).len(), 4);
         assert_eq!(tool.matches("pub static ALL").count(), 1, "{tool}");
-        let mut every = [ids(&app), ids(&engine), ids(&export), ids(&tool)].concat();
+        let mut every = [
+            ids(&app),
+            ids(&engine),
+            ids(&export),
+            ids(&import),
+            ids(&tool),
+        ]
+        .concat();
         assert_eq!(
             (every.first(), every.len()),
             (Some(&"theme"), schema.settings.len())
@@ -1094,6 +1104,17 @@ mod tests {
         assert!(ids(&export).iter().all(|id| id.starts_with("export.")));
         assert!(export.contains("Owner::Export,"), "{export}");
         assert!(!app.contains("EXPORT_") && !engine.contains("EXPORT_"));
+        // Import's are under `import.`, its first slice's four (decision 85).
+        assert_eq!(
+            ids(&import),
+            [
+                "import.base_folder",
+                "import.default_folder",
+                "import.subfolder",
+                "import.job_code"
+            ]
+        );
+        assert!(import.contains("Owner::Import,"), "{import}");
     }
 
     #[test]
@@ -1390,7 +1411,7 @@ mod tests {
         let me = "[s]\nowner = \"me\"\nkind = \"text\"\noptional = true\napplies = \"at-once\"\n";
         assert_eq!(
             refused(me),
-            ["2: [s]: owner is app, engine, export or tool:<id>"]
+            ["2: [s]: owner is app, engine, export, import or tool:<id>"]
         );
         let later = "[s]\nowner = \"app\"\nkind = \"text\"\noptional = true\napplies = \"later\"\n";
         assert_eq!(refused(later), ["5: [s]: applies is at-once, next-photo or after-restart"]);
