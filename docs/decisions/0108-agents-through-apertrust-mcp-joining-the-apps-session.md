@@ -91,8 +91,8 @@ A second endpoint beside [0089](0089-one-instance-and-one-window-per-user-data-f
   | `Access` | What it allows |
   | --- | --- |
   | `View` | Reading the values, the history, metadata, renders, scopes readings and the selection; the default, read-only (principle 8) |
-  | `EditOpenPhoto`, Edit the open photo | `Step`, one-shot picks, the agent's own Undo and Redo |
-  | `Photos` | `Open`, `Selection`, and later edits of selected photos that are not open |
+  | `EditOpenPhoto`, Edit the open photo | `Step`, one-shot picks |
+  | `Photos` | `Open`, `Selection`, and edits of photos that are not open: `Rate`, `SetMetadata` and `ApplyStyle` naming photos, `UndoBatch`, and Undo and Redo, which move a batch on its other photos as they cross it |
   | `Export` | Exports, allowed for the connection once granted; an export writes only new files, by the person's pattern |
   | `Organise` | Move, Copy, Rename and Delete, each put to the person before it runs, every time; and the person's settings and files: `Cache(Clear)`, `Cache(Limit)` and `Library(RawThumbnails)` |
   | `Person` | Never granted to an agent, at any level: the one view and the live picker every client shares (`Resize`, `View`, `Scopes`, `Hide`, and `Picker`'s `On`, `Point`, `Area`, `Switch`, `Reset`, `Settings`, `Channel` and `Off`), and the history's commands not offered to agents at first (`GoTo`, `Compress`, `Truncate`, `DiscardHistory` and `Reset`) |

@@ -1664,6 +1664,440 @@ fn every_command_round_trips_through_json() {
     );
 }
 
+/// Each command's access, as `docs/session-protocol.md`'s Commands table gives it: every
+/// command, by its content where that decides it.
+#[test]
+fn every_command_states_its_access() {
+    let tool = || "exposure".to_owned();
+    let tool_picker = PickerRef::Tool {
+        tool: "exposure",
+        picker: "exposure",
+    };
+    let rate = |photos| Command::Rate {
+        photos,
+        change: RatingChange::Stars(3),
+    };
+    let set_metadata = |photos| Command::SetMetadata {
+        photos,
+        fields: vec![("dc:title".to_owned(), Some("Market".to_owned()))],
+        values: Vec::new(),
+    };
+    let apply_style = |photos| Command::ApplyStyle {
+        name: "Warm".to_owned(),
+        file: "warm.apstyle".to_owned(),
+        mode: StyleMode::Append,
+        tools: vec![(tool(), values())],
+        photos,
+    };
+    let set = Command::SetControl {
+        tool: tool(),
+        control: "exposure".to_owned(),
+        value: ControlValue::Number(0.5),
+        done: true,
+    };
+    let step = |commands| Command::Step {
+        source: StepSource::Assistant,
+        note: None,
+        commands,
+    };
+    let hold = || export_job::testing::Hold::new().0;
+    let (told, _heard) = std::sync::mpsc::channel();
+    let rows = [
+        (Command::Open(photo()), Access::Photos),
+        (Command::Close, Access::Photos),
+        (
+            Command::Resize {
+                width: 1200,
+                height: 800,
+            },
+            Access::Person,
+        ),
+        (
+            Command::View(View {
+                scale: ViewScale::Fit,
+                centre: [0.5, 0.5],
+            }),
+            Access::Person,
+        ),
+        (set.clone(), Access::EditOpenPhoto),
+        (
+            Command::ResetControl {
+                tool: tool(),
+                control: "exposure".to_owned(),
+            },
+            Access::EditOpenPhoto,
+        ),
+        (Command::ResetTool { tool: tool() }, Access::EditOpenPhoto),
+        (
+            Command::SetTool {
+                tool: tool(),
+                values: values(),
+            },
+            Access::EditOpenPhoto,
+        ),
+        (
+            Command::CancelGesture { tool: tool() },
+            Access::EditOpenPhoto,
+        ),
+        (
+            Command::Keep {
+                tool: tool(),
+                control: "black".to_owned(),
+                kept: true,
+            },
+            Access::EditOpenPhoto,
+        ),
+        (
+            Command::ApplyPreset {
+                tool: "white-balance".to_owned(),
+                preset: "mode".to_owned(),
+                option: "camera".to_owned(),
+            },
+            Access::EditOpenPhoto,
+        ),
+        (
+            Command::Set {
+                operation: "rawprepare".to_owned(),
+                param: "flat_field".to_owned(),
+                value: Value::Choice(1),
+            },
+            Access::EditOpenPhoto,
+        ),
+        (Command::Reset, Access::Person),
+        (Command::Undo, Access::Photos),
+        (Command::Redo, Access::Photos),
+        (rate(Vec::new()), Access::EditOpenPhoto),
+        (rate(vec![photo(), other()]), Access::Photos),
+        (set_metadata(Vec::new()), Access::EditOpenPhoto),
+        (set_metadata(vec![other()]), Access::Photos),
+        (
+            Command::RenameCopy {
+                name: "Black and white".to_owned(),
+            },
+            Access::EditOpenPhoto,
+        ),
+        (Command::GoTo { step: None }, Access::Person),
+        (Command::Compress { up_to: None }, Access::Person),
+        (Command::Truncate { after: None }, Access::Person),
+        (Command::DiscardHistory, Access::Person),
+        (
+            step(vec![set.clone(), Command::ResetTool { tool: tool() }]),
+            Access::EditOpenPhoto,
+        ),
+        (step(vec![set, Command::Reset]), Access::Person),
+        (apply_style(Vec::new()), Access::EditOpenPhoto),
+        (apply_style(vec![photo(), other()]), Access::Photos),
+        (
+            Command::ClearStyle {
+                name: "Warm".to_owned(),
+                file: "warm.apstyle".to_owned(),
+            },
+            Access::EditOpenPhoto,
+        ),
+        (Command::UndoBatch { batch: BATCH }, Access::Photos),
+        (
+            Command::Hide {
+                tool: tool(),
+                hidden: true,
+            },
+            Access::Person,
+        ),
+        (Command::RetrySave, Access::EditOpenPhoto),
+        (Command::Scopes(None), Access::Person),
+        (
+            Command::Picker(PickerCommand::On {
+                picker: PickerRef::ColourPicker,
+                area: false,
+                keys: PickKeys::default(),
+                settings: Vec::new(),
+                channel: None,
+            }),
+            Access::Person,
+        ),
+        (
+            Command::Picker(PickerCommand::On {
+                picker: tool_picker,
+                area: true,
+                keys: PickKeys::default(),
+                settings: Vec::new(),
+                channel: None,
+            }),
+            Access::Person,
+        ),
+        (
+            Command::Picker(PickerCommand::Point {
+                at: [0.5, 0.5],
+                done: true,
+                keys: PickKeys::default(),
+            }),
+            Access::Person,
+        ),
+        (
+            Command::Picker(PickerCommand::Area {
+                from: [0.0, 0.0],
+                to: [1.0, 1.0],
+                done: true,
+                keys: PickKeys::default(),
+            }),
+            Access::Person,
+        ),
+        (Command::Picker(PickerCommand::Switch), Access::Person),
+        (Command::Picker(PickerCommand::Reset), Access::Person),
+        (
+            Command::Picker(PickerCommand::Settings {
+                tool: "exposure",
+                settings: Vec::new(),
+            }),
+            Access::Person,
+        ),
+        (
+            Command::Picker(PickerCommand::Channel { channel: None }),
+            Access::Person,
+        ),
+        (Command::Picker(PickerCommand::Off), Access::Person),
+        (
+            Command::Picker(PickerCommand::Once {
+                picker: tool_picker,
+                region: Region::Point([0.5, 0.5]),
+                keys: PickKeys::default(),
+                settings: Vec::new(),
+                channel: None,
+            }),
+            Access::EditOpenPhoto,
+        ),
+        (Command::CancelJob { job: job() }, Access::Organise),
+        (Command::RetryJob { job: job() }, Access::Organise),
+        (
+            Command::Export {
+                photos: vec![photo()],
+                settings: export_settings(Format::Jpeg(jpeg::Options::default())),
+                places: places(),
+            },
+            Access::Export,
+        ),
+        (
+            Command::PreviewExport {
+                photos: vec![photo()],
+                settings: export_settings(Format::Png(png::Options::default())),
+                places: places(),
+            },
+            Access::Export,
+        ),
+        (
+            Command::Summarise {
+                photos: vec![photo(), other()],
+            },
+            Access::View,
+        ),
+        (
+            Command::Library(LibraryCommand::Open(Source::Folder(PathBuf::from(
+                "/photos",
+            )))),
+            Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::Open(Source::Photos(vec![photo()]))),
+            Access::Photos,
+        ),
+        (Command::Library(LibraryCommand::Close), Access::Photos),
+        (
+            Command::Library(LibraryCommand::Thumbnails {
+                photos: vec!["a.cr3".to_owned()],
+                size: 256,
+            }),
+            Access::View,
+        ),
+        (
+            Command::Library(LibraryCommand::PhotoThumbnails {
+                paths: vec![photo()],
+                size: 256,
+            }),
+            Access::View,
+        ),
+        (
+            Command::Library(LibraryCommand::Subfolders {
+                folder: PathBuf::from("/photos"),
+            }),
+            Access::View,
+        ),
+        (
+            Command::Library(LibraryCommand::RawThumbnails(RawThumbnails::P720)),
+            Access::Organise,
+        ),
+        (
+            Command::Library(LibraryCommand::ListSource {
+                source: PathBuf::from("/Volumes/EOS_DIGITAL"),
+                include_subfolders: false,
+                base_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+                default_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+                places: Places::default(),
+            }),
+            Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::CancelListing { listing: 9 }),
+            Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::CheckSource {
+                listing: 9,
+                base_folder: "/Volumes/Albums".to_owned(),
+                default_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+                places: Places::default(),
+            }),
+            Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::SourceThumbnails {
+                listing: 9,
+                photos: vec![PathBuf::from("100CANON/IMG_0001.CR3")],
+                size: 256,
+            }),
+            Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::ListVolumes),
+            Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::SourceSubfolders {
+                folder: PathBuf::from("/Users/ana/Pictures"),
+            }),
+            Access::Photos,
+        ),
+        (
+            Command::Selection(SelectionCommand::Set(vec![photo()])),
+            Access::Photos,
+        ),
+        (
+            Command::Selection(SelectionCommand::Add(photo())),
+            Access::Photos,
+        ),
+        (
+            Command::Selection(SelectionCommand::Remove(photo())),
+            Access::Photos,
+        ),
+        (
+            Command::Selection(SelectionCommand::Range {
+                to: other(),
+                order: vec![photo(), other()],
+            }),
+            Access::Photos,
+        ),
+        (Command::Selection(SelectionCommand::All), Access::Photos),
+        (Command::Selection(SelectionCommand::Clear), Access::Photos),
+        (Command::Selection(SelectionCommand::Invert), Access::Photos),
+        (
+            Command::Selection(SelectionCommand::Unedited),
+            Access::Photos,
+        ),
+        (
+            Command::Selection(SelectionCommand::Previous),
+            Access::Photos,
+        ),
+        (Command::Cache(CacheCommand::Sizes), Access::View),
+        (
+            Command::Cache(CacheCommand::Limit(Limit::Unlimited)),
+            Access::Organise,
+        ),
+        (
+            Command::Cache(CacheCommand::Clear {
+                kind: cache::THUMBNAILS,
+            }),
+            Access::Organise,
+        ),
+        (
+            Command::Synthetic(crate::jobs::testing::Synthetic::new(
+                "access",
+                Queue::UserBackground,
+                1,
+                &told,
+            )),
+            Access::Organise,
+        ),
+        (Command::HoldExport(hold()), Access::Organise),
+        (Command::HoldPreview(hold()), Access::Organise),
+        (Command::HoldSummary(hold()), Access::Organise),
+        (Command::HoldFolder(hold()), Access::Organise),
+        (Command::HoldWalk(hold()), Access::Organise),
+        (Command::HoldThumbnails(hold()), Access::Organise),
+        (Command::HoldDecode(hold()), Access::Organise),
+        (Command::HoldChunks(hold()), Access::Organise),
+        (Command::HoldClear(hold()), Access::Organise),
+    ];
+    for (command, access) in &rows {
+        assert_eq!(command.access(), *access, "{command:?}");
+    }
+
+    // Every variant has a row, and every variant of the commands it carries.
+    let indices =
+        |pick: fn(&Command) -> Option<usize>| rows.iter().filter_map(move |(c, _)| pick(c));
+    every_variant("Command", indices(command_variant), COMMAND_VARIANTS);
+    every_variant(
+        "PickerCommand",
+        indices(|command| match command {
+            Command::Picker(picker) => Some(picker_variant(picker)),
+            _ => None,
+        }),
+        PICKER_VARIANTS,
+    );
+    every_variant(
+        "LibraryCommand",
+        indices(|command| match command {
+            Command::Library(library) => Some(library_command_variant(library)),
+            _ => None,
+        }),
+        LIBRARY_COMMAND_VARIANTS,
+    );
+    every_variant(
+        "SelectionCommand",
+        indices(|command| match command {
+            Command::Selection(selection) => Some(selection_variant(selection)),
+            _ => None,
+        }),
+        SELECTION_VARIANTS,
+    );
+    every_variant(
+        "CacheCommand",
+        indices(|command| match command {
+            Command::Cache(cache) => Some(cache_command_variant(cache)),
+            _ => None,
+        }),
+        CACHE_COMMAND_VARIANTS,
+    );
+}
+
+/// A command on the edit needs at least [`Access::EditOpenPhoto`]; more where it names
+/// photos, as `ApplyStyle` may, or a `Step` holds `Reset`. Not every command needing it is
+/// on the edit: `Picker(Once)` is not.
+#[test]
+fn every_command_on_the_edit_needs_at_least_edit_open_photo() {
+    for command in every_command() {
+        if on_edit(&command) {
+            assert!(
+                command.access() >= Access::EditOpenPhoto,
+                "{command:?}: {:?}",
+                command.access()
+            );
+        }
+    }
+}
+
+#[test]
+fn each_access_includes_those_before_it() {
+    let order = [
+        Access::View,
+        Access::EditOpenPhoto,
+        Access::Photos,
+        Access::Export,
+        Access::Organise,
+        Access::Person,
+    ];
+    for pair in order.windows(2) {
+        assert!(pair[0] < pair[1], "{:?} before {:?}", pair[0], pair[1]);
+    }
+}
+
 #[test]
 fn every_event_round_trips_through_json() {
     let events = every_event();
