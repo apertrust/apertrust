@@ -748,6 +748,20 @@ pub(crate) const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_
 /// threads submit meanwhile ([`GpuContext::done`]).
 pub(crate) struct Done(std::sync::mpsc::Receiver<()>);
 
+impl Done {
+    /// What tells once `commands`' work has finished, registered on them before they are
+    /// submitted, so nothing is submitted outside the submit gate to register it: the live
+    /// render's chunk i + 2 waits for chunk i's (decision 112).
+    pub(crate) fn after(commands: &wgpu::CommandBuffer) -> Self {
+        let (done, finished) = std::sync::mpsc::channel();
+        commands.on_submitted_work_done(move || {
+            // A receiver gone, a render that failed before it waited, wants no answer.
+            let _ = done.send(());
+        });
+        Done(finished)
+    }
+}
+
 impl GpuContext {
     /// Blocks until all GPU work submitted so far has finished, never keeping another
     /// thread from presenting for more than a moment.
@@ -756,8 +770,7 @@ impl GpuContext {
     }
 
     /// What tells once all GPU work submitted so far has finished, for
-    /// [`Self::wait_for`]: the live render's chunk i + 2 waits for chunk i's (decision
-    /// 112).
+    /// [`Self::wait_for`].
     pub(crate) fn done(&self) -> Done {
         let (done, finished) = std::sync::mpsc::channel();
         self.queue.on_submitted_work_done(move || {

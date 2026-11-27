@@ -68,7 +68,7 @@ flowchart TB
 
 The desktop UI, the web UI, MCP and scripts never touch the engine's internals. They send the same commands, so undo, agents and the remote web mode work the same way (decision 58).
 
-Inside the desktop app, the work is split across threads. The engine thread owns every GPU submission; the UI thread draws the engine's latest frame and sends commands. The window and the engine share one device, so they take turns through one submit gate (decisions 17, 18 and 57); the live frame is cut into submissions of bounded GPU time, so the window's frames run between them while a slow render lasts (decision 112; at Fit, the zoomed view planned). The app runs one process and one main window per user data folder, a second start on Windows and Linux handing its files to it, on macOS refused, LaunchServices sending opens to the running app (decision 89; the switch test on Windows waits).
+Inside the desktop app, the work is split across threads. The engine thread owns every GPU submission; the UI thread draws the engine's latest frame and sends commands. The window and the engine share one device, so they take turns through one submit gate (decisions 17, 18 and 57); the live frame is cut into submissions of bounded GPU time, so the window's frames run between them while a slow render lasts (decision 112). The app runs one process and one main window per user data folder, a second start on Windows and Linux handing its files to it, on macOS refused, LaunchServices sending opens to the running app (decision 89; the switch test on Windows waits).
 
 ```mermaid
 flowchart LR
