@@ -489,16 +489,264 @@ void blur_columns2(uint3 id: SV_DispatchThreadID)
     walk2(column, p.size.z, p.size.w, deriche_of(p));
 }
 
-// Its horizontal pass, one invocation per row.
+// Its horizontal pass, the rows staged through workgroup memory (#702): a row walked by
+// one invocation reads addresses a row apart from its neighbours', which the GPU cannot
+// coalesce. A workgroup of ROWS_PER_GROUP invocations takes as many rows, CHUNK values
+// of each at a time: the chunk loaded across the workgroup, coalesced, each invocation
+// walking its own row through it, then stored across the workgroup. The anticausal sweep
+// loads the causal sums back to add to them. Each row's sums are walk2()'s, in its order.
+// The pass's size is 16 × 16 times the groups, one group a row of the dispatch.
+static const uint ROWS_PER_GROUP = 32;
+static const uint CHUNK = 16;
+// A row of the stage one longer than the chunk, so the walks' reads, a row apart, fall in
+// different banks.
+static const uint STAGE_STRIDE = CHUNK + 1;
+groupshared float2 stage2_in[ROWS_PER_GROUP * STAGE_STRIDE];
+groupshared float2 stage2_out[ROWS_PER_GROUP * STAGE_STRIDE];
+groupshared float stage1_in[ROWS_PER_GROUP * STAGE_STRIDE];
+groupshared float stage1_out[ROWS_PER_GROUP * STAGE_STRIDE];
+
+// The workgroup's rows as the stage holds them: element `k` of invocation `t`'s share of
+// a chunk, its row in the workgroup and its column in the chunk.
+uint2 staged_at(uint k, uint t)
+{
+    uint e = k * ROWS_PER_GROUP + t;
+    return uint2(e / CHUNK, e % CHUNK);
+}
+
 [shader("compute")]
-[numthreads(16, 16, 1)]
-void blur_rows2(uint3 id: SV_DispatchThreadID)
+[numthreads(32, 1, 1)]
+void blur_rows2(uint3 group: SV_GroupID, uint3 local: SV_GroupThreadID)
 {
     ColorEqualParams p = params.ce;
-    uint row = id.y * 16 + id.x;
-    if (row >= p.size.w)
-        return;
-    walk2(row * p.size.z, 1, p.size.z, deriche_of(p));
+    Deriche d = deriche_of(p);
+    uint width = p.size.z;
+    uint rows = p.size.w;
+    uint t = local.x;
+    uint first_row = group.y * ROWS_PER_GROUP;
+    bool walks = first_row + t < rows;
+    uint chunks = (width + CHUNK - 1) / CHUNK;
+    float2 low = float2(-MEAN_BLUR_RANGE);
+    float2 high = float2(MEAN_BLUR_RANGE);
+
+    // The causal sweep, chunk by chunk from the start.
+    float2 xp = float2(0.0);
+    float2 yb = float2(0.0);
+    float2 yp = float2(0.0);
+    for (uint chunk = 0; chunk < chunks; chunk++)
+    {
+        uint c0 = chunk * CHUNK;
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            float2 v = float2(0.0);
+            if (row < rows && c0 + rc.y < width)
+                v = line2_in[row * width + c0 + rc.y];
+            stage2_in[rc.x * STAGE_STRIDE + rc.y] = v;
+            stage2_out[rc.x * STAGE_STRIDE + rc.y] = float2(0.0);
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (walks)
+        {
+            for (uint c = 0; c < min(CHUNK, width - c0); c++)
+            {
+                float2 xc = clampf(stage2_in[t * STAGE_STRIDE + c], low, high);
+                if (chunk == 0 && c == 0)
+                {
+                    xp = xc;
+                    yb = xp * d.coefp;
+                    yp = yb;
+                }
+                float2 yc = causal(d, xc, xp, yp, yb);
+                stage2_out[t * STAGE_STRIDE + c] = yc;
+                xp = xc;
+                yb = yp;
+                yp = yc;
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            if (row < rows && c0 + rc.y < width)
+                line2_out[row * width + c0 + rc.y] = stage2_out[rc.x * STAGE_STRIDE + rc.y];
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    // The anticausal sweep, chunk by chunk from the end, added to the causal sums.
+    float2 xn = float2(0.0);
+    float2 xa = float2(0.0);
+    float2 yn = float2(0.0);
+    float2 ya = float2(0.0);
+    for (uint left = chunks; left > 0; left--)
+    {
+        uint c0 = (left - 1) * CHUNK;
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            float2 v = float2(0.0);
+            float2 o = float2(0.0);
+            if (row < rows && c0 + rc.y < width)
+            {
+                v = line2_in[row * width + c0 + rc.y];
+                o = line2_out[row * width + c0 + rc.y];
+            }
+            stage2_in[rc.x * STAGE_STRIDE + rc.y] = v;
+            stage2_out[rc.x * STAGE_STRIDE + rc.y] = o;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (walks)
+        {
+            uint n_end = min(CHUNK, width - c0);
+            for (uint n = n_end; n > 0; n--)
+            {
+                uint c = n - 1;
+                float2 xc = clampf(stage2_in[t * STAGE_STRIDE + c], low, high);
+                if (left == chunks && n == n_end)
+                {
+                    xn = xc;
+                    xa = xn;
+                    yn = xn * d.coefn;
+                    ya = yn;
+                }
+                float2 yc = anticausal(d, xn, xa, yn, ya);
+                xa = xn;
+                xn = xc;
+                ya = yn;
+                yn = yc;
+                stage2_out[t * STAGE_STRIDE + c] = stage2_out[t * STAGE_STRIDE + c] + yc;
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            if (row < rows && c0 + rc.y < width)
+                line2_out[row * width + c0 + rc.y] = stage2_out[rc.x * STAGE_STRIDE + rc.y];
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+}
+
+// The same for one channel, line1_in into line1_out: walk1()'s sums.
+[shader("compute")]
+[numthreads(32, 1, 1)]
+void blur_rows1(uint3 group: SV_GroupID, uint3 local: SV_GroupThreadID)
+{
+    ColorEqualParams p = params.ce;
+    Deriche d = deriche_of(p);
+    uint width = p.size.z;
+    uint rows = p.size.w;
+    uint t = local.x;
+    uint first_row = group.y * ROWS_PER_GROUP;
+    bool walks = first_row + t < rows;
+    uint chunks = (width + CHUNK - 1) / CHUNK;
+
+    float xp = 0.0;
+    float yb = 0.0;
+    float yp = 0.0;
+    for (uint chunk = 0; chunk < chunks; chunk++)
+    {
+        uint c0 = chunk * CHUNK;
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            float v = 0.0;
+            if (row < rows && c0 + rc.y < width)
+                v = line1_in[row * width + c0 + rc.y];
+            stage1_in[rc.x * STAGE_STRIDE + rc.y] = v;
+            stage1_out[rc.x * STAGE_STRIDE + rc.y] = 0.0;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (walks)
+        {
+            for (uint c = 0; c < min(CHUNK, width - c0); c++)
+            {
+                float xc = clampf(stage1_in[t * STAGE_STRIDE + c], -MEAN_BLUR_RANGE, MEAN_BLUR_RANGE);
+                if (chunk == 0 && c == 0)
+                {
+                    xp = xc;
+                    yb = xp * d.coefp;
+                    yp = yb;
+                }
+                float yc = causal(d, xc, xp, yp, yb);
+                stage1_out[t * STAGE_STRIDE + c] = yc;
+                xp = xc;
+                yb = yp;
+                yp = yc;
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            if (row < rows && c0 + rc.y < width)
+                line1_out[row * width + c0 + rc.y] = stage1_out[rc.x * STAGE_STRIDE + rc.y];
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    float xn = 0.0;
+    float xa = 0.0;
+    float yn = 0.0;
+    float ya = 0.0;
+    for (uint left = chunks; left > 0; left--)
+    {
+        uint c0 = (left - 1) * CHUNK;
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            float v = 0.0;
+            float o = 0.0;
+            if (row < rows && c0 + rc.y < width)
+            {
+                v = line1_in[row * width + c0 + rc.y];
+                o = line1_out[row * width + c0 + rc.y];
+            }
+            stage1_in[rc.x * STAGE_STRIDE + rc.y] = v;
+            stage1_out[rc.x * STAGE_STRIDE + rc.y] = o;
+        }
+        GroupMemoryBarrierWithGroupSync();
+        if (walks)
+        {
+            uint n_end = min(CHUNK, width - c0);
+            for (uint n = n_end; n > 0; n--)
+            {
+                uint c = n - 1;
+                float xc = clampf(stage1_in[t * STAGE_STRIDE + c], -MEAN_BLUR_RANGE, MEAN_BLUR_RANGE);
+                if (left == chunks && n == n_end)
+                {
+                    xn = xc;
+                    xa = xn;
+                    yn = xn * d.coefn;
+                    ya = yn;
+                }
+                float yc = anticausal(d, xn, xa, yn, ya);
+                xa = xn;
+                xn = xc;
+                ya = yn;
+                yn = yc;
+                stage1_out[t * STAGE_STRIDE + c] = stage1_out[t * STAGE_STRIDE + c] + yc;
+            }
+        }
+        GroupMemoryBarrierWithGroupSync();
+        for (uint k = 0; k < CHUNK; k++)
+        {
+            uint2 rc = staged_at(k, t);
+            uint row = first_row + rc.x;
+            if (row < rows && c0 + rc.y < width)
+                line1_out[row * width + c0 + rc.y] = stage1_out[rc.x * STAGE_STRIDE + rc.y];
+        }
+        GroupMemoryBarrierWithGroupSync();
+    }
 }
 
 [shader("compute")]
@@ -512,16 +760,6 @@ void blur_columns1(uint3 id: SV_DispatchThreadID)
     walk1(column, p.size.z, p.size.w, deriche_of(p));
 }
 
-[shader("compute")]
-[numthreads(16, 16, 1)]
-void blur_rows1(uint3 id: SV_DispatchThreadID)
-{
-    ColorEqualParams p = params.ce;
-    uint row = id.y * 16 + id.x;
-    if (row >= p.size.w)
-        return;
-    walk1(row * p.size.z, 1, p.size.z, deriche_of(p));
-}
 
 // The image's chromaticity at a cell of the grid: itself where the grid is the image,
 // otherwise sampled by interpolate_bilinear().

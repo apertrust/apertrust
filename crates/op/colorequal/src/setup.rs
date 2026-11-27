@@ -601,12 +601,14 @@ fn blur(buffer: usize, grid: [u32; 2], channels: u32, sigma: f32, whole: [u32; 2
             lines(grid[0]),
             &[UNIFORMS, at(line_in, buffer), at(line_out, scratch::TEMP)],
         ),
+        // Its rows staged through workgroup memory, a group of 32 rows a row of the
+        // dispatch (the kernel's `blur_rows2`).
         pass(
             rows,
             PassKind::Reduction,
             uniforms(1),
             Vec::new(),
-            lines(grid[1]),
+            Some([16, 16 * grid[1].div_ceil(32)]),
             &[UNIFORMS, at(line_in, scratch::TEMP), at(line_out, buffer)],
         ),
     ]
