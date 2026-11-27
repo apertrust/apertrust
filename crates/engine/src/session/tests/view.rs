@@ -21,13 +21,40 @@
 //! rendering the detail alone, the scopes and the Colour picker reading the fitted frame, and a tiled viewport's detail from the raw
 //! stage's output; the detail's margin, a pan inside it rendering nothing and one past it updating the detail
 //! in place; and a drag upstream of a whole-image round rendering the fitted frame, the
-//! detail pending until the drag ends.
+//! detail pending until the drag ends. Every session under test here cuts each live
+//! render into chunks as small as they go (decision 112), and each frame is checked byte
+//! for byte against references rendered in one submission a render, never cut.
 
+use crate::pipeline::Chunking;
 use crate::session::history::MERGE_WITHIN;
 use crate::settings::registry;
 use crate::view::{ANTICIPATE_MOVE, View, ViewScale};
 
 use super::*;
+
+/// `driven` with every live render, the fitted pipeline's and the detail's, cut into
+/// chunks with the bound at nothing, every pass with a time a chunk of its own (decision
+/// 112).
+fn cut(mut driven: Driven) -> Driven {
+    driven.engine.chunking = Some(Chunking::Bounded(0.0));
+    driven
+}
+
+/// `driven` with every live render in one submission (decision 112): a reference the
+/// sessions in chunks are checked against, never cut.
+fn whole(mut driven: Driven) -> Driven {
+    driven.engine.chunking = Some(Chunking::Whole);
+    driven
+}
+
+/// The submissions the last render of the open photo's fitted pipeline and of its
+/// detail each took: their chunks (decision 112).
+fn chunks(driven: &Driven) -> (u64, u64) {
+    let open = driven.engine.open.as_ref().expect("a photo open");
+    let fitted = open.pipeline.as_ref().expect("its pipeline").chunks();
+    let detail = (open.detail.as_ref()).map_or(0, |detail| detail.pipeline.chunks());
+    (fitted as u64, detail as u64)
+}
 
 fn zoom(scale: ViewScale, centre: [f32; 2]) -> Command {
     Command::View(View { scale, centre })
@@ -89,7 +116,7 @@ fn the_frame(events: &[Event]) -> &Frame {
 #[test]
 fn a_view_is_no_command_on_the_edit() {
     let path = scratch("zoom-edit");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.run([
         Command::Open(path.clone()),
         Command::Resize {
@@ -143,7 +170,7 @@ fn a_view_is_no_command_on_the_edit() {
 #[test]
 fn a_view_is_kept_across_photos() {
     let path = scratch("zoom-kept");
-    let mut driven = Driven::new(&[]);
+    let mut driven = cut(Driven::new(&[]));
     driven.open(&path);
     let kept = View {
         scale: ViewScale::Factor(1.0),
@@ -177,7 +204,7 @@ fn a_view_is_kept_across_photos() {
 #[test]
 fn a_view_change_sends_the_view_fact_once_a_batch() {
     let path = scratch("zoom-batch");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     let events = driven.run([
         zoom(ViewScale::Factor(1.0), [0.3, 0.4]),
@@ -209,7 +236,7 @@ fn a_view_change_sends_the_view_fact_once_a_batch() {
 #[test]
 fn a_resize_that_moves_the_placement_sends_the_view_fact() {
     let path = scratch("zoom-resize");
-    let mut driven = Driven::new(&[]);
+    let mut driven = cut(Driven::new(&[]));
     driven.open(&path);
     let larger = Command::Resize {
         width: 300,
@@ -237,7 +264,7 @@ fn a_resize_that_moves_the_placement_sends_the_view_fact() {
 #[test]
 fn a_centre_clamped_at_an_edge_is_told_once() {
     let path = scratch("zoom-edge");
-    let mut driven = Driven::new(&[]);
+    let mut driven = cut(Driven::new(&[]));
     driven.open(&path);
     // At 100% in 40 × 40, the corner clamps the centre to where the view touches the
     // photo's edges, which an `f32` holds only to its rounding.
@@ -259,7 +286,7 @@ fn a_centre_clamped_at_an_edge_is_told_once() {
 #[test]
 fn a_panicked_turn_tells_the_view_again() {
     let path = scratch("zoom-panic");
-    let mut driven = Driven::new(&[]);
+    let mut driven = cut(Driven::new(&[]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.4, 0.5])]);
     let payload: Box<dyn std::any::Any + Send> = Box::new("a bug");
@@ -355,7 +382,7 @@ fn a_photo_commits_the_view_s_clamp_once_it_is_live() {
     for (case, from, steps) in cases {
         let path = scratch("zoom-commit");
         let wide = path.with_file_name("wide.ARW");
-        let mut driven = Driven::new(&[]);
+        let mut driven = cut(Driven::new(&[]));
         driven.run([
             Command::Open(wide.clone()),
             Command::Resize {
@@ -404,7 +431,7 @@ fn orient(bits: u8) -> Command {
 #[test]
 fn a_turn_maps_the_view_onto_the_same_point_of_the_scene() {
     use apertrust_tools::orientation::{ACTIONS, Orientation as Tool, turn};
-    let mut driven = Driven::new(&[&Sample, &Tool]);
+    let mut driven = cut(Driven::new(&[&Sample, &Tool]));
     let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()) < 1e-6;
     let at = [0.4, 0.6];
     for start in 0..8u8 {
@@ -446,7 +473,7 @@ fn a_turn_maps_the_view_onto_the_same_point_of_the_scene() {
 fn a_turn_in_the_batch_that_leaves_the_photo_goes_with_the_view() {
     use apertrust_tools::orientation::{Orientation as Tool, turn};
     let path = scratch("zoom-turn-leaving");
-    let mut driven = Driven::new(&[&Sample, &Tool]);
+    let mut driven = cut(Driven::new(&[&Sample, &Tool]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.25, 0.5])]);
     let flip = turn("flip_horizontally", 0).expect("a button");
@@ -466,7 +493,7 @@ fn a_turn_in_the_batch_that_leaves_the_photo_goes_with_the_view() {
 #[test]
 fn a_view_in_the_batch_that_leaves_the_photo_goes_on_as_asked() {
     let path = scratch("zoom-view-leaving");
-    let mut driven = Driven::new(&[]);
+    let mut driven = cut(Driven::new(&[]));
     driven.open(&path);
     let asked = View {
         scale: ViewScale::Factor(1.0),
@@ -488,7 +515,7 @@ fn a_view_in_the_batch_that_leaves_the_photo_goes_on_as_asked() {
 fn an_opening_photo_s_orientation_is_no_turn() {
     use apertrust_tools::orientation::{FLIP, Orientation as Tool, turn};
     let path = scratch("zoom-turn-opening");
-    let mut driven = Driven::new(&[&Sample, &Tool]);
+    let mut driven = cut(Driven::new(&[&Sample, &Tool]));
     driven.open(&path);
     let flip = turn("flip_horizontally", 0).expect("a button");
     driven.run([orient(flip)]);
@@ -515,7 +542,7 @@ fn an_opening_photo_s_orientation_is_no_turn() {
 #[test]
 fn a_decode_s_own_orientation_is_no_turn() {
     let path = scratch("zoom-turn-decode").with_file_name("reoriented.ARW");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     let asked = View {
         scale: ViewScale::Factor(1.0),
         centre: [0.4, 0.6],
@@ -598,7 +625,7 @@ fn an_undo_a_redo_and_the_eye_turn_the_view() {
             reoriented(at, none, flip_),
         ),
     ];
-    let mut driven = Driven::new(&[&Sample, &Tool]);
+    let mut driven = cut(Driven::new(&[&Sample, &Tool]));
     for (case, steps, want) in cases {
         let path = scratch(&format!("zoom-turn-{}", case.replace(' ', "-")));
         driven.open(&path);
@@ -629,7 +656,7 @@ fn a_photo_left_before_it_goes_live_takes_its_placement() {
     ];
     for (case, name, leave) in cases {
         let path = scratch("zoom-left-opening").with_file_name(name);
-        let mut driven = Driven::new(&[]);
+        let mut driven = cut(Driven::new(&[]));
         driven.run([
             Command::Resize {
                 width: 40,
@@ -655,7 +682,7 @@ fn a_photo_left_before_it_goes_live_takes_its_placement() {
 #[test]
 fn a_resize_while_a_photo_opens_is_provisional() {
     let path = scratch("zoom-resize-opening");
-    let mut driven = Driven::new(&[]);
+    let mut driven = cut(Driven::new(&[]));
     let asked = View {
         scale: ViewScale::Factor(1.0),
         centre: [0.3, 0.5],
@@ -691,7 +718,7 @@ fn a_photo_open_for_viewing_only_commits_its_clamp() {
     let newer =
         brightened_log("0.9.0").replace(r#"apertrust:version="2""#, r#"apertrust:version="3""#);
     std::fs::write(sidecar::path_for(&path), newer).unwrap();
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     assert!(driven.engine.open.as_ref().unwrap().view_only.is_some());
     let asked = View {
@@ -710,7 +737,7 @@ fn a_photo_open_for_viewing_only_commits_its_clamp() {
 #[test]
 fn a_frame_says_its_place_at_fit_and_at_fill() {
     let path = scratch("zoom-frame");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     let events = driven.open(&path);
     let extent = values(&events).extent;
     let fitted = FramePlace {
@@ -797,6 +824,8 @@ fn direct_detail_at(
     };
     let plan = pipeline::plan(&instances, &image, input.desc(), pipe, &limits).unwrap();
     let mut fitted = pollster::block_on(Pipeline::new(gpu, plan, input)).unwrap();
+    // Both in one submission, against which the session's frames in chunks are checked.
+    fitted.set_chunking(Chunking::Whole);
     fitted.render(gpu).unwrap();
     let (source, key) = fitted.demosaiced().expect("demosaic's image");
     let pipe = Pipe::Detail { region, scale };
@@ -871,7 +900,7 @@ fn with_overview(driven: &mut Driven, events: &[Event]) -> (Frame, Frame) {
 #[test]
 fn a_view_at_100_renders_the_detail_first_and_the_fitted_frame_after_it() {
     let path = scratch("detail-both");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     let events = driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     // 40 × 40 of the 84 × 62 photo round its centre, at scale 1, with its margin: 48 × 48
@@ -887,12 +916,13 @@ fn a_view_at_100_renders_the_detail_first_and_the_fitted_frame_after_it() {
     assert_eq!((frame.place, frame.width, frame.height), (place, 64, 62));
     assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &[], region));
 
-    // A change of the edit while zoomed: the detail from exposure, alone, in one
-    // submission, its frame with no overview, so nothing shows the fitted frame of the
-    // edit before.
+    // A change of the edit while zoomed: the detail from exposure, alone, in its chunks,
+    // its frame with no overview, so nothing shows the fitted frame of the edit before.
     let turns = driven.gpu.gate.turns();
     let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
-    assert_eq!(driven.gpu.gate.turns() - turns, 1, "{events:?}");
+    let (_, detail) = chunks(&driven);
+    assert!(detail > 1, "{detail} chunks");
+    assert_eq!(driven.gpu.gate.turns() - turns, detail, "{events:?}");
     let frame = the_frame(&events);
     assert_eq!((frame.place, frame.width, frame.height), (place, 64, 62));
     assert!(frame.overview.is_none());
@@ -914,13 +944,15 @@ fn a_view_at_100_renders_the_detail_first_and_the_fitted_frame_after_it() {
     // The frame is a fresh detail pipeline's.
     let exposure = [("exposure", "exposure", Value::Float(0.7 + 0.5))];
     assert!(frame_bytes(&driven.gpu, frame) == direct_detail(&driven.gpu, &exposure, region));
-    // The next turn with nothing to take: the fitted pipeline from exposure, alone, in one
-    // submission, the detail published again beside it; its overview a fresh fitted
+    // The next turn with nothing to take: the fitted pipeline from exposure, alone, in its
+    // chunks, the detail published again beside it; its overview a fresh fitted
     // viewport's.
     let (through, buffer) = (frame.through, frame.buffer.clone());
     let turns = driven.gpu.gate.turns();
     let events = follow(&mut driven);
-    assert_eq!(driven.gpu.gate.turns() - turns, 1, "{events:?}");
+    let (fitted, _) = chunks(&driven);
+    assert!(fitted > 1, "{fitted} chunks");
+    assert_eq!(driven.gpu.gate.turns() - turns, fitted, "{events:?}");
     let frame = the_frame(&events);
     assert_eq!(
         (frame.through, &frame.buffer, frame.place),
@@ -951,7 +983,7 @@ fn a_view_at_100_renders_the_detail_first_and_the_fitted_frame_after_it() {
 #[test]
 fn a_view_change_renders_the_detail_alone() {
     let path = scratch("detail-alone");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     // A pan past the margin: one view, one frame, from the detail's copy of its new
@@ -999,7 +1031,7 @@ fn measured(driven: &mut Driven) -> (Vec<Reading>, Vec<PickerReading>) {
 #[test]
 fn the_scopes_and_the_colour_picker_read_the_overview() {
     let path = scratch("detail-measured");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     let colour_picker = Command::Picker(PickerCommand::On {
         picker: PickerRef::ColourPicker,
@@ -1052,7 +1084,7 @@ fn the_scopes_and_the_colour_picker_read_the_overview() {
 #[test]
 fn a_white_balance_change_at_100_runs_the_raw_stage_once() {
     let path = scratch("detail-white-balance");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     let centre = [0.6, 0.4];
     driven.run([zoom(ViewScale::Factor(1.0), centre)]);
@@ -1092,7 +1124,7 @@ fn zoomed_after(
     centre: [f32; 2],
 ) -> (Vec<u8>, Vec<u8>) {
     let path = scratch("detail-first-afresh");
-    let mut driven = Driven::new(tools);
+    let mut driven = whole(Driven::new(tools));
     driven.open(&path);
     driven.run(commands.to_vec());
     let events = driven.run([zoom(ViewScale::Factor(1.0), centre)]);
@@ -1141,7 +1173,7 @@ fn a_change_at_100_renders_the_detail_first_where_the_fitted_passes_write_nothin
     static TOOLS: [&dyn ProcessingTool; 2] = [&Sample, &apertrust_tools::haze_removal::HazeRemoval];
     let centre = [0.4, 0.6];
     let path = scratch("detail-first");
-    let mut driven = Driven::new(&TOOLS);
+    let mut driven = cut(Driven::new(&TOOLS));
     driven.open(&path);
     let mut applied = vec![haze(0.3)];
     driven.run(applied.clone());
@@ -1171,7 +1203,7 @@ fn a_drag_at_100_renders_both_once_the_fitted_frame_has_waited() {
     // Changes that keep coming leave the fitted frame behind at most `OVERVIEW_LAG`, from
     // the first command its detail answered: the next frame then renders both.
     let path = scratch("detail-lag");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     let brightness = |value| set("brightness", ControlValue::Number(value), false);
@@ -1180,7 +1212,7 @@ fn a_drag_at_100_renders_both_once_the_fitted_frame_has_waited() {
     // The fitted frame follows once nothing waits.
     assert!(kinds(&follow(&mut driven)).contains(&"frame"));
     // A detail frame answering a command sent the lag ago, then the drag's next command:
-    // both in one submission.
+    // both in one frame, each in its chunks.
     let long_ago = Instant::now() - OVERVIEW_LAG;
     let events = driven.run_at(long_ago, [brightness(0.5)]);
     assert!(
@@ -1189,7 +1221,8 @@ fn a_drag_at_100_renders_both_once_the_fitted_frame_has_waited() {
     );
     let turns = driven.gpu.gate.turns();
     let events = driven.run([brightness(0.6)]);
-    assert_eq!(driven.gpu.gate.turns() - turns, 1);
+    let (fitted, detail) = chunks(&driven);
+    assert_eq!(driven.gpu.gate.turns() - turns, fitted + detail);
     let frame = the_frame(&events);
     assert_eq!(
         ran(frame)
@@ -1211,7 +1244,7 @@ fn a_fitted_frame_that_fails_is_tried_again_a_few_times() {
     // healthy turn then publishes it, the overview a fresh fitted viewport's (decision
     // 99). A change whose render fails leaves it owed too.
     let path = scratch("detail-retry");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
@@ -1313,7 +1346,7 @@ fn a_small_budget_drops_the_full_resolution_image_and_keeps_the_detail_exact() {
             }
             bytes
         };
-        let mut untiled = Driven::new(&WITH_TONE_EQUALIZER);
+        let mut untiled = whole(Driven::new(&WITH_TONE_EQUALIZER));
         let expected = frames(&mut untiled, &paths[0]);
         let (fitted, Some(detail), reserved) = taken(&untiled) else {
             panic!("{case}: a detail");
@@ -1323,7 +1356,10 @@ fn a_small_budget_drops_the_full_resolution_image_and_keeps_the_detail_exact() {
             open.pipeline.as_ref().unwrap().plan().tiled.is_none(),
             "{case}"
         );
-        let mut small = Driven::within(&WITH_TONE_EQUALIZER, reserved + fitted + detail - 1);
+        let mut small = cut(Driven::within(
+            &WITH_TONE_EQUALIZER,
+            reserved + fitted + detail - 1,
+        ));
         let rendered = frames(&mut small, &paths[1]);
         let open = small.engine.open.as_ref().unwrap();
         assert!(
@@ -1362,7 +1398,7 @@ fn at_fit_the_detail_is_freed_first() {
     let at_100 = zoom(ViewScale::Factor(1.0), [0.5, 0.5]);
     let fit = zoom(ViewScale::Fit, [0.5, 0.5]);
     // Within the default budget: what each pipeline takes.
-    let mut roomy = Driven::new(&[&Sample]);
+    let mut roomy = whole(Driven::new(&[&Sample]));
     roomy.open(&path);
     roomy.run([at_100.clone()]);
     let (_, Some(detail), _) = taken(&roomy) else {
@@ -1374,7 +1410,7 @@ fn at_fit_the_detail_is_freed_first() {
     let events = roomy.run([at_100.clone()]);
     let expected = frame_bytes(&roomy.gpu, the_frame(&events));
 
-    let mut driven = Driven::within(&[&Sample], reserved + fitted + detail - 1);
+    let mut driven = cut(Driven::within(&[&Sample], reserved + fitted + detail - 1));
     driven.open(&path);
     driven.run([at_100.clone()]);
     assert!(taken(&driven).1.is_some(), "the detail at 100%");
@@ -1400,7 +1436,10 @@ fn a_view_at_100_with_the_tone_equalizer_renders_its_round() {
     // held by a key with no region in it: a change
     // upstream runs it again, and a pan none (decision 99).
     let path = scratch("detail-round");
-    let mut driven = Driven::new(&[&Sample, &apertrust_tools::tone_equalizer::ToneEqualizer]);
+    let mut driven = cut(Driven::new(&[
+        &Sample,
+        &apertrust_tools::tone_equalizer::ToneEqualizer,
+    ]));
     driven.open(&path);
     driven.run([Command::SetControl {
         tool: "toneequal".into(),
@@ -1431,11 +1470,11 @@ fn a_view_at_100_with_the_tone_equalizer_renders_its_round() {
         panic!("the mask held: {:?}", held(&driven));
     };
     assert_ne!(changed, first);
-    // A pan past the margin: the region's passes alone, in one submission.
+    // A pan past the margin: the region's passes alone, in their chunks.
     let turns = driven.gpu.gate.turns();
     let events = driven.run([zoom(ViewScale::Factor(1.0), [0.8, 0.5])]);
     at_100(&events);
-    assert_eq!(driven.gpu.gate.turns() - turns, 1);
+    assert_eq!(driven.gpu.gate.turns() - turns, chunks(&driven).1);
     assert_eq!(held(&driven), [("toneequal", Some(changed))]);
     remove(&path);
 }
@@ -1443,7 +1482,7 @@ fn a_view_at_100_with_the_tone_equalizer_renders_its_round() {
 #[test]
 fn going_back_to_100_compiles_nothing() {
     let path = scratch("detail-compiles");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     let compiled = driven.engine.compiled;
@@ -1461,7 +1500,7 @@ fn a_tiled_viewport_takes_the_zoom() {
     // A budget smaller than demosaic's image, which the viewport demosaics in tiles: the
     // detail starts from the raw stage's output it keeps, and renders what the untiled
     // viewport's detail does (decision 99).
-    let mut driven = Driven::within(&[&Sample], 64 << 10);
+    let mut driven = cut(Driven::within(&[&Sample], 64 << 10));
     driven.open(&path);
     let open = driven.engine.open.as_ref().expect("a photo open");
     let fitted = open.pipeline.as_ref().expect("a pipeline");
@@ -1476,11 +1515,15 @@ fn a_tiled_viewport_takes_the_zoom() {
     let detail = open.detail.as_ref().expect("the detail pipeline");
     let mosaic = apertrust_plugin::Format::Mosaic;
     assert_eq!(detail.pipeline.plan().input.format, mosaic);
-    // An edit: the detail first in one submission, restarting after its demosaiced region,
+    // An edit: the detail first in its chunks, restarting after its demosaiced region,
     // neither copying nor demosaicing again, and the fitted frame after it.
     let turns = driven.gpu.gate.turns();
     let events = driven.run([set("brightness", ControlValue::Number(0.5), false)]);
-    assert_eq!(driven.gpu.gate.turns() - turns, 1, "{events:?}");
+    assert_eq!(
+        driven.gpu.gate.turns() - turns,
+        chunks(&driven).1,
+        "{events:?}"
+    );
     let frame = the_frame(&events);
     let passes = ran(frame);
     assert_eq!(passes.iter().filter(|&&name| name == "exposure").count(), 1);
@@ -1506,7 +1549,7 @@ fn a_tiled_viewports_detail_shrinks_its_margin_to_bind() {
     // holds but whose photosites, grown by demosaic's reach, Markesteijn's images do not.
     // The margin shrinks until they do, the region still holding the view (decision 99).
     let path = scratch("detail-shrink").with_file_name("wide-xtrans.ARW");
-    let mut driven = Driven::within(&[&Sample], 64 << 10);
+    let mut driven = cut(Driven::within(&[&Sample], 64 << 10));
     let bounds = Command::Resize {
         width: 400,
         height: 40,
@@ -1546,7 +1589,7 @@ fn a_tiled_viewports_detail_shrinks_its_margin_to_bind() {
 #[test]
 fn above_100_the_detail_renders_at_1() {
     let path = scratch("detail-above");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     // At 400% the bounds show 10 × 10 photo pixels: the frame is those at 100%, with
     // their margin rounded up to the grid, which the client enlarges.
@@ -1582,7 +1625,7 @@ fn a_view_sent_while_the_photo_opens_is_answered_as_it_goes_live() {
     };
     // In a viewport the detail can read: the photo's first frame is the detail's.
     let path = scratch("detail-opening");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     let (_, live) = opening(&mut driven, &path);
     assert!(failures(&live).is_empty(), "{live:?}");
     assert_eq!(the_frame(&live).place.scale, 1.0);
@@ -1592,7 +1635,7 @@ fn a_view_sent_while_the_photo_opens_is_answered_as_it_goes_live() {
     // edit: refused as the photo goes live, before its facts, the frame at Fit.
     let path = scratch("detail-opening-refused");
     let tools: &[&dyn ProcessingTool] = &[&Sample, &apertrust_tools::tone_equalizer::ToneEqualizer];
-    let mut saving = Driven::new(tools);
+    let mut saving = cut(Driven::new(tools));
     saving.open(&path);
     saving.run([Command::SetControl {
         tool: "toneequal".into(),
@@ -1601,7 +1644,7 @@ fn a_view_sent_while_the_photo_opens_is_answered_as_it_goes_live() {
         done: true,
     }]);
     saving.writes();
-    let mut driven = Driven::within(tools, 1 << 10);
+    let mut driven = cut(Driven::within(tools, 1 << 10));
     let (view, live) = opening(&mut driven, &path);
     let refused = (live.iter()).position(|event| {
         matches!(event, Event::Failed(SessionError::Refused { command, error })
@@ -1631,7 +1674,7 @@ fn kept(driven: &Driven) -> (wgpu::Buffer, [u32; 4]) {
 #[test]
 fn a_pan_inside_the_margin_renders_nothing() {
     let path = scratch("detail-pan-inside");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     let (_, region) = kept(&driven);
@@ -1654,7 +1697,7 @@ fn a_pan_inside_the_margin_renders_nothing() {
 #[test]
 fn a_pan_past_the_margin_updates_the_detail_in_place() {
     let path = scratch("detail-pan-past");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     let (buffer, region) = kept(&driven);
@@ -1680,7 +1723,7 @@ fn a_pan_past_the_margin_updates_the_detail_in_place() {
 #[test]
 fn a_scale_change_renders_again_where_the_region_falls_short() {
     let path = scratch("detail-scale");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     // Bounds of 80 × 60: at 400% 20 × 15 visible, a region of 64 × 62; at 100% the whole
     // photo, 80 × 60 with its margin being more than it.
@@ -1712,7 +1755,7 @@ fn a_scale_change_renders_again_where_the_region_falls_short() {
 #[test]
 fn an_edit_keeps_the_region() {
     let path = scratch("detail-kept");
-    let mut driven = Driven::new(&[&Sample]);
+    let mut driven = cut(Driven::new(&[&Sample]));
     driven.open(&path);
     driven.run([zoom(ViewScale::Factor(1.0), [0.5, 0.5])]);
     // A pan inside the region, then an edit: the region the detail rendered, not one round
@@ -1745,7 +1788,7 @@ fn the_anticipate_setting_reaches_the_session() {
     let options = crate::settings::Options::read(&store, &crate::settings::Flags::default());
     assert_eq!(options.anticipate_move, 1.0);
     for (view, width) in [(options.view(), 64), (ViewOptions::default(), 84)] {
-        let mut driven = Driven::with(&[&Sample], view);
+        let mut driven = cut(Driven::with(&[&Sample], view));
         driven.open(&path);
         driven.run([Command::Resize {
             width: 60,
@@ -1830,7 +1873,7 @@ fn undragged(
     view: &Command,
 ) -> Vec<Vec<u8>> {
     let path = scratch(name).with_file_name(photo);
-    let mut driven = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+    let mut driven = whole(Driven::new(&WITH_WHOLE_IMAGE_TOOLS));
     driven.open(&path);
     driven.run([on.clone()]);
     let mut frames = Vec::new();
@@ -1936,7 +1979,7 @@ fn an_upstream_drag_renders_the_fitted_frame_until_the_gesture_ends() {
             assert!(!kinds(&follow(driven)).contains(&"frame"), "{case}");
         };
         let path = scratch("drag-upstream").with_file_name(photo);
-        let mut untiled = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+        let mut untiled = cut(Driven::new(&WITH_WHOLE_IMAGE_TOOLS));
         dragged(&mut untiled, &path, false);
         remove(&path);
         if !*tiles {
@@ -1947,7 +1990,7 @@ fn an_upstream_drag_renders_the_fitted_frame_until_the_gesture_ends() {
         };
         let budget = reserved + fitted + detail - 1;
         let path = scratch("drag-upstream-tiled").with_file_name(photo);
-        let mut tiled = Driven::within(&WITH_WHOLE_IMAGE_TOOLS, budget);
+        let mut tiled = cut(Driven::within(&WITH_WHOLE_IMAGE_TOOLS, budget));
         dragged(&mut tiled, &path, true);
         remove(&path);
     }
@@ -1965,7 +2008,7 @@ fn a_pending_detail_renders_on_the_gesture_s_cancel_or_any_other_command() {
     for (photo, scale, (end, pan)) in every(&photos, &scales, &ends) {
         let case = format!("{photo} at {scale:?}, {end}");
         let path = scratch("drag-ends").with_file_name(photo);
-        let mut driven = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+        let mut driven = cut(Driven::new(&WITH_WHOLE_IMAGE_TOOLS));
         driven.open(&path);
         driven.run([tone_equalizer()]);
         driven.run([zoom(*scale, [0.4, 0.6])]);
@@ -2003,7 +2046,7 @@ fn a_downstream_drag_renders_the_detail_on_every_change() {
         for scale in [ViewScale::Factor(1.0), ViewScale::Factor(0.75)] {
             let case = format!("{photo} at {scale:?}");
             let path = scratch("drag-downstream").with_file_name(photo);
-            let mut driven = Driven::new(&WITH_WHOLE_IMAGE_TOOLS);
+            let mut driven = cut(Driven::new(&WITH_WHOLE_IMAGE_TOOLS));
             driven.open(&path);
             driven.run([tone_equalizer()]);
             let events = driven.run([zoom(scale, [0.4, 0.6])]);

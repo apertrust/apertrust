@@ -49,8 +49,8 @@ use thiserror::Error;
 use wgpu::util::DeviceExt;
 
 use crate::compute::{
-    ComputeError, DERIVATIVE_IN_BINDING, DERIVATIVE_OUT_BINDING, GpuImage, GpuTimer, ImageKernel,
-    Timings, WORKGROUP,
+    ComputeError, DERIVATIVE_IN_BINDING, DERIVATIVE_OUT_BINDING, Done, GpuImage, GpuTimer,
+    ImageKernel, Timings, WORKGROUP,
 };
 use crate::gpu::GpuContext;
 use crate::resample::{AxisPlan, input_length};
@@ -4066,16 +4066,18 @@ pub const CHUNK_BOUND: f64 = 12.0;
 /// How [`Pipeline::render`] submits a render's passes (decision 112).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Chunking {
-    /// In one submission: every pipe's but the fitted viewport's.
+    /// In one submission: every pipe's but the fitted viewport's, a round's tiles and an
+    /// export's among them.
     Whole,
     /// In chunks of at most this many milliseconds of GPU time each, by the last render's
     /// timestamps ([`chunks`]), at most two in flight: the fitted viewport's, at
-    /// [`CHUNK_BOUND`].
+    /// [`CHUNK_BOUND`], and the zoomed view's detail, which the session sets so.
     Bounded(f64),
 }
 
 impl Chunking {
-    /// How a render of a plan for `pipe` is submitted unless told otherwise.
+    /// How a render of a plan for `pipe` is submitted unless told otherwise: a detail's
+    /// plan as a whole, as a round's tile is one too.
     fn of(pipe: &Pipe) -> Self {
         match pipe {
             Pipe::Viewport { .. } => Chunking::Bounded(CHUNK_BOUND),
@@ -4155,6 +4157,9 @@ pub struct Pipeline {
     /// chunk is submitted, before the next.
     #[cfg(test)]
     hold: Option<Box<dyn FnOnce() + Send>>,
+    /// For a test: the submit gate's turns the last render's chunks took.
+    #[cfg(test)]
+    turns: Vec<u64>,
 }
 
 /// A pipeline's work and scratch buffers that it made and no render has used yet.
@@ -4207,14 +4212,58 @@ struct Submitted {
     copied: Option<wgpu::Buffer>,
 }
 
-/// A render recorded into a caller's encoder ([`Pipeline::record`]): what its timings
-/// need once the GPU has done the caller's submission.
+/// A render's chunks submitted ([`Pipeline::submit_chunks`]): what its timings need once
+/// the GPU has done them.
 pub(crate) struct Recording {
     first: usize,
     runs: Vec<bool>,
     names: Vec<&'static str>,
     copied: Option<wgpu::Buffer>,
     start: Instant,
+    chunks: usize,
+}
+
+/// The live frame's chunks submitted and not yet seen done, oldest first, at most two
+/// (decision 112): shared by every render of one frame, as the zoomed view's fitted and
+/// detail pipelines' (decision 99), so the second's first chunk waits as any other.
+#[derive(Default)]
+pub(crate) struct InFlight(VecDeque<Done>);
+
+impl InFlight {
+    /// Submits `commands` through [`GpuContext::submit`] once fewer than two chunks are
+    /// in flight, waiting for the older of two first: chunk i + 2 waits for chunk i. What
+    /// tells that they are done goes with them, inside the submit gate.
+    fn submit(
+        &mut self,
+        gpu: &GpuContext,
+        commands: wgpu::CommandBuffer,
+    ) -> Result<(), ComputeError> {
+        if self.0.len() >= 2 {
+            let done = self.0.pop_front().expect("two in flight");
+            gpu.wait_for(&done)?;
+        }
+        self.0.push_back(Done::after(&commands));
+        gpu.submit([commands]);
+        Ok(())
+    }
+
+    /// Waits until every chunk in flight is done: once a frame's last chunk is submitted,
+    /// and before a submission that does not count itself among them, as a round's tile,
+    /// so no more than two are ever queued.
+    pub(crate) fn drain(&mut self, gpu: &GpuContext) -> Result<(), ComputeError> {
+        // The queue runs in order, so the newest done means every one is.
+        if let Some(done) = self.0.pop_back() {
+            gpu.wait_for(&done)?;
+        }
+        self.0.clear();
+        Ok(())
+    }
+
+    /// For a test: the chunks it holds, done or not.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 /// A tool's colour picker's measurement at its operation in a live render (decision
@@ -4600,6 +4649,8 @@ impl Pipeline {
             chunks: 0,
             #[cfg(test)]
             hold: None,
+            #[cfg(test)]
+            turns: Vec::new(),
             plan,
             input,
             work,
@@ -4645,6 +4696,8 @@ impl Pipeline {
             chunks: _,
             #[cfg(test)]
                 hold: _,
+            #[cfg(test)]
+                turns: _,
         } = self;
         let mut work: Vec<Option<GpuImage>> = work.into_iter().map(Some).collect();
         let mut kept: Vec<Option<GpuImage>> = plan.work.iter().map(|_| None).collect();
@@ -5000,18 +5053,35 @@ impl Pipeline {
     /// them (decision 79); and whether it was recorded, which it is only where the render
     /// runs the operation's passes.
     ///
-    /// Chunked (decision 112), each chunk is a submission of its own through
-    /// [`GpuContext::submit`], cut between passes ([`chunks`]), at most two in flight:
-    /// chunk i + 2 is submitted once chunk i's work is done. `probe` goes in the chunk of
-    /// its operation's last pass; the timestamps' resolve and copy and `then` in the last.
-    /// Each chunk settles what it wrote as it is submitted; the render is done once the
-    /// last chunk is, and a GPU error in any fails it.
+    /// Chunked (decision 112), each chunk is a submission of its own
+    /// ([`Self::submit_chunks`]); the render is done once the last chunk is, and a GPU error
+    /// in any fails it.
     pub(crate) fn render_probing(
         &mut self,
         gpu: &GpuContext,
         probe: Option<Probe>,
         then: impl FnOnce(&mut wgpu::CommandEncoder),
     ) -> Result<(Timings, bool), ComputeError> {
+        let mut flight = InFlight::default();
+        let (recording, probed) = self.submit_chunks(gpu, &mut flight, probe, then)?;
+        flight.drain(gpu)?;
+        Ok((self.timings(gpu, recording)?, probed))
+    }
+
+    /// [`Self::render_probing`]'s passes submitted, not waited for: in chunks through
+    /// [`GpuContext::submit`], cut between passes ([`chunks`]), at most two in flight with
+    /// those of the frame's renders before it in `flight`, chunk i + 2 submitted once chunk
+    /// i's work is done. `probe` goes in the chunk of its operation's last pass; the
+    /// timestamps' resolve and copy and `then` in the last. Each chunk settles what it
+    /// wrote as it is submitted. Once the GPU has done them, [`Self::timings`] reads the
+    /// recording's timings; and whether `probe` was recorded.
+    pub(crate) fn submit_chunks(
+        &mut self,
+        gpu: &GpuContext,
+        flight: &mut InFlight,
+        probe: Option<Probe>,
+        then: impl FnOnce(&mut wgpu::CommandEncoder),
+    ) -> Result<(Recording, bool), ComputeError> {
         let start = Instant::now();
         let (submitted, copies) = self.begin();
         let run = ran(&submitted.runs);
@@ -5019,8 +5089,8 @@ impl Pipeline {
         let (mut probe, mut probed) = (probe, false);
         let mut then = Some(then);
         let mut copied = None;
-        // What tells that each chunk still to be waited for is done, oldest first.
-        let mut in_flight = VecDeque::new();
+        #[cfg(test)]
+        self.turns.clear();
         for (index, chunk) in chunks.iter().enumerate() {
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             let passes = chunk.clone();
@@ -5034,14 +5104,9 @@ impl Pipeline {
                 }
             }
             // Recorded while the two before it run; submitted once the older is done.
-            if index >= 2 {
-                let done = in_flight.pop_front().expect("chunk i − 2 in flight");
-                gpu.wait_for(&done)?;
-            }
-            gpu.submit([encoder.finish()]);
-            if index + 2 < chunks.len() {
-                in_flight.push_back(gpu.done());
-            }
+            flight.submit(gpu, encoder.finish())?;
+            #[cfg(test)]
+            self.turns.push(gpu.gate.turns());
             self.settle_chunk(&submitted, chunk.clone());
             #[cfg(test)]
             if let Some(hold) = self.hold.take() {
@@ -5049,21 +5114,24 @@ impl Pipeline {
             }
         }
         self.chunks = chunks.len();
-        gpu.wait()?;
         let Submitted {
             first, runs, names, ..
         } = submitted;
-        let ticks = self.timer.as_ref().zip(copied.as_ref());
-        let timings = Timings::read(gpu, ticks, &names, start)?;
-        self.keep_times(&run, &timings);
-        self.log_render(first, &runs, &names, &timings, chunks.len());
-        Ok((timings, probed))
+        let recording = Recording {
+            first,
+            runs,
+            names,
+            copied,
+            start,
+            chunks: chunks.len(),
+        };
+        Ok((recording, probed))
     }
 
     /// How [`Self::render`] submits from now on: [`Chunking::Bounded`] at
     /// [`CHUNK_BOUND`] for the fitted viewport, [`Chunking::Whole`] for every other pipe,
-    /// unless told otherwise here, as a test or a measurement does. A pipeline rebuilt by
-    /// [`Self::update`] keeps it.
+    /// unless told otherwise here, as the session does for the zoomed view's detail and a
+    /// test or a measurement does. A pipeline rebuilt by [`Self::update`] keeps it.
     pub fn set_chunking(&mut self, chunking: Chunking) {
         self.chunking = chunking;
     }
@@ -5071,6 +5139,13 @@ impl Pipeline {
     /// The submissions [`Self::render`] took last: its chunks (decision 112).
     pub fn chunks(&self) -> usize {
         self.chunks
+    }
+
+    /// For a test: the submit gate's turns the chunks of the last render took, in order,
+    /// each counted once its chunk is submitted.
+    #[cfg(test)]
+    pub(crate) fn chunk_turns(&self) -> &[u64] {
+        &self.turns
     }
 
     /// For a test: the next render cut before each pass, and `hold` called once its first
@@ -5130,42 +5205,9 @@ impl Pipeline {
         tracing::trace!(target: "perf", "submitted {passes}{from}");
     }
 
-    /// [`Self::render_probing`]'s passes and timestamps recorded into `encoder`, a
-    /// caller's, which it submits through [`GpuContext::submit`] with what else it
-    /// records, so that several pipelines' renders and their copies take one turn at the
-    /// submit gate (decisions 18 and 99); and whether `probe` was recorded. The cache
-    /// points, the edit cache and the scratch's results are taken as the recording leaves
-    /// them, which the caller's submission makes so, as [`Self::submit_then`] takes them.
-    /// Once the GPU has done the submission, [`Self::timings`] reads its timings.
-    pub(crate) fn record(
-        &mut self,
-        gpu: &GpuContext,
-        encoder: &mut wgpu::CommandEncoder,
-        probe: Option<Probe>,
-    ) -> (Recording, bool) {
-        let start = Instant::now();
-        let (submitted, probed) = self.record_into(gpu, encoder, probe, true);
-        self.settle(&submitted);
-        let Submitted {
-            first,
-            runs,
-            names,
-            copied,
-            ..
-        } = submitted;
-        let recording = Recording {
-            first,
-            runs,
-            names,
-            copied,
-            start,
-        };
-        (recording, probed)
-    }
-
-    /// The timings of `recording`, once the GPU has done the submission it went into,
-    /// logged as a render's: its passes' GPU times, kept for the next render's chunks, and
-    /// the time since it was recorded.
+    /// The timings of `recording`, once the GPU has done its chunks, logged as a render's:
+    /// its passes' GPU times, kept for the next render's chunks, and the time since it was
+    /// recorded.
     pub(crate) fn timings(
         &mut self,
         gpu: &GpuContext,
@@ -5177,11 +5219,12 @@ impl Pipeline {
             names,
             copied,
             start,
+            chunks,
         } = recording;
         let ticks = self.timer.as_ref().zip(copied.as_ref());
         let timings = Timings::read(gpu, ticks, &names, start)?;
         self.keep_times(&ran(&runs), &timings);
-        self.log_render(first, &runs, &names, &timings, 1);
+        self.log_render(first, &runs, &names, &timings, chunks);
         Ok(timings)
     }
 

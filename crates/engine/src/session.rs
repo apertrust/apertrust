@@ -106,8 +106,9 @@
 //! visible region with its margin at the zoom's scale, at most 1, with the fitted frame
 //! beside it ([`Frame::overview`]): a change renders the detail first, a whole-image
 //! round's tiles before it, and the fitted frame in a frame of its own after it, or both
-//! in one submission where the detail reads what the fitted passes write; a pan inside
-//! the margin renders nothing; at Fit and Small every frame is the whole photo at Fit.
+//! in one frame, the fitted passes first, where the detail reads what they write; a pan
+//! inside the margin renders nothing; at Fit and Small every frame is the whole photo at
+//! Fit. Each pipeline's render is cut into submissions of bounded GPU time (decision 112).
 //!
 //! These types stand in for the session protocol's until `apertrust-protocol` exists.
 //! Each derives serde in decision 59's JSON shape, `Frame` excepted, and `tests/protocol.rs`
@@ -3141,6 +3142,14 @@ struct Engine {
     /// Holds the next live frame at Fit after its first chunk, for a test.
     #[cfg(test)]
     chunks_hold: Option<export_job::testing::Hold>,
+    /// How every live render, the fitted pipeline's and the detail's, is cut into chunks
+    /// in place of their own, for a test (decision 112).
+    #[cfg(test)]
+    chunking: Option<pipeline::Chunking>,
+    /// The live frame's chunks still tracked as a zoomed frame's rounds began, one entry a
+    /// frame that ran them, for a test (decision 112).
+    #[cfg(test)]
+    in_flight_at_rounds: Vec<usize>,
     /// The opens whose decode began, and those whose mosaic was uploaded, in order, for a
     /// test.
     #[cfg(test)]
@@ -3760,6 +3769,10 @@ impl Engine {
             decode_hold: None,
             #[cfg(test)]
             chunks_hold: None,
+            #[cfg(test)]
+            chunking: None,
+            #[cfg(test)]
+            in_flight_at_rounds: Vec::new(),
             #[cfg(test)]
             decoding: Vec::new(),
             #[cfg(test)]
@@ -7179,6 +7192,10 @@ impl Engine {
             }
         };
         let pipeline = open.pipeline.insert(pipeline);
+        #[cfg(test)]
+        if let Some(chunking) = self.chunking {
+            pipeline.set_chunking(chunking);
+        }
         // A thumbnail reading what this frame writes stops before it, and the others wait
         // for the editing to pause.
         let path = open.sidecar.with_extension("");
@@ -7192,13 +7209,13 @@ impl Engine {
         let bytes = desc.buffer_size();
 
         // Into the display buffer the client was not sent last, copied in the render's
-        // submission, at Fit its last chunk's (decision 112).
+        // last chunk (decision 112).
         let size = (desc.width, desc.height);
         let (display, fresh) = Display::for_frames(&self.gpu, self.display.take(), size, bytes);
         let display = self.display.insert(display);
         let next = 1 - display.published;
         // A tool's colour picker measured at its operation while what it reads changes,
-        // in the same submission, right after the operation's last pass.
+        // in the same chunk, right after the operation's last pass.
         let mut recorded = None;
         // Whether a gesture's change leaves the detail pending, the fitted frame standing
         // in for it (decision 99).
@@ -7316,6 +7333,13 @@ impl Engine {
                 self.compiled += built.kernels() - had;
             }
             let mut detail = built;
+            // In chunks as the fitted frame is (decision 112); a round's tiles, details too,
+            // stay a submission each.
+            detail.set_chunking(pipeline::Chunking::Bounded(pipeline::CHUNK_BOUND));
+            #[cfg(test)]
+            if let Some(chunking) = self.chunking {
+                detail.set_chunking(chunking);
+            }
             // Both pipelines' buffers as made, the detail's but the source it reads in place and
             // with its display pair, and the largest round tile's while it runs.
             let display_pair = 2 * detail.output().desc().buffer_size();
@@ -7346,10 +7370,11 @@ impl Engine {
                 && probing.is_none()
                 && pipeline.lends_current();
             let fitted_due = fitted_due && !deferred;
-            // One encoder and one turn at the submit gate (decisions 18 and 99): the fitted
-            // pipeline's passes and copy where due, then the detail's.
+            // One frame of bounded turns (decisions 99 and 112): the fitted pipeline's
+            // chunks where due, its copy in the last, then the detail's, its copy in its last,
+            // at most two chunks in flight across both.
             let start = Instant::now();
-            let mut encoder = self.gpu.device.create_command_encoder(&Default::default());
+            let mut flight = pipeline::InFlight::default();
             let fitted = if fitted_due {
                 let probe = Self::probe(
                     self.pickers.probe_mut(),
@@ -7357,27 +7382,33 @@ impl Engine {
                     probing.as_ref(),
                     &mut recorded,
                 );
-                let fitted = pipeline.record(&self.gpu, &mut encoder, probe);
                 let into = &display.buffers[next];
-                encoder.copy_buffer_to_buffer(output.buffer(), 0, into, 0, bytes);
-                Some(fitted)
+                let copy = |encoder: &mut wgpu::CommandEncoder| {
+                    encoder.copy_buffer_to_buffer(output.buffer(), 0, into, 0, bytes);
+                };
+                pipeline
+                    .submit_chunks(&self.gpu, &mut flight, probe, copy)
+                    .map(Some)
             } else {
-                None
+                Ok(None)
             };
-            // The rounds that must run, after the fitted pipeline's passes, which may write
+            // The rounds that must run, after the fitted pipeline's chunks, which may write
             // the source they read: each tile a submission of its own, waited for,
             // as an export's (decision 99). Their buffers are made under a scope of their
             // own: a round the GPU cannot build or hold leaves the frame at Fit, as a detail
             // it cannot hold does, the fitted frame rendered there, and the next render that
             // wants the detail builds it afresh.
-            let rounds = if rounds.is_empty() {
+            // Every fitted chunk done first, so a tile, a submission outside the two in
+            // flight, never makes a third.
+            let fitted = match fitted {
+                Ok(fitted) if !rounds.is_empty() => flight.drain(&self.gpu).map(|()| fitted),
+                fitted => fitted,
+            };
+            let rounds = if rounds.is_empty() || fitted.is_err() {
                 (Ok(Timings::default()), None)
             } else {
-                if fitted.is_some() {
-                    let next = self.gpu.device.create_command_encoder(&Default::default());
-                    self.gpu
-                        .submit([std::mem::replace(&mut encoder, next).finish()]);
-                }
+                #[cfg(test)]
+                self.in_flight_at_rounds.push(flight.len());
                 let memory = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::OutOfMemory);
                 let validation = (self.gpu.device).push_error_scope(wgpu::ErrorFilter::Validation);
                 let ran = pollster::block_on(results.run(&self.gpu, rounds, &source));
@@ -7397,36 +7428,43 @@ impl Engine {
                     break 'detail;
                 }
             };
-            let recording = detail_due.then(|| {
-                let (recording, _) = detail.record(&self.gpu, &mut encoder, None);
-                let into = &detail_display.buffers[detail_next];
-                encoder.copy_buffer_to_buffer(detail_output.buffer(), 0, into, 0, detail_bytes);
-                recording
-            });
-            self.gpu.submit([encoder.finish()]);
+            let recording = match &fitted {
+                Ok(_) if detail_due => {
+                    let into = &detail_display.buffers[detail_next];
+                    let copy = |encoder: &mut wgpu::CommandEncoder| {
+                        let from = detail_output.buffer();
+                        encoder.copy_buffer_to_buffer(from, 0, into, 0, detail_bytes);
+                    };
+                    detail
+                        .submit_chunks(&self.gpu, &mut flight, None, copy)
+                        .map(Some)
+                }
+                _ => Ok(None),
+            };
             *reduced = recorded.is_some();
             #[cfg(test)]
             Self::poison(self.poison.as_ref(), &self.gpu, *reduced);
-            let probed = fitted.as_ref().is_some_and(|(_, probed)| *probed);
+            let probed = matches!(fitted, Ok(Some((_, true))));
             let probing = probing.filter(|probing| probing.missed() || probed);
-            let rendered_fitted = fitted.is_some();
-            let rendered_detail = recording.is_some();
-            // Both pipelines' passes, the fitted one's first, timed over the submission.
-            let read = self.gpu.wait().and_then(|()| {
+            let (rendered_fitted, rendered_detail) = (fitted_due, detail_due);
+            // Both pipelines' passes, the fitted one's first, timed once both are done.
+            let read = fitted.and_then(|fitted| {
+                let recording = recording?;
+                flight.drain(&self.gpu)?;
                 let mut timings = match fitted {
                     Some((fitted, _)) => pipeline.timings(&self.gpu, fitted)?,
                     None => Timings::default(),
                 };
                 timings.passes.extend(rounds.passes);
-                if let Some(recording) = recording {
+                if let Some((recording, _)) = recording {
                     let detail_timings = detail.timings(&self.gpu, recording)?;
                     timings.passes.extend(detail_timings.passes);
                 }
                 Ok(timings)
             });
-            // A submission whose end was not seen publishes neither frame: each pipeline,
-            // taken as rendered once recorded, renders again into its display, and the
-            // detail is kept, the frame shown still the one published last.
+            // A frame whose chunks' end was not seen publishes neither frame: each pipeline,
+            // taken as rendered once its last chunk is submitted, renders again into its
+            // display, and the detail is kept, the frame shown still the one published last.
             let mut timings = match read {
                 Ok(timings) => timings,
                 Err(error) => {
@@ -9700,6 +9738,8 @@ mod tests {
         )
         .expect("a plan");
         let mut pipeline = pollster::block_on(Pipeline::new(gpu, plan, input)).expect("it builds");
+        // In one submission, against which a session's frames in chunks are checked.
+        pipeline.set_chunking(pipeline::Chunking::Whole);
         pipeline.render(gpu).expect("it renders");
         bytemuck::cast_slice(&pipeline.output().download(gpu).expect("it reads back")).to_vec()
     }

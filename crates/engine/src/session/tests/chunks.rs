@@ -14,15 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//! The live frame at Fit in bounded submissions through the session (decision 112;
-//! `docs/engine.md`, The live frame in bounded submissions): a frame in chunks equal to
-//! the one submission's, each chunk a turn at the submit gate, the copy and the
+//! The live frame in bounded submissions through the session (decision 112;
+//! `docs/engine.md`, The live frame in bounded submissions): at Fit, a frame in chunks
+//! equal to the one submission's, each chunk a turn at the submit gate, the copy and the
 //! timestamps in the last; a tool picker's reading equal to the one submission's; and a
 //! command sent between a frame's chunks rendered in the next frame, with the window's
-//! turn at the gate between the chunks.
+//! turn at the gate between the chunks. In the zoomed view (decision 99), a change's
+//! detail chunks first and the fitted frame's in the next frame, and where the two join
+//! the fitted chunks first, one frame, every fitted chunk done before a round's first tile;
+//! `view.rs` checks its frames in chunks.
 
 use super::*;
 use crate::pipeline::Chunking;
+use crate::view::{View, ViewScale};
 
 /// The live pipeline of the photo `driven` has open.
 fn live(driven: &mut Driven) -> &mut Pipeline {
@@ -205,4 +209,128 @@ fn a_command_sent_between_a_frame_s_chunks_renders_in_the_next_frame() {
         second == alone(0.9, "chunks-between-later"),
         "the later edit's"
     );
+}
+
+/// The submit gate's turns the last render of the open photo's fitted pipeline and of its
+/// detail each took, a turn a chunk.
+fn chunk_turns(driven: &Driven) -> (Vec<u64>, Vec<u64>) {
+    let open = driven.engine.open.as_ref().expect("a photo open");
+    let fitted = open.pipeline.as_ref().expect("its pipeline").chunk_turns();
+    let detail = open
+        .detail
+        .as_ref()
+        .expect("the detail")
+        .pipeline
+        .chunk_turns();
+    (fitted.to_vec(), detail.to_vec())
+}
+
+/// The `n` turns at the submit gate after the `before`th, one after another.
+fn after(before: u64, n: usize) -> Vec<u64> {
+    (before + 1..=before + n as u64).collect()
+}
+
+/// Zoomed to 100%, every pass a chunk of its own: a change's frame is the detail's chunks
+/// alone, one after another, and the next turn's the fitted frame's after them; once the
+/// fitted frame has followed a drag for `OVERVIEW_LAG`, one frame takes the fitted
+/// chunks first, then the detail's, and nothing else.
+#[test]
+fn zoomed_the_detail_s_chunks_come_first_and_the_fitted_frame_s_after_them() {
+    let path = scratch("chunks-zoomed");
+    let mut driven = Driven::new(&[&Sample]);
+    driven.open(&path);
+    driven.engine.chunking = Some(Chunking::Bounded(0.0));
+    driven.run([Command::View(View {
+        scale: ViewScale::Factor(1.0),
+        centre: [0.5, 0.5],
+    })]);
+    let brightness = |value| set("brightness", ControlValue::Number(value), false);
+    let frame = |events: &[Event]| {
+        (events.iter())
+            .find_map(|event| match event {
+                Event::Frame(frame) => Some(frame.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("a frame: {events:?}"))
+    };
+
+    // A change: the detail's chunks, the frame's every turn.
+    let before = driven.gpu.gate.turns();
+    let events = driven.run([brightness(0.3)]);
+    assert!(frame(&events).overview.is_none(), "the detail first");
+    let (_, detail) = chunk_turns(&driven);
+    assert!(detail.len() > 1, "{detail:?}");
+    assert_eq!(detail, after(before, detail.len()));
+    assert_eq!(driven.gpu.gate.turns(), before + detail.len() as u64);
+    // The next turn: the fitted frame's chunks, after the detail's, its every turn.
+    let before = driven.gpu.gate.turns();
+    let events = driven.engine.turn(Vec::new(), None);
+    assert!(frame(&events).overview.is_some(), "the fitted frame");
+    let (fitted, _) = chunk_turns(&driven);
+    assert!(fitted.len() > 1, "{fitted:?}");
+    assert_eq!(fitted, after(before, fitted.len()));
+    assert_eq!(driven.gpu.gate.turns(), before + fitted.len() as u64);
+
+    // A detail frame answering a command sent the lag ago, then the drag's next command:
+    // the fitted chunks first, then the detail's, one frame.
+    let long_ago = Instant::now() - OVERVIEW_LAG;
+    let events = driven.run_at(long_ago, [brightness(0.5)]);
+    assert!(frame(&events).overview.is_none(), "the detail first");
+    let before = driven.gpu.gate.turns();
+    let events = driven.run([brightness(0.6)]);
+    assert!(frame(&events).overview.is_some(), "both in one frame");
+    let (fitted, detail) = chunk_turns(&driven);
+    assert!(
+        fitted.len() > 1 && detail.len() > 1,
+        "{fitted:?}, {detail:?}"
+    );
+    assert_eq!(fitted, after(before, fitted.len()));
+    assert_eq!(detail, after(before + fitted.len() as u64, detail.len()));
+    let both = (fitted.len() + detail.len()) as u64;
+    assert_eq!(driven.gpu.gate.turns(), before + both);
+    remove(&path);
+}
+
+/// Zoomed to 100% with the tone equalizer, whose mask is a round over the whole image: a
+/// frame that renders the fitted passes, every one a chunk of its own, and the round has
+/// every fitted chunk done before the round's first tile, a submission outside the two in
+/// flight, so no third is ever queued. Order, not time: the chunks stay tracked until
+/// waited for, however fast the GPU.
+#[test]
+fn zoomed_a_round_waits_for_the_fitted_chunks() {
+    static TOOLS: [&dyn ProcessingTool; 2] =
+        [&Sample, &apertrust_tools::tone_equalizer::ToneEqualizer];
+    let path = scratch("chunks-round");
+    let mut driven = Driven::new(&TOOLS);
+    driven.open(&path);
+    driven.run([Command::SetControl {
+        tool: "toneequal".into(),
+        control: "blending".into(),
+        value: ControlValue::Number(10.0),
+        done: true,
+    }]);
+    driven.engine.chunking = Some(Chunking::Bounded(0.0));
+    driven.run([Command::View(View {
+        scale: ViewScale::Factor(1.0),
+        centre: [0.5, 0.5],
+    })]);
+    // Exposure, before the tone equalizer, each change done: the round again each time;
+    // the second, once the fitted frame has waited `OVERVIEW_LAG`, with the fitted passes.
+    let brightness = |value| set("brightness", ControlValue::Number(value), true);
+    let long_ago = Instant::now() - OVERVIEW_LAG;
+    driven.run_at(long_ago, [brightness(0.3)]);
+    driven.engine.in_flight_at_rounds.clear();
+    let events = driven.run([brightness(0.6)]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let joined = (events.iter()).any(|e| matches!(e, Event::Frame(f) if f.overview.is_some()));
+    assert!(joined, "both in one frame: {events:?}");
+    let open = driven.engine.open.as_ref().expect("a photo open");
+    let fitted = open.pipeline.as_ref().expect("its pipeline").chunks();
+    assert!(fitted > 2, "{fitted} fitted chunks");
+    assert_eq!(
+        driven.engine.in_flight_at_rounds,
+        [0],
+        "chunks tracked at the round"
+    );
+    remove(&path);
 }
