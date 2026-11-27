@@ -11,11 +11,11 @@ How are the desktop app's threads organised, how does a frame reach the window, 
 - The **UI thread** runs egui and presents.
 - The **engine thread** owns the pipeline's state and GPU submission, as a **session** (`apertrust-engine::session`).
 - **rayon** for CPU work such as encoding; **tokio** only for I/O and the server.
-- Channels between them. The UI thread waits only for its turn at the submit gate and a surface reconfigure's own wait ([0018](0018-one-submit-gate-for-the-engine-and-the-window.md)).
+- Channels between them. The UI thread waits only for its turn at the submit gate, a surface reconfigure's own wait ([0018](0018-one-submit-gate-for-the-engine-and-the-window.md)) and the acquire of its surface image, which waits for the GPU work queued before the window's earlier frames, a render of the engine's included: today up to the whole render, planned at most two bounded chunks of it, plus any other turn queued before them, such as a job's step ([0112](0112-the-live-render-in-bounded-submissions.md)).
 
 **The session:** `Session::start` takes the GPU, the operations, the tools, the engine's budget and `wake`, and yields events without waiting.
 
-- Commands are numbered as they are sent. The thread takes every command that has arrived and renders the latest state once, so a 30-step drag sent at once renders fewer than 30 times.
+- Commands are numbered as they are sent. The thread takes every command that has arrived and renders the latest state once, so a 30-step drag sent at once renders fewer than 30 times. A render under way is finished, never dropped for a newer value, which the next render takes ([0112](0112-the-live-render-in-bounded-submissions.md)).
 - Each values report says how many commands it includes (`through`), so the app shows a value it set until a report includes it and a slider never jumps back to one reported late.
 - `wake` is the only UI hook the engine has, the app's `request_repaint`; the CLI and a server drive the same session.
 - The binaries hand the session the operations and tools (`apertrust_operations::OPERATIONS`, `apertrust_tools::TOOLS`), so the engine depends on no operation crate.

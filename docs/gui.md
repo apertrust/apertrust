@@ -57,7 +57,7 @@ winit's default app menu on macOS is off (`with_default_menu(false)` on the app'
   - every action can be reached by keyboard;
   - screen readers work as far as egui allows;
   - the interface scales;
-  - no frame waits for the engine to render: at most for a submission under way, and a resize for the GPU (decision 18).
+  - no frame waits for the engine to render: the window's frame time stays under about 20 ms during a long render, 60 Hz the aim once the gate shrinks with wgpu 31, waiting for at most two bounded submissions of the live frame and any other turn queued before them, and a resize for the GPU (decisions 18 and 112; planned, [Performance](#performance)).
 - **The same code in the web browser** (decision 35): nothing in the UI assumes a local file system, threads or a local GPU.
 
 ## Why egui
@@ -494,8 +494,9 @@ The engine's photo is not rendered for each step of a resize: the app holds the 
 - **The submit gate.** Each step reconfigures the window's surface, which wgpu-core 30 fails, with a panic, should another thread submit meanwhile. What is guaranteed (decision 18): no submission of the engine's overlaps a reconfigure of the window's surface, on any platform, the one eframe makes at the first event after a resize included. Every reconfigure is inside an eframe callback, and the app holds the engine's submit gate round each (`Gated`).
 - **What is not guaranteed:** the holds take turns in the order asked (`SubmitGate`), so each thread waits for the other.
   - A submission of the engine's waits for the eframe callback under way, however long it runs. A loop of its own inside a callback, a modal one included, would stop the engine's frames until it returned, so such loops run from the run loop, outside eframe's callbacks, as the Mac's popups do (decision 40).
-  - A frame takes one turn, its render and its copy for the window in one submission, and the scopes' count a second while they are shown. Zoomed past Fit, a change takes the detail's passes, after any whole-image round's tiles in submissions of their own, and the fitted passes in a frame of their own after it ([engine.md](engine.md#the-zoomed-view)).
+  - A frame takes one turn, its render and its copy for the window in one submission, and the scopes' count a second while they are shown. Zoomed past Fit, a change takes the detail's passes, after any whole-image round's tiles in submissions of their own, and the fitted passes in a frame of their own after it ([engine.md](engine.md#the-zoomed-view)). Planned: a frame in submissions of bounded GPU time, at most two in flight (decision 112, [engine.md](engine.md#the-live-frame-in-bounded-submissions)).
   - On the UI thread, as decision 18 narrows decision 17's rule that it waits for nothing, a callback waits for a submission asked for before it, a moment, and a reconfigure inside it for the work the engine had already submitted, up to one render's GPU time. Holding the size during a resize keeps that work small.
+  - Every frame's acquire of its surface image (`get_current_texture`) waits too, for the frames queued before it to run, behind any engine work ahead of them: today up to a whole render, planned at most two bounded submissions of the live frame, plus any turn of its own queued before them: a job's step, the scopes' count, a sample-only render (decision 79), which is short and not chunked, outside the two in flight. The gate is held through that wait, so the engine's next submission waits for it (decision 112).
 - **Measured on the M4:** with another thread holding the gate in 15 ms slices and no pause between them, a frame of the session test's synthetic photo came 12 to 23 ms after its change, against 0.8 to 1.6 ms with the gate free, and 70 to 110 ms when a frame took four turns.
 
 #### Windows' and Linux's frames
@@ -5335,7 +5336,9 @@ show_selected = false       # from Phase 3
 
 ## Performance
 
-- The UI thread builds a frame in a few milliseconds and waits for nothing but its turn at the engine's submit gate and, inside a reconfigure of the window's surface, for the GPU (decisions 17 and 18). puffin scopes for each region show where the time goes.
+- The UI thread builds a frame in a few milliseconds and waits for nothing but its turn at the engine's submit gate, inside a reconfigure of the window's surface for the GPU, and in the acquire of its surface image for the GPU work queued before its earlier frames (decisions 17, 18 and 112). puffin scopes for each region show where the time goes.
+- **During a long render** (decision 112, planned): the window's frame time stays under about 20 ms on a 60 Hz display while the engine renders for 100 ms or more at Fit, on the Radeon 780M, the M4 and the RTX 5060, so a slider's knob, its number and the rest of the window follow the pointer and the photo updates at the render's rate. The engine cuts its live frame into submissions of bounded GPU time, at most two in flight, so a window frame waits for at most two of them, plus any other turn queued before them, such as a job's step ([engine.md](engine.md#the-live-frame-in-bounded-submissions)). Zoomed to 100%, on 61 MP photos and in a drag that reruns the raw stage at full resolution, as White balance's does, a single pass can still pass the bound until row strips split it. 60 Hz is the aim once the gate shrinks with wgpu 31; 120 Hz is planned later.
+- **Measured** under `-d perf` (planned): a line once a second while a gesture or a render is under way, with the frame interval (median, 95th percentile, worst, and how many passed 20 ms), the frame's CPU time (`frame.info().cpu_usage`) and the rest of the frame, the interval less the CPU time: the acquire, the present, vsync's pacing and any idle time, not a wait; the engine measures its wait for the gate itself.
 - Long lists draw only their visible rows: the Browser's thumbnails, Collections' folders, keywords.
 - Scopes and thumbnails are computed by the engine, scopes as GPU reductions (decision 15). They arrive as textures or small arrays, and the UI only draws them.
 

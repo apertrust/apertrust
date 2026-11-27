@@ -197,6 +197,18 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [ ] A fine-control popup for sliders, as darktable's (decision 42).
 - [x] The slider's marker as a setting, Triangle, Circle or Square, Square by default, kept whole at the track's ends (decision 75).
 
+### Smooth dragging
+
+The window's frame time stays under about 20 ms while a slow render runs, a slider's knob following the pointer, 60 Hz the aim once the gate shrinks with wgpu 31 (decision 112; [engine.md](engine.md#the-live-frame-in-bounded-submissions)). Each step one pull request, reviewed before the next:
+
+- [ ] 1. The measurement first: under `-d perf`, the window's frame interval, CPU time and the rest of the frame once a second, the engine's wait for the submit gate and each render's submissions; with Mesa's overlay (`acquire_timing`) on Linux and the Metal HUD on macOS, showing the cause during a Colour equalizer drag on the Radeon 780M. With it, a hand check on the 780M: whether the whole desktop stutters during a long render.
+- [ ] 2. The live frame at Fit in bounded submissions: chunks of about 12 ms of GPU time by the passes' last measured times, a pass with no time a chunk of its own, at most two in flight, the copy and the timestamps in the last chunk, the frame bit-identical, a stale render finished. Done: the window's frame time under about 20 ms during a render of 100 ms or more, on the 780M, the M4 and the RTX 5060.
+- [ ] 3. The zoomed view in bounded submissions, the detail's chunks first.
+- [ ] 4. Row strips for passes longer than the bound, at 100% and on 61 MP photos.
+- [ ] 5. The submit gate after wgpu 31, as soon as it and an egui-wgpu on it are released, whichever step the others have reached: a stress test of resizes during renders on the M4, Linux and Windows, then the gate shrunk or gone and chunks of about 4 ms.
+- [ ] 6. A lower resolution while a slow drag lasts (B), only past a measured budget, the scale fixed for the drag, sharp on release; the scopes and pickers during it settled first.
+- [ ] Later: 120 Hz, with chunks of about 2 ms.
+
 ### Pickers
 
 darktable's colour pickers and its Colour picker, one API (decision 79; [pickers.md](pickers.md#the-plan)), one pull request each, each reviewed before the next that needs it:
