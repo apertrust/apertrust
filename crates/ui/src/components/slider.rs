@@ -24,9 +24,9 @@
 //!   all-positive one from its start and an all-negative one from its end. The row holds no
 //!   default: a reset is [`SliderAction::Reset`], which its caller applies. Its handle, the
 //!   marker Settings chooses ([`super::Marker`], decision 75), points at the value and
-//!   stays whole at the track's ends: its travel, and the fill's, stop short of each end by
-//!   the marker's stop, and a press anywhere on the strip maps onto that travel, so one at
-//!   the very end gives the track's end.
+//!   stays whole at the track's ends: its travel, and the fill's but where it starts at an
+//!   end, stop short of each end by the marker's stop, and a press anywhere on the strip
+//!   maps onto that travel, so one at the very end gives the track's end.
 //! - The marker, beside the label, shows ● on a slider you have kept, ○ under the pointer
 //!   or focus (a click keeps it), and "A" with a tick at the old value while a Match
 //!   proposal waits.
@@ -71,8 +71,8 @@ use egui::accesskit::{Action, ActionData};
 use egui::epaint::Mesh;
 use egui::os::OperatingSystem;
 use egui::{
-    Align2, Color32, CursorIcon, Event, EventFilter, FontId, Key, Modifiers, Pos2, Rangef, Rect,
-    Role, Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
+    Align2, Color32, CornerRadius, CursorIcon, Event, EventFilter, FontId, Key, Modifiers, Pos2,
+    Rangef, Rect, Role, Sense, Stroke, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 
 use super::value_field::number_char;
@@ -816,14 +816,34 @@ impl<'a> SliderRow<'a> {
                 }
             }
             if self.fill {
-                let (a, b) = fill_ends(low, high, shown);
-                let (a, b) = (x_at(travel, a), x_at(travel, b));
+                let (origin, value) = fill_ends(low, high, shown);
+                // From the track's very end where 0 is held there, rounded as the track is:
+                // the marker's travel stops short of the end, which would leave it unfilled.
+                let r = (t.shape.track / 2.0).round() as u8;
+                let (a, corners) = if origin == 0.0 {
+                    let corners = CornerRadius {
+                        nw: r,
+                        sw: r,
+                        ..CornerRadius::ZERO
+                    };
+                    (line.left(), corners)
+                } else if origin == 1.0 {
+                    let corners = CornerRadius {
+                        ne: r,
+                        se: r,
+                        ..CornerRadius::ZERO
+                    };
+                    (line.right(), corners)
+                } else {
+                    (x_at(travel, origin), CornerRadius::ZERO)
+                };
+                let b = x_at(travel, value);
                 let moved = Rect::from_x_y_ranges(a.min(b)..=a.max(b), line.y_range());
                 let colour = match self.track {
                     Track::Plain => t.colors.slider_fill,
                     Track::Gradient(_) => Color32::from_white_alpha(166),
                 };
-                painter.rect_filled(moved, 0.0, fade(colour));
+                painter.rect_filled(moved, corners, fade(colour));
             }
             if let Some(before) = self.before_match {
                 let tick =
@@ -1065,6 +1085,8 @@ fn gradient(rect: Rect, stops: &[(f32, Color32)], enabled: bool) -> Mesh {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::RangeInclusive;
+
     use egui::{Rangef, Rect, Shape, vec2};
     use egui_kittest::Harness;
 
@@ -1154,11 +1176,16 @@ mod tests {
     /// The rectangles in the fill's colour a row of gamut compression's, 0 to 5, default
     /// 1, paints at `value`, with its fill or without, and its track's line.
     fn painted(value: f64, fill: bool) -> (Vec<Rect>, Rect) {
+        painted_on(value, 0.0..=5.0, fill)
+    }
+
+    /// [`painted`] on a row of the range `range`.
+    fn painted_on(value: f64, range: RangeInclusive<f64>, fill: bool) -> (Vec<Rect>, Rect) {
         let mut harness = Harness::builder()
             .with_size(vec2(320.0, 60.0))
             .with_context_setup(|ctx| crate::install(ctx, Theme::default()))
             .build_ui(move |ui| {
-                let row = SliderRow::new("Gamut compression", value, 0.0..=5.0).decimals(2);
+                let row = SliderRow::new("Gamut compression", value, range.clone()).decimals(2);
                 let row = if fill { row } else { row.no_fill() };
                 row.show(ui);
             });
@@ -1181,10 +1208,23 @@ mod tests {
     fn a_row_fills_from_0_at_a_default_other_than_0() {
         let (fills, line) = painted(1.0, true);
         assert_eq!(fills.len(), 1, "{fills:?}");
-        // From the track's start, within the marker's stop, a fifth of the way along.
+        // From the track's very start, short of which the marker's travel stops, a fifth
+        // of the way along.
         let fill = fills[0];
-        assert!(fill.left() - line.left() < 10.0, "{fill:?} on {line:?}");
+        assert_eq!(fill.left(), line.left(), "{fill:?} on {line:?}");
         assert!(fill.width() > 0.15 * line.width(), "{fill:?} on {line:?}");
+    }
+
+    #[test]
+    fn a_range_without_0_fills_from_the_track_s_very_end() {
+        // All positive: from the very start; all negative: from the very end.
+        let (fills, line) = painted_on(50.0, 5.0..=100.0, true);
+        assert_eq!(fills[0].left(), line.left(), "{fills:?} on {line:?}");
+        let (fills, line) = painted_on(-5.0, -8.0..=-2.0, true);
+        assert_eq!(fills[0].right(), line.right(), "{fills:?} on {line:?}");
+        // Spanning 0, from 0 along the marker's travel: the middle.
+        let (fills, line) = painted_on(2.0, -4.0..=4.0, true);
+        assert_eq!(fills[0].left(), line.center().x, "{fills:?} on {line:?}");
     }
 
     #[test]

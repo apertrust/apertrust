@@ -3692,7 +3692,7 @@ struct Slider {
 type Setter = fn(&mut Values, u8);
 
 #[test]
-fn every_slider_paints_its_fill_from_the_track_s_start_to_the_handle() {
+fn every_slider_paints_its_fill_from_the_track_s_very_start_to_the_handle() {
     let theme = Theme::builtin(Builtin::Dark);
     let (track, fill) = (theme.colors.slider_track, theme.colors.slider_fill);
     // The row's painted fill at `value`: the one rectangle in the fill's colour, and the
@@ -3738,12 +3738,12 @@ fn every_slider_paints_its_fill_from_the_track_s_start_to_the_handle() {
         let (_, at_default) = painted_fill(format, set, default);
         let (_, at_high) = painted_fill(format, set, high);
         // Both ranges are all positive, so the fill starts where the shown 0 is held, the
-        // track's start, as darktable's; at the start there is nothing to fill.
-        assert_eq!(at_low.width(), 0.0, "{format:?}: empty at its start");
+        // track's very start, as darktable's; at the start it reaches the handle alone.
         let start = at_low.left();
-        assert!(
-            start - line.left() < 0.06 * line.width(),
-            "{format:?}: {start} on {line:?}"
+        assert_eq!(
+            start,
+            line.left(),
+            "{format:?}: from the track's very start"
         );
         // Below the default, at it and over it, from the same start: the default places no
         // fill.
@@ -3754,9 +3754,10 @@ fn every_slider_paints_its_fill_from_the_track_s_start_to_the_handle() {
             );
         }
         // The handle's place is linear in the value: the high end gives the slope.
-        let slope = (at_high.right() - start) / f32::from(high - low);
+        let first = at_low.right();
+        let slope = (at_high.right() - first) / f32::from(high - low);
         for (value, fill) in [(below, at_below), (default, at_default)] {
-            let handle = start + slope * f32::from(value - low);
+            let handle = first + slope * f32::from(value - low);
             assert!(
                 (fill.right() - handle).abs() < 0.5,
                 "{format:?}: the fill ends at {}, the handle at {handle}",
