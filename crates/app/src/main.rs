@@ -88,6 +88,7 @@ mod scopes;
 mod selection;
 mod settings;
 mod settings_dialog;
+mod sheet;
 mod start;
 mod storage;
 mod styles;
@@ -1988,6 +1989,10 @@ struct Shell {
     newer_shown: bool,
     /// The Toolbar's customise mode's draft, while the mode is on (decision 92).
     customising: Option<customise::CustomiseToolbar>,
+    /// The sheet open in the main window, one at a time (decision 86; [`sheet`]).
+    sheet: Option<Box<dyn sheet::Content>>,
+    /// Its tool column's width, `import.column_width`.
+    sheet_column: f32,
     /// Where the customise menu open adds an item, by its place in the draft.
     adding_at: usize,
     /// The tab whose icon takes the focus at the next frame: where a section went.
@@ -2248,6 +2253,8 @@ impl Shell {
             newer_found: BTreeSet::new(),
             newer_shown: false,
             customising: None,
+            sheet: None,
+            sheet_column: settings.sheet_column,
             adding_at: 0,
             focus_tab: None,
             focus_section: None,
@@ -2902,6 +2909,7 @@ impl Shell {
             ask_before_discard: self.discard.asks(),
             style_mode: self.style_mode,
             rating_notes: self.rating_notes.clone(),
+            sheet_column: self.sheet_column,
         }
     }
 
@@ -3598,11 +3606,13 @@ impl Shell {
             fitted: self.zoom.scale == zoom::Scale::Fit,
             at_100: self.zoom.scale == zoom::Scale::Factor(1.0),
             zoomed: (self.room).is_some_and(|room| zoom::overflows(&room.place(&self.zoom))),
-            dialog: self.about.is_open() || self.customising.is_some(),
-            // About is modal over the window, and so is the Toolbar's customise mode; the
-            // open dialog and the host's dialogs are the app's ([`with_dialogs`]).
-            modal: self.about.is_open() || self.customising.is_some(),
-            dialog_window: false,
+            dialog: self.about.is_open() || self.customising.is_some() || self.sheet.is_some(),
+            // About is modal over the window, and so are the Toolbar's customise mode and a
+            // sheet; the open dialog and the host's dialogs are the app's ([`with_dialogs`]).
+            modal: self.about.is_open() || self.customising.is_some() || self.sheet.is_some(),
+            // A sheet holds the main window as a dialog's own window would: what acts on
+            // the window or its photo rests, and Close Window closes the sheet.
+            dialog_window: self.sheet.is_some(),
             full_screen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
             toolbar_labels: self.labels_shown(),
             toolbar_kept: match &self.customising {
@@ -3756,6 +3766,19 @@ impl Shell {
     ) -> Option<FromToolbar> {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
+        if let Some(draft) = &self.customising {
+            return self.customising_toolbar(ui, draft, saved, title_bar, caption, jobs);
+        }
+        // Under a sheet the actions rest, drawn as they are without it, never greyed
+        // (decision 86): what the sheet alone holds them from is left out of their look.
+        let resting = self.sheet.is_some();
+        let at_rest = State {
+            dialog: false,
+            modal: false,
+            dialog_window: false,
+            ..*state
+        };
+        let state = if resting { &at_rest } else { state };
         // The photo's history alone for Undo and Redo: a click takes the focus from a text
         // field first.
         let can = |action: &actions::Action| match action.id {
@@ -3763,9 +3786,6 @@ impl Shell {
             ActionId::REDO => state.redo && action.enabled(state),
             _ => action.enabled(state),
         };
-        if let Some(draft) = &self.customising {
-            return self.customising_toolbar(ui, draft, saved, title_bar, caption, jobs);
-        }
         // The workspace's list (decision 92), what this build lacks skipped.
         let listed = toolbar::listed(self.workspace.toolbar().iter().map(String::as_str));
         let mut tips: Vec<(ToolbarAction, String)> = Vec::new();
@@ -3839,6 +3859,17 @@ impl Shell {
         let well = self.well(&ctx, state.photo);
         let shown = well.with(|cursors| bar.cursors(cursors).show(ui));
         let window = |gesture| Some(FromToolbar::Window(gesture));
+        // Under a sheet only the jobs spinner, the save state, the menu button and the
+        // window's own controls act; its drawn close closes the sheet first.
+        let shown = shown.filter(|shown| {
+            !resting
+                || !matches!(
+                    shown,
+                    ToolbarAction::Cursors(_)
+                        | ToolbarAction::ContextMenu(_)
+                        | ToolbarAction::Button(_)
+                )
+        });
         match shown? {
             ToolbarAction::Cursors(action) => match well.answer(action)? {
                 cursors::Answer::Choose(cursor) => Some(FromToolbar::Cursor(cursor)),
@@ -3854,7 +3885,9 @@ impl Shell {
             })),
             ToolbarAction::Minimise => window(TitleBar::Minimise),
             ToolbarAction::MaximiseOrRestore => window(TitleBar::MaximiseOrRestore),
-            // Closing the window quits, through the app's way out.
+            // Closing the window quits, through the app's way out; with a sheet open it
+            // closes the sheet first.
+            ToolbarAction::Close if resting => Some(FromToolbar::Action(ActionId::CLOSE_WINDOW)),
             ToolbarAction::Close => Some(FromToolbar::Action(ActionId::QUIT)),
             ToolbarAction::Jobs => Some(FromToolbar::Jobs),
             ToolbarAction::NotSaved => Some(FromToolbar::NotSaved),
@@ -4188,6 +4221,41 @@ impl Shell {
         };
         let list = draft.list().to_vec();
         self.say(placed_words(ctx, "toolbar-customise-added", &list, at));
+    }
+
+    /// Opens `content` as the main window's sheet (decision 86), where none is open and
+    /// neither About nor the Toolbar's customise mode is up: one at a time. Returns whether
+    /// it opened.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "Import's sheet opens one (#754)")
+    )]
+    fn open_sheet(&mut self, content: Box<dyn sheet::Content>) -> bool {
+        let busy = self.sheet.is_some() || self.about.is_open() || self.customising.is_some();
+        if !busy {
+            self.sheet = Some(content);
+        }
+        !busy
+    }
+
+    /// Draws the sheet open, if one is, over the window below the Toolbar, `toolbar`, its
+    /// column on the Tools panel's side, keeping its column's width and closing it as it
+    /// asks.
+    fn show_sheet(&mut self, ctx: &egui::Context, toolbar: egui::Rect) {
+        let place = sheet::Place {
+            column: self.sheet_column,
+            at_start: self.panel_position.at_start(),
+        };
+        let Some(content) = self.sheet.as_deref_mut() else {
+            return;
+        };
+        let shown = sheet::show(ctx, toolbar, content, place);
+        if let Some(action) = shown.column {
+            self.sheet_column = sheet::resized(action);
+        }
+        if shown.closed {
+            self.sheet = None;
+        }
     }
 
     /// The scrim over the window below the Toolbar, `toolbar`, while customising (decision
@@ -4696,6 +4764,8 @@ impl Shell {
             // The main window, the app's one: a dialog's own is the app's to close. A close
             // the app leaves by, never the start window's own. Restart is Quit by now
             // (`App::run_actions`).
+            // Closing the window with a sheet open closes the sheet first (decision 86).
+            Intent::CloseWindow if self.sheet.is_some() => self.sheet = None,
             Intent::CloseWindow | Intent::Quit | Intent::Restart => {
                 // The customise mode cancelled first: its draft is never written.
                 self.finish_customising(false, ctx);
@@ -7705,11 +7775,12 @@ impl App {
         // frame of its input, in the photo area it gives.
         self.shell.pointed = None;
         let mut placed = placed;
-        // Nothing under the customise mode's scrim, a touch screen's pinch included, which
-        // the scrim's hit test never sees.
+        // Nothing under the customise mode's scrim or a sheet, a touch screen's pinch
+        // included, which their hit tests never see.
         if let (Some(room), Some(area)) = (&room, placed.as_ref().map(|p| p.photo))
             && open
             && self.shell.customising.is_none()
+            && self.shell.sheet.is_none()
         {
             let before = self.shell.zoom;
             let gesture = &mut self.shell.gesture;
@@ -9417,8 +9488,10 @@ impl eframe::App for App {
         if let Some(action) = browser_edge.show(ui, browser) {
             self.shell.resize_browser(action);
         }
-        // While customising, the window below the Toolbar dims and takes no input.
+        // While customising, the window below the Toolbar dims and takes no input; a sheet
+        // covers it.
         self.shell.scrim(&ctx, toolbar.response.rect);
+        self.shell.show_sheet(&ctx, toolbar.response.rect);
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
 
@@ -9628,6 +9701,15 @@ impl eframe::App for App {
         // On the Mac the close button closes the start window, the app running on, and on
         // the main window with something open does what Close does, so eframe never sees
         // that close; the close Quit asks for still ends the app.
+        // Closing the window with a sheet open closes the sheet first; the close Quit asks
+        // for still ends the app (decision 86).
+        if raw_input.viewport().close_requested()
+            && !self.shell.leaving
+            && self.shell.sheet.take().is_some()
+            && let Some(viewport) = raw_input.viewports.get_mut(&raw_input.viewport_id)
+        {
+            viewport.events.retain(|e| *e != egui::ViewportEvent::Close);
+        }
         if raw_input.viewport().close_requested() {
             let quitting = std::mem::take(&mut self.shell.leaving);
             // The customise mode holds no close: it cancels, then the close runs as at rest.
@@ -10229,11 +10311,16 @@ fn run_action(
     may_leave: &mut dyn FnMut() -> bool,
 ) -> Option<Command> {
     let enabled = actions::action(id).is_some_and(|a| a.enabled(state));
-    if id == ActionId::CLOSE_WINDOW && enabled && state.dialog_window {
+    // A dialog's own window with the focus closes; else the main window's sheet does, as
+    // the shell runs it.
+    let sheet = shell.sheet.is_some();
+    let dialog_focused = dialogs.shown().is_some_and(|shown| shown.focused);
+    if id == ActionId::CLOSE_WINDOW && enabled && state.dialog_window && (dialog_focused || !sheet)
+    {
         dialogs.close();
         return None;
     }
-    let leaves = id == ActionId::QUIT || id == ActionId::CLOSE_WINDOW;
+    let leaves = id == ActionId::QUIT || (id == ActionId::CLOSE_WINDOW && !sheet);
     // The customise mode cancelled before anything may hold the leaving, so a refused Quit
     // leaves no draft for Done to write.
     if leaves && enabled {
@@ -24369,6 +24456,7 @@ mod tests {
                     run.extend(bench.shell.toolbar_menu(&ctx, asked, &state));
                     run.extend(bench.shell.customise(&ctx, edited, &state));
                     bench.shell.scrim(&ctx, top.response.rect);
+                    bench.shell.show_sheet(&ctx, top.response.rect);
                     let name = tr(&ctx, "tools-panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
                     let width = edge.width(&ctx);
@@ -31454,5 +31542,266 @@ mod tests {
         harness.state_mut().shell.settings = true;
         harness.run();
         assert!(!menu_open(&harness, "Menu"));
+    }
+
+    /// A stub sheet (decision 86): three photos of a card and, in its column, a text field
+    /// row, drawn by the design system's frame; how often its primary button was pressed.
+    struct StubSheet {
+        count: usize,
+        checks: apertrust_ui::components::Checks,
+        pressed: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl sheet::Content for StubSheet {
+        fn show(&mut self, ui: &mut egui::Ui, place: sheet::Place) -> sheet::Shown {
+            use apertrust_ui::components::{Sheet, SheetCell, TextFieldRow};
+            let names: Vec<String> = (0..self.count)
+                .map(|i| format!("DSCF{}.RAF", 1001 + i))
+                .collect();
+            let check_names: Vec<String> = names.iter().map(|n| format!("Import {n}")).collect();
+            let checks = &self.checks;
+            let count = self.count;
+            let out = Sheet::new(
+                "Import · CARD",
+                "Import, CARD",
+                count,
+                checks.active(),
+                |i| SheetCell {
+                    name: &names[i],
+                    picture: None,
+                    no_preview: true,
+                    checked: checks.is_checked(i),
+                    check_name: &check_names[i],
+                    dimmed: false,
+                    mark: None,
+                },
+            )
+            .column(place.column, place.at_start)
+            .primary("Import 3 photos", None)
+            .show(ui, |ui, returned| {
+                let name =
+                    TextFieldRow::new(egui::Id::unique("stub name"), "Import name", "").show(ui);
+                returned.0 |= name.returned;
+            });
+            if let Some(gesture) = out.gesture {
+                self.checks.apply(gesture);
+            }
+            self.pressed
+                .set(self.pressed.get() + usize::from(out.primary));
+            sheet::Shown {
+                closed: out.close,
+                column: out.column,
+            }
+        }
+    }
+
+    /// The bench on `os` with a photo open and the stub sheet open over it; how often its
+    /// primary button was pressed.
+    fn sheet_bench(
+        os: OperatingSystem,
+    ) -> (Harness<'static, Bench>, std::rc::Rc<std::cell::Cell<usize>>) {
+        let mut harness = bench(os);
+        harness.state_mut().photo = true;
+        harness.run();
+        let pressed = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut checks = apertrust_ui::components::Checks::new(3);
+        checks.set_active(Some(0));
+        let stub = StubSheet {
+            count: 3,
+            checks,
+            pressed: pressed.clone(),
+        };
+        assert!(harness.state_mut().shell.open_sheet(Box::new(stub)));
+        harness.run();
+        harness.run();
+        (harness, pressed)
+    }
+
+    /// Decision 86: a grid taller than the sheet scrolls with the wheel over it: the sheet's
+    /// area is as large as the room below the Toolbar, so the wheel reaches its grid.
+    #[test]
+    fn a_sheet_s_grid_taller_than_it_scrolls_with_the_wheel() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.run();
+        let stub = StubSheet {
+            count: 200,
+            checks: apertrust_ui::components::Checks::new(200),
+            pressed: std::rc::Rc::default(),
+        };
+        assert!(harness.state_mut().shell.open_sheet(Box::new(stub)));
+        harness.run();
+        harness.run();
+        let first = harness.get_by_role_and_label(Role::ListItem, "DSCF1001.RAF");
+        let top = first.rect().top();
+        harness.hover_at(first.rect().center());
+        harness.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -400.0),
+            modifiers: Modifiers::NONE,
+            phase: egui::TouchPhase::Move,
+            source: egui::MouseWheelSource::Wheel,
+        });
+        harness.run_steps(30);
+        let moved = (harness.query_by_role_and_label(Role::ListItem, "DSCF1001.RAF"))
+            .is_none_or(|first| first.rect().top() < top - 100.0);
+        assert!(moved, "the grid scrolled");
+    }
+
+    /// Decision 86: under a sheet the Toolbar's actions rest, drawn at rest and never
+    /// greyed, and so do the view's keys and what opens a dialog; the jobs stay live, and a
+    /// second sheet does not open over the first.
+    #[test]
+    fn under_a_sheet_the_toolbar_s_actions_and_the_view_s_keys_rest() {
+        let (mut harness, _) = sheet_bench(OperatingSystem::Nix);
+        let guides = harness.get_by_role_and_label(Role::Button, "Guides");
+        assert!(!guides.accesskit_node().is_disabled());
+        guides.click();
+        harness.run();
+        assert!(!harness.state().shell.guides);
+        let tab = harness.state().shell.panel_tab;
+        for (modifiers, key) in [
+            (Modifiers::NONE, Key::G),
+            (Modifiers::COMMAND, Key::Num1),
+            (Modifiers::COMMAND, Key::E),
+        ] {
+            harness.key_press_modifiers(modifiers, key);
+            harness.run();
+        }
+        assert!(!harness.state().shell.guides);
+        assert_eq!(harness.state().shell.panel_tab, tab);
+        let pressed = &harness.state().pressed;
+        assert!(!pressed.contains(&ActionId::EXPORT), "{pressed:?}");
+        harness.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::J);
+        harness.run();
+        assert!(harness.state().pressed.contains(&ActionId::SHOW_JOBS));
+        assert!(harness.state().shell.sheet.is_some());
+        let state = harness.state().state(&harness.ctx);
+        assert!(state.dialog && state.modal && state.dialog_window);
+        let second = StubSheet {
+            count: 0,
+            checks: apertrust_ui::components::Checks::new(0),
+            pressed: std::rc::Rc::default(),
+        };
+        assert!(!harness.state_mut().shell.open_sheet(Box::new(second)));
+    }
+
+    /// Decision 86: the sheet's own keys reach it: Return on its grid presses its primary
+    /// button, Return in its text field row too, and Esc closes it.
+    #[test]
+    fn the_sheet_s_keys_reach_it_and_esc_closes_it() {
+        let (mut harness, pressed) = sheet_bench(OperatingSystem::Nix);
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert_eq!(pressed.get(), 1);
+        harness
+            .get_by_role_and_label(Role::TextInput, "Import name")
+            .focus();
+        harness.run();
+        harness.key_press(Key::Enter);
+        harness.run();
+        assert_eq!(pressed.get(), 2);
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.state().shell.sheet.is_none());
+        // At rest again, the Toolbar acts.
+        harness
+            .get_by_role_and_label(Role::Button, "Guides")
+            .click();
+        harness.run();
+        assert!(harness.state().shell.guides);
+    }
+
+    /// Decision 86: a sheet opening takes the focus from what had it behind it, a slider in
+    /// the Tools panel here, though its grid has no photo to take it: → then changes nothing
+    /// behind it, and the sheet's own Esc still closes it.
+    #[test]
+    fn a_sheet_with_no_photos_takes_the_focus_from_a_slider_behind_it() {
+        let mut harness = bench(OperatingSystem::Nix);
+        harness.state_mut().photo = true;
+        harness.run();
+        let slider = || (Role::Slider, "Brightness");
+        harness
+            .get_by_role_and_label(slider().0, slider().1)
+            .focus();
+        harness.run();
+        assert!(
+            harness
+                .get_by_role_and_label(slider().0, slider().1)
+                .is_focused()
+        );
+        let stub = StubSheet {
+            count: 0,
+            checks: apertrust_ui::components::Checks::new(0),
+            pressed: std::rc::Rc::default(),
+        };
+        assert!(harness.state_mut().shell.open_sheet(Box::new(stub)));
+        harness.run();
+        harness.run();
+        assert!(
+            !harness
+                .get_by_role_and_label(slider().0, slider().1)
+                .is_focused()
+        );
+        let (commands, pressed) = (
+            harness.state().commands.len(),
+            harness.state().pressed.len(),
+        );
+        harness.key_press(Key::ArrowRight);
+        harness.run();
+        assert_eq!(harness.state().commands.len(), commands);
+        assert_eq!(harness.state().pressed.len(), pressed);
+        harness.key_press(Key::Escape);
+        harness.run();
+        assert!(harness.state().shell.sheet.is_none());
+    }
+
+    /// Decision 86: under a sheet, with everything else able to run, the state the shell
+    /// gives it (`dialog`, `modal` and `dialog_window`) leaves exactly these actions
+    /// available: the jobs and the log windows, leaving, Close Window, which closes the
+    /// sheet, and the interface's size.
+    #[test]
+    fn under_a_sheet_exactly_the_allowed_actions_stay_available() {
+        let state = State {
+            dialog: true,
+            modal: true,
+            dialog_window: true,
+            ..actions::tests::everything()
+        };
+        let available: BTreeSet<&str> = (actions::all())
+            .filter(|action| action.enabled(&state))
+            .map(|action| action.id.0)
+            .collect();
+        let allowed: BTreeSet<&str> = [
+            ActionId::SHOW_JOBS,
+            ActionId::SHOW_LOG,
+            ActionId::QUIT,
+            ActionId::RESTART,
+            ActionId::CLOSE_WINDOW,
+            ActionId::SCALE_UP,
+            ActionId::SCALE_DOWN,
+            ActionId::SCALE_RESET,
+        ]
+        .map(|id| id.0)
+        .into();
+        assert_eq!(available, allowed);
+    }
+
+    /// Decision 86: Close Window, Cmd+W on the Mac, closes the sheet first, the window
+    /// staying; the column's width is kept as its edge moves.
+    #[test]
+    fn close_window_closes_the_sheet_first_and_its_column_width_is_kept() {
+        let (mut harness, _) = sheet_bench(OperatingSystem::Mac);
+        let edge = harness.get_by_role_and_label(Role::Splitter, "Tool column width");
+        edge.focus();
+        harness.run();
+        harness.key_press(Key::ArrowLeft);
+        harness.run();
+        assert_eq!(harness.state().shell.sheet_column, 450.0);
+        let kept = harness.state().shell.to_settings(&harness.ctx);
+        assert_eq!(kept.sheet_column, 450.0);
+        harness.key_press_modifiers(Modifiers::MAC_CMD, Key::W);
+        harness.run();
+        assert!(harness.state().shell.sheet.is_none());
+        assert!(!harness.state().shell.leaving);
     }
 }

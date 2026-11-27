@@ -35,7 +35,7 @@ A setting holds:
   - `app`: read by the desktop app alone;
   - `engine`: read by every process that runs the engine, the app, the CLI and later the server;
   - `export`: the Export tool's settings (decisions 56 and 90), kept by the app and read by the CLI's `export`;
-  - `import`, planned with step 20a1, each key with the slice that first uses it: Import's settings for the copy itself, the base folder, the default folder, subfolder and file name patterns, the job code (Import name in the sheet), the date override (scripts' alone) and the rest of what `PreviewImport` and `Import` carry (decision 85), kept by the app and read by the CLI's `import`; the Import sheet's own places, folder, the folder last imported into, the Folder and Subfolder menus' recents, column width, Keep open and Zoom are `app`'s, under `import.` too (decision 86);
+  - `import`, planned with step 20a1, each key with the slice that first uses it: Import's settings for the copy itself, the base folder, the default folder, subfolder and file name patterns, the job code (Import name in the sheet), the date override (scripts' alone) and the rest of what `PreviewImport` and `Import` carry (decision 85), kept by the app and read by the CLI's `import`; the Import sheet's own places, folder, the folder last imported into, the Folder and Subfolder menus' recents, column width (`import.column_width`, declared with the sheet frame), Keep open and Zoom are `app`'s, under `import.` too (decision 86);
   - `tool:<id>`: a tool's setting (decision 29), kept by the client and sent with the commands that use it;
 - **`kind`** and its fields:
   - boolean;
