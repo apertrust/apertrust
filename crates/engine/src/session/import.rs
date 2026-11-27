@@ -23,6 +23,7 @@
 //! and asks whether it is still the latest before each event, so one a newer check
 //! replaced sends nothing more.
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use apertrust_library::ops::Trees;
@@ -39,14 +40,19 @@ pub(super) struct SourceListing {
     pub job: JobId,
     /// The job of the latest `CheckSource` after the listing, which the next cancels.
     pub check: Option<JobId>,
+    /// The thumbnail jobs asked for of its photos, which a new listing or a
+    /// `CancelListing` cancels.
+    pub thumbnails: Vec<JobId>,
     pub checks: Arc<Checks>,
 }
 
 /// A listing's checks: the listing, once done, and the latest check asked for with its
-/// trees, shared by its jobs and the engine thread.
+/// trees; and the folder listed, once its first chunk names it, which its photos'
+/// thumbnails are read from. Shared by its jobs and the engine thread.
 pub(super) struct Checks(Mutex<State>);
 
 struct State {
+    folder: Option<PathBuf>,
     listed: Option<Arc<Listed>>,
     latest: u64,
     trees: Trees,
@@ -56,6 +62,7 @@ impl Checks {
     /// The checks of a listing asked to check against `trees` as it ends.
     pub fn new(trees: Trees) -> Self {
         Checks(Mutex::new(State {
+            folder: None,
             listed: None,
             latest: 1,
             trees,
@@ -87,5 +94,15 @@ impl Checks {
     /// Whether the check numbered `check` is still the latest.
     pub fn latest(&self, check: u64) -> bool {
         self.lock().latest == check
+    }
+
+    /// The folder listed, the card's `DCIM` or the folder, as its first chunk named it.
+    pub fn found(&self, folder: &Path) {
+        self.lock().folder.get_or_insert_with(|| folder.to_owned());
+    }
+
+    /// The folder listed, once its first chunk has named it.
+    pub fn folder(&self) -> Option<PathBuf> {
+        self.lock().folder.clone()
     }
 }

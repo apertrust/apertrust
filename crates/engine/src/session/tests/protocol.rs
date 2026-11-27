@@ -333,6 +333,11 @@ pub(super) fn every_command() -> Vec<Command> {
             default_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
             places: Places::default(),
         }),
+        Command::Library(LibraryCommand::SourceThumbnails {
+            listing: 9,
+            photos: vec![PathBuf::from("100CANON/IMG_0001.CR3")],
+            size: 256,
+        }),
         Command::Selection(SelectionCommand::Set(vec![photo(), other()])),
         Command::Selection(SelectionCommand::Add(photo())),
         Command::Selection(SelectionCommand::Remove(other())),
@@ -429,7 +434,7 @@ fn picker_variant(command: &PickerCommand) -> usize {
     }
 }
 
-const LIBRARY_COMMAND_VARIANTS: usize = 9;
+const LIBRARY_COMMAND_VARIANTS: usize = 10;
 
 /// Each library command's variant; a new one takes the next index and raises the count.
 fn library_command_variant(command: &LibraryCommand) -> usize {
@@ -443,6 +448,7 @@ fn library_command_variant(command: &LibraryCommand) -> usize {
         LibraryCommand::ListSource { .. } => 6,
         LibraryCommand::CancelListing { .. } => 7,
         LibraryCommand::CheckSource { .. } => 8,
+        LibraryCommand::SourceThumbnails { .. } => 9,
     }
 }
 

@@ -241,6 +241,7 @@ fn serve_raw(
         photo,
         size: 256,
         raw,
+        embedded_only: false,
     };
     serve(cached, &asked, &tell, &|| false, read, facts);
     events.into_inner().unwrap()
@@ -403,6 +404,7 @@ fn the_picture_is_sent_before_it_is_written() {
         photo: "A.ARW",
         size: 256,
         raw: RawThumbnails::Never,
+        embedded_only: false,
     };
     let tally = Tally::new(256);
     serve(bench.cached(&tally), &asked, &tell, &|| false, read, facts);
@@ -423,6 +425,7 @@ fn a_cancel_after_the_read_writes_nothing() {
         photo: "A.ARW",
         size: 256,
         raw: RawThumbnails::Never,
+        embedded_only: false,
     };
     let tally = Tally::new(256);
     serve(bench.cached(&tally), &asked, &tell, &cancel, read, facts);
@@ -737,6 +740,7 @@ fn a_slow_embedded_read_does_not_downgrade_a_render_that_arrived() {
             photo: "A.ARW",
             size: 256,
             raw: RawThumbnails::Never,
+            embedded_only: false,
         },
         &|event| events.lock().unwrap().push(event),
         &|| false,

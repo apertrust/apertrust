@@ -736,6 +736,7 @@ fn time_the_walk() {
                         photo: name.to_str().unwrap(),
                         size,
                         raw: RawThumbnails::Never,
+                        embedded_only: false,
                     };
                     let tell = |_: LibraryEvent| {};
                     serve(

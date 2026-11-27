@@ -5944,6 +5944,14 @@ impl Engine {
                 self.check_source(listing, trees);
                 return;
             }
+            LibraryCommand::SourceThumbnails {
+                listing,
+                photos,
+                size,
+            } => {
+                self.source_thumbnails(listing, photos, size);
+                return;
+            }
             // The live photo's thumbnail is chosen again under it.
             LibraryCommand::RawThumbnails(raw) => {
                 self.raw_thumbnails = raw;
@@ -6147,8 +6155,14 @@ impl Engine {
                     return Ok(());
                 }
                 // The folders are read on the library's own thread, so a card or a share
-                // that hangs holds that thread alone, never this worker.
-                let tell = |event| outbox.send(Event::Library(event));
+                // that hangs holds that thread alone, never this worker. The folder listed
+                // is noted before its first chunk goes, for its photos' thumbnails.
+                let tell = |event: LibraryEvent| {
+                    if let LibraryEvent::SourceListed { folder, .. } = &event {
+                        shared.found(folder);
+                    }
+                    outbox.send(Event::Library(event));
+                };
                 let cancel = || context.cancelled();
                 let listed =
                     library::list_source(listing, &source, include_subfolders, &tell, &cancel);
@@ -6173,6 +6187,7 @@ impl Engine {
             listing,
             job,
             check: None,
+            thumbnails: Vec::new(),
             checks,
         });
     }
@@ -6222,13 +6237,55 @@ impl Engine {
         }
     }
 
-    /// Cancels the latest listing of Import's source and its check, which then send nothing
-    /// more.
+    /// [`LibraryCommand::SourceThumbnails`], for the latest listing of Import's source alone,
+    /// once its first chunk has named the folder listed: each of `photos`, by its path
+    /// relative to that folder, a job of kind `thumbnail` on darktable's `SystemForeground`
+    /// queue as a folder's photo's ([`Self::thumbnails`]), from the cache by its fingerprint
+    /// or its own file, whatever folder is open, its event naming the path asked in the
+    /// listing's number. A path that is absolute or holds a `..` is refused and read
+    /// nothing.
+    fn source_thumbnails(&mut self, listing: u64, photos: Vec<PathBuf>, size: u32) {
+        let Some(source) = self
+            .source
+            .as_ref()
+            .filter(|source| source.listing == listing)
+        else {
+            return;
+        };
+        let Some(root) = source.checks.folder() else {
+            return;
+        };
+        let (inside, refused): (Vec<PathBuf>, Vec<PathBuf>) = photos
+            .into_iter()
+            .partition(|photo| library::relative_inside(photo));
+        for photo in &refused {
+            tracing::warn!("{}: not inside the source; no thumbnail", photo.display());
+        }
+        let wanted = inside.into_iter().map(|photo| {
+            let path = root.join(&photo);
+            thumbnail::Wanted {
+                folder: path.parent().unwrap_or(&root).to_owned(),
+                photo: (path.file_name().unwrap_or_default().to_string_lossy()).into_owned(),
+                named: thumbnail::Named::Source(photo),
+            }
+        });
+        let jobs = self.thumbnail_jobs(listing, wanted.collect(), size);
+        if let Some(source) = self.source.as_mut() {
+            let control = &self.jobs.control;
+            source
+                .thumbnails
+                .retain(|&job| control.state(job).is_some());
+            source.thumbnails.extend(jobs);
+        }
+    }
+
+    /// Cancels the latest listing of Import's source, its check and its photos'
+    /// thumbnails, which then send nothing more.
     fn drop_listing(&mut self) {
         if let Some(source) = self.source.take() {
-            self.jobs.control.cancel(source.job);
-            if let Some(check) = source.check {
-                self.jobs.control.cancel(check);
+            let jobs = [source.job].into_iter().chain(source.check);
+            for job in jobs.chain(source.thumbnails) {
+                self.jobs.control.cancel(job);
             }
         }
     }
@@ -6295,9 +6352,12 @@ impl Engine {
         let wanted = photos.into_iter().map(|photo| thumbnail::Wanted {
             folder: folder.clone(),
             photo,
-            alone: None,
+            named: thumbnail::Named::Folder,
         });
-        self.thumbnail_jobs(open, wanted.collect(), size);
+        let jobs = self.thumbnail_jobs(open, wanted.collect(), size);
+        let control = &self.jobs.control;
+        self.thumbnails.retain(|&job| control.state(job).is_some());
+        self.thumbnails.extend(jobs);
     }
 
     /// [`LibraryCommand::PhotoThumbnails`]: each of the photos opened alone at `paths` read
@@ -6309,17 +6369,24 @@ impl Engine {
         let wanted = paths.into_iter().map(|path| thumbnail::Wanted {
             folder: path.parent().unwrap_or(Path::new("")).to_owned(),
             photo: (path.file_name().unwrap_or_default().to_string_lossy()).into_owned(),
-            alone: Some(path),
+            named: thumbnail::Named::Alone(path),
         });
-        self.thumbnail_jobs(self.latest_library, wanted.collect(), size);
-    }
-
-    /// The jobs of [`Self::thumbnails`] and [`Self::photo_thumbnails`], each thumbnail
-    /// `wanted` at `size` named by the open or close numbered `open`, the first read first.
-    fn thumbnail_jobs(&mut self, open: u64, wanted: Vec<thumbnail::Wanted>, size: u32) {
-        // Those that have ended are forgotten, so the list holds what a cancel can reach.
+        let jobs = self.thumbnail_jobs(self.latest_library, wanted.collect(), size);
         let control = &self.jobs.control;
         self.thumbnails.retain(|&job| control.state(job).is_some());
+        self.thumbnails.extend(jobs);
+    }
+
+    /// The jobs of [`Self::thumbnails`], [`Self::photo_thumbnails`] and
+    /// [`Self::source_thumbnails`], each thumbnail `wanted` at `size` named by the command
+    /// numbered `open`, the first read first.
+    fn thumbnail_jobs(
+        &mut self,
+        open: u64,
+        wanted: Vec<thumbnail::Wanted>,
+        size: u32,
+    ) -> Vec<JobId> {
+        let mut jobs = Vec::new();
         #[cfg(test)]
         let hold = self.thumbnails_hold.take();
         // The command's jobs share one tally, logged once the last has ended.
@@ -6329,17 +6396,22 @@ impl Engine {
         for thumbnail::Wanted {
             folder,
             photo,
-            alone,
+            named,
         } in wanted.into_iter().rev()
         {
-            // A folder's photo is told apart by its name, a photo alone by its path.
-            let key = match &alone {
-                Some(path) => {
+            // A folder's photo is told apart by its name, a photo alone and a source's by
+            // their paths; a source's photo has no render, nor an edit the session follows.
+            let key = match &named {
+                thumbnail::Named::Alone(path) => {
                     self.rendered_thumbnails.asked_alone(open, path, size);
                     let path = path.as_os_str().as_encoded_bytes();
                     [format!("alone/{open}/{size}/").as_bytes(), path].concat()
                 }
-                None => {
+                thumbnail::Named::Source(path) => {
+                    let path = path.as_os_str().as_encoded_bytes();
+                    [format!("source/{open}/{size}/").as_bytes(), path].concat()
+                }
+                thumbnail::Named::Folder => {
                     self.rendered_thumbnails.asked(open, &folder, &photo, size);
                     format!("{open}/{size}/{photo}").into_bytes()
                 }
@@ -6356,15 +6428,15 @@ impl Engine {
                     if let Some(hold) = &hold {
                         hold.wait();
                     }
-                    let tell = |event| {
-                        outbox.send(Event::Library(thumbnail::named(event, alone.as_ref())))
-                    };
+                    let tell = |event| outbox.send(Event::Library(thumbnail::named(event, &named)));
                     let asked = thumbnail::Asked {
                         open,
                         folder: &folder,
                         photo: &photo,
                         size,
                         raw,
+                        // A card's file is no edited photo's, whatever its fingerprint.
+                        embedded_only: matches!(named, thumbnail::Named::Source(_)),
                     };
                     let cached =
                         (cached.as_ref()).map(|(upkeep, tally)| (upkeep, &**tally, &*fingerprints));
@@ -6375,8 +6447,9 @@ impl Engine {
                 })
                 .dedup(key)
             });
-            self.thumbnails.push(job);
+            jobs.push(job);
         }
+        jobs
     }
 
     /// Renders the photo at the viewport's size and publishes it, once both are known. A
