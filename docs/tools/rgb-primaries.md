@@ -116,7 +116,7 @@ P4 in detail: six of the eight parameters bind darktable's exactly. The tint's h
 ## In the panel
 
 - **No tabs and no group labels:** darktable's eight sliders, one under another, in its order.
-- **Tracks** are plain, filled from the default, where darktable paints each slider in the colours its primary takes ([Gaps](#gaps)).
+- **Tracks** are plain, filled from 0, where darktable paints each slider in the colours its primary takes ([Gaps](#gaps)).
 - **Values** show one decimal with their unit, in the language's number format: "+9.5°", "−15.7%". A slider whose range spans zero is signed, as darktable's is, zero included: "+0.0°".
 - **Keyboard:** every row is a `SliderRow`, stepping by darktable's step, Shift ten steps and Ctrl a tenth, Option on the Mac, never less than 0.1, the decimal shown, as darktable's `min_visible`; the step grows as a widened track's span does, as darktable's zoom step makes it. The value is rounded to the decimal shown before it is sent.
 - **While closed** the section shows its title and buttons; its presets button opens its presets ([gui.md](../gui.md#a-tools-presets)), and its options hold Reset, Copy Settings and Paste Settings, then the layout's items.
@@ -135,7 +135,7 @@ What darktable's page has or does that the panel does not yet:
 - **Units:** stored as shown, with darktable's slider factor and offset, the binding converting back in f32 as darktable's slider does.
 - **Ranges:** darktable's hard ranges in the units shown, so every value darktable's sliders take when typed fits.
 - **Steps and decimals:** darktable's: its computed steps over the soft ranges, and one decimal.
-- **Tracks:** plain, filled from the default, since the design system's hue track is wrong for green's and blue's hues ([Gaps](#gaps), 1).
+- **Tracks:** plain, filled from 0, since the design system's hue track is wrong for green's and blue's hues ([Gaps](#gaps), 1).
 - **Row ids:** P, for rgb Primaries; C is Colour calibration's.
 - **Row P6:** that the tint's hue changes nothing while its purity is 0, measured exactly.
 - **The files' names:** by the tool's English name, `rgb_primaries.rs` and this page, `rgb-primaries.md`, apart from the operation's `primaries` (the `tool-bindings` skill).

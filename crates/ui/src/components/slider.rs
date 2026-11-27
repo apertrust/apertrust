@@ -18,12 +18,15 @@
 //! its marker at the start of the top line, the quad and the value at its end, and the
 //! track the row's full width under them.
 //!
-//! - The track is one line, plain or a colour band; the part moved from the default is
-//!   drawn on it at the same thickness. Its handle, the marker Settings chooses
-//!   ([`super::Marker`], decision 75), points at the value and stays whole at the track's
-//!   ends: its travel, and the fill's, stop short of each end by the marker's stop, and a
-//!   press anywhere on the strip maps onto that travel, so one at the very end gives the
-//!   track's end.
+//! - The track is one line, plain or a colour band; the fill, from the value shown as 0 to
+//!   the value, is drawn on it at the same thickness, as darktable's from its origin: 0
+//!   held to the track's ends, so a range spanning 0 fills from 0 either way, an
+//!   all-positive one from its start and an all-negative one from its end. The row holds no
+//!   default: a reset is [`SliderAction::Reset`], which its caller applies. Its handle, the
+//!   marker Settings chooses ([`super::Marker`], decision 75), points at the value and
+//!   stays whole at the track's ends: its travel, and the fill's, stop short of each end by
+//!   the marker's stop, and a press anywhere on the strip maps onto that travel, so one at
+//!   the very end gives the track's end.
 //! - The marker, beside the label, shows ● on a slider you have kept, ○ under the pointer
 //!   or focus (a click keeps it), and "A" with a tick at the old value while a Match
 //!   proposal waits.
@@ -167,7 +170,7 @@ pub struct Quad<'a> {
 pub enum SliderAction {
     /// A new value; `done` on the last change of a drag, a click, a key or a typed value.
     Set { value: f64, done: bool },
-    /// Back to the default.
+    /// Back to the default, which the caller holds.
     Reset,
     /// Keep the slider, or release it.
     ToggleKeep,
@@ -182,7 +185,6 @@ pub struct SliderRow<'a> {
     name: &'a str,
     promise: Option<&'a str>,
     value: f64,
-    default: f64,
     range: RangeInclusive<f64>,
     soft: Option<RangeInclusive<f64>>,
     step: f64,
@@ -202,16 +204,13 @@ pub struct SliderRow<'a> {
 
 impl<'a> SliderRow<'a> {
     /// `label` is the short, translated label; the full name defaults to it. `range` is
-    /// what a value may hold, and the track spans it unless a soft range is given. The
-    /// default value is 0, or the range's start if 0 is outside it.
+    /// what a value may hold, and the track spans it unless a soft range is given.
     pub fn new(label: &'a str, value: f64, range: RangeInclusive<f64>) -> Self {
-        let default = 0.0_f64.clamp(*range.start(), *range.end());
         SliderRow {
             label,
             name: label,
             promise: None,
             value,
-            default,
             range,
             soft: None,
             step: 0.0,
@@ -242,11 +241,6 @@ impl<'a> SliderRow<'a> {
         self
     }
 
-    pub fn default_value(mut self, value: f64) -> Self {
-        self.default = value;
-        self
-    }
-
     /// darktable's soft range: what the track spans at rest, inside the range, which
     /// stays what a value may hold. A value beyond it widens the track to reach it until
     /// the row is reset, as darktable's `dt_bauhaus_slider_set` does.
@@ -273,7 +267,8 @@ impl<'a> SliderRow<'a> {
         self
     }
 
-    /// No fill from the default: for values with no "more" direction, such as a hue.
+    /// No fill from 0 to the value: for values with no "more" direction, such as a hue,
+    /// as darktable's sliders with `fill_feedback` off.
     pub fn no_fill(mut self) -> Self {
         self.fill = false;
         self
@@ -730,9 +725,7 @@ impl<'a> SliderRow<'a> {
                 d.insert_temp(span_id, (rest, (low, high)));
             }
         });
-        let span = (high - low).max(f64::EPSILON);
-        let fraction = |v: f64| ((v - low) / span).clamp(0.0, 1.0) as f32;
-        let x_of = |v: f64| x_at(travel, fraction(v));
+        let x_of = |v: f64| x_at(travel, fraction_of(v, low, high));
 
         // The track, last in the row's focus order. Screen readers hear the value as the
         // row writes it, with its unit, and the key that opens its field.
@@ -823,7 +816,8 @@ impl<'a> SliderRow<'a> {
                 }
             }
             if self.fill {
-                let (a, b) = (x_of(self.default), x_of(shown));
+                let (a, b) = fill_ends(low, high, shown);
+                let (a, b) = (x_at(travel, a), x_at(travel, b));
                 let moved = Rect::from_x_y_ranges(a.min(b)..=a.max(b), line.y_range());
                 let colour = match self.track {
                     Track::Plain => t.colors.slider_fill,
@@ -946,6 +940,20 @@ fn written(
 /// line's middle with its outline, then stays inside the strip.
 const TRACK_TOP: f32 = 6.0;
 
+/// The fraction of the track's span, from `low` to `high`, that `value` lies at, held to
+/// its ends.
+fn fraction_of(value: f64, low: f64, high: f64) -> f32 {
+    let span = (high - low).max(f64::EPSILON);
+    ((value - low) / span).clamp(0.0, 1.0) as f32
+}
+
+/// The fill's ends, as fractions of the track's span from `low` to `high`: from darktable's
+/// origin, the value shown as 0 held to the track's ends, to `shown`
+/// (`dt_bauhaus_draw_baseline`). The default has no part in it.
+fn fill_ends(low: f64, high: f64, shown: f64) -> (f32, f32) {
+    (fraction_of(0.0, low, high), fraction_of(shown, low, high))
+}
+
 /// The x a fraction `f` of the track's span puts the marker at, along its `travel`.
 fn x_at(travel: Rangef, f: f32) -> f32 {
     travel.min + f * travel.span()
@@ -1057,9 +1065,11 @@ fn gradient(rect: Rect, stops: &[(f32, Color32)], enabled: bool) -> Mesh {
 
 #[cfg(test)]
 mod tests {
-    use egui::Rangef;
+    use egui::{Rangef, Rect, Shape, vec2};
+    use egui_kittest::Harness;
 
-    use super::{fraction_at, x_at};
+    use super::{SliderRow, fill_ends, fraction_at, x_at};
+    use crate::Theme;
     use crate::components::Marker;
 
     /// A 300-point track, as a 320-point Tools panel's rows have.
@@ -1078,16 +1088,45 @@ mod tests {
     }
 
     #[test]
-    fn the_default_and_the_fill_s_start_follow_the_same_travel() {
-        // Exposure's default, 0 on −4 to +4, half way along: the track's middle for every
-        // marker, since each stops alike at both ends.
+    fn the_fill_starts_at_the_shown_0_on_every_marker_s_travel() {
+        // Exposure's −4 to +4: 0 half way along, the track's middle for every marker, since
+        // each stops alike at both ends.
         for marker in Marker::ALL {
             let travel = marker.travel(TRACK);
-            assert_eq!(x_at(travel, 0.5), 160.0);
+            let (origin, _) = fill_ends(-4.0, 4.0, 1.0);
+            assert_eq!(x_at(travel, origin), 160.0);
         }
-        // A quarter of the way, inside the square's travel, not the track's.
+        // A quarter of the way, −2 to +6, inside the square's travel, not the track's.
         let travel = Marker::Square.travel(TRACK);
-        assert_eq!(x_at(travel, 0.25), 15.75 + 0.25 * 288.5);
+        let (origin, _) = fill_ends(-2.0, 6.0, 1.0);
+        assert_eq!(x_at(travel, origin), 15.75 + 0.25 * 288.5);
+    }
+
+    #[test]
+    fn a_default_other_than_0_places_no_fill() {
+        // Colour calibration's gamut compression, 0 to 5, default 1: from 0 at its default,
+        // and from 0 moved either side of it, as darktable's.
+        assert_eq!(fill_ends(0.0, 5.0, 1.0), (0.0, 0.2));
+        assert_eq!(fill_ends(0.0, 5.0, 0.5), (0.0, 0.1));
+        assert_eq!(fill_ends(0.0, 5.0, 4.0), (0.0, 0.8));
+    }
+
+    #[test]
+    fn a_range_spanning_0_fills_from_its_middle_either_way() {
+        // Exposure's −4 to +4.
+        assert_eq!(fill_ends(-4.0, 4.0, 0.0), (0.5, 0.5));
+        assert_eq!(fill_ends(-4.0, 4.0, 2.0), (0.5, 0.75));
+        assert_eq!(fill_ends(-4.0, 4.0, -2.0), (0.5, 0.25));
+    }
+
+    #[test]
+    fn a_range_without_0_fills_from_its_nearer_end() {
+        // All positive, as JPEG's quality, 5 to 100: from its start.
+        assert_eq!(fill_ends(5.0, 100.0, 5.0), (0.0, 0.0));
+        assert_eq!(fill_ends(5.0, 100.0, 52.5), (0.0, 0.5));
+        // All negative: from its end.
+        assert_eq!(fill_ends(-8.0, -2.0, -5.0), (1.0, 0.5));
+        assert_eq!(fill_ends(-8.0, -2.0, -2.0), (1.0, 1.0));
     }
 
     #[test]
@@ -1110,5 +1149,49 @@ mod tests {
         assert_eq!(x_at(travel, 0.0), 5.0);
         assert_eq!(x_at(travel, 1.0), 5.0);
         assert_eq!(fraction_at(travel, 0.0), 0.5);
+    }
+
+    /// The rectangles in the fill's colour a row of gamut compression's, 0 to 5, default
+    /// 1, paints at `value`, with its fill or without, and its track's line.
+    fn painted(value: f64, fill: bool) -> (Vec<Rect>, Rect) {
+        let mut harness = Harness::builder()
+            .with_size(vec2(320.0, 60.0))
+            .with_context_setup(|ctx| crate::install(ctx, Theme::default()))
+            .build_ui(move |ui| {
+                let row = SliderRow::new("Gamut compression", value, 0.0..=5.0).decimals(2);
+                let row = if fill { row } else { row.no_fill() };
+                row.show(ui);
+            });
+        harness.run();
+        let colours = Theme::default().colors;
+        let rects = |colour| -> Vec<Rect> {
+            (harness.output().shapes.iter())
+                .filter_map(|clipped| match &clipped.shape {
+                    Shape::Rect(rect) if rect.fill == colour => Some(rect.rect),
+                    _ => None,
+                })
+                .collect()
+        };
+        let lines = rects(colours.slider_track);
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        (rects(colours.slider_fill), lines[0])
+    }
+
+    #[test]
+    fn a_row_fills_from_0_at_a_default_other_than_0() {
+        let (fills, line) = painted(1.0, true);
+        assert_eq!(fills.len(), 1, "{fills:?}");
+        // From the track's start, within the marker's stop, a fifth of the way along.
+        let fill = fills[0];
+        assert!(fill.left() - line.left() < 10.0, "{fill:?} on {line:?}");
+        assert!(fill.width() > 0.15 * line.width(), "{fill:?} on {line:?}");
+    }
+
+    #[test]
+    fn no_fill_draws_none() {
+        let (fills, _) = painted(1.0, false);
+        assert_eq!(fills, []);
+        let (fills, _) = painted(4.0, false);
+        assert_eq!(fills, []);
     }
 }

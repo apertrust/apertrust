@@ -1548,7 +1548,6 @@ fn two_rows() -> Harness<'static> {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.allocate_ui(egui::vec2(content, 100.0), |ui| {
                 SliderRow::new("Temperature", 5000.0, 2000.0..=10000.0)
-                    .default_value(5000.0)
                     .unit("unit-kelvin-value")
                     .quad(Quad {
                         icon: Icon::Pick,

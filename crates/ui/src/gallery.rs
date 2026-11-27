@@ -2400,7 +2400,6 @@ fn controls(ui: &mut Ui, t: &Theme, demo: &mut Demo) {
         let mut row = SliderRow::new(label, sample.value, range)
             .name(name)
             .promise("The control's promise: what it changes and what it keeps. 0 = untouched.")
-            .default_value(sample.default)
             .step(step)
             .decimals(decimals)
             .mark(sample.mark);
@@ -2715,7 +2714,6 @@ fn groups(ui: &mut Ui, demo: &mut Demo) {
     PlainGroup::new("Basic curve parameters").show(ui, |ui| {
         SliderRow::new("Contrast", 3.0, 0.1..=5.0)
             .name("AgX contrast")
-            .default_value(3.0)
             .decimals(2)
             .no_fill()
             .show(ui);
@@ -2732,7 +2730,6 @@ fn groups(ui: &mut Ui, demo: &mut Demo) {
                 {
                     let mut row = SliderRow::new(label, sample.value, range.clone())
                         .name(name)
-                        .default_value(sample.default)
                         .decimals(*decimals)
                         .no_fill()
                         .mark(sample.mark);
@@ -3372,7 +3369,6 @@ fn exposure_body(ui: &mut Ui, tab: usize) {
         PlainGroup::new("Contrast").first(true).show(ui, |ui| {
             SliderRow::new("Pivot", 18.0, 1.0..=50.0)
                 .name("Contrast pivot")
-                .default_value(18.0)
                 .decimals(1)
                 .unit(PERCENT)
                 .no_fill()

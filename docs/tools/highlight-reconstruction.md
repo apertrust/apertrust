@@ -146,7 +146,7 @@ Measured on the Apple M4 (Metal) by `crates/tools/tests/highlight_reconstruction
 
 - **No tabs and no group labels:** Method and Clipping threshold, then, when their method is ported and chosen, its rows, in darktable's order.
 - **Method** is a `Choice` list, inpaint opposed the one option live, the others drawn disabled.
-- **Clipping threshold** shows three decimals, "1.000", in the language's number format; its track is plain over 0 to 2, filled from the photo's default. A key steps by 0.01, Shift by 0.1, Alt by 0.001, the last decimal shown; a value is rounded to three decimals before it is sent.
+- **Clipping threshold** shows three decimals, "1.000", in the language's number format; its track is plain over 0 to 2, filled from 0, as darktable's. A key steps by 0.01, Shift by 0.1, Alt by 0.001, the last decimal shown; a value is rounded to three decimals before it is sent.
 - **On a photo that is not a colour raw** every row is drawn disabled.
 
 ## Gaps
