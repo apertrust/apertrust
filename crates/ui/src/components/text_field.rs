@@ -474,6 +474,14 @@ impl<'a> PathField<'a> {
     }
 }
 
+/// Whether the path field `field` showed its list of variables as the last frame ended:
+/// part of the row, not the popup service's, so a sheet asks here before it takes a key the
+/// list holds. False for any other widget.
+pub(super) fn variables_open(ctx: &egui::Context, field: Id) -> bool {
+    ctx.data(|d| d.get_temp::<Last>(field.with("list")))
+        .is_some_and(|last| last.open)
+}
+
 /// What the list was like at the end of the last frame.
 #[derive(Clone, Default)]
 struct Last {

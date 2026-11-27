@@ -29,7 +29,7 @@ use super::plate::{ButtonState, Touch, allocate, paint_focus, undimmed_painter};
 use crate::{Theme, theme};
 
 /// The box's side, in points.
-const BOX: f32 = 14.0;
+pub(super) const BOX: f32 = 14.0;
 
 /// The tick's three points from the box's centre, and its width.
 const TICK: [[f32; 2]; 3] = [[-3.2, 0.1], [-0.9, 2.4], [3.3, -2.3]];
@@ -119,8 +119,8 @@ impl<'a> Checkbox<'a> {
     }
 }
 
-/// The box in `square`, ticked or not, as `touch` has it.
-fn paint_box(painter: &egui::Painter, square: Rect, on: bool, touch: Touch, t: &Theme) {
+/// The box in `square`, ticked or not, as `touch` has it: a grid cell's check box too.
+pub(super) fn paint_box(painter: &egui::Painter, square: Rect, on: bool, touch: Touch, t: &Theme) {
     let c = &t.colors;
     let radius = t.shape.radius_small;
     if on {

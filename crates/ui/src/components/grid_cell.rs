@@ -59,6 +59,13 @@
 //!   a list's item and as toggled, when it is selected or active; the first line's stars,
 //!   reject and circle are buttons inside it. The tooltip says the name, the marks and,
 //!   last, the No preview yet plate's line.
+//! - **A sheet's cell** (`docs/gui.md`, A sheet's cell; decision 86) chooses by a check box
+//!   ([`GridCell::check`]): its caption always shown, the check box at its start and the
+//!   file name after it, cut in its middle; a click on the box reported apart
+//!   ([`GridCellOutput::check`]), to AccessKit a CheckBox inside the cell named as the
+//!   caller says, and no Tab stop, Space on the cell being the sheet's. Its picture may be
+//!   at half strength ([`GridCell::dimmed`]), and a mark of the caller's may lead the
+//!   corner marks, its words in the description ([`GridCell::mark`]).
 
 use std::sync::Arc;
 
@@ -291,6 +298,9 @@ pub struct GridCellOutput {
     /// The whole cell's, its square and caption: its own `clicked` counts a click anywhere
     /// on it.
     pub response: Response,
+    /// The check box was clicked, by the pointer or a screen reader
+    /// ([`GridCell::check`]).
+    pub check: bool,
     /// The photo was clicked: by the pointer on its picture, its No preview yet plate, or
     /// the name's box while it has none, or by Enter, Space or a screen reader.
     pub clicked: bool,
@@ -312,6 +322,26 @@ pub struct GridCell<'a> {
     status: Option<CellStatus<'a>>,
     selected: bool,
     active: bool,
+    check: Option<CellCheck<'a>>,
+    dimmed: bool,
+    mark: Option<CellMark<'a>>,
+}
+
+/// A sheet's cell's check box: whether it is checked, and its name to screen readers,
+/// translated, the caller's ("Import DSCF1033.RAF").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellCheck<'a> {
+    pub on: bool,
+    pub name: &'a str,
+}
+
+/// A mark of the caller's at the picture's bottom right, before the others: its icon, and
+/// its words, translated, in the cell's description and tooltip, as a sheet's destination
+/// mark says a photo was imported before.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CellMark<'a> {
+    pub icon: Icon,
+    pub words: &'a str,
 }
 
 /// The caption's height at Medium and larger, and at Small.
@@ -364,6 +394,9 @@ impl<'a> GridCell<'a> {
             status: None,
             selected: false,
             active: false,
+            check: None,
+            dimmed: false,
+            mark: None,
         }
     }
 
@@ -431,11 +464,33 @@ impl<'a> GridCell<'a> {
         self
     }
 
-    /// The cell's size: its square and the caption under it.
+    /// A sheet's choosing: the caption a check box and the name, drawn whatever
+    /// [`labels`](Self::labels) says; none by default.
+    pub fn check(mut self, check: Option<CellCheck<'a>>) -> Self {
+        self.check = check;
+        self
+    }
+
+    /// The picture at half strength, as a sheet draws a photo imported before while it is
+    /// unchecked; off by default.
+    pub fn dimmed(mut self, dimmed: bool) -> Self {
+        self.dimmed = dimmed;
+        self
+    }
+
+    /// A mark of the caller's, leading the corner marks; none by default.
+    pub fn mark(mut self, mark: Option<CellMark<'a>>) -> Self {
+        self.mark = mark;
+        self
+    }
+
+    /// The cell's size: its square and the caption under it, always shown with a check
+    /// box.
     pub fn size(&self) -> egui::Vec2 {
+        let labels = self.labels || self.check.is_some();
         vec2(
             self.side,
-            self.side + Self::caption_height(self.side, self.labels),
+            self.side + Self::caption_height(self.side, labels),
         )
     }
 
@@ -463,7 +518,12 @@ impl<'a> GridCell<'a> {
         let picture = match shown {
             Some(picture) => {
                 let (place, uv) = placed(square, picture.size, self.square);
-                painter.image(picture.texture, place, uv, Color32::WHITE);
+                let tint = if self.dimmed {
+                    Color32::WHITE.gamma_multiply(0.5)
+                } else {
+                    Color32::WHITE
+                };
+                painter.image(picture.texture, place, uv, tint);
                 place
             }
             None if plate => {
@@ -498,8 +558,10 @@ impl<'a> GridCell<'a> {
             }
         };
 
-        // The corner marks, from the picture's bottom right: the status, then the pencil.
+        // The corner marks, from the picture's bottom right: the caller's, the status, then
+        // the pencil.
         let marks = [
+            (self.mark).map(|mark| (mark.icon, t.colors.text_on_thumb_scrim)),
             self.status.map(|status| match status {
                 CellStatus::ViewOnly => (Icon::Lock, t.colors.text_on_thumb_scrim),
                 CellStatus::Unreadable(_) => (Icon::Warning, t.colors.warning_on_thumb_scrim),
@@ -538,13 +600,23 @@ impl<'a> GridCell<'a> {
             focus_ring(&painter, picture.expand(RING_GAP + ring + 2.0), &t);
         }
 
-        // The caption: the first line, where the cell has a rating, and the name.
-        let caption = Self::caption_height(self.side, self.labels);
+        // The caption: the first line, where the cell has a rating, and the name; or a
+        // sheet's check box and the name.
+        let labels = self.labels || self.check.is_some();
+        let caption = Self::caption_height(self.side, labels);
         let strip = Rect::from_min_size(square.left_bottom(), vec2(self.side, caption));
         let mut action = None;
+        let mut checked = false;
         // What of the caption is no empty space: its first line, and the name.
         let mut taken = [Rect::NOTHING; 2];
-        if caption == CAPTION_SMALL {
+        if let Some(check) = self.check {
+            let build = UiBuilder::new().max_rect(strip).accessibility_parent(id);
+            let mut child = ui.new_child(build);
+            let (clicked, box_rect, name) =
+                self.check_line(&mut child, &painter, &t, id, strip, check);
+            checked = clicked;
+            taken = [box_rect, name];
+        } else if caption == CAPTION_SMALL {
             taken[1] = self.paint_name(&painter, &t, strip, None);
         } else if caption > 0.0 {
             let line = Rect::from_min_size(
@@ -606,10 +678,52 @@ impl<'a> GridCell<'a> {
             .join("\n");
         GridCellOutput {
             response: response.on_hover_text(tip),
+            check: checked,
             clicked,
             empty,
             action,
         }
+    }
+
+    /// A sheet's caption in `strip`: the check box at its start and the name after it, cut
+    /// in its middle, on the first line's place at Medium and larger and at the foot of a
+    /// Small one. The box is a CheckBox to AccessKit inside the cell `cell`, named as the
+    /// caller says, and no Tab stop. Returns whether it was clicked, where it lies and where
+    /// the name lies.
+    fn check_line(
+        &self,
+        ui: &mut Ui,
+        painter: &egui::Painter,
+        t: &Theme,
+        cell: Id,
+        strip: Rect,
+        check: CellCheck,
+    ) -> (bool, Rect, Rect) {
+        let side = super::checkbox::BOX;
+        let top = if strip.height() > CAPTION_SMALL {
+            strip.top() + CLEAR - (side - MARK) / 2.0
+        } else {
+            strip.bottom() - side - STEP
+        };
+        let square = Rect::from_min_size(pos2(strip.left(), top), vec2(side, side));
+        let response = ui.interact(square, cell.with("check"), Sense::CLICK);
+        let touch = super::plate::Touch::of(ui.ctx(), &response, true, None);
+        super::checkbox::paint_box(painter, square, check.on, touch, t);
+        let name = check.name;
+        response.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, check.on, name));
+        let font = FontId::proportional(t.text.small);
+        let colour = if self.active {
+            t.colors.text_strong
+        } else {
+            t.colors.text
+        };
+        let start = square.right() + t.spacing.xs;
+        let text = fitted(painter, self.name, &font, strip.right() - start);
+        let galley = painter.layout_no_wrap(text, font, colour);
+        let at = pos2(start, square.center().y - galley.size().y / 2.0);
+        let place = Rect::from_min_size(at, galley.size());
+        painter.galley(at, galley, colour);
+        (response.clicked(), square, place)
     }
 
     /// The No preview yet plate in `plate`: `sunken`, or `hover` under the pointer, outlined
@@ -712,6 +826,9 @@ impl<'a> GridCell<'a> {
         let tr = translator(ui.ctx());
         let person = rating_notes(ui.ctx());
         let mut notes = Vec::new();
+        if let Some(mark) = self.mark {
+            notes.push(mark.words.to_owned());
+        }
         if self.edited {
             notes.push(tr.text("grid-cell-edited"));
         }

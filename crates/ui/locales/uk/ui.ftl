@@ -2079,3 +2079,12 @@ metadata-sensitivity_type-7 = SOS, REI і світлочутливість ISO
 metadata-flash_return-1 = Відбите світло: зарезервовано
 metadata-flash_return-2 = Відбите світло спалаху не виявлено
 metadata-flash_return-3 = Відбите світло спалаху виявлено
+
+## A sheet, full-window inside the main window, as Import… opens (docs/gui.md, Sheets): its
+## bar's Select ▾, its footer's Help and Close, and its tool column's edge
+
+sheet-select = Вибрати
+sheet-close = Закрити
+sheet-help = Довідка
+sheet-help-later = З’явиться в наступній версії
+sheet-column-width = Ширина стовпця інструмента

@@ -1515,6 +1515,7 @@ Import… opens a sheet, full-window inside the main window (decision 86, planne
 
 - **Drawn by the design system** on `panel`, the same on every platform: never one of AppKit's sheets, nor a window of the dialog host. It covers the window below the Toolbar.
 - **Built in this order** ([roadmap.md](roadmap.md#export)): the setting rows, shared with the Export tool; then the sheet frame with Import's first slice, 20a1 ([The Import sheet](#the-import-sheet)), its footer's Help drawn disabled, its tooltip "Comes in a later version", until Help (decision 97) is built; then the rest, day headings, Checked only, Sort, Zoom and Keep open with 20a2, none of the four drawn until then, the larger look with 20b and presets with 20c.
+- **Built in the design system** (`components::Sheet`, `Checks`, `GridCell::check`; [crates.md](crates.md)): the frame's four regions, the grid's choosing by check boxes with its gestures and keys, the cell's mark slot and half-strength picture, the column's width and its giving way, the footer with Help drawn disabled, the frame's keys and what screen readers hear. Not drawn yet, coming with 20a2: the bar's Checked only, Sort and Zoom, the footer's Keep open and the grid's day headings, with no room kept for them; the Select buttons are the caller's, Select new among them.
 
 ```text
 ┌ Toolbar: its actions at rest; the jobs spinner and the window's controls live ─────────────────────┐
@@ -1567,6 +1568,7 @@ Import… opens a sheet, full-window inside the main window (decision 86, planne
 - **The Select buttons,** quiet text buttons as darktable has them, act on the cells shown: **Select new**, exactly the photos not imported before, darktable's "select new"; **Select all**; **Select none**. Below about 520 points of grid width they fold into one **Select ▾** pull-down holding the same items.
 - **Checked only,** a toggle (Lucide's `list-checks`, filled while on), hides the unchecked cells to review exactly what goes, off at each opening.
 - **Day headings,** while sorted by capture time: one over each capture day, its date in Medium and its counts in `text_secondary` ("Saturday 15 November · 16 photos, 14 checked", "8 photos, imported before"), with a three-state check box at its start, checked, unchecked or a dash for some.
+- **Select all and Select none,** Ctrl+A and Ctrl+Shift+A among them, forget the last touched photo: the next Shift gesture on a check box, or Shift+Space, acts as a plain one, a click or Space.
 - **The model** is plain data in `apertrust-ui`, `Checks`: the checked set, the active photo and the last touched, unit-tested.
 
 ### The larger look
@@ -1668,7 +1670,7 @@ The Import tool's presets hold the settings the tool owns, as darktable's import
 | ←, →, ↑, ↓, Home, End | A cell focused | The Browser's: move the focus and the sheet's active photo, the rows' tooltips following, the grid scrolling to keep it in sight |
 | Space | A cell focused | Turns its check on or off |
 | Shift+Space | A cell focused | Sets every cell from the last touched to it as the last touched was set |
-| Shift with the arrows | A cell focused | Moves and checks the cells passed |
+| Shift with the arrows | A cell focused | Moves and checks the cells passed, from the cell focused, which a check box's click focuses without making it the active photo |
 | Ctrl+A, Ctrl+Shift+A | The grid focused | Select all, Select none |
 | W, held | Anywhere but a text field being typed in or an open list or menu, whose keys come first | The larger look; ← and → move, Space checks, letting go returns to the grid |
 | Return | Anywhere but a text field being typed in, an open list, or a focused button, choice or slider, which take it themselves: a button presses itself, Close among them | The primary button, when enabled; a focused cell included |

@@ -389,7 +389,7 @@ pub struct Browser<'a, F: Fn(usize) -> Thumb<'a>> {
 
 /// The space round the cells inside the strip, for their outlines and focus rings: before
 /// the first line of cells and after the last, and at the strip's two ends.
-const TOP: f32 = 8.0;
+pub(super) const TOP: f32 = 8.0;
 /// Between cells: room for the active one's ring and a selected neighbour's, with the panel
 /// showing between them. A row's cells are this far apart both ways, a column's side by side.
 pub(super) const GAP: f32 = 12.0;
@@ -397,7 +397,7 @@ pub(super) const GAP: f32 = 12.0;
 const COLUMN_GAP: f32 = 16.0;
 /// The scroll bar's lane at the strip's far edge, after the space round the cells: the bar
 /// alone, with no room round it.
-const SCROLL_BAR: f32 = 8.0;
+pub(super) const SCROLL_BAR: f32 = 8.0;
 
 impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
     /// `active` is the photo being edited, if it is in the panel.
@@ -680,7 +680,7 @@ impl<'a, F: Fn(usize) -> Thumb<'a>> Browser<'a, F> {
                             }
                             let (response, picked) = (cell.response, cell.clicked);
                             if response.has_focus() {
-                                moved = moved.or(keyed(ui, id, i, &cells));
+                                moved = moved.or(keyed(ui, id, i, &cells, Modifiers::NONE));
                             }
                             let keys = menu_asked(ui.ctx(), &response);
                             let clicked = context_click(ui.ctx(), &response);
@@ -1129,8 +1129,15 @@ fn id_of<T: Choice + PartialEq>(value: T) -> &'static str {
 /// The photo a key sends the focus to from cell `i`, taking the keys it uses: along the
 /// strip (← and → in a row, ↑ and ↓ in a column), to the same place in the next or previous
 /// line across, the last photo where the last line is short; across it, to the cell beside
-/// it in its own line, and nothing at the line's end; Home and End to the first and last.
-fn keyed(ui: &Ui, id: Id, i: usize, cells: &Cells) -> Option<usize> {
+/// it in its own line, and nothing at the line's end; Home and End to the first and last;
+/// each with `modifiers` held exactly, none for the Browser, Shift for a sheet's range.
+pub(super) fn keyed(
+    ui: &Ui,
+    id: Id,
+    i: usize,
+    cells: &Cells,
+    modifiers: Modifiers,
+) -> Option<usize> {
     ui.memory_mut(|m| {
         m.set_focus_lock_filter(
             id,
@@ -1160,7 +1167,7 @@ fn keyed(ui: &Ui, id: Id, i: usize, cells: &Cells) -> Option<usize> {
         )
     };
     ui.input_mut(|input| {
-        let mut key = |key| input.consume_key(Modifiers::NONE, key);
+        let mut key = |key| input.consume_key(modifiers, key);
         if key(next) {
             // The next line across, where there is one.
             (i / lines < last / lines).then(|| (i + lines).min(last))
@@ -1236,13 +1243,13 @@ fn toggled(ui: &Ui) -> bool {
 /// Where the cells lie in the scrolling strip: in a row, columns of `lines` cells, each
 /// filled from the top before the next; in a column, rows of `lines`, each filled from the
 /// left before the next.
-struct Cells {
-    count: usize,
-    lines: usize,
+pub(super) struct Cells {
+    pub(super) count: usize,
+    pub(super) lines: usize,
     /// A cell's size, its caption counted, in points.
-    cell: egui::Vec2,
+    pub(super) cell: egui::Vec2,
     /// Whether the strip runs up and down.
-    column: bool,
+    pub(super) column: bool,
 }
 
 impl Cells {
@@ -1275,7 +1282,7 @@ impl Cells {
 
     /// The strip's content: every line along it and the lines across, each with room
     /// before and after.
-    fn size(&self) -> egui::Vec2 {
+    pub(super) fn size(&self) -> egui::Vec2 {
         let majors = self.count.div_ceil(self.lines) as f32;
         let along = self.lead() * 2.0 + majors * self.pitch().0 - self.gap();
         let across = lines_across(self.extents().1, self.lines);
@@ -1287,7 +1294,7 @@ impl Cells {
     }
 
     /// Cell `i`'s rectangle, its square and caption, the content starting at `origin`.
-    fn rect(&self, origin: egui::Pos2, i: usize) -> Rect {
+    pub(super) fn rect(&self, origin: egui::Pos2, i: usize) -> Rect {
         let (major, line) = (i / self.lines, i % self.lines);
         let (pitch_along, pitch_across) = self.pitch();
         let along = self.lead() + major as f32 * pitch_along;
@@ -1301,7 +1308,7 @@ impl Cells {
     }
 
     /// The cells in sight, or partly, in `viewport`, the content's own coordinates.
-    fn visible(&self, viewport: Rect) -> Range<usize> {
+    pub(super) fn visible(&self, viewport: Rect) -> Range<usize> {
         let range = if self.column {
             viewport.y_range()
         } else {
