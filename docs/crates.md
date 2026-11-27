@@ -344,13 +344,13 @@ The session's events (decision 59, [docs/events.md](events.md)):
 
 ## apertrust-cli
 
-The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info` and `cache clear`; `import` (with the library's step 20a1, its other flags with 20a2, decision 85), `batch` and `serve` are planned; MCP is a program of its own, `apertrust-mcp` (decision 108). AGENTS.md's Commands list shows how to run each.
+The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`, `preview`, `import` (decision 85; its other flags with the library's step 20a2), `library scan`, `cache info` and `cache clear`; `batch` and `serve` are planned; MCP is a program of its own, `apertrust-mcp` (decision 108). AGENTS.md's Commands list shows how to run each.
 
 ### Options for every command
 
 - **`--user-data-dir DIR`**, or `--config-dir`, darktable's `--configdir`, or `APERTRUST_USER_DATA_DIR`; else the platform's folder. `gpu`, `preview` and `export` read the engine's settings from the folder's `settings.toml`, its `[engine]` table (`adapter`, `backend`, `memory_budget`), and never write them (decision 43).
   - The folder is found for reading (`Folders::find_to_read`): nothing is created or probed, and one given that is missing is an error.
-  - The settings are read through a read-only store, by the commands that run the engine and by `cache`, which reads the `[cache]` table.
+  - The settings are read through a read-only store, by the commands that run the engine, by `cache`, which reads the `[cache]` table, and by `import`, which reads the `[import]` table.
   - The budget applies to `export` and `preview`.
 - **`--cache-dir DIR`**, or darktable's `--cachedir`, or `APERTRUST_CACHE_DIR`; else the user data folder's `cache` when that is given, else the platform's cache folder. Chosen and logged under `-d settings`, never created; read by the `cache` commands.
 - **`--adapter NAME`** comes before the file: the adapter of exactly that name, else the first whose name holds it, ignoring case, `cpu` the software adapter (decision 82). A name that matches no adapter is an error, while a setting that names none falls back to wgpu's choice (decision 43).
@@ -358,7 +358,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`
 - **`--conf KEY=VALUE`**: a setting for this run only, as darktable's `--conf`, never written.
   - Global and repeatable; the last value for a key counts.
   - KEY is the setting's id in `settings.toml`; VALUE is written as the file holds it, but text without quotes.
-  - The CLI takes the engine's settings and the export settings (`export.jpeg.quality=80`); its store opens on both registries.
+  - The CLI takes the engine's settings, the export settings (`export.jpeg.quality=80`) and Import's (`import.subfolder=`); its store opens on the three registries.
   - Every command checks it before the folder is looked for. An unknown key or a value that cannot be read stops the start.
   - It counts after a flag of its own (`--adapter`, `--backend`) and before the file.
 - **`--max-binding MIB`**: `export`, `preview` or `gpu` as on a GPU that binds at most that many MiB at once; 128 is lavapipe's (decision 14).
@@ -438,6 +438,19 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`
 - from the index, the photos with an edit, those that open view-only, and the sidecars that could not be read;
 - the leftover temporaries it removed;
 - the times, under `-d perf` (decisions 46 and 53).
+
+### import
+
+`import SOURCE [--folder DIR] [--subfolder PATTERN] [--name NAME] [--dry-run]` (`crates/cli/src/import.rs`, decision 85; [library.md](library.md#the-cli)) runs the library's ops in its own process, with no session and no GPU, as `library scan` does: the listing (`ops::list_source`), the check (`ops::check_source`), the preview (`ops::preview_import`) and the copy (`ops::run_import`) are the bodies the session's jobs run.
+
+- `SOURCE`, a folder, made absolute: a card, its root or any folder inside it, the card's `DCIM` listed whole, or any folder, its own raws only.
+- The defaults are the `import.*` settings of the user data folder's `settings.toml`, through the read-only store, `--conf` over them, the flags over both: `--folder` `import.base_folder`, on Windows each `\` a `/`, as `export`'s `-o` takes it, `--subfolder` `import.subfolder`, `--name` `import.job_code`. Nothing is written to the settings. `Places` are the platform's folders, as `export` finds them.
+- Only new photos: those the check finds imported before, or probably, are left out and counted. Each under its camera name, `_01` where a name is taken.
+- The problems the preview finds refuse the run before anything is copied, each on stderr with its row and fix ("Subfolder: unknown variable $(MONT). Did you mean $(MONTH)?").
+- `--dry-run` prints each photo and its destination, each skipped and why, the folders new or there with their counts, then the summary ("3 to copy, 6.2 GB; 412 GB free on Macintosh HD; 198 imported before left out"), copying nothing; without it, each photo as it lands, then the summary ("Imported 214 photos into ~/Pictures/Apertrust/20261115_Wedding; 198 imported before left out"). A photo under the source is shown by its path there, a destination under the home folder with `~`. Failures and the folders that could not be read go to stderr; under `-d perf`, the listing's, the check's and the copy's times.
+- Exit status 0 when every new photo was copied, or none was new, and every folder of the source was read; 1 when a photo failed, the copy stopped, the source could not be listed, a problem refused the run, or a folder of the source could not be read, the photos read copied first; 2 for a usage error.
+- A run killed midway leaves hidden temporaries, which the listing removes once a day old, and, of the photo landing, the sidecars that landed before its main file, as the checked copy's crash leaves them ([copy](#copy)); every other photo is whole or absent.
+- `tests/import.rs` runs it on folders, a home folder and a user data folder of each test's own.
 
 ### cache
 

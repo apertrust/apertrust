@@ -76,6 +76,7 @@ use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 mod beside;
 mod cache;
 mod history;
+mod import;
 mod library;
 mod zoom;
 
@@ -119,9 +120,9 @@ struct Cli {
         overrides_with = "cache_dir"
     )]
     cache_dir: Option<PathBuf>,
-    /// Set an engine or export setting for this run only, as darktable's --conf, never
-    /// written: KEY is its id in settings.toml, such as engine.memory_budget or
-    /// export.jpeg.quality, and VALUE as the file holds it, but text without quotes. Before
+    /// Set an engine, export or import setting for this run only, as darktable's --conf,
+    /// never written: KEY is its id in settings.toml, such as engine.memory_budget,
+    /// export.jpeg.quality or import.subfolder, and VALUE as the file holds it, but text without quotes. Before
     /// the file; a flag of its own, such as --adapter, comes first. Repeat for more; the
     /// last for one key counts.
     #[arg(long, global = true, value_name = "KEY=VALUE")]
@@ -151,6 +152,18 @@ enum Command {
     },
     /// Decode a raw file and show what the decoder reports about it.
     Info { file: PathBuf },
+    /// Import photos from a card or a folder, run in this process with no GPU: only those
+    /// not imported before, by the check against Folder's tree and the default folder's,
+    /// copied one at a time in the order of their paths, each whole or not at all, under
+    /// its camera name, `_01` and on where the name is taken, its sidecars and darktable's
+    /// .xmp with it; a copy already there byte for byte is skipped, and nothing on the
+    /// source is written. The defaults are the user data folder's import.* settings, --conf
+    /// over them, the flags over both; nothing is written to the settings. A problem
+    /// (an unknown variable, a folder that cannot be written, a destination on the source,
+    /// too little space) refuses the run before anything is copied. Exits with 1 where a
+    /// photo failed, the copy stopped, the source could not be listed or a problem refused
+    /// it; with 0 when every new photo was copied, or none was new.
+    Import(import::Args),
     /// The library's commands, run in this process.
     Library {
         #[command(subcommand)]
@@ -492,6 +505,7 @@ fn main() -> Result<()> {
         }
         Command::Info { file } => show_info(&file),
         Command::Library { command } => library::run(command),
+        Command::Import(args) => import::run(args, &store(), places()),
         Command::Cache { command } => cache::run(command, folders.as_ref(), &store()),
         Command::Edit {
             file,
@@ -647,13 +661,16 @@ fn main() -> Result<()> {
     }
 }
 
-/// The settings the CLI reads: the engine's, which it hands the engine as options, and the
-/// export settings, whose format options `export` takes (decisions 43 and 56).
+/// The settings the CLI reads: the engine's, which it hands the engine as options, the
+/// export settings, whose format options `export` takes, and Import's, which `import` takes
+/// (decisions 43, 56 and 85).
 fn registries() -> Vec<&'static dyn Declared> {
     let export = export_settings::registry::ALL.iter();
+    let import = apertrust_library::settings::registry::ALL.iter();
     engine::registry::ALL
         .iter()
         .chain(export)
+        .chain(import)
         .copied()
         .collect()
 }

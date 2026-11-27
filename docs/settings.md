@@ -182,7 +182,7 @@ path = "/Users/me/Pictures/Wedding"
 
 **The engine never opens a folder or reads a file of settings.** The binaries read the store and hand it plain options.
 
-- **The CLI** reads its user data folder's engine and export settings and never writes settings. It finds the folder with `Folders::find_to_read`, which creates and probes nothing, and its store is `Store::read_only`. A test runs it on files of every kind, damaged and newer included, and finds each byte for byte as it was, nothing set aside and no temporary file removed. Only the commands that run the engine (`gpu`, `preview`, `export`) open the store.
+- **The CLI** reads its user data folder's engine, export and import settings and never writes settings. It finds the folder with `Folders::find_to_read`, which creates and probes nothing, and its store is `Store::read_only`. A test runs it on files of every kind, damaged and newer included, and finds each byte for byte as it was, nothing set aside and no temporary file removed. Only the commands that run the engine (`gpu`, `preview`, `export`), `cache` and `import` open the store.
 - **The app** opens one store on its registry and the engine's, the export's and the tools' settings (`tools.*`) together, so their keys share its file and are never unknown to it.
 - **The golden harness** reads none, so no result depends on a person's folder. It turns on base's log alone, opens no store, and takes `GpuOptions::default()` and `pipeline::BUDGET`, which a test of the engine holds equal to these settings' defaults.
 - **Remotely** (Phase 7), engine settings are the server's folder's, and a client's own settings are the client's.
