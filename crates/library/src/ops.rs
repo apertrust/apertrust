@@ -157,6 +157,12 @@ pub enum LibraryCommand {
     /// Lists the cards and drives mounted, for Import's Source as its sheet opens; answered
     /// by [`LibraryEvent::Volumes`].
     ListVolumes,
+    /// Lists the subfolders of `folder`, any place's, for the Import tool's Folders tree, as
+    /// [`LibraryCommand::Subfolders`] lists the open folder's, but whatever folder is open,
+    /// or none: answered by [`LibraryEvent::SubfoldersOf`] in this command's own number. A
+    /// relative `folder`, or one with a `..` in it, is refused. A second ask for the same
+    /// folder, or a [`CancelListing`](LibraryCommand::CancelListing), drops it.
+    SourceSubfolders { folder: PathBuf },
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -465,6 +471,20 @@ pub fn subfolders(
         unreadable,
     });
     Ended::Listed
+}
+
+/// Lists the subfolders of `folder`, a place's, for the Import tool's Folders tree, for the
+/// command numbered `open`, as [`subfolders`] lists the open folder's, whatever folder is
+/// open: refused, with a warning and nothing sent, only where `folder` is relative or holds
+/// a `..`. A blocking call, made by a job's body; once `cancel` answers true nothing is
+/// sent.
+pub fn source_subfolders(
+    open: u64,
+    folder: &Path,
+    observer: &(dyn Fn(LibraryEvent) + Send + Sync),
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Ended {
+    subfolders(open, folder, folder, observer, cancel)
 }
 
 /// Walks the whole tree under `root`, the folder the open numbered `open` made the tree's
@@ -1378,6 +1398,35 @@ mod tests {
             );
         }
         assert!(heard.into_inner().unwrap().is_empty());
+    }
+
+    /// A place's subfolders are listed wherever it is; only a relative folder and one with
+    /// a `..` are refused, nothing sent.
+    #[test]
+    fn a_place_s_subfolders_are_listed_wherever_it_is() {
+        let dir = folder();
+        let place = dir.path();
+        let heard = Mutex::new(Vec::new());
+        let listen = |event| heard.lock().unwrap().push(event);
+        for refused in [PathBuf::from("Archive"), place.join("Archive").join("..")] {
+            let ended = source_subfolders(9, &refused, &listen, &|| false);
+            assert_eq!(ended, Ended::Failed, "{refused:?}");
+        }
+        assert!(heard.lock().unwrap().is_empty());
+        assert_eq!(
+            source_subfolders(9, place, &listen, &|| false),
+            Ended::Listed
+        );
+        let heard = heard.into_inner().unwrap();
+        assert_eq!(
+            heard,
+            [LibraryEvent::SubfoldersOf {
+                open: 9,
+                folder: place.to_owned(),
+                names: vec!["Archive".into(), "day 2".into(), "Day 10".into()],
+                unreadable: None,
+            }]
+        );
     }
 
     /// Links count as what they point to: one to a folder is listed, one to a file or a

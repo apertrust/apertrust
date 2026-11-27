@@ -2969,6 +2969,9 @@ struct Engine {
     source: Option<import::SourceListing>,
     /// The job listing the volumes mounted, which the next `ListVolumes` cancels.
     volumes: Option<JobId>,
+    /// The jobs listing a place's subfolders for the Import tool's Folders tree, each with
+    /// its folder, which a second ask for the folder or a `CancelListing` cancels.
+    source_subfolders: Vec<(PathBuf, JobId)>,
     /// The selection, of the folder open's photos, and the active photo (decision 37).
     selection: selection::State,
     /// When a frame is published, for a test of the history's merging; else when it is.
@@ -3578,6 +3581,7 @@ impl Engine {
             alone: None,
             source: None,
             volumes: None,
+            source_subfolders: Vec::new(),
             selection: selection::State::default(),
             #[cfg(test)]
             published_at: None,
@@ -5927,12 +5931,17 @@ impl Engine {
                 self.list_source(source, include_subfolders, trees);
                 return;
             }
+            // The sheet closing: its listing, the volumes' and every place's subfolders it
+            // asked for.
             LibraryCommand::CancelListing { listing } => {
                 if (self.source.as_ref()).is_some_and(|source| source.listing == listing) {
                     self.drop_listing();
                 }
                 if let Some(volumes) = self.volumes.take() {
                     self.jobs.control.cancel(volumes);
+                }
+                for (_, job) in self.source_subfolders.drain(..) {
+                    self.jobs.control.cancel(job);
                 }
                 return;
             }
@@ -5960,6 +5969,10 @@ impl Engine {
             }
             LibraryCommand::ListVolumes => {
                 self.list_volumes();
+                return;
+            }
+            LibraryCommand::SourceSubfolders { folder } => {
+                self.source_subfolders(folder);
                 return;
             }
             // The live photo's thumbnail is chosen again under it.
@@ -6308,6 +6321,44 @@ impl Engine {
             })
         });
         self.volumes = Some(job);
+    }
+
+    /// [`LibraryCommand::SourceSubfolders`], the command numbered [`Self::applied`]: a
+    /// place's subfolders for the Import tool's Folders tree, listed by a job of kind
+    /// `subfolders` on darktable's `UserBackground` queue with no progress, as
+    /// [`Self::subfolders`] lists the open folder's, but whatever folder is open, or none,
+    /// answered in this command's own number; the library refuses a relative folder or one
+    /// with a `..`. A second ask for the same folder cancels the first.
+    fn source_subfolders(&mut self, folder: PathBuf) {
+        let control = &self.jobs.control;
+        self.source_subfolders.retain(|(asked, job)| {
+            let running = control.state(*job).is_some();
+            if running && *asked == folder {
+                control.cancel(*job);
+            }
+            running && *asked != folder
+        });
+        let open = self.applied;
+        let outbox = self.jobs.outbox.clone();
+        let description = format!("listing the subfolders of {}", folder.display());
+        let place = folder.clone();
+        // A test holds it with the folder's hold, which no reading has taken.
+        #[cfg(test)]
+        let hold = self.folder_hold.take();
+        let job = self.jobs.add(open, Queue::UserBackground, |_| {
+            jobs::Job::new("subfolders", description, move |context| {
+                #[cfg(test)]
+                if let Some(hold) = &hold
+                    && !hold.wait_unless(|| context.cancelled())
+                {
+                    return Ok(());
+                }
+                let tell = |event| outbox.send(Event::Library(event));
+                library::source_subfolders(open, &place, &tell, &|| context.cancelled());
+                Ok(())
+            })
+        });
+        self.source_subfolders.push((folder, job));
     }
 
     /// Cancels the latest listing of Import's source, its check and its photos'

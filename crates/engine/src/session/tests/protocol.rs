@@ -339,6 +339,9 @@ pub(super) fn every_command() -> Vec<Command> {
             size: 256,
         }),
         Command::Library(LibraryCommand::ListVolumes),
+        Command::Library(LibraryCommand::SourceSubfolders {
+            folder: PathBuf::from("/Users/ana/Pictures"),
+        }),
         Command::Selection(SelectionCommand::Set(vec![photo(), other()])),
         Command::Selection(SelectionCommand::Add(photo())),
         Command::Selection(SelectionCommand::Remove(other())),
@@ -435,7 +438,7 @@ fn picker_variant(command: &PickerCommand) -> usize {
     }
 }
 
-const LIBRARY_COMMAND_VARIANTS: usize = 11;
+const LIBRARY_COMMAND_VARIANTS: usize = 12;
 
 /// Each library command's variant; a new one takes the next index and raises the count.
 fn library_command_variant(command: &LibraryCommand) -> usize {
@@ -451,6 +454,7 @@ fn library_command_variant(command: &LibraryCommand) -> usize {
         LibraryCommand::CheckSource { .. } => 8,
         LibraryCommand::SourceThumbnails { .. } => 9,
         LibraryCommand::ListVolumes => 10,
+        LibraryCommand::SourceSubfolders { .. } => 11,
     }
 }
 
