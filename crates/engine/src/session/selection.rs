@@ -52,6 +52,10 @@ use serde::{Deserialize, Serialize};
 use super::library::{EditState, Shot};
 use super::summary::Known;
 use super::{Engine, Event, LibraryEvent, SessionError};
+use apertrust_library::fields::Fields;
+
+/// A photo opened alone as its job read it: its path, its edit's state and its fields.
+pub(crate) type Classified = (PathBuf, EditState, Arc<Fields>);
 
 /// What a client asks of the selection (decision 37). Each names photos by their paths:
 /// one named by `Set`, `Add` or `Range`'s `to` must be one of the collection's, the folder
@@ -187,6 +191,13 @@ struct Entry {
     /// Its facts (decision 110), once a summary has read them: `Some(None)` where there are
     /// none; kept for the next summary.
     facts: Option<Option<Arc<Shot>>>,
+    /// Its fields (decision 110): the latest listing's, or what the session wrote since,
+    /// which a summary of several photos compares.
+    fields: Arc<Fields>,
+    /// The number of the listing under way, or last done, when the session last wrote its
+    /// fields, 0 for none: that listing's row, which may have read the sidecar before the
+    /// write, leaves `fields` as they are, as `classified` leaves `edit`.
+    fields_written: u64,
 }
 
 /// The folder open, with its photos: the collection, one list, so every command, the fact
@@ -254,6 +265,8 @@ impl Folder {
                     classified: 0,
                     size: 0,
                     facts: None,
+                    fields: Arc::default(),
+                    fields_written: 0,
                 });
             }
         }
@@ -268,12 +281,12 @@ impl Folder {
         self.brought = 0;
     }
 
-    /// `photos`, a chunk of the listing under way, each with its size: each in the
-    /// collection, as that listing found it but where the edit writer classified it since
-    /// that listing began.
-    fn extend(&mut self, photos: impl IntoIterator<Item = (PathBuf, EditState, u64)>) {
+    /// `photos`, a chunk of the listing under way, each with its size and fields: each in
+    /// the collection, as that listing found it but where the edit writer classified it, or
+    /// the session wrote its fields, since that listing began.
+    fn extend(&mut self, photos: impl IntoIterator<Item = (PathBuf, EditState, u64, Arc<Fields>)>) {
         let listing = self.listing;
-        for (name, edit, size) in photos {
+        for (name, edit, size, fields) in photos {
             let rank = self.brought;
             self.brought += 1;
             match self.places.get(&self.absolute.join(&name)) {
@@ -281,6 +294,9 @@ impl Folder {
                     let entry = &mut self.photos[at];
                     if entry.classified != listing {
                         entry.edit = Some(edit);
+                    }
+                    if entry.fields_written != listing {
+                        entry.fields = fields;
                     }
                     entry.seen = listing;
                     entry.rank = rank;
@@ -294,6 +310,8 @@ impl Folder {
                     classified: 0,
                     size,
                     facts: None,
+                    fields,
+                    fields_written: 0,
                 }),
             }
         }
@@ -352,6 +370,8 @@ impl Folder {
                 classified: 0,
                 size: 0,
                 facts: None,
+                fields: Arc::default(),
+                fields_written: 0,
             });
         }
     }
@@ -460,8 +480,15 @@ impl State {
         self.changed = true;
         match event {
             LibraryEvent::Listed { photos, done, .. } => {
-                let listed = (photos.iter())
-                    .map(|photo| (PathBuf::from(&photo.name), photo.edit.clone(), photo.size));
+                let listed = (photos.iter()).map(|photo| {
+                    let name = PathBuf::from(&photo.name);
+                    (
+                        name,
+                        photo.edit.clone(),
+                        photo.size,
+                        Arc::clone(&photo.fields),
+                    )
+                });
                 folder.extend(listed);
                 if *done {
                     folder.done();
@@ -474,6 +501,19 @@ impl State {
         // keep or drop, which knows the active photo.
         let elsewhere = |photo: &PathBuf| photo.parent() != Some(folder.absolute.as_path());
         (self.selected).retain(|photo| folder.holds(photo) || elsewhere(photo));
+    }
+
+    /// The fields of the photo at `path` as the session wrote them, a batch's job or the open
+    /// photo as it closes, kept for the next summary, over the listing under way's row.
+    pub(super) fn set_fields(&mut self, path: &Path, fields: Arc<Fields>) {
+        let Some(folder) = self.folder.as_mut() else {
+            return;
+        };
+        if let Some(&at) = folder.places.get(&key(path)) {
+            let entry = &mut folder.photos[at];
+            entry.fields = fields;
+            entry.fields_written = folder.listing;
+        }
     }
 
     /// The facts a summary of the collection opened by the library command numbered `open`
@@ -512,6 +552,7 @@ impl State {
                     size: entry.size,
                     edited: live.map_or(listed, |(_, edited)| *edited),
                     facts: entry.facts.clone(),
+                    fields: Arc::clone(&entry.fields),
                     ..Known::outside(&absolute)
                 }
             })
@@ -523,16 +564,19 @@ impl State {
     /// their job read them, each by its path: each its state, as a listing's row is, but
     /// where the edit writer classified it since, the later observation; dropped where
     /// another folder or photos have been opened since.
-    pub(super) fn found(&mut self, open: u64, photos: &[(PathBuf, EditState)]) {
+    pub(super) fn found(&mut self, open: u64, photos: &[Classified]) {
         let Some(folder) = (self.folder.as_mut()).filter(|folder| folder.open == open) else {
             return;
         };
         self.changed = true;
-        for (path, edit) in photos {
+        for (path, edit, fields) in photos {
             if let Some(&at) = folder.places.get(&key(path)) {
                 let entry = &mut folder.photos[at];
                 if entry.classified != folder.listing {
                     entry.edit = Some(edit.clone());
+                }
+                if entry.fields_written != folder.listing {
+                    entry.fields = Arc::clone(fields);
                 }
             }
         }
@@ -942,9 +986,8 @@ impl Engine {
                         for path in paths {
                             #[cfg(test)]
                             stall::wait(&path);
-                            let sidecar = super::sidecar::path_for(&path);
-                            let edit = super::library::sidecar_state(&sidecar);
-                            let photos = vec![(path, edit)];
+                            let (edit, fields) = super::library::photo_state(&path);
+                            let photos = vec![(path, edit, fields)];
                             let sent = inbox.send(super::Inbox::Classified { open, photos });
                             if sent.is_err() || read.send(()).is_err() {
                                 return;
@@ -997,13 +1040,18 @@ impl Engine {
     /// The open photo closing, by any path, a close, a failed write or a panic: its sidecar
     /// classified as a listing classifies it by the edit writer, after its last write, off
     /// the engine thread ([`Self::take_classified`]), its listed state from then on; what its
-    /// values said no longer counts.
+    /// values said no longer counts. Its fields are kept as it leaves them.
     pub(super) fn settle_closed(&mut self) {
         if let Some(open) = &self.open
             && self.selection.reads(&open.photo.path)
             && let Some(number) = self.selection.folder_open()
         {
             self.writer.classify(open.photo.path.clone(), number);
+        }
+        // Its fields as it leaves them, for the next summary of several photos.
+        if let Some(open) = &self.open {
+            let fields = Arc::new(Fields::of(&open.file.copies));
+            self.selection.set_fields(&open.photo.path, fields);
         }
         self.selection.closed();
     }

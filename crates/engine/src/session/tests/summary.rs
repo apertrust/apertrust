@@ -147,3 +147,59 @@ fn a_later_summarise_cancels_the_one_before_which_keeps_what_it_read() {
     assert_eq!(answered.len(), 1);
     assert_eq!(reads(&a), 2, "kept, not read again");
 }
+
+/// Each photo's `.apxmp` titled `title`.
+fn titled(photos: &[&Path], title: &str) {
+    use apertrust_library::clock::{Clock, MachineId};
+    use apertrust_library::fields::{self, FieldValue};
+    for photo in photos {
+        let mut file = sidecar::Edits::new("test");
+        let copy = crate::session::fields::copy_mut(&mut file);
+        let clock = Clock::at(1, None, MachineId::UNKNOWN);
+        let value = FieldValue::LangAlt(vec![("x-default".to_owned(), title.to_owned())]);
+        fields::set(&mut copy.fields, "dc:title", Some(value), clock);
+        copy.clocks.push(clock);
+        std::fs::write(sidecar::path_for(photo), file.to_xml()).unwrap();
+    }
+}
+
+/// The photos' fields as their listing, or the reading of photos opened alone, read them:
+/// a summary of two photos titled alike, opened in their folder or alone, shows the title.
+#[test]
+fn a_summary_shows_the_fields_the_listing_or_the_photos_alone_read() {
+    use crate::session::facts::FieldSummary;
+    let gpu = gpu();
+    let folder = two_photos("summary-fields");
+    let (a, b) = (folder.join("A.ARW"), folder.join("B.ARW"));
+    titled(&[&a, &b], "Tram 28");
+    let (session, wakes) = start_with(&gpu, &[], synthetic);
+    let title = |summary: &facts::Summary| match summary.field("dc:title") {
+        Some(FieldSummary::Same(value)) => Some(value.shown()),
+        _ => None,
+    };
+    opened(&session, &wakes, &folder);
+    let asked = session.send(Command::Summarise {
+        photos: vec![a.clone(), b.clone()],
+    });
+    let answered = answers(&session, &wakes, asked);
+    assert_eq!(title(&answered[0]).as_deref(), Some("Tram 28"));
+    // Opened alone: their reading, which comes after the open, carries the fields.
+    session.send(Command::Library(LibraryCommand::Open(
+        library::Source::Photos(vec![a.clone(), b.clone()]),
+    )));
+    let deadline = Instant::now() + TEST_WAIT;
+    loop {
+        let asked = session.send(Command::Summarise {
+            photos: vec![a.clone(), b.clone()],
+        });
+        let answered = answers(&session, &wakes, asked);
+        if title(answered.last().unwrap()).as_deref() == Some("Tram 28") {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the photos alone show their title"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}

@@ -347,6 +347,8 @@ impl Fields {
         } else {
             let value = (!made.is_empty()).then(|| typed.clone());
             Command::SetMetadata {
+                photos: Vec::new(),
+                values: Vec::new(),
                 fields: vec![(property.to_owned(), value)],
             }
         };

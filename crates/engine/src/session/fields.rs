@@ -32,8 +32,10 @@
 //! joined with the session's, the later clock winning each ([`library_fields::join`]).
 //! [`Event::Metadata`] tells the open copy's fields, its name and place as a fact.
 //!
-//! A rating naming other photos is a batch on several photos (decision 109, `batch`), which
-//! reaches the active photo here, its record carrying the batch.
+//! A rating or a change of fields naming other photos is a batch on several photos
+//! (decision 109, `batch`), which reaches the active photo here, its record carrying the
+//! batch, and the others by a job, which sets each one's fields as [`wanted`] and
+//! [`set_wanted`] set the active photo's.
 //!
 //! [`Command::Rate`]: super::Command::Rate
 //! [`Command::SetMetadata`]: super::Command::SetMetadata
@@ -44,10 +46,11 @@ use std::time::Instant;
 
 use apertrust_library::clock::Clock;
 use apertrust_library::fields::{
-    self as library_fields, COPY_NAME, FieldChange, FieldEntry, FieldValue, Rating,
+    self as library_fields, COPY_NAME, FieldChange, FieldEntry, FieldValue, Rating, TypedError,
 };
 use apertrust_library::sidecar::{Edits, FIRST_COPY, VirtualCopy};
 
+use super::styles::Batch;
 use super::{
     CopyState, Engine, Event, MetadataState, Open, RatingChange, RatingState, SessionError,
 };
@@ -135,16 +138,26 @@ impl FieldRecord {
 
     /// Sets each field it changed in `copy` back as it was before it, or with `back` false
     /// as it left it, at `clock`, where the field still holds the value the record left it
-    /// at: one changed since, as a newer file taken in changed it, keeps its later value.
-    /// The copy's name is one of its fields here ([`COPY_NAME`]). Whether it set any.
-    pub(super) fn put(&mut self, copy: &mut VirtualCopy, back: bool, clock: Clock) -> bool {
+    /// at, and with `clocked` the clock too: one changed since, as a newer file taken in
+    /// changed it, keeps its later value, and with `clocked` though a later change set it
+    /// back to the same value, as a batch's move on its photos reads them (decision 110);
+    /// the open photo's own Undo, whose records move the field in turn, reads the value
+    /// alone. The copy's name is one of its fields here ([`COPY_NAME`]). Whether it set any.
+    pub(super) fn put(
+        &mut self,
+        copy: &mut VirtualCopy,
+        (back, clocked): (bool, bool),
+        clock: Clock,
+    ) -> bool {
         let mut put = false;
         for (change, set) in &mut self.changes {
             let (left, value) = match back {
                 true => (&change.after, change.before.clone()),
                 false => (&change.before, change.after.clone()),
             };
-            if library_fields::value_in(copy, &change.field).as_ref() != left.as_ref() {
+            let held = library_fields::value_in(copy, &change.field);
+            let moved = clocked && clock_in(copy, &change.field) != Some(*set);
+            if held.as_ref() != left.as_ref() || moved {
                 continue;
             }
             library_fields::set_in(copy, &change.field, value, clock);
@@ -173,6 +186,17 @@ impl FieldRecord {
     /// batch on several photos, which is a record of its own.
     pub(super) fn merges(&self, later: &FieldRecord) -> bool {
         self.batch.is_none() && later.batch.is_none() && self.change.merges(&later.change)
+    }
+}
+
+/// The clock of the last change of `field` in `copy`, or with [`COPY_NAME`] its name's;
+/// `None` for one never set, or not written yet.
+fn clock_in(copy: &VirtualCopy, field: &str) -> Option<Clock> {
+    match field {
+        COPY_NAME => copy.name_clock,
+        _ => (copy.fields.iter())
+            .find(|entry| entry.field == field)
+            .and_then(|entry| entry.clock),
     }
 }
 
@@ -300,7 +324,99 @@ pub(super) fn stamp_darktable(file: &mut Edits, clock: impl FnOnce() -> Clock) -
 }
 
 /// What a change of fields wants: each field by its property, its value now and after.
-type Wanted = Vec<(&'static str, Option<FieldValue>, Option<FieldValue>)>;
+pub(super) type Wanted = Vec<(&'static str, Option<FieldValue>, Option<FieldValue>)>;
+
+/// What a [`super::Command::SetMetadata`] sets: each field by its property with what was
+/// typed, and each with a value as it is, as a list's chosen value, never typed again.
+#[derive(Debug, Clone, Default)]
+pub(super) struct MetadataSet {
+    pub(super) fields: Vec<(String, Option<String>)>,
+    pub(super) values: Vec<(String, FieldValue)>,
+}
+
+impl MetadataSet {
+    /// The properties it names, in order, each once.
+    pub(super) fn properties(&self) -> Vec<String> {
+        let mut properties: Vec<String> = Vec::new();
+        let named = (self.fields.iter().map(|(field, _)| field))
+            .chain(self.values.iter().map(|(field, _)| field));
+        for field in named {
+            if !properties.contains(field) {
+                properties.push(field.clone());
+            }
+        }
+        properties
+    }
+}
+
+/// What setting `set` on `copy` wants (a [`super::Command::SetMetadata`]): each field, by
+/// its property, its value in `copy` now and what was typed as its kind takes it
+/// ([`FieldValue::from_typed`]), `None` clearing it, or the value given as it is, a field
+/// named twice taking the later. Refused whole for a field none of
+/// [`library_fields::FIELDS`] is, or the rating's ([`SessionError::UnknownField`]), and for
+/// a value its field cannot hold ([`SessionError::FieldValue`]), whatever `copy` holds.
+pub(super) fn wanted(
+    copy: Option<&VirtualCopy>,
+    set: &MetadataSet,
+) -> Result<Wanted, SessionError> {
+    let def = |property: &String| {
+        (library_fields::field(property))
+            .filter(|def| !library_fields::is_rating(def.property))
+            .ok_or_else(|| SessionError::UnknownField {
+                field: property.clone(),
+            })
+    };
+    let refused = |property: &String, reason| SessionError::FieldValue {
+        field: property.clone(),
+        reason,
+    };
+    let mut wanted: Wanted = Vec::new();
+    for (property, typed) in &set.fields {
+        let def = def(property)?;
+        let now = copy.and_then(|copy| library_fields::value_in(copy, def.property));
+        let after = match typed {
+            Some(typed) => FieldValue::from_typed(def, typed, now.as_ref())
+                .map_err(|reason| refused(property, reason))?,
+            None => None,
+        };
+        wanted.retain(|(kept, _, _)| *kept != def.property);
+        wanted.push((def.property, now, after));
+    }
+    for (property, value) in &set.values {
+        let def = def(property)?;
+        if !value.is(def.kind) {
+            return Err(refused(property, TypedError::WrongKind));
+        }
+        let now = copy.and_then(|copy| library_fields::value_in(copy, def.property));
+        wanted.retain(|(kept, _, _)| *kept != def.property);
+        wanted.push((def.property, now, Some(value.clone())));
+    }
+    Ok(wanted)
+}
+
+/// The properties `wanted` sets, in order.
+pub(super) fn properties(wanted: &Wanted) -> Vec<&'static str> {
+    wanted.iter().map(|(property, ..)| *property).collect()
+}
+
+/// Sets `wanted` on `copy` at `clock`, each field whose value changes: what it changed, in
+/// order, none for a change that changes nothing. The caller advances the copy's clock
+/// vector with `clock`.
+pub(super) fn set_wanted(copy: &mut VirtualCopy, wanted: Wanted, clock: Clock) -> Vec<FieldChange> {
+    let mut changes = Vec::new();
+    for (field, before, after) in wanted {
+        if before == after {
+            continue;
+        }
+        library_fields::set_in(copy, field, after.clone(), clock);
+        changes.push(FieldChange {
+            field: field.to_owned(),
+            before,
+            after,
+        });
+    }
+    changes
+}
 
 impl Engine {
     /// [`super::Command::Rate`] on the active photo, sent at `at`: `change` set on its
@@ -311,9 +427,9 @@ impl Engine {
     /// needs no decode. A change that changes nothing records and writes nothing; whether it
     /// changed any field.
     pub(super) fn rate(&mut self, change: RatingChange, at: Instant) -> Result<bool, SessionError> {
-        let batch = self.batching.map(|batch| batch.id);
+        let batch = self.batching;
         let open = self.fields_open()?;
-        let clock = open.history.next_clock();
+        let clock = open.history.next_clock(batch.map(|batch| batch.wall));
         let changes = change.apply(first_mut(&mut open.file), clock);
         if changes.is_empty() {
             return Ok(false);
@@ -325,6 +441,7 @@ impl Engine {
         } = open.rating();
         let name = crate::sidecar::file_name(&open.photo.path);
         tracing::debug!(target: "pipe", "rated {name}: {stars} stars, rejected: {rejected}, labels: {labels:05b}");
+        let batch = batch.map(|batch| batch.id);
         let record = FieldRecord::new(Changed::Rating(change), changes, clock, batch);
         open.history.rated(record, at);
         open.fields_unsaved = true;
@@ -342,40 +459,14 @@ impl Engine {
     /// field.
     pub(super) fn set_metadata(
         &mut self,
-        fields: &[(String, Option<String>)],
+        set: &MetadataSet,
         at: Instant,
     ) -> Result<bool, SessionError> {
+        let batch = self.batching;
         let open = self.fields_open()?;
-        let copy = open.file.copies.first();
-        let mut wanted: Wanted = Vec::new();
-        for (property, typed) in fields {
-            let def = (library_fields::field(property))
-                .filter(|def| !library_fields::is_rating(def.property))
-                .ok_or_else(|| SessionError::UnknownField {
-                    field: property.clone(),
-                })?;
-            let now = copy.and_then(|copy| library_fields::value_in(copy, def.property));
-            let after = match typed {
-                Some(typed) => {
-                    FieldValue::from_typed(def, typed, now.as_ref()).map_err(|reason| {
-                        SessionError::FieldValue {
-                            field: property.clone(),
-                            reason,
-                        }
-                    })?
-                }
-                None => None,
-            };
-            wanted.retain(|(kept, _, _)| *kept != def.property);
-            wanted.push((def.property, now, after));
-        }
-        let properties = wanted.iter().map(|(property, ..)| *property).collect();
-        Ok(change_fields(
-            open,
-            Changed::Metadata(properties),
-            wanted,
-            at,
-        ))
+        let wanted = wanted(open.file.copies.first(), set)?;
+        let change = Changed::Metadata(properties(&wanted));
+        Ok(change_fields(open, change, wanted, at, batch))
     }
 
     /// [`super::Command::RenameCopy`]: the open copy's name set to `name`, on one line and
@@ -394,6 +485,7 @@ impl Engine {
             Changed::Name,
             vec![(COPY_NAME, now, after)],
             at,
+            None,
         ))
     }
 
@@ -465,24 +557,20 @@ impl Engine {
     }
 }
 
-/// Sets `wanted` on `open`'s copy as one undo record of `change`, sent at `at`, each field
-/// whose value changes with one clock, the copy's clock vector advanced with it; nothing
-/// for a change that changes nothing. Whether it changed any.
-fn change_fields(open: &mut Open, change: Changed, wanted: Wanted, at: Instant) -> bool {
-    let clock = open.history.next_clock();
-    let copy = copy_mut(&mut open.file);
-    let mut changes = Vec::new();
-    for (field, before, after) in wanted {
-        if before == after {
-            continue;
-        }
-        library_fields::set_in(copy, field, after.clone(), clock);
-        changes.push(FieldChange {
-            field: field.to_owned(),
-            before,
-            after,
-        });
-    }
+/// Sets `wanted` on `open`'s copy as one undo record of `change`, sent at `at`, in the
+/// batch on several photos `batch` where it is part of one, each field whose value changes
+/// with one clock, the copy's clock vector advanced with it; nothing for a change that
+/// changes nothing. Whether it changed any.
+fn change_fields(
+    open: &mut Open,
+    change: Changed,
+    wanted: Wanted,
+    at: Instant,
+    batch: Option<Batch>,
+) -> bool {
+    let clock = open.history.next_clock(batch.map(|batch| batch.wall));
+    let batch = batch.map(|batch| batch.id);
+    let changes = set_wanted(copy_mut(&mut open.file), wanted, clock);
     if changes.is_empty() {
         return false;
     }
@@ -490,7 +578,7 @@ fn change_fields(open: &mut Open, change: Changed, wanted: Wanted, at: Instant) 
     let set: Vec<&str> = changes.iter().map(|change| change.field.as_str()).collect();
     tracing::debug!(target: "pipe", "set {} of {name}", set.join(", "));
     open.history
-        .rated(FieldRecord::new(change, changes, clock, None), at);
+        .rated(FieldRecord::new(change, changes, clock, batch), at);
     open.fields_unsaved = true;
     open.unsaved = true;
     true
