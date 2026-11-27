@@ -32,7 +32,7 @@ A choice names its Rust type (`type = "apertrust_ui::Builtin"`) instead of listi
 
 **The engine opens no folder or file:** the binaries hand it options (`apertrust_engine::settings::Options::read`); the golden harness reads no settings. **The Settings dialog** has nine pages, as darktable's preferences: General, Import, Photos, Editing, Processing, Storage, Shortcuts, Presets and AI. Its rows are drawn from the schema, each setting with a `page` and a `group` a row there in the schema's order; Shortcuts, Storage, Presets and AI are panels built by hand; a page that holds nothing yet is listed dimmed and cannot be chosen. What the app remembers on its own is never shown.
 
-**`apertrust-base`** holds what every program sets up as it starts and nothing about images, colour, the GPU or the UI: logging and the banner ([0044](0044-logging-the-banner-and-versions.md)), the version, folders, settings, the safe write (`fs`) and jobs ([0057](0057-jobs-as-darktables-control-jobs.md)), each behind a feature.
+**`apertrust-base`** holds what every program sets up as it starts and nothing about images, colour, the GPU or the UI: logging and the banner ([0044](0044-logging-the-banner-and-versions.md)), the version, folders, settings, the safe write (`fs`), jobs ([0057](0057-jobs-as-darktables-control-jobs.md)) and darktable's variables with the person's folders they read (`variables`, `Places`), the patterns' text that the export's and the import's paths share ([0085](0085-import-in-folder-mode.md)), each behind a feature.
 
 ## Options considered
 

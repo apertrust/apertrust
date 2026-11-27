@@ -101,6 +101,15 @@ Radiance HDR, PFM, binary PNM, QOI and BMP are read by Apertrust's own code, por
 - **HEIF and HEIC,** tier 6, choose their decoder after a spike comparing the pure-Rust `heic` crate with libheif on phones' photos: `heic`, AGPL-3.0-only (or a commercial licence), which `deny.toml` does not allow yet; the platform's decoders, which differ by platform, with none on Linux; libheif with libde265, which would need an exception to decision 5; or none (decision 111).
 - **Not used:** GraphicsMagick, ImageMagick and libvips (C, darktable's catch-all for formats no photographer's workflow needs); the `image` crate as the one decoder (its AVIF is dav1d, C); libjpeg-turbo, libtiff, libpng, libwebp, libjxl, libavif, OpenJPEG and OpenEXR, darktable's, all C or C++.
 
+### The volumes and their free space: sysinfo
+
+Import's Source lists the cards and drives mounted, and its preview the destination's free space (decision 85), through `sysinfo` (MIT), a dependency of `apertrust-library` alone, its default features off and only `disk` on, checked with `cargo deny check` when it is added with Import's volumes.
+
+- **What it gives,** on macOS, Linux and Windows alike: each volume's name, mount point, removable flag and free and total space, so the library holds no `unsafe` of its own and the CLI has the free space too.
+- **Rust over the system's own calls:** on macOS through the objc2 bindings to IOKit and Core Foundation, frameworks the OS provides; on Linux `/proc/mounts` and `statvfs`; on Windows the `windows` crate. Nothing in C is compiled in.
+- **Where it stops:** it reads the volumes when asked, not as they come and go; those notifications (20c) and Eject stay in `apertrust-display`'s platform code.
+- **Not used:** the volumes through `apertrust-display`'s own FFI on three systems, for what `sysinfo` gives in Rust; `fs4` and `fs2`, which give a path's free space but no list of the volumes.
+
 ### The system clipboard: arboard and smithay-clipboard
 
 Copy and paste reach the system clipboard through eframe's `clipboard` feature, which brings egui-winit's arboard and, on Wayland, smithay-clipboard, both Rust, over the platform's own clipboard and, on Linux, libwayland and the X11 libraries loaded at run time.
