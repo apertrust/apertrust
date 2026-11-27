@@ -2046,14 +2046,14 @@ Decision 79; the design in full is [pickers.md](pickers.md). One active picker p
 
 ## Export jobs
 
-Decision 56, under decision 2's rule, for Export ([gui.md](gui.md#the-export-tool), The Export tool). What an export writes and where lives in `apertrust-export`, a crate with no GPU: the settings, darktable's size computation, darktable's variables, the file-on-disk rules and the format writers. The engine's session runs the job.
+Decision 56, under decision 2's rule, for Export ([gui.md](gui.md#the-export-tool), The Export tool). What an export writes and where lives in `apertrust-export`, a crate with no GPU: the settings, darktable's size computation, the file-on-disk rules and the format writers, with darktable's variables, which `apertrust-base` holds for the import too (decision 85), re-exported. The engine's session runs the job.
 
 Built:
 
 - the writers ([Writing the file](#writing-the-file)), through which `apertrust-cli export` writes JPEG or PNG, rendered by `export::export_at` ([Tiling](#tiling));
 - darktable's size and its resample ([Size and resampling](#size-and-resampling), `docs/ports/finalscale.md`), which `apertrust-cli export --width --height --hq --upscale` takes;
 - the export settings ([Settings and presets](#settings-and-presets)), whose format options `apertrust-cli export` takes;
-- darktable's variables (`apertrust_export::variables`, `docs/ports/variables.md`);
+- darktable's variables (`apertrust_base::variables`, re-exported as `apertrust_export::variables`, `docs/ports/variables.md`);
 - File on disk ([Writing the file](#writing-the-file));
 - the export job ([The job](#the-job)), through which `apertrust-cli export` runs;
 - the Export tool's preview (`PreviewExport`, [Commands and events](#commands-and-events)).
@@ -2097,7 +2097,7 @@ The rest is planned.
   - The edit writer is handed a read of every photo's sidecar, which it makes after the writes handed to it before: writes and reads go to it in one queue, consecutive writes of a file still coalesced. The body waits for it through `Context::wait`.
   - The open photo's edit is the one the session holds, so a gesture's value in progress, a drag not yet done, is exported as it stands.
   - A photo whose last save failed is exported from the file on disk, the edit as last written, since the snapshot reads its sidecar.
-- **The person's folders and name,** `$(HOME)`, `$(PICTURES.FOLDER)`, `$(DESKTOP.FOLDER)` and `$(USERNAME)`, come with the command (`apertrust_export::Places`, beside the settings), since the engine reads no platform folder (decision 43). The CLI fills them through `directories`.
+- **The person's folders and name,** `$(HOME)`, `$(PICTURES.FOLDER)`, `$(DESKTOP.FOLDER)` and `$(USERNAME)`, come with the command (`apertrust_base::variables::Places`, re-exported as `apertrust_export::Places`, beside the settings), since the engine reads no platform folder (decision 43). The CLI fills them through `directories`.
 - **Each photo on the worker:**
   - decoded and uploaded through the session's loader, a panic or a GPU error the photo's failure; its sidecar's text parsed; clamped as an opened edit is; bound, sized (`export_job::size`, shared with the CLI), named and prepared (`Disk::prepare`);
   - rendered by `export::export_handing`: `export_at` with the same plans and renders, planned, compiled, allocated and rebuilt tile by tile on the worker inside error scopes of its own;

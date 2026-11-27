@@ -35,10 +35,12 @@
 //! `$(` list.
 
 use std::ops::Range;
+use std::path::PathBuf;
 
-use apertrust_base::wire::Id;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::wire::Id;
 
 mod expand;
 mod names;
@@ -137,7 +139,7 @@ pub enum PatternError {
         name: String,
         /// The name's place, to replace by the suggestion.
         at: Range<usize>,
-        #[serde(default, deserialize_with = "apertrust_base::wire::id::option")]
+        #[serde(default, deserialize_with = "crate::wire::id::option")]
         suggestion: Option<Id>,
     },
     /// A variable that is not closed: no `expected`, `)` or the `/` or `]` it takes, at
@@ -177,7 +179,7 @@ fn shown(text: &str) -> String {
 /// (D7).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Unavailable {
-    #[serde(deserialize_with = "apertrust_base::wire::id")]
+    #[serde(deserialize_with = "crate::wire::id")]
     pub name: Id,
     pub why: NotHere,
 }
@@ -447,4 +449,16 @@ impl Field {
             Field::List(items) => items.join(", "),
         }
     }
+}
+
+/// The person's folders and name that darktable's variables give (`$(HOME)`,
+/// `$(PICTURES.FOLDER)`, `$(DESKTOP.FOLDER)`, `$(USERNAME)`), sent beside an export's
+/// settings by the client, which finds them on its own machine: the engine reads no
+/// platform folder (decision 43). `None` for a folder the platform has not.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Places {
+    pub home: Option<PathBuf>,
+    pub pictures: Option<PathBuf>,
+    pub desktop: Option<PathBuf>,
+    pub user_name: String,
 }

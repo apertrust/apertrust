@@ -10,9 +10,10 @@ publish.workspace = true
 
 [dependencies]
 # Its settings part alone, for the types of its generated statics and the store a client
-# reads them from (decisions 43 and 56), and its `fs` part, the hidden temporary a file
-# is written to and its rename, shared with the sidecar's writer (decision 53).
-apertrust-base = { workspace = true, features = ["fs"] }
+# reads them from (decisions 43 and 56), its `fs` part, the hidden temporary a file is
+# written to and its rename, shared with the sidecar's writer (decision 53), and its
+# `variables`, darktable's variables and `Places`, re-exported (decision 85).
+apertrust-base = { workspace = true, features = ["fs", "variables"] }
 apertrust-color.workspace = true
 flate2.workspace = true
 jpeg-encoder.workspace = true
