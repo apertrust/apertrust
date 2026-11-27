@@ -56,6 +56,9 @@ pub enum Icon {
     /// folder at the header's buttons' 14 points, told apart from [`Icon::Folder`], the
     /// Photos tab's and Collections' closed folder.
     ChooseFolder,
+    /// Show in Finder, Explorer or Files: a file or a folder shown in the platform's file
+    /// manager, as the Metadata tool's Folder row's end item, an arrow out of a box.
+    ShowInFolder,
     /// A section's ⋯ options.
     Options,
     /// The tab bar's ⋮ options.
@@ -252,7 +255,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 125] = [
+    pub const ALL: [Icon; 126] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -262,6 +265,7 @@ impl Icon {
         Icon::Reset,
         Icon::Presets,
         Icon::ChooseFolder,
+        Icon::ShowInFolder,
         Icon::Options,
         Icon::OptionsVertical,
         Icon::More,
@@ -485,6 +489,7 @@ impl Icon {
             Icon::Reset => derived!("reset", "rotate-ccw", 14.0),
             Icon::Presets => derived!("presets", "menu", 14.0),
             Icon::ChooseFolder => derived!("folder-open", "folder-open", 14.0),
+            Icon::ShowInFolder => derived!("external-link", "external-link", 14.0),
             Icon::Options => derived!("options", "ellipsis", 14.0),
             Icon::OptionsVertical => derived!("options-vertical", "ellipsis-vertical", 14.0),
             Icon::More => derived!("more", "chevrons-right", 14.0),

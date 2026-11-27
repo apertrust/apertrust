@@ -100,7 +100,7 @@ The design is drawn on the [UI wireframe](https://claude.ai/artifact/V4r2xReSqn3
 - **No Apply.** Return, Tab or the focus leaving commits a field; Esc puts back that one field as it was when editing began. A field captures the photos it edits as editing begins, so a selection changing mid-edit commits to those. Line breaks only in Description and Notes (Shift+Return or Ctrl+Return); spaces trimmed at both ends, as darktable's (`src/common/metadata.c:402-417`).
 - **No right-click.** A read-only row takes the focus; Ctrl+C or Edit › Copy copies its value. ⋯ holds Copy Information (every row shown), Copy Coordinates, and Clear Metadata Fields on N Photos…, darktable's metadata editor reset, asking first with the count, one batch; the header has no ↺.
 - **No text in the panel.** Reasons and sources are in tooltips. Problems are warning buttons: a failed write on its field, with the reason and Try Again; view-only photos among the selected on Content's title row, with Select Only Editable Photos.
-- **Basic's Folder row** ends with Open This Folder, darktable's jump to the film roll (`src/libs/metadata_view.c:1156-1161`, Ctrl+J).
+- **Basic's Folder row** ends with Show in Finder (Show in Explorer, Show in Files), the photo's file selected in the platform's file manager, or the folder several photos share; darktable's jump to the film roll (`src/libs/metadata_view.c:1156-1161`, Ctrl+J) stays with Collections' Open This Folder.
 
 ### The order of work
 

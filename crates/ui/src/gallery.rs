@@ -813,8 +813,8 @@ fn fact_lists(ui: &mut Ui, t: &Theme) {
         ),
         Fact {
             end: Some(FactEnd {
-                icon: crate::Icon::ChooseFolder,
-                name: "Open This Folder",
+                icon: crate::Icon::ShowInFolder,
+                name: "Show in Finder",
                 enabled: true,
                 tip: None,
             }),

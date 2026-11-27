@@ -1850,7 +1850,6 @@ metadata-copy-information = Копіювати відомості
 metadata-copy-coordinates = Копіювати координати
 metadata-select-a-photo = Виберіть знімок
 metadata-fact-unread = Apertrust поки не читає цього з файлів { $format }
-metadata-folder-open = Цю папку відкрито
 metadata-label-some = { $label } (деякі знімки)
 metadata-rejected = Відхилено
 metadata-stars =

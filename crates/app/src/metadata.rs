@@ -55,12 +55,12 @@ use apertrust_ui::{Icon, Translator, theme};
 use eframe::egui;
 
 use crate::actions::ActionId;
-use crate::library;
 use crate::mirror::Mirror;
 use crate::presets::{self, Item as PresetItem, Line, Menu, Settings};
 use crate::utility::{Context, UtilityTool};
+use crate::{jobs, library};
 use apertrust_engine::session::facts::FieldSummary;
-use apertrust_engine::session::facts::{FactSummary, FactValue, Key, Summary};
+use apertrust_engine::session::facts::{FactSummary, Summary};
 use apertrust_engine::session::library::{EditState, Photo as Listed};
 use apertrust_engine::session::{Command, Rating, SelectionCommand};
 use apertrust_library::fields::COPY_NAME;
@@ -674,14 +674,8 @@ impl Metadata {
                     .filter(|line| !line.is_empty())
                     .collect::<Vec<_>>()
                     .join("\n");
-                if fact.end == Some(FactEndDef::OpenFolder) {
-                    row.end = match &subject {
-                        Subject::One(photo) => {
-                            photo.path.parent().map(|folder| open_folder(folder, cx))
-                        }
-                        Subject::Several { .. } => Some(self.shared_folder(cx)),
-                        Subject::None => None,
-                    };
+                if fact.end == Some(FactEndDef::ShowInFolder) {
+                    row.end = self.shown_in_folder(&subject, cx);
                 }
                 row
             })
@@ -1085,19 +1079,39 @@ impl Metadata {
         }
     }
 
-    /// Open This Folder over several photos: on the folder they share, disabled where they
-    /// are in several, and with no word while their summary has not come.
-    fn shared_folder(&self, cx: &Context<'_>) -> (bool, String, Option<library::Action>) {
-        let Some(summary) = self.held(cx.mirror) else {
-            return (false, String::new(), None);
+    /// Show in Finder at Folder's end: one photo's file selected in its folder; several
+    /// photos' folder where they share one, their own paths compared, never the summary's
+    /// words of them; disabled where they are in several, and with no word while their
+    /// selection is on its way; none with no photo.
+    fn shown_in_folder(&self, subject: &Subject<'_>, cx: &Context<'_>) -> Option<End> {
+        let end = match subject {
+            Subject::None => return None,
+            Subject::One(photo) => End {
+                why: String::new(),
+                action: Some(library::Action::ShowInFolder(photo.path.clone())),
+            },
+            Subject::Several { .. } if !cx.mirror.selection_settled() => End {
+                why: String::new(),
+                action: None,
+            },
+            Subject::Several { .. } => {
+                let photos = &cx.mirror.selection.photos;
+                let first = photos.first().and_then(|photo| photo.parent());
+                let shared = first
+                    .filter(|&folder| (photos.iter()).all(|photo| photo.parent() == Some(folder)));
+                match shared {
+                    Some(folder) => End {
+                        why: String::new(),
+                        action: Some(library::Action::Reveal(folder.to_owned())),
+                    },
+                    None => End {
+                        why: cx.words.text("metadata-several-folders"),
+                        action: None,
+                    },
+                }
+            }
         };
-        match summary.get("folder") {
-            Some(FactSummary::Same(FactValue {
-                key: Key::Text(folder),
-                ..
-            })) => open_folder(Path::new(folder), cx),
-            _ => (false, cx.words.text("metadata-several-folders"), None),
-        }
+        Some(end)
     }
 }
 
@@ -1201,29 +1215,16 @@ struct Drawn {
     value: Option<String>,
     tip: String,
     cut: FactCut,
-    end: Option<(bool, String, Option<library::Action>)>,
+    end: Option<End>,
     enabled: bool,
 }
 
-/// Open This Folder on `folder`: whether it can run, its tooltip, and what it does. In
-/// folder mode it chooses the folder in Collections' tree, for photos opened alone it opens
-/// it, as Collections' own does; it rests where the folder is the one open.
-fn open_folder(folder: &Path, cx: &Context<'_>) -> (bool, String, Option<library::Action>) {
-    let words = cx.words;
-    let folder = folder.to_owned();
-    let open = match &cx.mirror.folder.folder {
-        crate::folder::Folder::Open(listing) => Some(listing.path.as_path()),
-        _ => None,
-    };
-    if open == Some(folder.as_path()) {
-        return (false, words.text("metadata-folder-open"), None);
-    }
-    let root = cx.mirror.folder.root();
-    let action = match root {
-        Some(root) if open.is_some() && folder.starts_with(root) => library::Action::Choose(folder),
-        _ => library::Action::Open(folder),
-    };
-    (true, String::new(), Some(action))
+/// A row's end item, Folder's Show in Finder: what it shows in the platform's file manager,
+/// the app starting it as Collections' Show in Finder (`jobs::reveal`), disabled with none,
+/// and why, where it says.
+struct End {
+    why: String,
+    action: Option<library::Action>,
 }
 
 impl UtilityTool for Metadata {
@@ -1288,27 +1289,20 @@ impl UtilityTool for Metadata {
     ) -> Vec<library::Action> {
         let column = self.column(ui, cx.words);
         let drawn = self.rows(facts, cx);
-        let ends: Vec<Option<FactEnd<'_>>> = drawn
+        // The platform's words, as the Jobs window's Show in Finder.
+        let show = cx.words.text(jobs::FILE_MANAGER.show_message());
+        let list: Vec<parts::Fact<'_>> = drawn
             .iter()
-            .map(|row| {
-                row.end.as_ref().map(|(enabled, tip, _)| FactEnd {
-                    icon: Icon::ChooseFolder,
-                    name: "",
-                    enabled: *enabled,
-                    tip: (!tip.is_empty()).then_some(tip.as_str()),
-                })
-            })
-            .collect();
-        let open_name = cx.words.text("collections-open-this-folder");
-        let list: Vec<parts::Fact<'_>> = (drawn.iter().zip(ends))
-            .map(|(row, end)| parts::Fact {
+            .map(|row| parts::Fact {
                 label: &row.label,
                 value: row.value.as_deref(),
                 tip: &row.tip,
                 cut: row.cut,
-                end: end.map(|end| FactEnd {
-                    name: &open_name,
-                    ..end
+                end: row.end.as_ref().map(|end| FactEnd {
+                    icon: Icon::ShowInFolder,
+                    name: &show,
+                    enabled: end.action.is_some(),
+                    tip: (!end.why.is_empty()).then_some(end.why.as_str()),
                 }),
                 enabled: row.enabled,
             })
@@ -1325,7 +1319,7 @@ impl UtilityTool for Metadata {
         let out = FactList::new(&name, &list).column_width(column).show(ui);
         out.end
             .and_then(|at| drawn[at].end.as_ref())
-            .and_then(|(_, _, action)| action.clone())
+            .and_then(|end| end.action.clone())
             .into_iter()
             .collect()
     }

@@ -2313,7 +2313,6 @@ metadata-copy-information = Copy Information
 metadata-copy-coordinates = Copy Coordinates
 metadata-select-a-photo = Select a photo
 metadata-fact-unread = Apertrust does not read this from { $format } files yet
-metadata-folder-open = This folder is open
 metadata-label-some = { $label } (some photos)
 metadata-rejected = Rejected
 metadata-stars =
