@@ -260,7 +260,7 @@ Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, all built:
 - Each new buffer is touched in a step of its own first (`Pipeline::parts`).
 - It steps beside a live frame only, or one step at a time where no photo is open or no viewport sized, as in the CLI (`Run::live_frame`).
 - Everything its row shows is sent as `Event::Job` (decision 72): its total and done, the photo under way, its folder then its first file as its destination, its outcome, the failure that ended it or else its first photo's, and `Retry` unless cancelled or refused, its retry, the same export of the photos that failed and those not reached, left with the session for `RetryJob`; its photos as `Event::Export`, the record for scripts and the CLI.
-- `names` gives darktable's variables their values; the client passes the person's folders and name (`Places`).
+- `names` gives darktable's variables their values; the client passes the person's folders and name (`Places`). The exported copy's Metadata fields, name and count and the preserved file name are `names::CopyFields`: the open photo's from the session (`Live::copy`), another's from its sidecar as the edit writer read it, and with no `.apxmp` darktable's `.xmp`'s (decision 110).
 
 ### The export preview
 
@@ -272,7 +272,7 @@ Decision 99, [engine.md](engine.md#the-zoomed-view), in seven steps, all built:
 - the pattern's errors (D8) and the variables with no value (D7);
 - the open photo's output size, and each folder's preflight (`disk::preflight`).
 
-It writes and makes nothing and decodes no image; it reads the EXIF only for a path that uses it.
+It writes and makes nothing and decodes no image; it reads the EXIF only for a path that uses it, and a photo's sidecar, its `.apxmp` or else darktable's `.xmp`, only for a path that uses the copy's fields, name or count (`CopyFields::read`), the open photo's the session's.
 
 ### Library commands
 
@@ -404,7 +404,7 @@ The headless binary. Its commands are `gpu`, `info`, `edit`, `history`, `export`
 
 - the extension is stripped; a folder that exists means `FOLDER/$(FILE_NAME)`, the format then `export.format`'s;
 - `_$(SEQUENCE)` is added with several files and no `$` in the pattern;
-- the variables' values come from the raw and its EXIF, through the engine's `names`;
+- the variables' values come from the raw, its EXIF and its sidecar's fields, or darktable's `.xmp`'s with no `.apxmp`, through the engine's `names`;
 - `export.disk.on_conflict` (create unique filename, overwrite, overwrite if changed, skip) decides about a file already there, acted on by `apertrust-export`'s `disk`: the folder is made, and each file is written to a temporary file beside its name, synced and renamed into place;
 - a photo that fails does not stop the others, as in darktable-cli, but a destination that fails does (decision 56).
 

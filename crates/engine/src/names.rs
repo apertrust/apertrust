@@ -16,16 +16,106 @@
 
 //! What an export's file names are made of: the variables' values for each photo
 //! (`apertrust_export::variables::Values`, which `docs/ports/variables.md` says the export
-//! fills), from the raw, its EXIF and the export itself. The session's export job fills
-//! them ([`crate::export_job`]), and `apertrust-cli export` where it renders a photo
-//! outside the job.
+//! fills), from the raw, its EXIF, the copy exported ([`CopyFields`]) and the export
+//! itself. The session's export job fills them ([`crate::export_job`]), and its preview
+//! ([`crate::export_preview`]).
 
+use std::io;
 use std::path::{Path, PathBuf};
 
 use apertrust_export::Places;
-use apertrust_export::variables::{DateTime, Size, Values};
+use apertrust_export::variables::{DateTime, Field, Metadata, Size, Values};
+use apertrust_library::fields::{FieldValue, Fields};
+use apertrust_library::sidecar::Edits;
 use apertrust_raw::RawImage;
 use chrono::{Datelike, Timelike};
+
+/// The namespace of `xmpMM:PreservedFileName`, which an import that renames a photo keeps
+/// its camera name in (decision 85).
+const MEDIA_MANAGEMENT: &str = "http://ns.adobe.com/xap/1.0/mm/";
+
+/// The sidecar's `xmpMM:PreservedFileName`, where `file` holds one.
+pub(crate) fn preserved_file_name(file: &Edits) -> Option<String> {
+    (file.other.iter())
+        .find(|property| property.name.is(MEDIA_MANAGEMENT, "PreservedFileName"))
+        .and_then(|property| property.node.as_str())
+        .map(str::to_owned)
+}
+
+/// What the variables read of the copy an export writes, the photo's first (decision
+/// 110): its Metadata fields, its name and how many copies the photo has, and the
+/// photo's preserved file name.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CopyFields {
+    pub fields: Fields,
+    pub preserved_file_name: Option<String>,
+}
+
+impl CopyFields {
+    /// What the `.apxmp` `file` holds.
+    pub fn of(file: &Edits) -> Self {
+        Self {
+            fields: Fields::of(&file.copies),
+            preserved_file_name: preserved_file_name(file),
+        }
+    }
+
+    /// What darktable's `.xmp` beside `photo` holds, for a photo with no `.apxmp`, as the
+    /// Metadata tool shows it: nothing where there is none or it cannot be read.
+    pub fn darktable(photo: &Path) -> Self {
+        match apertrust_library::darktable::read_fields(photo) {
+            Ok(read) => Self {
+                fields: read.map_or_else(Fields::default, |read| {
+                    Fields::held(&read.fields, &read.name, 1)
+                }),
+                preserved_file_name: None,
+            },
+            Err(error) => {
+                tracing::warn!("{}: no darktable metadata: {error}", photo.display());
+                Self::default()
+            }
+        }
+    }
+
+    /// What `photo`'s sidecar holds as it is now, its `.apxmp` read and parsed, or
+    /// darktable's `.xmp` where it has none; nothing where the `.apxmp` cannot be read.
+    pub fn read(photo: &Path) -> Self {
+        let sidecar = crate::sidecar::path_for(photo);
+        let unread = |error: &dyn std::fmt::Display| {
+            tracing::debug!("{}: no metadata: {error}", sidecar.display());
+            Self::default()
+        };
+        match std::fs::read_to_string(&sidecar) {
+            Ok(xml) => {
+                Edits::parse(&xml, 0).map_or_else(|error| unread(&error), |file| Self::of(&file))
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Self::darktable(photo),
+            Err(error) => unread(&error),
+        }
+    }
+
+    /// The field `property` as darktable's variables read it, `None` where it holds none.
+    fn field(&self, property: &str) -> Option<Field> {
+        Some(match self.fields.value(property)? {
+            FieldValue::LangAlt(items) => Field::Alternative(items),
+            FieldValue::List(items) => Field::List(items),
+            value => Field::Text(value.shown()),
+        })
+    }
+
+    /// Its fields as darktable's metadata.
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            title: self.field("dc:title"),
+            description: self.field("dc:description"),
+            creator: self.field("dc:creator"),
+            publisher: self.field("dc:publisher"),
+            rights: self.field("dc:rights"),
+            notes: self.field("apertrust:notes"),
+            preserved_file_name: self.preserved_file_name.clone(),
+        }
+    }
+}
 
 /// The local time now, as darktable takes an export's: once, as the storage's parameters
 /// are made, so every photo of the export has the same.
@@ -114,19 +204,27 @@ impl Export {
     }
 
     /// The values for photo number `sequence` of the export: the raw at `path` as the
-    /// decoder reads it, `shot`, its shooting data from its EXIF where that reads, and its
-    /// sizes, the developed image's and `crop`'s, the image after every geometry. The EXIF
-    /// is read from the file here, so this runs where a file may be read: a job's worker.
-    pub fn values(&self, path: &Path, shot: &Shot, sequence: u32, sizes: Sizes) -> Values {
+    /// decoder reads it, `shot`, its shooting data from its EXIF where that reads, its
+    /// sizes, the developed image's and `crop`'s, the image after every geometry, and
+    /// `copy`, the copy exported. The EXIF is read from the file here, so this runs where a
+    /// file may be read: a job's worker.
+    pub fn values(
+        &self,
+        path: &Path,
+        shot: &Shot,
+        sequence: u32,
+        sizes: Sizes,
+        copy: &CopyFields,
+    ) -> Values {
         let exif = apertrust_raw::read_exif_file(path).unwrap_or_else(|error| {
             tracing::warn!("{}: no shooting data: {error}", path.display());
             apertrust_raw::Exif::default()
         });
-        self.values_with(path, shot, sequence, sizes, exif)
+        self.values_with(path, shot, sequence, sizes, exif, copy)
     }
 
     /// [`values`](Self::values) with the shooting data `exif` already read, or none: the
-    /// export preview reads it only for a pattern that uses it.
+    /// export preview reads it only for a pattern that uses it, and `copy` likewise.
     pub fn values_with(
         &self,
         path: &Path,
@@ -134,6 +232,7 @@ impl Export {
         sequence: u32,
         sizes: Sizes,
         exif: apertrust_raw::Exif,
+        copy: &CopyFields,
     ) -> Values {
         let lossy = |path: &Option<PathBuf>| {
             path.as_ref()
@@ -182,6 +281,12 @@ impl Export {
             creator: exif.artist,
             rights: exif.copyright,
             description: exif.user_comment,
+            metadata: copy.metadata(),
+            version_name: copy.fields.name.clone(),
+            // The export writes each photo's first copy, darktable's version 0.
+            copy_version: 0,
+            copies: copy.fields.copies.max(1) as u32,
+            crop_factor: exif.crop_factor.unwrap_or(0.0),
             sensor: sizes.sensor,
             raw: sizes.developed,
             crop: sizes.crop,

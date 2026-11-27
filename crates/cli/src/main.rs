@@ -1562,7 +1562,9 @@ fn export(path: &Path, number: u32, run: &Run<'_>, gpu: &mut Option<GpuContext>)
             height: extent[1],
         },
     };
-    let values = names.values(path, &Shot::of(&raw), number, sizes);
+    // The copy's fields, name and count from its sidecar, or darktable's `.xmp` with none.
+    let copy = names::CopyFields::read(path);
+    let values = names.values(path, &Shot::of(&raw), number, sizes, &copy);
     // The edit's change time, for Overwrite if changed: the sidecar's; none, no edit.
     let changed = std::fs::metadata(sidecar::path_for(path))
         .and_then(|m| m.modified())
