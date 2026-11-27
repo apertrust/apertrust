@@ -512,3 +512,97 @@ fn the_volumes_come_unnumbered_from_a_job_with_no_progress() {
         assert!(root, "{volumes:?}");
     }
 }
+
+/// Lists `folder`'s subfolders for the Import tool's Folders tree.
+fn place(folder: &Path) -> Command {
+    Command::Library(LibraryCommand::SourceSubfolders {
+        folder: folder.to_owned(),
+    })
+}
+
+/// The subfolders answered among `events` in the number `asked`: the folder, its names and
+/// why it could not be read.
+fn subfolders_of(events: &[Event], asked: u64) -> Vec<(PathBuf, Vec<String>, Option<String>)> {
+    (library_of(events, asked).into_iter())
+        .filter_map(|event| match event {
+            LibraryEvent::SubfoldersOf {
+                folder,
+                names,
+                unreadable,
+                ..
+            } => Some((folder.clone(), names.clone(), unreadable.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A place's subfolders are listed in their own command's number with no folder open and
+/// with one open elsewhere; a relative folder and one with a `..` are refused, and one that
+/// cannot be read says why.
+#[test]
+fn a_place_s_subfolders_are_listed_whatever_is_open() {
+    let gpu = gpu();
+    let (folder, path) = photo_folder("import-source-places");
+    let (elsewhere, other_path) = photo_folder("import-source-places-elsewhere");
+    let (session, wakes) = start_with(&gpu, &[], synthetic);
+    let answered = |asked: u64| move |e: &Event| matches!(e, Event::Library(LibraryEvent::SubfoldersOf { open, .. }) if *open == asked);
+
+    let asked = session.send(place(&folder));
+    let events = until(&session, &wakes, answered(asked));
+    let day = vec!["Day 1".to_owned()];
+    assert_eq!(
+        subfolders_of(&events, asked),
+        [(folder.clone(), day.clone(), None)]
+    );
+
+    let open = session.send(open_folder(&elsewhere));
+    follow(&session, &wakes, &mut Vec::new(), open, ended);
+    session.send(place(Path::new("Day 1")));
+    session.send(place(&folder.join("Day 1").join("..")));
+    let gone = folder.join("gone");
+    let asked = session.send(place(&gone));
+    let events = until(&session, &wakes, answered(asked));
+    let told = subfolders_of(&events, asked);
+    let [(at, names, Some(why))] = told.as_slice() else {
+        panic!("{events:?}");
+    };
+    assert_eq!((at, names.len()), (&gone, 0));
+    assert!(!why.is_empty());
+    let any = |e: &Event| matches!(e, Event::Library(LibraryEvent::SubfoldersOf { .. }));
+    assert_eq!(events.iter().filter(|e| any(e)).count(), 1, "{events:?}");
+    let after = session.send(place(&folder));
+    let events = until(&session, &wakes, answered(after));
+    assert_eq!(subfolders_of(&events, after), [(folder.clone(), day, None)]);
+    drop(session);
+    remove(&path);
+    remove(&other_path);
+}
+
+/// A `CancelListing`, as the sheet closes, drops a place's subfolders still listed: no
+/// answer comes.
+#[test]
+fn a_cancel_listing_drops_a_place_s_subfolders() {
+    let gpu = gpu();
+    let (folder, path) = photo_folder("import-source-places-cancel");
+    let (session, wakes) = start_with(&gpu, &[], synthetic);
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    session.send(Command::HoldFolder(hold));
+    let asked = session.send(place(&folder));
+    begun.recv_timeout(TEST_WAIT).expect("the listing begins");
+    session.send(Command::Library(LibraryCommand::CancelListing {
+        listing: 0,
+    }));
+    // A listing after it answers only once the cancel is applied, the held job ending as
+    // its cancel comes: only then is it let go.
+    let listing = session.send(list_source(&folder));
+    let mut events = until(&session, &wakes, taken(listing));
+    drop(permit);
+    let quiet = Instant::now() + Duration::from_millis(200);
+    while Instant::now() < quiet {
+        let _ = wakes.recv_timeout(Duration::from_millis(20));
+        events.extend(session.events());
+    }
+    assert!(subfolders_of(&events, asked).is_empty(), "{events:?}");
+    drop(session);
+    remove(&path);
+}

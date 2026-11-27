@@ -236,7 +236,7 @@ The read-back's cost is the destination's, about 1.3 s a GB to a local SSD, what
 
 ### Import in folder mode
 
-Decision 85, planned: the library's step 20, in slices 20a1 to 20d ([roadmap.md](roadmap.md#the-librarys-steps)), the first, 20a1, this library side with `apertrust-cli import` and a simple sheet, after step 19's checked copy. The sheet that shows it is [gui.md](gui.md#the-import-sheet)'s, on the sheets' frame (decision 86); this is its library side, in `apertrust-library`.
+Decision 85, planned: the library's step 20, in slices 20a1 to 20d ([roadmap.md](roadmap.md#the-librarys-steps)), the first, 20a1, this library side with `apertrust-cli import` and a simple sheet, after step 19's checked copy. The sheet that shows it is [gui.md](gui.md#the-import-sheet)'s, on the sheets' frame (decision 86); this is its library side, in `apertrust-library`. Built: what is read before a photo is copied, the source's listing, the check against the destination, the source's thumbnails, the volumes and a place's subfolders, served by the session; planned: the preview and the copy.
 
 ```mermaid
 flowchart LR
@@ -487,6 +487,7 @@ Decision 54's layer 4, in `crates/library/src/ops.rs`. Clients see only `Library
 | `LibraryCommand::CancelListing` | `listing`, the `ListSource`'s number | Cancels that listing and its check, as the Import sheet closes, where it is the latest; they send nothing more. |
 | `LibraryCommand::CheckSource` | `listing`, the `ListSource`'s number; `base_folder`, `default_folder` and `places`, as `ListSource`'s | Checks the latest listing again against these trees, as Folder changes: its next check, numbered one past the last, answered by `SourceChecked` in the listing's number, cancelling the check still running; one asked while the listing runs is the check it ends with. A listing that is not the latest is not checked. |
 | `LibraryCommand::ListVolumes` | none | Lists the cards and drives mounted for Import's Source, as its sheet opens: a job on `UserBackground` with no progress, the one before it, or a `CancelListing` as the sheet closes, cancelling it, answered by `Volumes`. |
+| `LibraryCommand::SourceSubfolders` | `folder: PathBuf`, a place's folder | Lists its subfolders for the Import tool's Folders tree, as `Subfolders` lists the open folder's, whatever folder is open or none, answered by `SubfoldersOf` in its own command's number; only a relative folder or one holding a `..` is refused. A second ask for the same folder, or a `CancelListing`, cancels it. |
 
 `Source` has `Folder` and `Photos` today; `Folder` gains Include subfolders with step 19b, and `Library`, by its id, joins them in Phase 5.
 
@@ -570,6 +571,8 @@ Each `LibraryCommand::ListSource` is a job on `UserBackground` too, beside the f
 - then, in the same job, `ops::check_source`, the listing's check against its trees or those of a `CheckSource` that came while it listed: the trees walked on a thread of their own (`imported::candidates`), then each photo with a candidate confirmed by the fingerprints through the session's memo (`ops::Fingerprints`), 16 at a time, each check asking before each event whether it is still the latest;
 - a `CheckSource` once the listing is done is a job of the same kind, queue and body, the one before it cancelled;
 - the next `ListSource`, or a `CancelListing` naming it, cancels it and its check; an `Open` or a `Close` leaves them.
+
+Each `LibraryCommand::SourceSubfolders` is a job of kind `subfolders` on `UserBackground` with no progress, as `Subfolders` is, numbered by its own command, its body `ops::source_subfolders`, `ops::subfolders` with the place itself as the root, so only a relative folder or one with a `..` is refused; a second ask for the same folder, or a `CancelListing` as the sheet closes, cancels it, and an `Open` or a `Close` leaves it.
 
 Each `LibraryCommand::ListVolumes` is a job of kind `volumes` on `UserBackground` with no progress, its body `ops::volumes`, which reads the mounts through `sysinfo` on a thread of its own (`volumes::mounts`, `volumes::volumes`), waited for while the cancel is asked every 20 ms; the next `ListVolumes`, or a `CancelListing` as the sheet closes, cancels it. `ops::free_space`, a blocking call for Import's preview, gives a path's volume, the one whose mount point is its longest prefix, with its free space.
 
