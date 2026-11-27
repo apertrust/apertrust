@@ -173,7 +173,7 @@ fn entries(count: u64) -> &'static str {
 
 /// `bytes` in kB, MB or GB, of 10³, 10⁶ and 10⁹ bytes as disks count them, to one decimal,
 /// the unit chosen after rounding, so 999,960 bytes are 1.0 MB, never 1000.0 kB.
-fn size(bytes: u64) -> String {
+pub(crate) fn size(bytes: u64) -> String {
     let units = [("kB", 1e3), ("MB", 1e6), ("GB", 1e9)];
     let (unit, value) = units
         .iter()

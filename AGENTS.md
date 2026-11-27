@@ -111,6 +111,7 @@ cargo run --release -p apertrust-cli -- export FILE... [-o PATTERN] [--preset NA
 cargo run --release -p apertrust-cli -- preview FILE [--width W --height H] [--exposure EV] [--png OUT] [--join OPERATION] [--scopes[=totals|histogram|waveform|vectorscope]]
 cargo run --release -p apertrust-cli -- -d perf preview FILE --zoom FACTOR [--at X,Y] [--pans N] [--changes N] [--png OUT]   # the zoomed view (decision 99)
 cargo run --release -p apertrust-cli -- -d perf preview FILE --beside-export ROUNDS [--changes N] [--interval MS]
+cargo run --release -p apertrust-cli -- import SOURCE [--folder DIR] [--subfolder PATTERN] [--name NAME] [--dry-run]   # a card's or folder's new photos
 cargo run --release -p apertrust-cli -- library scan DIR                       # one folder's raws, sidecars, edits
 cargo run -p apertrust-cli -- [--cache-dir DIR] cache info                     # the disk cache's folder, limit and sizes
 cargo run -p apertrust-cli -- [--cache-dir DIR] cache clear [KIND...]          # thumbnails, pipelines; none: every limited kind
@@ -189,7 +190,7 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | Crate | Role |
 | --- | --- |
 | `apertrust-engine` | The GPU-resident pipeline and the editing session; no UI dependencies |
-| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `history`, `export`, `preview`, `library scan`, `cache info`, `cache clear`; `import`, `batch` and `serve` later |
+| `apertrust-cli` | The headless binary: `gpu`, `info`, `edit`, `history`, `export`, `preview`, `import`, `library scan`, `cache info`, `cache clear`; `batch` and `serve` later |
 | `apertrust-golden` | The golden-image harness against darktable-cli, and Phase 1's exit test |
 | `apertrust-raw` | Raw decoding via rawler, metadata as darktable reads it; planned, the decoders of other images, JPEG first (decision 111) |
 | `apertrust` | The desktop app (egui), in `crates/app` |
