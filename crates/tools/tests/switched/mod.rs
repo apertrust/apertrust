@@ -314,9 +314,12 @@ impl Rows {
         }
     }
 
-    /// Row 2 on the sweep through the export and a small raw through the viewport.
-    pub fn moved_and_reset(&self, moves: &[&[(&str, f32)]]) {
-        let (picture, image) = sweep(-0.67);
+    /// Row 2 on `picture` through the export and a small raw through the viewport.
+    pub fn moved_and_reset(
+        &self,
+        moves: &[&[(&str, f32)]],
+        (picture, image): (Picture, ImageContext),
+    ) {
         self.moved_and_reset_holds(&mut Bench::picture(&picture, image, Pipe::Export), moves);
         let (mosaic, image) = small_raw(-0.67);
         let viewport = Pipe::Viewport {
