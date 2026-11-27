@@ -37,6 +37,11 @@ mod common;
 mod corpus;
 #[expect(dead_code, reason = "Grain has no row on darktable's chart")]
 mod switched;
+#[expect(
+    dead_code,
+    reason = "only colour balance rgb and the tone equalizer measure how far apart two words are"
+)]
+mod uniforms;
 
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::pipeline::Pipe;
@@ -50,6 +55,7 @@ use apertrust_tools::grain::{Grain, iso, scale};
 
 use common::{Bench, Picture, id, jump, sweep};
 use switched::{Frame, Rows};
+use uniforms::words;
 
 const GRAIN: &str = "grain";
 
@@ -128,7 +134,7 @@ const MOVES: [&[(&str, f32)]; 6] = [
 
 #[test]
 fn g2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
-    ROWS.moved_and_reset(&MOVES);
+    ROWS.moved_and_reset(&MOVES, sweep(-0.67));
 }
 
 // G3: the order controls were set in.
@@ -151,11 +157,6 @@ fn g2_and_g3_on_the_corpus() {
 }
 
 // G4: darktable's golden cases.
-
-/// Little-endian bytes as four-byte words.
-fn words(bytes: &[u8]) -> Vec<[u8; 4]> {
-    bytes.as_chunks::<4>().0.to_vec()
-}
 
 /// The golden grain cases, test 0059's four and the one after AgX.
 const CASES: [&str; 5] = [

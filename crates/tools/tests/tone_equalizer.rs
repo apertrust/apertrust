@@ -39,6 +39,7 @@
 mod common;
 mod corpus;
 mod switched;
+mod uniforms;
 
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::pipeline::{Instance, Pipe};
@@ -53,6 +54,7 @@ use golden::synthetic;
 
 use common::{Bench, Picture, id, jump, sweep};
 use switched::{Frame, Rows};
+use uniforms::{apart, words};
 
 const TONE_EQUALIZER: &str = "toneequal";
 
@@ -214,7 +216,7 @@ const MOVES: [&[(&str, f32)]; 7] = [
 
 #[test]
 fn q2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
-    ROWS.moved_and_reset(&MOVES);
+    ROWS.moved_and_reset(&MOVES, ramp());
 }
 
 // Q3: the order controls were set in.
@@ -226,7 +228,7 @@ const PAIRS: [[(&str, f32); 2]; 2] = [
 
 #[test]
 fn q3_controls_render_the_same_whichever_came_first() {
-    ROWS.order(&PAIRS, ramp());
+    ROWS.order(&PAIRS, sweep(-0.67));
 }
 
 /// Q2 and Q3 on the 90D, through the viewport's frame and the export's.
@@ -244,22 +246,6 @@ fn q0_on_the_corpus() {
 }
 
 // Q4: darktable's golden cases.
-
-/// Little-endian bytes as four-byte words.
-fn words(bytes: &[u8]) -> Vec<[u8; 4]> {
-    bytes.as_chunks::<4>().0.to_vec()
-}
-
-/// How far a uniform word of ours is from the case's: 0 for the same bits, else the
-/// relative difference of the two as floats.
-fn apart(ours: [u8; 4], theirs: [u8; 4]) -> f32 {
-    let (a, b) = (f32::from_le_bytes(ours), f32::from_le_bytes(theirs));
-    if ours == theirs {
-        0.0
-    } else {
-        (a - b).abs() / b.abs()
-    }
-}
 
 /// Q4: the tool's controls set to the values of the tone equalizer's golden cases,
 /// darktable's tests 0080, 0129, 0131, 0133 and 0134 and the two edited from them, as

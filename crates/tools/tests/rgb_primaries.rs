@@ -38,6 +38,11 @@
 mod common;
 mod corpus;
 mod switched;
+#[expect(
+    dead_code,
+    reason = "only colour balance rgb and the tone equalizer measure how far apart two words are"
+)]
+mod uniforms;
 
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::pipeline::Pipe;
@@ -50,6 +55,7 @@ use golden::synthetic;
 
 use common::{Bench, Picture, id, jump, sweep};
 use switched::{Frame, Rows};
+use uniforms::words;
 
 const PRIMARIES: &str = "primaries";
 
@@ -159,7 +165,7 @@ const MOVES: [&[(&str, f32)]; 6] = [
 
 #[test]
 fn p2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
-    ROWS.moved_and_reset(&MOVES);
+    ROWS.moved_and_reset(&MOVES, sweep(-0.67));
 }
 
 // P3: the order controls were set in.
@@ -182,11 +188,6 @@ fn p2_and_p3_on_the_corpus() {
 }
 
 // P4: darktable's golden case.
-
-/// Little-endian bytes as four-byte words.
-fn words(bytes: &[u8]) -> Vec<[u8; 4]> {
-    bytes.as_chunks::<4>().0.to_vec()
-}
 
 /// How far apart P4 lets a matrix entry of the kernel's be from the golden case's:
 /// two f32 steps of an entry of 1. A setting one step from darktable's moves an entry by

@@ -140,7 +140,7 @@ const MOVES: [&[(&str, f32)]; 6] = [
 
 #[test]
 fn z2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
-    ROWS.moved_and_reset(&MOVES);
+    ROWS.moved_and_reset(&MOVES, sweep(-0.67));
 }
 
 // Z3: the order controls were set in.

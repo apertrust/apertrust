@@ -42,6 +42,11 @@ mod corpus;
     reason = "Vignetting's rows are its own, none of switched::Rows"
 )]
 mod switched;
+#[expect(
+    dead_code,
+    reason = "only colour balance rgb and the tone equalizer measure how far apart two words are"
+)]
+mod uniforms;
 
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::pipeline::{self, Instance, Limits, Pipe};
@@ -55,6 +60,7 @@ use common::{
     BEFORE_THE_WORKING_SPACE, Bench, Picture, Rendered, exact, id, jump, small_raw, sweep,
 };
 use corpus::{CORPUS_VIEWPORT, NINETY_D, corpus_bench, each_corpus_raw, export_bench};
+use uniforms::words;
 
 const VIGNETTE: &str = "vignette";
 
@@ -339,11 +345,6 @@ fn v2_and_v3_on_the_corpus() {
 }
 
 // V4: darktable's golden cases.
-
-/// Little-endian bytes as four-byte words.
-fn words(bytes: &[u8]) -> Vec<[u8; 4]> {
-    bytes.as_chunks::<4>().0.to_vec()
-}
 
 /// The golden cases a tool's values can reach: all but `vignette-clip`, whose clipping
 /// (`unbound` off) the tool fixes on.

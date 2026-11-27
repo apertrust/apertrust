@@ -38,6 +38,7 @@
 mod common;
 mod corpus;
 mod switched;
+mod uniforms;
 
 use apertrust_engine::edit::{self, Edit};
 use apertrust_engine::pipeline::Pipe;
@@ -50,6 +51,7 @@ use golden::synthetic;
 
 use common::{Bench, Picture, id, jump, sweep};
 use switched::{Frame, Rows};
+use uniforms::{apart, words};
 
 const COLOR_BALANCE: &str = "colorbalancergb";
 
@@ -145,7 +147,7 @@ const MOVES: [&[(&str, f32)]; 6] = [
 
 #[test]
 fn b2_a_control_moved_and_reset_renders_as_on_and_the_tool_reset_as_no_edit() {
-    ROWS.moved_and_reset(&MOVES);
+    ROWS.moved_and_reset(&MOVES, ramp());
 }
 
 // B3: the order controls were set in.
@@ -157,7 +159,7 @@ const PAIRS: [[(&str, f32); 2]; 2] = [
 
 #[test]
 fn b3_controls_render_the_same_whichever_came_first() {
-    ROWS.order(&PAIRS, ramp());
+    ROWS.order(&PAIRS, sweep(-0.67));
 }
 
 /// B2 and B3 on the 90D, through the viewport's frame and the export's.
@@ -175,22 +177,6 @@ fn b0_on_the_corpus() {
 }
 
 // B4: darktable's golden cases.
-
-/// Little-endian bytes as four-byte words.
-fn words(bytes: &[u8]) -> Vec<[u8; 4]> {
-    bytes.as_chunks::<4>().0.to_vec()
-}
-
-/// How far a uniform word of ours is from the golden case's: 0 for the same bits, else
-/// the relative difference of the two as floats.
-fn apart(ours: [u8; 4], theirs: [u8; 4]) -> f32 {
-    let (a, b) = (f32::from_le_bytes(ours), f32::from_le_bytes(theirs));
-    if ours == theirs {
-        0.0
-    } else {
-        (a - b).abs() / b.abs()
-    }
-}
 
 /// How far apart B4 lets a uniform word be: two f32 steps, relative. A percentage over
 /// 100 is within one step of darktable's parameter, and the setup may round once more.
