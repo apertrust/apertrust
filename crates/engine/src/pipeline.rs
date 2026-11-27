@@ -32,7 +32,7 @@ mod still;
 pub(crate) use still::{EDITING_QUIET, TEST_BAND_BYTES};
 pub(crate) use still::{LastChange, Sources, Still, StillError};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::num::NonZeroU64;
 use std::ops::Range;
@@ -3666,6 +3666,13 @@ fn count(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
+/// The compiled passes a render runs, by their indices, in order, given whether each runs.
+fn ran(runs: &[bool]) -> Vec<usize> {
+    (runs.iter().enumerate())
+        .filter_map(|(pass, &runs)| runs.then_some(pass))
+        .collect()
+}
+
 /// The perf domain's detail for a render: each pass's GPU time, `passes` in dispatch
 /// order beside the operation each belongs to, `operations`. A pass named after an entry
 /// point of its operation's kernel is named after the operation too, `pass demosaic
@@ -4056,6 +4063,27 @@ pub enum Derivative {
 /// window frame while the submit gate holds through the window's acquire.
 pub const CHUNK_BOUND: f64 = 12.0;
 
+/// How [`Pipeline::render`] submits a render's passes (decision 112).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Chunking {
+    /// In one submission: every pipe's but the fitted viewport's.
+    Whole,
+    /// In chunks of at most this many milliseconds of GPU time each, by the last render's
+    /// timestamps ([`chunks`]), at most two in flight: the fitted viewport's, at
+    /// [`CHUNK_BOUND`].
+    Bounded(f64),
+}
+
+impl Chunking {
+    /// How a render of a plan for `pipe` is submitted unless told otherwise.
+    fn of(pipe: &Pipe) -> Self {
+        match pipe {
+            Pipe::Viewport { .. } => Chunking::Bounded(CHUNK_BOUND),
+            _ => Chunking::Whole,
+        }
+    }
+}
+
 /// The chunks a render of passes whose last GPU times are `times`, in milliseconds and in
 /// the order they run, takes as submissions, as ranges over them (decision 112): each
 /// takes passes in order while the sum of their times stays within `bound`. A pass with
@@ -4116,6 +4144,17 @@ pub struct Pipeline {
     /// The work and scratch buffers it made that no render has used yet, by index, which a
     /// render in parts touches first, each in a step of its own.
     unused: Unused,
+    /// Per compiled pass, its GPU time in milliseconds in the last render that ran it, by
+    /// its timestamps; `None` until one has, and again once its dispatches change size.
+    times: Vec<Option<f64>>,
+    /// How [`Self::render`] submits.
+    chunking: Chunking,
+    /// The submissions [`Self::render`] took last.
+    chunks: usize,
+    /// For a test: the next render cut before each pass, and this called once its first
+    /// chunk is submitted, before the next.
+    #[cfg(test)]
+    hold: Option<Box<dyn FnOnce() + Send>>,
 }
 
 /// A pipeline's work and scratch buffers that it made and no render has used yet.
@@ -4556,6 +4595,11 @@ impl Pipeline {
         Ok(Self {
             held,
             results,
+            times: vec![None; passes.len()],
+            chunking: Chunking::of(&plan.pipe),
+            chunks: 0,
+            #[cfg(test)]
+            hold: None,
             plan,
             input,
             work,
@@ -4595,6 +4639,12 @@ impl Pipeline {
             rendered: _,
             // A kept buffer counts as used, so it is never touched.
             unused: _,
+            // A new plan's passes have no times yet; the caller keeps the chunking.
+            times: _,
+            chunking: _,
+            chunks: _,
+            #[cfg(test)]
+                hold: _,
         } = self;
         let mut work: Vec<Option<GpuImage>> = work.into_iter().map(Some).collect();
         let mut kept: Vec<Option<GpuImage>> = plan.work.iter().map(|_| None).collect();
@@ -4799,9 +4849,12 @@ impl Pipeline {
                     .all(|(held, bound)| held.as_ref().is_none_or(|held| held == bound))
         });
         if !self.accepts(&plan) || !holds {
+            let chunking = self.chunking;
             let mut kept = self.keep(&plan);
             kept.hold(&plan, held);
-            return Self::build(gpu, plan, kept).await;
+            let mut rebuilt = Self::build(gpu, plan, kept).await?;
+            rebuilt.chunking = chunking;
+            return Ok(rebuilt);
         }
         let Self {
             plan: old,
@@ -4810,6 +4863,7 @@ impl Pipeline {
             scratch,
             kernels,
             passes,
+            times,
             ..
         } = &mut self;
         let image = |buffer: Buffer| match buffer {
@@ -4824,8 +4878,10 @@ impl Pipeline {
             .operations
             .iter()
             .flat_map(|op| op.passes.iter().zip(&op.dispatches).map(move |p| (op, p)));
-        for ((compiled, (before_op, (before, before_dispatches))), (op, (after, dispatches))) in
-            passes.iter_mut().zip(before).zip(new)
+        for (
+            ((compiled, time), (before_op, (before, before_dispatches))),
+            (op, (after, dispatches)),
+        ) in passes.iter_mut().zip(times.iter_mut()).zip(before).zip(new)
         {
             for ((buffer, table), previous) in compiled
                 .tables
@@ -4865,7 +4921,13 @@ impl Pipeline {
                         &resources,
                     );
                 }
-                target.workgroups = workgroups(op, after, dispatch);
+                let size = workgroups(op, after, dispatch);
+                // A pass whose dispatches change size, as at a new viewport size, has no
+                // time until it runs again (decision 112).
+                if size != target.workgroups {
+                    *time = None;
+                }
+                target.workgroups = size;
             }
         }
         for (image, desc) in self.work.iter_mut().zip(&plan.work_used) {
@@ -4912,17 +4974,18 @@ impl Pipeline {
             }
     }
 
-    /// Runs the passes from the newest valid cache point to the end, in one submission,
-    /// and waits for the GPU, but for the whole-image passes whose result their
-    /// operation's scratch still holds (decision 15). On the way it keeps the cache
-    /// points it passes, and the input of the operation the last change began at.
+    /// Runs the passes from the newest valid cache point to the end and waits for the GPU,
+    /// but for the whole-image passes whose result their operation's scratch still holds
+    /// (decision 15): in one submission, or as [`Self::set_chunking`] says, the fitted
+    /// viewport's in chunks of bounded GPU time (decision 112). On the way it keeps the
+    /// cache points it passes, and the input of the operation the last change began at.
     pub fn render(&mut self, gpu: &GpuContext) -> Result<Timings, ComputeError> {
         self.render_then(gpu, |_| {})
     }
 
-    /// [`Self::render`], recording `then` after the passes in the same submission: for
-    /// copying [`Self::output`] without a submission, and a turn at the submit gate, of
-    /// its own.
+    /// [`Self::render`], recording `then` after the passes in the same submission, the
+    /// last where the render is chunked: for copying [`Self::output`] without a
+    /// submission, and a turn at the submit gate, of its own.
     pub(crate) fn render_then(
         &mut self,
         gpu: &GpuContext,
@@ -4936,6 +4999,13 @@ impl Pipeline {
     /// that operation's input and output are intact, as a tool's colour picker measures
     /// them (decision 79); and whether it was recorded, which it is only where the render
     /// runs the operation's passes.
+    ///
+    /// Chunked (decision 112), each chunk is a submission of its own through
+    /// [`GpuContext::submit`], cut between passes ([`chunks`]), at most two in flight:
+    /// chunk i + 2 is submitted once chunk i's work is done. `probe` goes in the chunk of
+    /// its operation's last pass; the timestamps' resolve and copy and `then` in the last.
+    /// Each chunk settles what it wrote as it is submitted; the render is done once the
+    /// last chunk is, and a GPU error in any fails it.
     pub(crate) fn render_probing(
         &mut self,
         gpu: &GpuContext,
@@ -4943,20 +5013,101 @@ impl Pipeline {
         then: impl FnOnce(&mut wgpu::CommandEncoder),
     ) -> Result<(Timings, bool), ComputeError> {
         let start = Instant::now();
-        let (submitted, probed) = self.submit(gpu, probe, then, true);
+        let (submitted, copies) = self.begin();
+        let run = ran(&submitted.runs);
+        let chunks = self.chunks_of(&run);
+        let (mut probe, mut probed) = (probe, false);
+        let mut then = Some(then);
+        let mut copied = None;
+        // What tells that each chunk still to be waited for is done, oldest first.
+        let mut in_flight = VecDeque::new();
+        for (index, chunk) in chunks.iter().enumerate() {
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            let passes = chunk.clone();
+            probed |= self.record_passes(&mut encoder, &run, passes, copies, true, &mut probe);
+            if index + 1 == chunks.len() {
+                let slots = run.len() as u32;
+                copied =
+                    (self.timer.as_ref()).map(|timer| timer.copy_out(gpu, &mut encoder, slots));
+                if let Some(then) = then.take() {
+                    then(&mut encoder);
+                }
+            }
+            // Recorded while the two before it run; submitted once the older is done.
+            if index >= 2 {
+                let done = in_flight.pop_front().expect("chunk i − 2 in flight");
+                gpu.wait_for(&done)?;
+            }
+            gpu.submit([encoder.finish()]);
+            if index + 2 < chunks.len() {
+                in_flight.push_back(gpu.done());
+            }
+            self.settle_chunk(&submitted, chunk.clone());
+            #[cfg(test)]
+            if let Some(hold) = self.hold.take() {
+                hold();
+            }
+        }
+        self.chunks = chunks.len();
         gpu.wait()?;
-        self.settle(&submitted);
         let Submitted {
-            first,
-            runs,
-            names,
-            copied,
-            ..
+            first, runs, names, ..
         } = submitted;
         let ticks = self.timer.as_ref().zip(copied.as_ref());
         let timings = Timings::read(gpu, ticks, &names, start)?;
-        self.log_render(first, &runs, &names, &timings);
+        self.keep_times(&run, &timings);
+        self.log_render(first, &runs, &names, &timings, chunks.len());
         Ok((timings, probed))
+    }
+
+    /// How [`Self::render`] submits from now on: [`Chunking::Bounded`] at
+    /// [`CHUNK_BOUND`] for the fitted viewport, [`Chunking::Whole`] for every other pipe,
+    /// unless told otherwise here, as a test or a measurement does. A pipeline rebuilt by
+    /// [`Self::update`] keeps it.
+    pub fn set_chunking(&mut self, chunking: Chunking) {
+        self.chunking = chunking;
+    }
+
+    /// The submissions [`Self::render`] took last: its chunks (decision 112).
+    pub fn chunks(&self) -> usize {
+        self.chunks
+    }
+
+    /// For a test: the next render cut before each pass, and `hold` called once its first
+    /// chunk is submitted, before the next is.
+    #[cfg(test)]
+    pub(crate) fn hold_chunks(&mut self, hold: impl FnOnce() + Send + 'static) {
+        self.hold = Some(Box::new(hold));
+    }
+
+    /// The chunks a render of the compiled passes `run` takes, in order, as ranges over
+    /// `run`: at least one, the last for the timestamps and what follows the passes.
+    fn chunks_of(&self, run: &[usize]) -> Vec<Range<usize>> {
+        #[cfg(test)]
+        if self.hold.is_some() && !run.is_empty() {
+            return (0..run.len()).map(|pass| pass..pass + 1).collect();
+        }
+        let cut = match self.chunking {
+            Chunking::Whole => Vec::new(),
+            Chunking::Bounded(bound) => {
+                let times: Vec<Option<f64>> = run.iter().map(|&pass| self.times[pass]).collect();
+                chunks(&times, bound)
+            }
+        };
+        if cut.is_empty() {
+            return std::iter::once(0..run.len()).collect();
+        }
+        cut
+    }
+
+    /// Keeps the GPU time `timings` gives each of the compiled passes `run` that a render
+    /// ran, for the next render's chunks; a pass the device could not time keeps none.
+    fn keep_times(&mut self, run: &[usize], timings: &Timings) {
+        for (&pass, &(_, ms)) in run.iter().zip(&timings.passes) {
+            if ms.is_finite() {
+                self.times[pass] = Some(ms);
+            }
+        }
     }
 
     /// [`Self::render_then`] without waiting for the GPU, and so untimed: the passes and
@@ -5013,9 +5164,10 @@ impl Pipeline {
     }
 
     /// The timings of `recording`, once the GPU has done the submission it went into,
-    /// logged as a render's: its passes' GPU times, and the time since it was recorded.
+    /// logged as a render's: its passes' GPU times, kept for the next render's chunks, and
+    /// the time since it was recorded.
     pub(crate) fn timings(
-        &self,
+        &mut self,
         gpu: &GpuContext,
         recording: Recording,
     ) -> Result<Timings, ComputeError> {
@@ -5028,7 +5180,8 @@ impl Pipeline {
         } = recording;
         let ticks = self.timer.as_ref().zip(copied.as_ref());
         let timings = Timings::read(gpu, ticks, &names, start)?;
-        self.log_render(first, &runs, &names, &timings);
+        self.keep_times(&ran(&runs), &timings);
+        self.log_render(first, &runs, &names, &timings, 1);
         Ok(timings)
     }
 
@@ -5158,9 +5311,23 @@ impl Pipeline {
         &self,
         gpu: &GpuContext,
         encoder: &mut wgpu::CommandEncoder,
-        probe: Option<Probe>,
+        mut probe: Option<Probe>,
         timed: bool,
     ) -> (Submitted, bool) {
+        let (mut submitted, copies) = self.begin();
+        let run = ran(&submitted.runs);
+        let passes = 0..run.len();
+        let probed = self.record_passes(encoder, &run, passes, copies, timed, &mut probe);
+        submitted.copied = (self.timer.as_ref())
+            .filter(|_| timed)
+            .map(|timer| timer.copy_out(gpu, encoder, run.len() as u32));
+        (submitted, probed)
+    }
+
+    /// What a render from the newest valid cache point to the end runs, before it is
+    /// recorded: from the edit cache's operation where it holds that operation's input,
+    /// capturing the edited operation's input into it where it takes it; and those copies.
+    fn begin(&self) -> (Submitted, Copies) {
         let keys: Vec<u64> = self.plan.operations.iter().map(|op| op.key).collect();
         let mut first = self.newest_cache_point(&keys);
         // The edited operation: the first whose key changed since the last render.
@@ -5185,44 +5352,41 @@ impl Pipeline {
             }
         }
         let runs = self.runs_from(first);
-        let copies = Copies { restore, capture };
-        let (names, probed) = self.record_passes(encoder, &runs, copies, timed, probe);
-        let copied = self
-            .timer
-            .as_ref()
-            .filter(|_| timed)
-            .map(|timer| timer.copy_out(gpu, encoder, names.len() as u32));
+        let names = (ran(&runs).into_iter())
+            .map(|pass| self.passes[pass].label)
+            .collect();
         let submitted = Submitted {
             keys,
             first,
             capture,
             runs,
             names,
-            copied,
+            copied: None,
         };
-        (submitted, probed)
+        (submitted, Copies { restore, capture })
     }
 
-    /// Records the passes `runs` marks, in order, each operation's input first restored
-    /// from the edit cache or captured into it as `copies` asks, the timestamps where
-    /// `timed` and the device has them, and `probe` right after its operation's last pass;
-    /// the passes' names, and whether `probe` was recorded.
+    /// Records the passes `run[passes]`, `run` the compiled passes a render runs, in order:
+    /// each operation's input first restored from the edit cache or captured into it as
+    /// `copies` asks, before its first pass; the timestamps, each in the slot of its pass's
+    /// place in `run`, where `timed` and the device has them; and `probe`, taking it, right
+    /// after its operation's last pass. Whether `probe` was recorded. A range ending inside
+    /// an operation, a chunk's (decision 112), leaves its copies to the first range and its
+    /// probe to the last.
     fn record_passes(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        runs: &[bool],
+        run: &[usize],
+        passes: Range<usize>,
         copies: Copies,
         timed: bool,
-        mut probe: Option<Probe>,
-    ) -> (Vec<&'static str>, bool) {
+        probe: &mut Option<Probe>,
+    ) -> bool {
         let mut probed = false;
-        let mut names = Vec::new();
-        let mut previous = None;
-        let run = self.passes.iter().zip(runs).filter(|&(_, &runs)| runs);
-        for (pass, _) in run {
-            if previous != Some(pass.op) {
-                probed |= self.measure(encoder, previous, &mut probe);
-                previous = Some(pass.op);
+        let op = |at: usize| self.passes[run[at]].op;
+        for at in passes {
+            let pass = &self.passes[run[at]];
+            if at == 0 || op(at - 1) != pass.op {
                 let input = self.image(self.plan.operations[pass.op].input).buffer();
                 let edit = self.edit.as_ref().map(|edit| edit.buffer.buffer());
                 if let (Some(edit), true) = (edit, copies.restore == Some(pass.op)) {
@@ -5232,7 +5396,7 @@ impl Pipeline {
                     encoder.copy_buffer_to_buffer(input, 0, edit, 0, input.size());
                 }
             }
-            let slot = names.len() as u32;
+            let slot = at as u32;
             let timer = self.timer.as_ref().filter(|_| timed);
             let mut compute = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some(pass.label),
@@ -5245,10 +5409,11 @@ impl Pipeline {
                 compute.dispatch_workgroups(dispatch.workgroups.0, dispatch.workgroups.1, 1);
             }
             drop(compute);
-            names.push(pass.label);
+            if at + 1 == run.len() || op(at + 1) != pass.op {
+                probed |= self.measure(encoder, pass.op, probe);
+            }
         }
-        probed |= self.measure(encoder, previous, &mut probe);
-        (names, probed)
+        probed
     }
 
     /// Records `probe`, taking it, where its operation is `op`, the one whose passes were
@@ -5256,10 +5421,10 @@ impl Pipeline {
     fn measure(
         &self,
         encoder: &mut wgpu::CommandEncoder,
-        op: Option<usize>,
+        op: usize,
         probe: &mut Option<Probe>,
     ) -> bool {
-        let Some(probe) = probe.take_if(|probe| Some(probe.op) == op) else {
+        let Some(probe) = probe.take_if(|probe| probe.op == op) else {
             return false;
         };
         let planned = &self.plan.operations[probe.op];
@@ -5345,7 +5510,8 @@ impl Pipeline {
             capture: copies.capture.filter(|_| output),
             ..copies
         };
-        let (names, _) = self.record_passes(&mut encoder, &runs, copies, false, None);
+        let run = ran(&runs);
+        self.record_passes(&mut encoder, &run, 0..run.len(), copies, false, &mut None);
         let planned = &self.plan.operations[op];
         let input = self.image(planned.input).buffer();
         if !output && let (Some(edit), Some(_)) = (&self.edit, sampling.capture()) {
@@ -5379,7 +5545,7 @@ impl Pipeline {
             .operations
             .get(first)
             .map_or("", |planned| planned.id);
-        let passes = count(names.len(), "pass", "passes");
+        let passes = count(run.len(), "pass", "passes");
         tracing::trace!(target: "perf", "sampled {id} after {passes} from {from}");
         true
     }
@@ -5517,37 +5683,78 @@ impl Pipeline {
     /// Takes the cache points, the edit cache and the scratch's results as `submitted`
     /// leaves them.
     fn settle(&mut self, submitted: &Submitted) {
+        let passes = submitted.runs.iter().filter(|&&runs| runs).count();
+        self.settle_chunk(submitted, 0..passes);
+    }
+
+    /// Takes the cache points, the edit cache and the scratch's results as the chunk of
+    /// `submitted` that runs the passes `passes`, a range over those it runs, leaves them
+    /// (decision 112): what the chunk finishes, from `first` on for the first chunk, as
+    /// written, the operations it runs no pass of among them; an operation it begins and a
+    /// later chunk finishes as holding nothing, until then; the edit cache once the chunk
+    /// has its capture. The last chunk takes the render as rendered.
+    fn settle_chunk(&mut self, submitted: &Submitted, passes: Range<usize>) {
         let Submitted {
             keys,
             first,
             capture,
+            runs,
             ..
         } = submitted;
-        let first = *first;
+        let run = ran(runs);
+        let op = |at: usize| self.passes[run[at]].op;
+        let last = passes.end == run.len();
+        // The operations finished before the chunk's pass `at`.
+        let finished = |at: usize| if at == run.len() { keys.len() } else { op(at) };
+        let from = if passes.start == 0 {
+            *first
+        } else {
+            finished(passes.start)
+        };
+        let to = finished(passes.end);
+        let begun = (!last && passes.end > 0 && op(passes.end - 1) == op(passes.end))
+            .then(|| op(passes.end));
+        // The capture's copy comes before its operation's first pass.
+        let captured = capture.filter(|&at| {
+            let begins = run.iter().position(|&pass| self.passes[pass].op == at);
+            begins.map_or(last, |begins| passes.contains(&begins))
+        });
         for (held, &op) in self.held.iter_mut().zip(&self.plan.cached) {
-            if op >= first {
+            if (from..to).contains(&op) {
                 *held = Some(keys[op]);
+            } else if begun == Some(op) {
+                *held = None;
             }
         }
-        if let (Some(edit), Some(op)) = (&mut self.edit, *capture) {
+        if let (Some(edit), Some(op)) = (&mut self.edit, captured) {
             edit.held = Some((op, keys[op - 1]));
         }
-        // What ran from `first` on, or was skipped because the scratch held it already.
-        for (result, op) in self
-            .results
-            .iter_mut()
-            .zip(&self.plan.operations)
-            .skip(first)
-        {
-            *result = Results::of(op.whole_image);
+        // What ran, or was skipped because the scratch held it already.
+        let operations = self.results.iter_mut().zip(&self.plan.operations);
+        for (index, (result, op)) in operations.enumerate() {
+            if (from..to).contains(&index) {
+                *result = Results::of(op.whole_image);
+            } else if begun == Some(index) {
+                *result = Results::default();
+            }
         }
-        self.rendered = keys.clone();
-        self.unused = Unused::default();
+        if last {
+            self.rendered = keys.clone();
+            self.unused = Unused::default();
+        }
     }
 
     /// The perf domain's lines for a render from operation `first` that ran the passes
-    /// `runs` marks, `names`, in `timings`.
-    fn log_render(&self, first: usize, runs: &[bool], names: &[&str], timings: &Timings) {
+    /// `runs` marks, `names`, in `timings`, in `chunks` submissions (decision 112), named
+    /// where more than one.
+    fn log_render(
+        &self,
+        first: usize,
+        runs: &[bool],
+        names: &[&str],
+        timings: &Timings,
+        chunks: usize,
+    ) {
         let from = self
             .plan
             .operations
@@ -5573,6 +5780,9 @@ impl Pipeline {
                 format!(", GPU: {gpu_ms:.1} ms")
             }
         );
+        if chunks > 1 {
+            rendered.push_str(&format!(", {}", count(chunks, "chunk", "chunks")));
+        }
         // Named when they fit the line (decision 44), otherwise counted, and named at
         // trace level.
         let named = format!(", kept: {}", kept.join(", "));
