@@ -66,6 +66,11 @@ mod folder;
 mod frame_times;
 mod hardware;
 mod history;
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "the Import tool's ways in open its sheet (#754)")
+)]
+mod import;
 mod info;
 mod instance;
 mod jobs;
@@ -1993,6 +1998,8 @@ struct Shell {
     sheet: Option<Box<dyn sheet::Content>>,
     /// Its tool column's width, `import.column_width`.
     sheet_column: f32,
+    /// What a sheet closed since the last frame sends as it goes, sent with the next.
+    sheet_left: Vec<Command>,
     /// Where the customise menu open adds an item, by its place in the draft.
     adding_at: usize,
     /// The tab whose icon takes the focus at the next frame: where a section went.
@@ -2255,6 +2262,7 @@ impl Shell {
             customising: None,
             sheet: None,
             sheet_column: settings.sheet_column,
+            sheet_left: Vec::new(),
             adding_at: 0,
             focus_tab: None,
             focus_section: None,
@@ -4238,23 +4246,36 @@ impl Shell {
         !busy
     }
 
+    /// Closes the sheet open, if one is, keeping what it sends as it goes for the next
+    /// frame's [`Shell::show_sheet`]. Returns whether one was open.
+    fn close_sheet(&mut self) -> bool {
+        let Some(mut content) = self.sheet.take() else {
+            return false;
+        };
+        self.sheet_left.extend(content.closing());
+        true
+    }
+
     /// Draws the sheet open, if one is, over the window below the Toolbar, `toolbar`, its
     /// column on the Tools panel's side, keeping its column's width and closing it as it
-    /// asks.
-    fn show_sheet(&mut self, ctx: &egui::Context, toolbar: egui::Rect) {
+    /// asks; what it, or a sheet closed since the last frame, asks of the session goes
+    /// through `send`.
+    fn show_sheet(&mut self, ctx: &egui::Context, toolbar: egui::Rect, send: &mut SendCommand<'_>) {
         let place = sheet::Place {
             column: self.sheet_column,
             at_start: self.panel_position.at_start(),
         };
-        let Some(content) = self.sheet.as_deref_mut() else {
-            return;
-        };
-        let shown = sheet::show(ctx, toolbar, content, place);
-        if let Some(action) = shown.column {
-            self.sheet_column = sheet::resized(action);
+        if let Some(content) = self.sheet.as_deref_mut() {
+            let shown = sheet::show(ctx, toolbar, content, place, send);
+            if let Some(action) = shown.column {
+                self.sheet_column = sheet::resized(action);
+            }
+            if shown.closed {
+                self.close_sheet();
+            }
         }
-        if shown.closed {
-            self.sheet = None;
+        for command in self.sheet_left.drain(..) {
+            send(command);
         }
     }
 
@@ -4765,7 +4786,9 @@ impl Shell {
             // the app leaves by, never the start window's own. Restart is Quit by now
             // (`App::run_actions`).
             // Closing the window with a sheet open closes the sheet first (decision 86).
-            Intent::CloseWindow if self.sheet.is_some() => self.sheet = None,
+            Intent::CloseWindow if self.sheet.is_some() => {
+                self.close_sheet();
+            }
             Intent::CloseWindow | Intent::Quit | Intent::Restart => {
                 // The customise mode cancelled first: its draft is never written.
                 self.finish_customising(false, ctx);
@@ -5924,6 +5947,12 @@ impl App {
                         self.metadata.receive(through, summary);
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
+                    // Import's, for the sheet open, which keeps its own commands'.
+                    Reaction::Import(event) => {
+                        if let Some(sheet) = self.shell.sheet.as_deref_mut() {
+                            sheet.receive(&event);
+                        }
+                    }
                     // Settings a pick measured, kept as the user's own.
                     // A reference's L comes with the photo it was measured on (decision 88).
                     // The photo is the open one's: a reading of an earlier photo is stale
@@ -9491,7 +9520,10 @@ impl eframe::App for App {
         // While customising, the window below the Toolbar dims and takes no input; a sheet
         // covers it.
         self.shell.scrim(&ctx, toolbar.response.rect);
-        self.shell.show_sheet(&ctx, toolbar.response.rect);
+        let session = &self.session;
+        (self.shell).show_sheet(&ctx, toolbar.response.rect, &mut |command| {
+            session.send(command)
+        });
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
 
@@ -9705,7 +9737,7 @@ impl eframe::App for App {
         // for still ends the app (decision 86).
         if raw_input.viewport().close_requested()
             && !self.shell.leaving
-            && self.shell.sheet.take().is_some()
+            && self.shell.close_sheet()
             && let Some(viewport) = raw_input.viewports.get_mut(&raw_input.viewport_id)
         {
             viewport.events.retain(|e| *e != egui::ViewportEvent::Close);
@@ -24456,7 +24488,13 @@ mod tests {
                     run.extend(bench.shell.toolbar_menu(&ctx, asked, &state));
                     run.extend(bench.shell.customise(&ctx, edited, &state));
                     bench.shell.scrim(&ctx, top.response.rect);
-                    bench.shell.show_sheet(&ctx, top.response.rect);
+                    let commands = &mut bench.commands;
+                    bench
+                        .shell
+                        .show_sheet(&ctx, top.response.rect, &mut |command| {
+                            commands.push(command);
+                            commands.len() as u64
+                        });
                     let name = tr(&ctx, "tools-panel-width");
                     let edge = bench.shell.panel_edge(&ctx, ui.available_width(), &name);
                     let width = edge.width(&ctx);
@@ -31553,7 +31591,12 @@ mod tests {
     }
 
     impl sheet::Content for StubSheet {
-        fn show(&mut self, ui: &mut egui::Ui, place: sheet::Place) -> sheet::Shown {
+        fn show(
+            &mut self,
+            ui: &mut egui::Ui,
+            place: sheet::Place,
+            _send: &mut SendCommand<'_>,
+        ) -> sheet::Shown {
             use apertrust_ui::components::{Sheet, SheetCell, TextFieldRow};
             let names: Vec<String> = (0..self.count)
                 .map(|i| format!("DSCF{}.RAF", 1001 + i))
@@ -31572,8 +31615,10 @@ mod tests {
                     no_preview: true,
                     checked: checks.is_checked(i),
                     check_name: &check_names[i],
+                    check_description: "",
                     dimmed: false,
                     mark: None,
+                    tip: None,
                 },
             )
             .column(place.column, place.at_start)
@@ -31645,6 +31690,41 @@ mod tests {
         let moved = (harness.query_by_role_and_label(Role::ListItem, "DSCF1001.RAF"))
             .is_none_or(|first| first.rect().top() < top - 100.0);
         assert!(moved, "the grid scrolled");
+    }
+
+    /// Decision 85: the Import sheet lists its source as it opens, and closing it, by its
+    /// Close or by closing the window, sends `CancelListing` for that listing.
+    #[test]
+    fn closing_the_import_sheet_cancels_its_listing() {
+        use apertrust_engine::session::LibraryCommand;
+        let source = import::Source {
+            folder: PathBuf::from("/Volumes/EOS_DIGITAL"),
+            name: "EOS_DIGITAL".to_owned(),
+            card: true,
+        };
+        for close in [Key::Escape, Key::W] {
+            let mut harness = bench(OperatingSystem::Mac);
+            harness.run();
+            let sheet = import::ImportSheet::new(Some(source.clone()), Default::default());
+            assert!(harness.state_mut().shell.open_sheet(Box::new(sheet)));
+            harness.run();
+            let commands = &harness.state().commands;
+            let listing = (commands.iter()).position(|command| {
+                matches!(command, Command::Library(LibraryCommand::ListSource { .. }))
+            });
+            let listing = listing.expect("listed") as u64 + 1;
+            let modifiers = if close == Key::W {
+                Modifiers::MAC_CMD
+            } else {
+                Modifiers::NONE
+            };
+            harness.key_press_modifiers(modifiers, close);
+            harness.run();
+            harness.run();
+            assert!(harness.state().shell.sheet.is_none(), "{close:?}");
+            let cancel = Command::Library(LibraryCommand::CancelListing { listing });
+            assert!(harness.state().commands.contains(&cancel), "{close:?}");
+        }
     }
 
     /// Decision 86: under a sheet the Toolbar's actions rest, drawn at rest and never

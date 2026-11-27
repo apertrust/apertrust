@@ -1467,6 +1467,9 @@ mod tests {
                 args.set("values", 3);
                 // An import's photos copied (decision 85).
                 args.set("copied", 120);
+                // The Import sheet's: its checks and the photos new among them.
+                args.set("checked", 209);
+                args.set("new", 209);
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

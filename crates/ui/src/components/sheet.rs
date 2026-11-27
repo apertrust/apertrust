@@ -106,10 +106,15 @@ pub struct SheetCell<'a> {
     pub checked: bool,
     /// Its check box's name to screen readers, translated: "Import DSCF1033.RAF".
     pub check_name: &'a str,
+    /// Its check box's description to screen readers, translated, as its capture time;
+    /// empty for none.
+    pub check_description: &'a str,
     /// Its picture at half strength, as a photo imported before while unchecked.
     pub dimmed: bool,
     /// The mark at its picture's bottom right, as the destination mark.
     pub mark: Option<CellMark<'a>>,
+    /// Its tooltip, translated, in place of the cell's own of its name and mark.
+    pub tip: Option<&'a str>,
 }
 
 /// A Select button of the sheet bar: what it answers with, and its words, translated.
@@ -601,9 +606,11 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
                                 .check(Some(CellCheck {
                                     on: cell.checked,
                                     name: cell.check_name,
+                                    description: cell.check_description,
                                 }))
                                 .dimmed(cell.dimmed)
                                 .mark(cell.mark)
+                                .tip(cell.tip)
                                 .show_at(ui, cells.rect(origin, i), id);
                             let modifiers = ui.input(|input| input.modifiers);
                             // A click on the cell, its box or its picture, gives it the focus,

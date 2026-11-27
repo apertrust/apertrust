@@ -2566,3 +2566,33 @@ sheet-close = Close
 sheet-help = Help
 sheet-help-later = Comes in a later version
 sheet-column-width = Tool column width
+
+## The Import sheet (docs/gui.md, The Import sheet): its heading and grid, what each cell's
+## tooltip and check box say, what screen readers hear as the listing ends, and its primary
+## button, with why it cannot press. $source is the card's volume name or the folder's.
+
+import-heading = Import · { $source }
+import-sheet-name = Import, { $source }
+import-grid-name = { $source }, { photo-count }, { $checked } checked
+import-grid-checked = { $checked } checked
+import-listed-said =
+    { $count ->
+        [one] { $count } photo listed
+       *[other] { $count } photos listed
+    }, { $new } new, checked
+import-cell-check = Import { $name }
+import-cell-taken = Taken { $time }
+import-cell-modified = Modified { $time }; this may differ from when it was taken
+import-cell-imported-before = Imported before: { $path }
+import-cell-probably = Probably in { $path }
+import-cell-said = Taken { $time }
+import-cell-said-imported = Taken { $time }, imported before
+import-cell-said-imported-only = Imported before
+import-primary = Import { photo-count }
+import-why-no-source = Choose where to import from.
+import-why-listing = Still listing { $source }
+import-why-none-checked = No photos checked
+import-why-empty-card = No photos on { $source }.
+import-why-empty-folder = No photos in { $source }.
+import-why-removed = { $source } was removed.
+import-why-failed = { $source } can’t be listed: { $reason }

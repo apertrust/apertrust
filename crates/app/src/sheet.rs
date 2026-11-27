@@ -27,8 +27,11 @@
 //! the Toolbar's drawn close close the sheet first; Quit asks only where a job runs, as
 //! always. The sheet's own keys are the frame's (`apertrust_ui::components::Sheet`).
 
+use apertrust_engine::session::{Command, LibraryEvent};
 use apertrust_ui::components::PanelEdgeAction;
 use eframe::egui;
+
+use crate::SendCommand;
 
 /// Where the sheet's tool column is: its kept width, and whether it is at the window's
 /// start, as the Tools panel is.
@@ -47,9 +50,19 @@ pub struct Shown {
 }
 
 /// A sheet's content: draws the design system's `Sheet` into the room it is given, acting
-/// on what it reports.
+/// on what it reports and sending the session what it asks through `send`; takes in the
+/// library's events the mirror hands it, and says what it sends as it closes.
 pub trait Content {
-    fn show(&mut self, ui: &mut egui::Ui, place: Place) -> Shown;
+    fn show(&mut self, ui: &mut egui::Ui, place: Place, send: &mut SendCommand<'_>) -> Shown;
+
+    /// Takes in one of the library's events, Import's or a thumbnail of no folder open
+    /// (`Reaction::Import`): the content keeps those of its own commands' numbers.
+    fn receive(&mut self, _event: &LibraryEvent) {}
+
+    /// What it sends as it closes, however it closes.
+    fn closing(&mut self) -> Vec<Command> {
+        Vec::new()
+    }
 }
 
 /// Draws `content` over the window below the Toolbar, `toolbar`, at `place`.
@@ -58,6 +71,7 @@ pub fn show(
     toolbar: egui::Rect,
     content: &mut dyn Content,
     place: Place,
+    send: &mut SendCommand<'_>,
 ) -> Shown {
     let window = ctx.content_rect();
     let below = egui::Rect::from_min_max(egui::pos2(window.left(), toolbar.bottom()), window.max);
@@ -71,7 +85,7 @@ pub fn show(
             ui.allocate_rect(below, egui::Sense::hover());
             let mut room = ui.new_child(egui::UiBuilder::new().max_rect(below));
             room.set_clip_rect(below);
-            content.show(&mut room, place)
+            content.show(&mut room, place, send)
         })
         .inner
 }

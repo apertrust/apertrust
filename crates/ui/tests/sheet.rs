@@ -142,8 +142,10 @@ fn a_grid_empty_as_the_sheet_opens_takes_the_focus_once_its_photos_come() {
                         no_preview: true,
                         checked: checks.is_checked(i),
                         check_name: names[i],
+                        check_description: "",
                         dimmed: false,
                         mark: None,
+                        tip: None,
                     },
                 )
                 .primary("Import", None)
