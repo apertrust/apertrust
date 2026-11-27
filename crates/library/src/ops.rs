@@ -24,7 +24,8 @@
 //! walking the whole tree under the folder opened for each folder's raw count and
 //! subfolders ([`walk`]), listing a subfolder's own subfolders for Collections' tree
 //! ([`subfolders`]), and its photos' thumbnails, or those of photos opened alone
-//! ([`thumbnail`]), the camera's embedded pictures until Apertrust renders its own. The
+//! ([`thumbnail`]), the camera's embedded pictures until Apertrust renders its own; and
+//! for Import, its source listed, a card's `DCIM` or a folder ([`list_source`]). The
 //! session runs [`open`] and [`thumbnail`] as jobs' bodies and hands each an observer,
 //! which turns each [`LibraryEvent`] into its own event, and a cancel closure, the job's;
 //! the library knows nothing of the engine or its events (`docs/events.md`, Lower crates
@@ -50,7 +51,11 @@ use crate::index::{Index, READERS, Sidecar};
 use crate::listing::Options;
 pub use crate::listing::browser_order;
 use crate::sidecar::Newer;
+pub use crate::source::{LeftOut, SourceFile, Unreadable};
 pub use crate::walk::WalkedFolder;
+pub use import::{SourceShot, list_source};
+
+mod import;
 
 /// How many photos a [`LibraryEvent::Listed`] carries at most.
 pub const CHUNK: usize = 256;
@@ -96,6 +101,21 @@ pub enum LibraryCommand {
     /// camera's embedded picture, the engine's setting `library.raw_thumbnails_from`, for
     /// the thumbnails and opening pictures from now on; answered by nothing.
     RawThumbnails(RawThumbnails),
+    /// Lists Import's source, the folder `source` (decision 85): where it is on a card, its
+    /// root or any folder inside it, the card's `DCIM` whole; else the folder alone, or with
+    /// every folder under it where `include_subfolders`, off until the Import tool's toggle
+    /// comes. Raws only; nothing is written on the source. Answered in this command's number
+    /// by [`LibraryEvent::SourceListed`] chunks, then [`LibraryEvent::SourceTaken`], or by
+    /// [`LibraryEvent::SourceFailed`]. The next `ListSource` or a
+    /// [`CancelListing`](LibraryCommand::CancelListing) drops it.
+    ListSource {
+        source: PathBuf,
+        include_subfolders: bool,
+    },
+    /// Drops the source's listing numbered `listing`, the `ListSource`'s number, as the
+    /// Import sheet closes: it sends nothing more. A listing that is not the latest is
+    /// dropped already.
+    CancelListing { listing: u64 },
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -175,10 +195,30 @@ pub enum LibraryEvent {
         folders: Vec<WalkedFolder>,
         done: bool,
     },
+    /// More of Import's source, as [`LibraryCommand::ListSource`] numbered `open` asked:
+    /// `folder`, the folder listed, the card's `DCIM` or the folder, and its raws, each by
+    /// its path relative to `folder`, in the order of their paths across chunks, at most
+    /// [`CHUNK`] each; the last says `done` and carries what was left out, `left_out`, none
+    /// before it.
+    SourceListed {
+        open: u64,
+        folder: PathBuf,
+        files: Vec<SourceFile>,
+        done: bool,
+        left_out: Option<LeftOut>,
+    },
+    /// When each raw of the source was taken and by which camera, sent once after the last
+    /// [`SourceListed`](LibraryEvent::SourceListed) chunk: one for each file, in the
+    /// listing's order.
+    SourceTaken { open: u64, shots: Vec<SourceShot> },
+    /// Import's source could not be listed, in plain words: not there, no folder,
+    /// unreadable, or gone while it was read, a card pulled out. It ends the listing.
+    SourceFailed { open: u64, reason: String },
 }
 
 impl LibraryEvent {
-    /// The number of the open or close it is about.
+    /// The number of the command it answers: the open or close it is about, or Import's
+    /// listing.
     pub fn open(&self) -> u64 {
         match *self {
             LibraryEvent::Opened { open, .. }
@@ -190,7 +230,10 @@ impl LibraryEvent {
             | LibraryEvent::Closed { open }
             | LibraryEvent::Thumbnail { open, .. }
             | LibraryEvent::PhotoThumbnail { open, .. }
-            | LibraryEvent::Walked { open, .. } => open,
+            | LibraryEvent::Walked { open, .. }
+            | LibraryEvent::SourceListed { open, .. }
+            | LibraryEvent::SourceTaken { open, .. }
+            | LibraryEvent::SourceFailed { open, .. } => open,
         }
     }
 }

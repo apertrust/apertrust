@@ -825,9 +825,25 @@ pub(crate) mod stall {
     /// Waits while `folder` is held.
     pub(crate) fn wait(folder: &Path) {
         let mut held = HELD.lock().unwrap_or_else(PoisonError::into_inner);
+        if held.iter().any(|held| held == folder) {
+            WAITING
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(folder.to_owned());
+        }
         while held.iter().any(|held| held == folder) {
             held = RELEASED.wait(held).unwrap_or_else(PoisonError::into_inner);
         }
+    }
+
+    /// The folders a listing has waited on while they were held, each once for each wait.
+    static WAITING: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+    /// Whether a listing has come to `folder` while it was held, and waited.
+    pub(crate) fn waited(folder: &Path) -> bool {
+        (WAITING.lock().unwrap_or_else(PoisonError::into_inner))
+            .iter()
+            .any(|waited| waited == folder)
     }
 }
 

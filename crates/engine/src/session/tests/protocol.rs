@@ -37,7 +37,9 @@ use apertrust_export::size::Request;
 use apertrust_export::variables::{NotHere, PatternError, Unavailable};
 use apertrust_export::{Format, jpeg, png};
 use apertrust_library::clock::ClockError;
-use apertrust_library::ops::{EditState, RawThumbnails, Source, Thumbnail};
+use apertrust_library::ops::{
+    EditState, LeftOut, RawThumbnails, Source, SourceFile, SourceShot, Thumbnail, Unreadable,
+};
 use apertrust_library::sidecar::{Newer, Problem, Reason, SidecarError};
 use apertrust_library::summary::{Facts, Summed};
 use apertrust_library::walk::WalkedFolder;
@@ -316,6 +318,11 @@ pub(super) fn every_command() -> Vec<Command> {
             folder: PathBuf::from("/photos/2026"),
         }),
         Command::Library(LibraryCommand::RawThumbnails(RawThumbnails::P720)),
+        Command::Library(LibraryCommand::ListSource {
+            source: PathBuf::from("/Volumes/EOS_DIGITAL"),
+            include_subfolders: false,
+        }),
+        Command::Library(LibraryCommand::CancelListing { listing: 9 }),
         Command::Selection(SelectionCommand::Set(vec![photo(), other()])),
         Command::Selection(SelectionCommand::Add(photo())),
         Command::Selection(SelectionCommand::Remove(other())),
@@ -412,7 +419,7 @@ fn picker_variant(command: &PickerCommand) -> usize {
     }
 }
 
-const LIBRARY_COMMAND_VARIANTS: usize = 6;
+const LIBRARY_COMMAND_VARIANTS: usize = 8;
 
 /// Each library command's variant; a new one takes the next index and raises the count.
 fn library_command_variant(command: &LibraryCommand) -> usize {
@@ -423,6 +430,8 @@ fn library_command_variant(command: &LibraryCommand) -> usize {
         LibraryCommand::PhotoThumbnails { .. } => 3,
         LibraryCommand::Subfolders { .. } => 4,
         LibraryCommand::RawThumbnails(_) => 5,
+        LibraryCommand::ListSource { .. } => 6,
+        LibraryCommand::CancelListing { .. } => 7,
     }
 }
 
@@ -1059,6 +1068,49 @@ fn every_event() -> Vec<Event> {
             }],
             done: true,
         }),
+        Event::Library(LibraryEvent::SourceListed {
+            open: 9,
+            folder: PathBuf::from("/Volumes/EOS_DIGITAL/DCIM"),
+            files: vec![SourceFile {
+                path: PathBuf::from("100CANON/IMG_0001.CR3"),
+                size: 30_000_000,
+                modified: Some(UNIX_EPOCH + Duration::from_secs(1_763_200_000)),
+                local: true,
+            }],
+            done: true,
+            left_out: Some(LeftOut {
+                non_raws: 3,
+                sidecars: 1,
+                unreadable: vec![Unreadable {
+                    folder: PathBuf::from("101CANON"),
+                    reason: "permission denied".to_owned(),
+                }],
+            }),
+        }),
+        Event::Library(LibraryEvent::SourceTaken {
+            open: 9,
+            shots: vec![
+                SourceShot {
+                    taken: Some(DateTime {
+                        year: 2026,
+                        month: 11,
+                        day: 15,
+                        hour: 14,
+                        minute: 2,
+                        second: 7,
+                        millisecond: 0,
+                        offset_minutes: None,
+                    }),
+                    make: Some("Canon".to_owned()),
+                    model: Some("Canon EOS R5".to_owned()),
+                },
+                SourceShot::default(),
+            ],
+        }),
+        Event::Library(LibraryEvent::SourceFailed {
+            open: 9,
+            reason: "/Volumes/EOS_DIGITAL is not there".to_owned(),
+        }),
         Event::Cache(CacheEvent::Sizes {
             sizes: Sizes::default(),
             limited: Usage {
@@ -1353,7 +1405,7 @@ fn event_variant(event: &Event) -> Option<usize> {
     })
 }
 
-const LIBRARY_EVENT_VARIANTS: usize = 10;
+const LIBRARY_EVENT_VARIANTS: usize = 13;
 
 /// Each library event's variant; a new one takes the next index and raises the count.
 fn library_event_variant(event: &LibraryEvent) -> usize {
@@ -1368,6 +1420,9 @@ fn library_event_variant(event: &LibraryEvent) -> usize {
         LibraryEvent::Thumbnail { .. } => 7,
         LibraryEvent::PhotoThumbnail { .. } => 8,
         LibraryEvent::Walked { .. } => 9,
+        LibraryEvent::SourceListed { .. } => 10,
+        LibraryEvent::SourceTaken { .. } => 11,
+        LibraryEvent::SourceFailed { .. } => 12,
     }
 }
 
