@@ -59,9 +59,9 @@ use std::time::{Duration, Instant};
 use apertrust_engine::session::library::Thumbnail;
 use apertrust_engine::session::{
     ActionState, BatchEvent, ControlState, ControlValue, CoordinateState, Event, ExportPreview,
-    Frame, History, MetadataState, OpenPreview, Photo, PresetState, PreviewSource, Rating,
-    RatingState, ReadoutState, Selection, SelectionCommand, SessionError, ToolState, Values,
-    ViewState, WarningState,
+    Frame, History, LibraryEvent, MetadataState, OpenPreview, Photo, PresetState, PreviewSource,
+    Rating, RatingState, ReadoutState, Selection, SelectionCommand, SessionError, ToolState,
+    Values, ViewState, WarningState,
 };
 use apertrust_engine::{edit, sidecar};
 use apertrust_plugin::ImageContext;
@@ -97,6 +97,9 @@ pub enum Reaction {
     },
     /// The folder at this path opened: it joins the recent folders.
     FolderOpened(PathBuf),
+    /// One of Import's events, or a thumbnail of no folder's open, for the Import sheet,
+    /// which keeps those of its own commands' numbers (`crate::import`).
+    Import(Box<LibraryEvent>),
     /// The folder at this path could not be opened: its entry in the recent folders says so.
     FolderFailed { path: PathBuf, reason: String },
     /// A tool's pick measured these settings, as a measure mode's target: the app keeps them
@@ -877,8 +880,22 @@ impl Mirror {
             Event::Summary { through, summary } => {
                 reactions.push(Reaction::Summary { through, summary });
             }
-            // The folder took these in above.
-            Event::Library(_) => {}
+            // The folder took its own in above; Import's go to its sheet, with a thumbnail of
+            // another number than the folder's latest, which may be its source's.
+            Event::Library(event) => {
+                let import = match &event {
+                    LibraryEvent::Thumbnail { open, .. } => *open != self.folder.latest(),
+                    LibraryEvent::SourceListed { .. }
+                    | LibraryEvent::SourceTaken { .. }
+                    | LibraryEvent::SourceFailed { .. }
+                    | LibraryEvent::SourceChecked { .. }
+                    | LibraryEvent::ImportPreview { .. } => true,
+                    _ => false,
+                };
+                if import {
+                    reactions.push(Reaction::Import(Box::new(event)));
+                }
+            }
             // Taken in above, for Settings › Storage.
             Event::Cache(_) => {}
             // The session's selection, the latest by its `through`.

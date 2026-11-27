@@ -2113,3 +2113,35 @@ sheet-close = Закрити
 sheet-help = Довідка
 sheet-help-later = З’явиться в наступній версії
 sheet-column-width = Ширина стовпця інструмента
+
+## Аркуш імпорту (docs/gui.md, The Import sheet): заголовок і сітка, підказка й прапорець
+## кожної клітинки, що чують програми читання екрана наприкінці переліку, і основна кнопка
+## з причиною, чому вона недоступна. $source — назва тому картки або назва теки.
+
+import-heading = Імпорт · { $source }
+import-sheet-name = Імпорт, { $source }
+import-grid-name = { $source }, { photo-count }, позначено: { $checked }
+import-grid-checked = Позначено: { $checked }
+import-listed-said =
+    { $count ->
+        [one] Знайдено { $count } знімок
+        [few] Знайдено { $count } знімки
+        [many] Знайдено { $count } знімків
+       *[other] Знайдено { $count } знімка
+    }, нових і позначених: { $new }
+import-cell-check = Імпортувати { $name }
+import-cell-taken = Знято { $time }
+import-cell-modified = Змінено { $time }; може відрізнятися від часу зйомки
+import-cell-imported-before = Імпортовано раніше: { $path }
+import-cell-probably = Імовірно, у { $path }
+import-cell-said = Знято { $time }
+import-cell-said-imported = Знято { $time }, імпортовано раніше
+import-cell-said-imported-only = Імпортовано раніше
+import-primary = Імпортувати { photo-count }
+import-why-no-source = Виберіть, звідки імпортувати.
+import-why-listing = Ще триває перелік { $source }
+import-why-none-checked = Не позначено жодного знімка
+import-why-empty-card = На { $source } немає знімків.
+import-why-empty-folder = У { $source } немає знімків.
+import-why-removed = { $source } від’єднано.
+import-why-failed = Не вдається прочитати { $source }: { $reason }

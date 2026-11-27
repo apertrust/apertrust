@@ -382,8 +382,10 @@ fn sheet(ui: &mut Ui, demo: &mut SheetDemo, at_start: bool) -> SheetOutput<()> {
             no_preview: false,
             checked: checks.is_checked(i),
             check_name: &check_names[i],
+            check_description: "",
             dimmed: imported(i) && !checks.is_checked(i),
             mark: imported(i).then_some(mark),
+            tip: None,
         },
     )
     .counts("40 photos, 8 imported before")

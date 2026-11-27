@@ -132,6 +132,8 @@ pub enum Icon {
     Star,
     /// A crossed circle: a photo's reject mark, under its thumbnail.
     Reject,
+    /// A ticked circle: the Import sheet's mark on a photo imported before (decision 85).
+    ImportedBefore,
     /// A circle: a colour label (decision 110).
     Label,
     /// A bolt, and a crossed one: the flash fired, or it did not, after the camera in the
@@ -257,7 +259,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 127] = [
+    pub const ALL: [Icon; 128] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -306,6 +308,7 @@ impl Icon {
         Icon::EyeOff,
         Icon::Star,
         Icon::Reject,
+        Icon::ImportedBefore,
         Icon::Label,
         Icon::Flash,
         Icon::FlashOff,
@@ -536,6 +539,7 @@ impl Icon {
             Icon::EyeOff => derived!("eye-off", "eye-off", 22.0),
             Icon::Star => derived!("star", "star", 12.0),
             Icon::Reject => derived!("reject", "circle-x", 12.0),
+            Icon::ImportedBefore => derived!("imported-before", "circle-check", 12.0),
             Icon::Label => derived!("label", "circle", 12.0),
             Icon::Flash => derived!("flash", "zap", 12.0),
             Icon::FlashOff => derived!("flash-off", "zap-off", 12.0),

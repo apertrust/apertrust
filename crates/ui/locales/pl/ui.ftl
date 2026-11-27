@@ -2116,3 +2116,36 @@ sheet-close = Zamknij
 sheet-help = Pomoc
 sheet-help-later = Pojawi się w późniejszej wersji
 sheet-column-width = Szerokość kolumny narzędzia
+
+## Arkusz importu (docs/gui.md, The Import sheet): nagłówek i siatka, podpowiedź i pole
+## wyboru każdej komórki, co słyszą czytniki ekranu na końcu listowania, oraz przycisk
+## główny z powodem, dla którego jest niedostępny. $source to nazwa woluminu karty lub
+## nazwa folderu.
+
+import-heading = Import · { $source }
+import-sheet-name = Import, { $source }
+import-grid-name = { $source }, { photo-count }, zaznaczono: { $checked }
+import-grid-checked = Zaznaczono: { $checked }
+import-listed-said =
+    { $count ->
+        [one] Znaleziono { $count } zdjęcie
+        [few] Znaleziono { $count } zdjęcia
+        [many] Znaleziono { $count } zdjęć
+       *[other] Znaleziono { $count } zdjęcia
+    }, nowych i zaznaczonych: { $new }
+import-cell-check = Importuj { $name }
+import-cell-taken = Zrobione { $time }
+import-cell-modified = Zmodyfikowano { $time }; może się różnić od czasu zrobienia zdjęcia
+import-cell-imported-before = Zaimportowane wcześniej: { $path }
+import-cell-probably = Prawdopodobnie w { $path }
+import-cell-said = Zrobione { $time }
+import-cell-said-imported = Zrobione { $time }, zaimportowane wcześniej
+import-cell-said-imported-only = Zaimportowane wcześniej
+import-primary = Importuj { photo-count }
+import-why-no-source = Wybierz, skąd importować.
+import-why-listing = Trwa listowanie { $source }
+import-why-none-checked = Nie zaznaczono żadnych zdjęć
+import-why-empty-card = Brak zdjęć na { $source }.
+import-why-empty-folder = Brak zdjęć w { $source }.
+import-why-removed = Wysunięto { $source }.
+import-why-failed = Nie można odczytać { $source }: { $reason }

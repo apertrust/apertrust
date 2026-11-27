@@ -325,14 +325,17 @@ pub struct GridCell<'a> {
     check: Option<CellCheck<'a>>,
     dimmed: bool,
     mark: Option<CellMark<'a>>,
+    tip: Option<&'a str>,
 }
 
-/// A sheet's cell's check box: whether it is checked, and its name to screen readers,
-/// translated, the caller's ("Import DSCF1033.RAF").
+/// A sheet's cell's check box: whether it is checked, and its name and description to
+/// screen readers, translated, the caller's ("Import DSCF1033.RAF", described by its
+/// capture time); an empty description is none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CellCheck<'a> {
     pub on: bool,
     pub name: &'a str,
+    pub description: &'a str,
 }
 
 /// A mark of the caller's at the picture's bottom right, before the others: its icon, and
@@ -397,6 +400,7 @@ impl<'a> GridCell<'a> {
             check: None,
             dimmed: false,
             mark: None,
+            tip: None,
         }
     }
 
@@ -481,6 +485,13 @@ impl<'a> GridCell<'a> {
     /// A mark of the caller's, leading the corner marks; none by default.
     pub fn mark(mut self, mark: Option<CellMark<'a>>) -> Self {
         self.mark = mark;
+        self
+    }
+
+    /// The tooltip, translated, in place of the one the cell writes of its name and marks,
+    /// as a sheet's cell says its photo's times, size and camera; the cell's own by default.
+    pub fn tip(mut self, tip: Option<&'a str>) -> Self {
+        self.tip = tip;
         self
     }
 
@@ -671,11 +682,13 @@ impl<'a> GridCell<'a> {
                 node.set_description(description.clone());
             }
         });
-        let tip = (Some(self.name.to_owned()).into_iter())
-            .chain(Some(notes).filter(|notes| !notes.is_empty()))
-            .chain(tip_line)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let tip = self.tip.map(str::to_owned).unwrap_or_else(|| {
+            (Some(self.name.to_owned()).into_iter())
+                .chain(Some(notes).filter(|notes| !notes.is_empty()))
+                .chain(tip_line)
+                .collect::<Vec<_>>()
+                .join("\n")
+        });
         GridCellOutput {
             response: response.on_hover_text(tip),
             check: checked,
@@ -711,6 +724,11 @@ impl<'a> GridCell<'a> {
         super::checkbox::paint_box(painter, square, check.on, touch, t);
         let name = check.name;
         response.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, check.on, name));
+        if !check.description.is_empty() {
+            let description = check.description.to_owned();
+            (ui.ctx())
+                .accesskit_node_builder(response.id, |node| node.set_description(description));
+        }
         let font = FontId::proportional(t.text.small);
         let colour = if self.active {
             t.colors.text_strong
