@@ -2212,6 +2212,32 @@ fn metadata_and_multi_preset_export_are_closed_and_disabled_groups() {
 }
 
 #[test]
+fn a_title_in_the_path_names_the_file_and_is_said_to_have_a_value() {
+    let path = "$(FILE_FOLDER)/apertrust_exported/$(TITLE)_$(FILE_NAME)";
+    let values = Values {
+        path: path.to_owned(),
+        ..Values::default()
+    };
+    let mut harness = tool(values, Builtin::Dark, Locale::EnGb, PANEL);
+    let mut p = preview();
+    // The session's answer: the title filled in, and nothing said to have no value.
+    p.not_here = variables::Pattern::parse(path).unwrap().not_here();
+    assert!(p.not_here.is_empty());
+    p.names[0].fate = Fate::File {
+        file: PathBuf::from("/Users/anna/Pictures/apertrust_exported/Market_IMG_2041.jpg"),
+        exists: false,
+        action: Action::Write,
+    };
+    answer(&mut harness, 1, p);
+    assert!(summary_says(&harness, "File name Market_IMG_2041.jpg"));
+    assert!(tip_says(
+        &harness,
+        "IMG_2041.ARW → ~/Pictures/apertrust_exported/Market_IMG_2041.jpg"
+    ));
+    assert!(!tip_says(&harness, "with no value here"));
+}
+
+#[test]
 fn the_path_is_one_line_with_no_visible_label_and_the_folder_button_at_its_end() {
     let mut harness = open();
     answer(&mut harness, 1, preview());

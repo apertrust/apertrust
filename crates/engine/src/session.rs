@@ -5796,6 +5796,7 @@ impl Engine {
             image: open.image.clone(),
             input,
             shot: open.shot.clone(),
+            copy: crate::names::CopyFields::of(&open.file),
             unsaved: open.unsaved,
         })
     }

@@ -34,8 +34,10 @@
 //! - **the folders' preflight**, whether each can be made or written, without making it.
 //!
 //! It writes nothing and makes nothing. It decodes no image: a name that uses the shooting
-//! data reads it with `apertrust_raw::read_exif_file`, the metadata alone, and only when
-//! the pattern uses any (a probe expands it with and without such values to see). What
+//! data reads it with `apertrust_raw::read_exif_file`, the metadata alone, and one that
+//! uses the copy's fields, name or count reads the photo's sidecar, its `.apxmp` or else
+//! darktable's `.xmp`, the open photo's as the session holds them, each only when the
+//! pattern uses any (a probe expands it with and without such values to see). What
 //! only a decode gives, the camera's name as the decoder reads it, the ISO, the exposure
 //! bias and the image's sizes, is known for the open photo and empty for the others, whose
 //! names then say they are not exact ([`PhotoName::exact`]) if the pattern uses them.
@@ -47,7 +49,9 @@ use std::time::SystemTime;
 use apertrust_base::wire::Id;
 use apertrust_export::disk::{self, Claimed, Disk, Foreseen};
 pub use apertrust_export::disk::{Action, Blocked, Preflight, Why};
-use apertrust_export::variables::{DateTime, Pattern, PatternError, Size, Unavailable, Values};
+use apertrust_export::variables::{
+    DateTime, Field, Metadata, Pattern, PatternError, Size, Unavailable, Values,
+};
 use apertrust_export::{ExportSettings, Places};
 use apertrust_plugin::{ImageContext, ImageDesc, Operation};
 use apertrust_tools::ProcessingTool;
@@ -56,7 +60,7 @@ use serde::{Deserialize, Serialize};
 use crate::edit::{self, Edit};
 use crate::export_job::{self, Live, SizeError};
 use crate::jobs::Job;
-use crate::names::{self, Shot, Sizes};
+use crate::names::{self, CopyFields, Shot, Sizes};
 use crate::pipeline::Limits;
 use crate::session::{Event, Outbox};
 use crate::sidecar;
@@ -218,6 +222,7 @@ pub(crate) struct Active {
     image: ImageContext,
     sensor: ImageDesc,
     shot: Shot,
+    copy: CopyFields,
     unsaved: bool,
 }
 
@@ -229,6 +234,7 @@ impl Active {
             image: live.image.clone(),
             sensor: live.input.desc(),
             shot: live.shot.clone(),
+            copy: live.copy.clone(),
             unsaved: live.unsaved,
         }
     }
@@ -353,7 +359,12 @@ impl Run {
                 (Some((_, active)), Some((_, sizes))) => (active.shot.clone(), *sizes),
                 _ => (Shot::default(), UNKNOWN),
             };
-            let values = names.values_with(path, &shot, index as u32 + 1, sizes, exif);
+            let copy = match open {
+                Some((_, active)) => active.copy.clone(),
+                None if uses.fields => CopyFields::read(path),
+                None => CopyFields::default(),
+            };
+            let values = names.values_with(path, &shot, index as u32 + 1, sizes, exif, &copy);
             // A name that needs the decode, for a photo that is not the open one, is a guess.
             let exact = open.is_some() || !uses.decoded;
             let changed = changed(path, open.map(|(_, active)| active));
@@ -499,6 +510,8 @@ fn read_exif(path: &Path) -> apertrust_raw::Exif {
 struct Uses {
     /// The shooting data its file records.
     exif: bool,
+    /// Its copy's fields, name and count, which its sidecar holds.
+    fields: bool,
     /// What only a decode gives.
     decoded: bool,
 }
@@ -548,6 +561,21 @@ impl Uses {
                 v.creator = Some("Probe creator".to_owned());
                 v.rights = Some("Probe rights".to_owned());
                 v.description = Some("Probe description".to_owned());
+                v.crop_factor = 1.5;
+            }),
+            fields: differs(|v| {
+                let text = |text: &str| Some(Field::Text(text.to_owned()));
+                v.metadata = Metadata {
+                    title: text("Probe title"),
+                    description: text("Probe description"),
+                    creator: text("Probe creator"),
+                    publisher: text("Probe publisher"),
+                    rights: text("Probe rights"),
+                    notes: text("Probe notes"),
+                    preserved_file_name: Some("PROBE.ARW".to_owned()),
+                };
+                v.version_name = "Probe name".to_owned();
+                v.copies = 3;
             }),
             decoded: differs(|v| {
                 v.maker = "Probe maker".to_owned();
@@ -683,6 +711,7 @@ mod tests {
                 exposure_bias: None,
                 ..Shot::default()
             },
+            copy: CopyFields::default(),
             unsaved,
         }
     }
@@ -965,7 +994,7 @@ mod tests {
     #[test]
     fn a_path_that_names_no_file_fails_for_that_photo_alone() {
         let out = scratch("noname");
-        // A variable with no value here leaves the path empty for every photo.
+        // A title these photos lack leaves the path empty for every photo.
         let raws = photos(&out, &["a.ARW", "b.ARW"]);
         let bare = preview(&run(
             raws.clone(),
@@ -992,6 +1021,40 @@ mod tests {
         assert_eq!(names, ["STARS", "OPENCL.ACTIVATED"]);
         // They expand to nothing, and the export goes on.
         assert_eq!(files(&preview, &out), ["___a.png"]);
+    }
+
+    /// A title names each photo's file, exactly: the open photo's as the session holds it,
+    /// whatever its sidecar says; another's from its `.apxmp`, or with none from
+    /// darktable's `.xmp`; and nothing said of it under the path.
+    #[test]
+    fn a_title_is_read_from_the_session_the_sidecar_or_darktable_s_xmp() {
+        use apertrust_library::fields::{FieldValue, Fields};
+        let out = scratch("titles");
+        let raws = photos(&out, &["open.ARW", "saved.ARW", "dt.ARW", "none.ARW"]);
+        crate::export_job::testing::sidecar_title(&raws[0], "On disk", 1);
+        crate::export_job::testing::sidecar_title(&raws[1], "Harbour", 1);
+        crate::export_job::testing::darktable_title(&raws[2], "Lighthouse");
+        let mut open = active(&raws[0], false);
+        let title = FieldValue::LangAlt(vec![("x-default".to_owned(), "Market".to_owned())]);
+        open.copy.fields = Fields {
+            values: vec![("dc:title".to_owned(), title)],
+            name: String::new(),
+            copies: 1,
+        };
+        let path = path_in(&out, "$(TITLE)_$(FILE_NAME)");
+        let run = run(raws, settings(&path, OnConflict::Skip), Some(open));
+        let preview = preview(&run);
+        assert!(preview.not_here.is_empty(), "{:?}", preview.not_here);
+        assert_eq!(
+            files(&preview, &out),
+            [
+                "Market_open.png",
+                "Harbour_saved.png",
+                "Lighthouse_dt.png",
+                "_none.png"
+            ]
+        );
+        assert!(preview.names.iter().all(|name| name.exact));
     }
 
     #[test]
@@ -1060,18 +1123,40 @@ mod tests {
     fn the_path_is_probed_for_what_it_asks_of_a_photo() {
         let uses = |path: &str| {
             let disk = Disk::new(path, OnConflict::Skip, 2, None).expect("a pattern");
-            let Uses { exif, decoded } = Uses::of(&disk, "png");
-            (exif, decoded)
+            let Uses {
+                exif,
+                fields,
+                decoded,
+            } = Uses::of(&disk, "png");
+            (exif, decoded, fields)
         };
-        assert_eq!(uses("/o/$(FILE_NAME)"), (false, false));
-        assert_eq!(uses("/o/$(FILE_FOLDER)/$(SEQUENCE)"), (false, false));
-        assert_eq!(uses("/o/$(EXIF.YEAR)/$(FILE_NAME)"), (true, false));
-        assert_eq!(uses("/o/$(EXIF.EXPOSURE)"), (true, false));
-        assert_eq!(uses("/o/$(EXIF.MODEL)"), (false, true));
-        assert_eq!(uses("/o/$(EXIF.ISO)"), (false, true));
-        assert_eq!(uses("/o/$(WIDTH.SENSOR)x$(EXIF.YEAR)"), (true, true));
+        assert_eq!(uses("/o/$(FILE_NAME)"), (false, false, false));
+        assert_eq!(uses("/o/$(FILE_FOLDER)/$(SEQUENCE)"), (false, false, false));
+        assert_eq!(uses("/o/$(EXIF.YEAR)/$(FILE_NAME)"), (true, false, false));
+        assert_eq!(uses("/o/$(EXIF.EXPOSURE)"), (true, false, false));
+        assert_eq!(uses("/o/$(EXIF.MODEL)"), (false, true, false));
+        assert_eq!(uses("/o/$(EXIF.ISO)"), (false, true, false));
+        assert_eq!(uses("/o/$(WIDTH.SENSOR)x$(EXIF.YEAR)"), (true, true, false));
         // A value the path does not let through does not count.
-        assert_eq!(uses("/o/$(EXIF.MODEL:0:0)$(FILE_NAME)"), (false, false));
+        assert_eq!(
+            uses("/o/$(EXIF.MODEL:0:0)$(FILE_NAME)"),
+            (false, false, false)
+        );
+        // The copy's fields, name and count are its sidecar's; the crop factor is the
+        // EXIF's, and the camera's text stands in for the creator; the version is always
+        // the first copy's.
+        assert_eq!(uses("/o/$(TITLE)_$(FILE_NAME)"), (false, false, true));
+        assert_eq!(
+            uses("/o/$(VERSION.NAME)$(VERSION.IF_MULTI)"),
+            (false, false, true)
+        );
+        assert_eq!(
+            uses("/o/$(Xmp.xmpMM.PreservedFileName)"),
+            (false, false, true)
+        );
+        assert_eq!(uses("/o/$(EXIF.CROP_FACTOR)"), (true, false, false));
+        assert_eq!(uses("/o/$(CREATOR)"), (true, false, true));
+        assert_eq!(uses("/o/$(VERSION)_$(FILE_NAME)"), (false, false, false));
     }
 
     #[test]

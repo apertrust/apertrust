@@ -77,7 +77,7 @@ use crate::export::{
 };
 use crate::gpu::GpuContext;
 use crate::jobs::{self, Context, Destination, Interrupted, Job, Message, Offer, TaskError, Tasks};
-use crate::names::{self, Shot, Sizes};
+use crate::names::{self, CopyFields, Shot, Sizes};
 use crate::pipeline::{self, Instance, Limits, Pipe, PlanError, Resample};
 use crate::session::{Command, Decoded, Event, Load, Outbox, Retries};
 use crate::sidecar::{self, FileStamp};
@@ -358,6 +358,9 @@ pub(crate) struct Live {
     pub image: ImageContext,
     pub input: GpuImage,
     pub shot: Shot,
+    /// Its copy's fields, name and count as the session holds them, darktable's read from
+    /// its `.xmp` among them where they are not yet written.
+    pub copy: CopyFields,
     /// Whether the edit has changed since it was last handed to the writer, so its change
     /// time is the export's moment rather than its file's.
     pub unsaved: bool,
@@ -835,7 +838,7 @@ impl Run {
         };
         let live = self.live.as_ref();
         let live = live.filter(|live| live.sidecar == sidecar::path_for(path));
-        let (mut edit, newer, image, input, shot, changed) = match live {
+        let (mut edit, newer, image, input, shot, copy, changed) = match live {
             Some(live) => {
                 let changed = if live.unsaved {
                     Some(SystemTime::now())
@@ -849,11 +852,12 @@ impl Run {
                     image,
                     input,
                     live.shot.clone(),
+                    live.copy.clone(),
                     changed,
                 )
             }
             None => {
-                let (edit, newer) = match self.edit(path, snapshot.xml) {
+                let (edit, newer, copy) = match self.edit(path, snapshot.xml) {
                     Ok(edit) => edit,
                     Err(message) => return failed(Cause::Edit, None, &message),
                 };
@@ -864,7 +868,7 @@ impl Run {
                 let Decoded {
                     image, input, shot, ..
                 } = decoded;
-                (edit, newer, image, input, shot, snapshot.changed)
+                (edit, newer, image, input, shot, copy, snapshot.changed)
             }
         };
         // As the session reads an edit: a number outside its range clamped, a newer
@@ -906,7 +910,7 @@ impl Run {
         };
         // Its place in the export first asked for, which a retry keeps.
         let sequence = self.numbering.sequences[index];
-        let values = names.values(path, &shot, sequence, sizes);
+        let values = names.values(path, &shot, sequence, sizes, &copy);
         let extension = settings.format.extension();
         let mut target = match disk.prepare(&values, extension, changed) {
             Ok(Prepared::Write(target)) => target,
@@ -980,14 +984,19 @@ impl Run {
         Some(result)
     }
 
-    /// The edit a photo's sidecar holds, as `xml` the writer read it, and whether a newer
-    /// Apertrust wrote it; none for a photo never edited.
-    fn edit(&self, path: &Path, xml: io::Result<Option<String>>) -> Result<(Edit, bool), String> {
+    /// The edit a photo's sidecar holds, as `xml` the writer read it, whether a newer
+    /// Apertrust wrote it, and its first copy's fields, name and count; none for a photo
+    /// never edited, whose fields are darktable's `.xmp`'s.
+    fn edit(
+        &self,
+        path: &Path,
+        xml: io::Result<Option<String>>,
+    ) -> Result<(Edit, bool, CopyFields), String> {
         let sidecar = sidecar::path_for(path);
         let reading = |error: &dyn Display| format!("reading {}: {error}", sidecar.display());
         let xml = match xml {
             Ok(Some(xml)) => xml,
-            Ok(None) => return Ok((Edit::default(), false)),
+            Ok(None) => return Ok((Edit::default(), false, CopyFields::darktable(path))),
             Err(error) => return Err(reading(&error)),
         };
         let loaded = sidecar::from_xml(&xml, self.operations, &self.tools, self.retired)
@@ -996,7 +1005,8 @@ impl Run {
             tracing::warn!(target: "pipe", "{}: {warning}", sidecar.display());
         }
         let newer = loaded.view_only().is_some();
-        Ok((loaded.edit, newer))
+        let copy = CopyFields::of(&loaded.file);
+        Ok((loaded.edit, newer, copy))
     }
 }
 
@@ -1067,11 +1077,47 @@ pub(crate) mod testing {
 
     use crate::gpu::GpuContext;
     use crate::jobs::{GpuTask, Step};
+    use crate::sidecar;
 
     /// An export's path of `rest` in `folder`, its folders written with `/`: a path reads
     /// `\` as an escape, so Windows' own separator would vanish, as in darktable.
     pub(crate) fn path_in(folder: &Path, rest: &str) -> String {
         format!("{}/{rest}", folder.to_string_lossy().replace('\\', "/"))
+    }
+
+    /// A darktable sidecar beside `photo` holding the title `title`.
+    pub(crate) fn darktable_title(photo: &Path, title: &str) {
+        let xmp = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF
+            xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
+            xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title><rdf:Alt>
+            <rdf:li xml:lang="x-default">{title}</rdf:li></rdf:Alt></dc:title>
+            </rdf:Description></rdf:RDF></x:xmpmeta>"#
+        );
+        std::fs::write(apertrust_library::darktable::path_for(photo), xmp).unwrap();
+    }
+
+    /// An `.apxmp` beside `photo` of `copies` copies with no edit, its first titled
+    /// `title`.
+    pub(crate) fn sidecar_title(photo: &Path, title: &str, copies: usize) {
+        use apertrust_library::clock::{Clock, MachineId};
+        use apertrust_library::fields::{self, FieldValue};
+        let path = sidecar::path_for(photo);
+        let edit = crate::edit::Edit::default();
+        let operations = apertrust_operations::OPERATIONS;
+        sidecar::write(&path, &edit, operations, &[], "0.4.0").unwrap();
+        let xml = std::fs::read_to_string(&path).unwrap();
+        let mut file = sidecar::Edits::parse(&xml, 0).unwrap();
+        let alt = FieldValue::LangAlt(vec![("x-default".to_owned(), title.to_owned())]);
+        let clock = Clock::at(1_000, None, MachineId::UNKNOWN);
+        fields::set_in(&mut file.copies[0], "dc:title", Some(alt), clock);
+        for number in 1..copies {
+            let mut copy = file.copies[0].clone();
+            copy.id = format!("{number:08x}");
+            copy.number = number.to_string();
+            file.copies.push(copy);
+        }
+        std::fs::write(&path, file.to_xml()).unwrap();
     }
 
     /// Holds the first step of an export's render, on the engine thread, as a long step
@@ -2201,6 +2247,49 @@ mod tests {
         assert_eq!(
             listed(&out),
             ["photo_0001.png", "photo_0002.png", "photo_0003.png"]
+        );
+        drop(client);
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// Each photo's file is named by its copy's fields: the live photo's title as the
+    /// session holds it, set just before; another's from its `.apxmp`, of two copies, so
+    /// `$(VERSION.IF_MULTI)` writes its first's 0; one with no `.apxmp` from darktable's
+    /// `.xmp`; and one with no title by the rest of the pattern alone.
+    #[test]
+    fn a_photo_s_title_names_its_file_wherever_its_fields_are_kept() {
+        let gpu = gpu();
+        let folder = scratch("titles");
+        let [live, saved, darktable, none] =
+            ["live.ARW", "saved.ARW", "dt.ARW", "none.ARW"].map(|name| folder.join(name));
+        testing::sidecar_title(&saved, "Harbour", 2);
+        testing::darktable_title(&darktable, "Lighthouse");
+        let out = folder.join("out");
+        let mut client = Client::beside_a_viewport(&gpu, &live);
+        client.send(Command::SetMetadata {
+            photos: Vec::new(),
+            fields: vec![("dc:title".to_owned(), Some("Market".to_owned()))],
+            values: Vec::new(),
+        });
+        let rest = "$(TITLE)_$(FILE_NAME)$(VERSION.IF_MULTI)";
+        let photos = [&live, &saved, &darktable, &none].map(PathBuf::as_path);
+        let command = client.send(export_as(&photos, &out, rest, OnConflict::Skip));
+        let job = client.job(command);
+        client.ended(job);
+        let statuses = client.exported(job);
+        let written = Summary {
+            written: 4,
+            ..Summary::default()
+        };
+        assert_eq!(summary(&statuses), written, "{statuses:?}");
+        assert_eq!(
+            listed(&out),
+            [
+                "Harbour_saved0.png",
+                "Lighthouse_dt.png",
+                "Market_live.png",
+                "_none.png"
+            ]
         );
         drop(client);
         let _ = std::fs::remove_dir_all(&folder);

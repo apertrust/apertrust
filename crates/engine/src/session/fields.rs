@@ -56,10 +56,6 @@ use super::{
 };
 use crate::history::{BatchId, Move};
 
-/// The namespace of `xmpMM:PreservedFileName`, which an import that renames a photo keeps
-/// its camera name in (decision 85).
-const MEDIA_MANAGEMENT: &str = "http://ns.adobe.com/xap/1.0/mm/";
-
 /// What a [`FieldRecord`] changed, which tells which records merge and how Undo names it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Changed {
@@ -278,10 +274,7 @@ impl Open {
             .filter(|entry| !library_fields::is_rating(&entry.field))
             .map(|entry| (entry.field.clone(), entry.value.clone()))
             .collect();
-        let preserved = (self.file.other.iter())
-            .find(|property| property.name.is(MEDIA_MANAGEMENT, "PreservedFileName"))
-            .and_then(|property| property.node.as_str())
-            .map(str::to_owned);
+        let preserved = crate::names::preserved_file_name(&self.file);
         // Values with no clock are darktable's, not yet written.
         let darktable = copy.is_some_and(|copy| {
             let name = !copy.name.is_empty() && copy.name_clock.is_none();

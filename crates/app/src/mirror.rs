@@ -733,8 +733,9 @@ impl Mirror {
     }
 
     /// What makes the Export tool's preview stale while its photo and settings stay: a
-    /// change of the photo's history, the photo becoming live, which gives its output size,
-    /// or the end of an export, whose files are then there. It only grows.
+    /// change of the photo's history or of its Metadata fields and copy, which file names
+    /// take, the photo becoming live, which gives its output size, or the end of an
+    /// export, whose files are then there. It only grows.
     pub fn preview_generation(&self) -> u64 {
         self.edit_changes + self.jobs.exports_ended()
     }
@@ -919,6 +920,16 @@ impl Mirror {
                     kept.photo != state.photo || state.through >= kept.through
                 };
                 if self.metadata.as_ref().is_none_or(newer) {
+                    // The same photo's fields or copy changed, which the Export tool's
+                    // preview names files by; the first of a photo is no change, as its
+                    // history's is not.
+                    let moved = self.metadata.as_ref().is_some_and(|kept| {
+                        kept.photo == state.photo
+                            && (kept.fields != state.fields
+                                || kept.copy != state.copy
+                                || kept.preserved_file_name != state.preserved_file_name)
+                    });
+                    self.edit_changes += u64::from(moved);
                     self.metadata = Some(state);
                 }
             }
@@ -2854,6 +2865,31 @@ pub(crate) mod tests {
         let other = m.preview_generation();
         m.apply(event(5, &[1, 2, 3]));
         assert_eq!(m.preview_generation(), other);
+        // Its Metadata fields: the first is no change, the same again none, a title one.
+        let titled = |through, title: Option<&str>| {
+            Event::Metadata(apertrust_engine::session::MetadataState {
+                through,
+                photo: PathBuf::from("/photos/b.ARW"),
+                fields: (title.iter())
+                    .map(|t| {
+                        (
+                            "dc:title".to_owned(),
+                            Some(apertrust_engine::session::FieldValue::Text((*t).to_owned())),
+                        )
+                    })
+                    .collect(),
+                copy: apertrust_engine::session::CopyState::default(),
+                preserved_file_name: None,
+                darktable: false,
+            })
+        };
+        m.apply(titled(6, None));
+        assert_eq!(m.preview_generation(), other);
+        m.apply(titled(7, None));
+        assert_eq!(m.preview_generation(), other);
+        m.apply(titled(8, Some("Market")));
+        assert_eq!(m.preview_generation(), other + 1);
+        let other = m.preview_generation();
 
         // An export ending, finished or cancelled, once each.
         let ids = jobs::tests::ids(2);
