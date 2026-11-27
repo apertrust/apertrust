@@ -2,7 +2,7 @@
 
 What runs models, how assistants and agents reach the editor, and how the pipeline's derivatives let Apertrust set the sliders towards a goal. Every client, agents included, goes through the [session protocol](session-protocol.md); the kernels' derivative entry points are [engine.md](engine.md#later-phases)'s and the `slang-kernels` skill's.
 
-**Status.** Built: every differentiable kernel exports its derivatives, checked against finite differences; the session protocol's types serializable, the first of MCP's foundation (decision 108). Planned: the matching slice, Phase 3's first engine work; AI masks in Phase 4; MCP through `apertrust-mcp`, AI denoise, AI erase and reference matching in Phase 6 (decisions 11, 58, 60 and 108); `Command::access()` now, the rest of MCP's foundation (decision 108).
+**Status.** Built: every differentiable kernel exports its derivatives, checked against finite differences; the session protocol's types serializable and each command's access, `Command::access()`, MCP's foundation (decision 108). Planned: the matching slice, Phase 3's first engine work; AI masks in Phase 4; MCP through `apertrust-mcp`, AI denoise, AI erase and reference matching in Phase 6 (decisions 11, 58, 60 and 108).
 
 ## AI inference
 

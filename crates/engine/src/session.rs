@@ -659,6 +659,32 @@ pub enum Command {
     HoldClear(export_job::testing::Hold),
 }
 
+/// What a client must be granted to send a command (decision 108): five scopes, each
+/// including those before it, and `Person`, the person's own client's alone, never
+/// granted to an agent; a client granted `granted` may send `command` exactly when
+/// `granted >= command.access()`. Nothing checks it yet; the session will, per
+/// connection, once agents join it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Access {
+    /// Reads: the values, the history, the photo's metadata, renders, thumbnails, the
+    /// selection.
+    View,
+    /// Changes to the open photo's edit, and Undo and Redo.
+    EditOpenPhoto,
+    /// What is open and shown: a photo opened or closed, a folder, the selection; and
+    /// edits of photos that are not open.
+    Photos,
+    /// Files written from the photos: an export, and its preview.
+    Export,
+    /// Changes beyond the photos shown: the person's settings, the disk cache, and later
+    /// Move to…, Copy to…, Rename and Delete.
+    Organise,
+    /// The person's own: the shared view and the live picker, and the history's rewrites,
+    /// which an agent is never granted (decision 108): its renders and scopes are its own,
+    /// its picks one-shot, and its undo only of its own newest change.
+    Person,
+}
+
 /// How [`Command::ApplyStyle`] applies a style (decision 106), as the person chooses it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum StyleMode {
@@ -714,6 +740,116 @@ fn on_edit(command: &Command) -> bool {
         | Command::HoldChunks(_)
         | Command::HoldClear(_) => false,
         _ => true,
+    }
+}
+
+impl Command {
+    /// The scope a client needs to send this command (decision 108), from the command
+    /// alone: where what a command does depends on the session's state (the active
+    /// picker's moves, a job's cancel or retry), the most it can do. Every command on the
+    /// edit (`on_edit`) needs at least [`Access::EditOpenPhoto`], and a [`Command::Step`]
+    /// the most any of its commands needs, each checked against its own, so one holding
+    /// [`Command::Reset`] needs [`Access::Person`]. A command naming photos, which can
+    /// reach photos that are not open, needs [`Access::Photos`].
+    pub fn access(&self) -> Access {
+        match self {
+            Command::Open(_) | Command::Close => Access::Photos,
+            Command::Resize { .. } | Command::View(_) => Access::Person,
+            Command::SetControl { .. }
+            | Command::ResetControl { .. }
+            | Command::ResetTool { .. }
+            | Command::SetTool { .. }
+            | Command::CancelGesture { .. }
+            | Command::Keep { .. }
+            | Command::ApplyPreset { .. }
+            | Command::Set { .. }
+            | Command::RenameCopy { .. }
+            | Command::ClearStyle { .. }
+            | Command::RetrySave => Access::EditOpenPhoto,
+            // Crossing a remembered batch, they move it on its other photos too (decision 109).
+            Command::Undo | Command::Redo => Access::Photos,
+            Command::Rate { photos, .. }
+            | Command::SetMetadata { photos, .. }
+            | Command::ApplyStyle { photos, .. } => {
+                if photos.is_empty() {
+                    Access::EditOpenPhoto
+                } else {
+                    Access::Photos
+                }
+            }
+            Command::Reset
+            | Command::GoTo { .. }
+            | Command::Compress { .. }
+            | Command::Truncate { .. }
+            | Command::DiscardHistory => Access::Person,
+            Command::Step { commands, .. } => commands
+                .iter()
+                .map(Command::access)
+                .fold(Access::EditOpenPhoto, Access::max),
+            Command::UndoBatch { .. } => Access::Photos,
+            Command::Hide { .. } | Command::Scopes(_) => Access::Person,
+            Command::Picker(picker) => match picker {
+                PickerCommand::On {
+                    picker: PickerRef::ColourPicker | PickerRef::Tool { .. },
+                    ..
+                }
+                | PickerCommand::Point { .. }
+                | PickerCommand::Area { .. }
+                | PickerCommand::Switch
+                | PickerCommand::Reset
+                | PickerCommand::Settings { .. }
+                | PickerCommand::Channel { .. }
+                | PickerCommand::Off => Access::Person,
+                PickerCommand::Once { .. } => Access::EditOpenPhoto,
+            },
+            // It can stop, or run again, an export, a folder's open or a cache's Clear.
+            Command::CancelJob { .. } | Command::RetryJob { .. } => Access::Organise,
+            Command::Export { .. } | Command::PreviewExport { .. } => Access::Export,
+            Command::Summarise { .. } => Access::View,
+            Command::Library(command) => match command {
+                LibraryCommand::Open(library::Source::Folder(_) | library::Source::Photos(_))
+                | LibraryCommand::Close => Access::Photos,
+                // Import's reading of a source, any folder as the library's `Open`.
+                LibraryCommand::ListSource { .. }
+                | LibraryCommand::CancelListing { .. }
+                | LibraryCommand::CheckSource { .. }
+                | LibraryCommand::SourceThumbnails { .. }
+                | LibraryCommand::ListVolumes
+                | LibraryCommand::SourceSubfolders { .. } => Access::Photos,
+                LibraryCommand::Thumbnails { .. }
+                | LibraryCommand::PhotoThumbnails { .. }
+                | LibraryCommand::Subfolders { .. } => Access::View,
+                // The person's setting `library.raw_thumbnails_from`.
+                LibraryCommand::RawThumbnails(_) => Access::Organise,
+            },
+            Command::Selection(selection) => match selection {
+                SelectionCommand::Set(_)
+                | SelectionCommand::Add(_)
+                | SelectionCommand::Remove(_)
+                | SelectionCommand::Range { .. }
+                | SelectionCommand::All
+                | SelectionCommand::Clear
+                | SelectionCommand::Invert
+                | SelectionCommand::Unedited
+                | SelectionCommand::Previous => Access::Photos,
+            },
+            Command::Cache(cache) => match cache {
+                CacheCommand::Sizes => Access::View,
+                CacheCommand::Limit(_) | CacheCommand::Clear { .. } => Access::Organise,
+            },
+            // The tests' own start jobs; the top scope, so never the loosest case.
+            #[cfg(test)]
+            Command::Synthetic(_)
+            | Command::HoldExport(_)
+            | Command::HoldPreview(_)
+            | Command::HoldSummary(_)
+            | Command::HoldFolder(_)
+            | Command::HoldWalk(_)
+            | Command::HoldThumbnails(_)
+            | Command::HoldDecode(_)
+            | Command::HoldChunks(_)
+            | Command::HoldClear(_) => Access::Organise,
+        }
     }
 }
 
