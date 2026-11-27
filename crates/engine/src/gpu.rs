@@ -16,6 +16,9 @@
 
 //! GPU adapter and device setup.
 
+use std::cell::Cell;
+use std::time::{Duration, Instant};
+
 use apertrust_base::settings::Choice;
 use thiserror::Error;
 
@@ -168,12 +171,73 @@ pub struct GpuContext {
 impl GpuContext {
     /// Submits `buffers` to the queue, holding the [`SubmitGate`]. Every submission of
     /// the engine's goes through here.
+    ///
+    /// Under `-d perf` it times its wait for the gate, counted in this thread's
+    /// [`Submissions`] and logged where it passes [`GATE_WAIT_LOGGED`] (decision 112's
+    /// measurement); with `perf` off it times nothing.
     pub fn submit<I: IntoIterator<Item = wgpu::CommandBuffer>>(
         &self,
         buffers: I,
     ) -> wgpu::SubmissionIndex {
-        let _held = self.gate.hold();
-        self.queue.submit(buffers)
+        let asked = tracing::enabled!(target: "perf", tracing::Level::DEBUG).then(Instant::now);
+        let held = self.gate.hold();
+        let waited = asked.map(|asked| asked.elapsed());
+        let index = self.queue.submit(buffers);
+        drop(held);
+        if let Some(waited) = waited {
+            Submissions::count(waited);
+            if waited > GATE_WAIT_LOGGED {
+                let ms = waited.as_secs_f64() * 1e3;
+                tracing::debug!(target: "perf", "submit waited {ms:.1} ms for the gate");
+            }
+        }
+        index
+    }
+}
+
+/// The wait for the submit gate a submission logs past, under `-d perf`.
+pub const GATE_WAIT_LOGGED: Duration = Duration::from_micros(500);
+
+thread_local! {
+    /// This thread's submissions through [`GpuContext::submit`] while `-d perf` is on.
+    static SUBMITTED: Cell<Submissions> = const { Cell::new(Submissions::NONE) };
+}
+
+/// A thread's submissions through [`GpuContext::submit`] under `-d perf`, and their summed
+/// wait for the submit gate: so far ([`Submissions::so_far`]), or between two such counts
+/// ([`Submissions::since`]), as a live frame's line gives them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Submissions {
+    pub count: u32,
+    pub waited: Duration,
+}
+
+impl Submissions {
+    const NONE: Submissions = Submissions {
+        count: 0,
+        waited: Duration::ZERO,
+    };
+
+    /// This thread's, so far.
+    pub fn so_far() -> Self {
+        SUBMITTED.get()
+    }
+
+    /// Those after `earlier`, a count of this thread's before them.
+    pub fn since(self, earlier: Self) -> Self {
+        Submissions {
+            count: self.count.saturating_sub(earlier.count),
+            waited: self.waited.saturating_sub(earlier.waited),
+        }
+    }
+
+    /// One more submission of this thread's, that waited `waited` for the gate.
+    fn count(waited: Duration) {
+        let so_far = SUBMITTED.get();
+        SUBMITTED.set(Submissions {
+            count: so_far.count.saturating_add(1),
+            waited: so_far.waited.saturating_add(waited),
+        });
     }
 }
 
@@ -801,6 +865,32 @@ mod tests {
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("the other thread enters once the gate is free");
         other.join().expect("the other thread ends");
+    }
+
+    #[test]
+    fn submissions_are_counted_for_their_own_thread_and_since_an_earlier_count() {
+        std::thread::spawn(|| {
+            assert_eq!(Submissions::so_far(), Submissions::NONE);
+            Submissions::count(Duration::from_millis(3));
+            let before = Submissions::so_far();
+            Submissions::count(Duration::from_millis(2));
+            Submissions::count(Duration::from_millis(5));
+            // Another thread's count is its own.
+            std::thread::spawn(|| Submissions::count(Duration::from_secs(1)))
+                .join()
+                .expect("the other thread ends");
+            let after = Submissions::so_far();
+            assert_eq!(after.count, 3);
+            assert_eq!(
+                after.since(before),
+                Submissions {
+                    count: 2,
+                    waited: Duration::from_millis(7),
+                }
+            );
+        })
+        .join()
+        .expect("the counting thread ends");
     }
 
     impl SubmitGate {
