@@ -173,7 +173,7 @@ Planned, Phase 3, the library's step 19, with Rename and Delete ([decision 101](
 - **Never replaces a file** at the destination; a cancel takes effect between photos.
 - **Albums:** the sheet counts the album entries a move takes out of a folder's `.apertrust/`.
 - **Delete** sends photos with their sidecars to the system's trash, with a bar and not cancellable (decision 57).
-- **Import's copy is this checked copy** (decision 85): from 20a1 whole or absent and never replacing a file, its read-back Verify the copies (20b), on by default if the read-back adds at most 10% to a card import's time, the source hashed as it is copied and only the destination read back, else off, pending the card's measurement ([below](#what-verify-the-copies-default-waits-on)); Backup (20d) copies to a second destination the same way.
+- **Import's copy is this checked copy** (decision 85): from 20a1 whole or absent and never replacing a file, its read-back Verify the copies (20b), on by default, the source hashed as it is copied and only the destination read back ([below](#why-verify-the-copies-is-on-by-default)); Backup (20d) copies to a second destination the same way.
 
 ### The checked copy
 
@@ -220,9 +220,9 @@ cargo run --release -p apertrust-library --example copy_timing -- test-images/ra
 cargo run --release -p apertrust-library --example copy_timing -- test-images\raw.pixls.us %TEMP%\copy-timing 200
 ```
 
-#### What Verify the copies' default waits on
+#### Why Verify the copies is on by default
 
-On the M4's SSD the read-back adds 1.4 s a GB. A card import to it takes the card's read plus about 1.2 s a GB for the copy and hash, so the read-back adds at most 10% only where the card reads at about 78 MB/s or slower, a UHS-I card's speed; a UHS-II card at 250 MB/s would take about 27% longer. Decision 85's default for Verify the copies (`import.verify`, 20b) is pending the card's measurement: on if the card measured adds at most 10%, else off.
+The read-back's cost is the destination's, about 1.3 s a GB to a local SSD, whatever the card: so its share of a card import is the reader's speed. From a USB 2 reader, at 39 to 41 MB/s, it adds 2.5 to 5%; from one at 165 MB/s, 22 to 23%, a 64 GB card taking about 8 minutes rather than 6.5. Hashing the source as it is read adds nothing a card shows. A copy that differs from its card is found only by the read-back, before the card is formatted, so Verify the copies (`import.verify`, 20b) is on by default (decision 85), and the setting turns it off.
 
 ### Import in folder mode
 

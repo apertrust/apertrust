@@ -2295,7 +2295,7 @@ One tool, Import, its header the title, ↺, the presets button and ⋯ ([The co
 | | Show already imported | On | `import.show_imported` | 20b |
 | | Date taken, from and to | Empty | — | After Phase 3 |
 | **After import** (open) | Open the destination: When the import starts (darktable's), When it ends, No | When the import starts | `import.open_destination` | 20a2; in 20a1 When it ends, the other choices disabled |
-| | Verify the copies: each copy read back past the system's cache and compared with its source before its photo counts as landed, its tooltip saying so | On if step 19's spike measures the read-back as cheap on a local SSD, adding at most 10% to a card import's time, the source hashed as it is copied and only the destination read back, else off | `import.verify` | 20b |
+| | Verify the copies: each copy read back past the system's cache and compared with its source before its photo counts as landed, its tooltip saying so | On, the source hashed as it is copied and only the destination read back | `import.verify` | 20b |
 
 - **A row of a later slice is drawn disabled,** "Comes in a later version" in its tooltip, never hidden: in 20a1 Places' ＋, − and ↺, Include subfolders, Select only new photos, Folder's ⌄, Keep original file name, on, and File name; until 20b Metadata and Filters, closed.
 - **⋯** holds **Open Folder Instead** (20a2), enabled while the source is a folder on a fixed disk: it opens that folder where it is and closes the sheet.
