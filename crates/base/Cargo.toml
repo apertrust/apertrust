@@ -32,6 +32,9 @@ fs = ["dep:tempfile", "dep:rustix"]
 # The disk cache (decision 76): its kinds, entries, walk, eviction and clearing, written
 # through the safe write, for the engine, the library and the CLI. No `unsafe`.
 cache = ["fs"]
+# darktable's variables and the person's folders they read (decision 85), for the export's
+# path and the import's patterns: the export and the library.
+variables = ["dep:thiserror"]
 
 [dependencies]
 # The safe write's hidden temporary file.

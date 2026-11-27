@@ -18,9 +18,9 @@
 //! (architecture decision 43).
 //!
 //! Its rule: only what a program needs before its first real work: its logging with the
-//! startup banner and the version, its folders and its settings. Nothing
-//! about images, colour, the GPU or the interface: no egui, no wgpu, no engine, so that
-//! every client, the design system included, can depend on it.
+//! startup banner and the version, its folders and its settings. Nothing that decodes or
+//! processes images, and nothing of colour, the GPU or the interface: no egui, no wgpu, no
+//! engine, so that every client, the design system included, can depend on it.
 //!
 //! - `log`, behind the `log` feature, which the design system never turns on: darktable's
 //!   `-d` domains, short lines and the startup banner (decision 44), and
@@ -52,6 +52,9 @@
 //!   `data/settings.schema.toml` in the workspace's top-level `data/` (decision 45).
 //! - [`wire`]: serde helpers for the session protocol's types (decision 108): ids read
 //!   from text, `io::Error`, `io::ErrorKind` and NaN.
+//! - `variables`, behind the `variables` feature, which the export and the library turn
+//!   on (decision 85): darktable's variables, the patterns' text an export's path and an
+//!   import's folders share, and `Places`, the person's folders and name they read.
 //!
 //! [`Choice`]: settings::Choice
 //! [`Store`]: settings::Store
@@ -70,4 +73,6 @@ pub mod jobs;
 #[cfg(feature = "log")]
 pub mod log;
 pub mod settings;
+#[cfg(any(feature = "variables", test))]
+pub mod variables;
 pub mod wire;

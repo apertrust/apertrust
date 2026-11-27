@@ -18,6 +18,7 @@ crates/base/src/fs.rs
 crates/base/src/fs/**
 crates/base/src/folders.rs
 crates/base/src/settings/**
+crates/base/src/variables/**
 crates/export/**
 crates/library/**
 crates/cli/**

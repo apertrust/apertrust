@@ -17,7 +17,7 @@ darktable at the reference release, commit 20891f6c6f. darktable's code is the r
 
 **Ported**, for Export (decision 56; `docs/gui.md`, The Export tool):
 
-- `apertrust-export`'s `variables` (`crates/export/src/variables/`);
+- `apertrust-base`'s `variables` (`crates/base/src/variables/`, behind its `variables` feature), which `apertrust-export` re-exports under its old path, `apertrust_export::variables`, so the export and the library's import share it (decision 85);
 - `apertrust-raw`'s `read_exif_file` and `read_exif` (`crates/raw/src/exif.rs`).
 
 Their users, built apart from this port:
@@ -261,7 +261,7 @@ Kept as darktable has them, though odd (darktable-cli does each, Results):
 ## Test plan
 
 - darktable's own `src/tests/variables.c`, its six tests case by case, each with its file name, job code and sequence (`crates/export/tests/variables.rs`): every case darktable expands as it expects, expanded the same; its cases on `NONEXISTANT`, `$(FILE_NAME`, `$(FILE_FOLDER/home` and `foo$(bar…`, which darktable expands to nothing or leaves as text, refused with their errors.
-- Every name, in darktable's order, the table held to `NAMES` whole, expanded for a photo with every value set; every one with no value here expanding to nothing and listed by `not_here`; a photo without EXIF data expanding as darktable's image without them; each metadata field with a value, with none and with the camera's text; `VERSION.IF_MULTI` with one copy and with two; a Creator of two names; a language alternative with no `x-default` item (`crates/export/src/variables/tests.rs`).
+- Every name, in darktable's order, the table held to `NAMES` whole, expanded for a photo with every value set; every one with no value here expanding to nothing and listed by `not_here`; a photo without EXIF data expanding as darktable's image without them; each metadata field with a value, with none and with the camera's text; `VERSION.IF_MULTI` with one copy and with two; a Creator of two names; a language alternative with no `x-default` item (`crates/base/src/variables/tests.rs`).
 - D8: unknown names with and without a suggestion, its place, wrong case, a name with more after it, inside an operation, no name; each `Unclosed` and `NoOperation`; the messages.
 - Parameters: SEQUENCE's digits and start, its older form, 0 digits, text that is no number; ROLL.NAME's levels clamped; the others read and empty; every entry of the list read once filled.
 - The helpers: `dt_util_format_exposure()`'s branches, glib's dirname and basename, ROLL.NAME's levels, the export size, `strtol()`; that no name starts with one before it; the suggestions (unit tests).

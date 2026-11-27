@@ -151,7 +151,7 @@ path = "/Users/me/Pictures/Wedding"
 
 ## Where it lives
 
-**`apertrust-base`** (`crates/base`) holds only what every program sets up as it starts: logging and the banner, the version, folders and settings, the safe write and jobs. Nothing about images, colour, the GPU or the UI goes into it, and it depends on no egui, no wgpu and no engine. For settings it holds:
+**`apertrust-base`** (`crates/base`) holds only what every program sets up as it starts: logging and the banner, the version, folders and settings, the safe write, jobs and darktable's variables. Nothing that decodes or processes images, and nothing of colour, the GPU or the UI, goes into it, and it depends on no egui, no wgpu and no engine. For settings it holds:
 
 - the schema's generator, which embeds the schema from the top-level `data/` (decision 45);
 - the `Setting` type, its kinds and the `Choice` trait;

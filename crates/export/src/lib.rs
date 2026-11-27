@@ -19,8 +19,10 @@
 //! quantised as darktable rounds and with darktable's sRGB output profile embedded.
 //!
 //! Built so far (`docs/gui.md`, The Export dialog): the writers, darktable's export size
-//! ([`size`]), the export settings ([`settings`]), darktable's variables ([`variables`])
-//! and the file-on-disk rules ([`disk`]).
+//! ([`size`]), the export settings ([`settings`]) and the file-on-disk rules ([`disk`]).
+//! darktable's variables ([`variables`]) and the person's folders they read ([`Places`])
+//! live in `apertrust-base`, which the library's import shares (decision 85), and are
+//! re-exported here under their old paths.
 
 // The generated settings name this crate's choice types by their paths in the schema,
 // `apertrust_export::…`, as another crate would.
@@ -38,7 +40,9 @@ pub mod profile;
 pub mod quantise;
 pub mod settings;
 pub mod size;
-pub mod variables;
+
+pub use apertrust_base::variables;
+pub use apertrust_base::variables::Places;
 
 /// A rendered image: the export pipe's output, which colorout has encoded for darktable's
 /// sRGB, row by row from the top, alpha ignored.
@@ -135,18 +139,6 @@ pub struct ExportSettings {
     pub on_conflict: settings::OnConflict,
     pub format: Format,
     pub size: size::Request,
-}
-
-/// The person's folders and name that darktable's variables give (`$(HOME)`,
-/// `$(PICTURES.FOLDER)`, `$(DESKTOP.FOLDER)`, `$(USERNAME)`), sent beside an export's
-/// settings by the client, which finds them on its own machine: the engine reads no
-/// platform folder (decision 43). `None` for a folder the platform has not.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct Places {
-    pub home: Option<std::path::PathBuf>,
-    pub pictures: Option<std::path::PathBuf>,
-    pub desktop: Option<std::path::PathBuf>,
-    pub user_name: String,
 }
 
 #[derive(Debug, Error)]

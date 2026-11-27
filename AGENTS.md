@@ -197,11 +197,11 @@ What each crate has built and planned is in [docs/crates.md](docs/crates.md).
 | `apertrust-display` | The window's platform code, FFI that may use `unsafe`: display colour, the window frame and menu bar where winit and muda cannot (decision 39), native popups (decision 40), modal dialogs and alerts (decision 41), the files Finder opens with the app (decision 46), Windows' named pipe and Linux's peer credentials for the single-instance hand-off (decision 89) and, planned, the assistants' channel beside it (decision 108), and the Windows app's terminal, attached to at its start (`docs/packaging.md`, Windows) |
 | `apertrust-op-<id>` | One operation each, in `crates/op/<id>`: Slang kernel, generated WGSL, CPU-side setup, manifest and schema (decision 20) |
 | `apertrust-operations` | The list of built-in operations, in darktable's order |
-| `apertrust-base` | What every program sets up as it starts, nothing about images, colour, the GPU or the UI (decision 43): logging, version, folders, settings, the safe write, darktable's control jobs; the disk cache, planned (decision 76) |
+| `apertrust-base` | What every program sets up as it starts, nothing that decodes or processes images, nothing of colour, the GPU or the UI (decision 43): logging, version, folders, settings, the safe write, darktable's control jobs, darktable's variables with `Places` (decision 85); the disk cache, planned (decision 76) |
 | `apertrust-plugin` | The operation interface |
 | `apertrust-color` | Colour maths shared by operations, and numerical helpers two ports share (decision 65): Slang for kernels, Rust for setup |
 | `apertrust-tools` | Tools (decision 28): what a person works with, bound to operation parameters; no egui, wgpu, engine or operation crate |
-| `apertrust-export` | What an export writes and where, with no GPU (decision 56): settings, size, variables, file-on-disk rules, JPEG and PNG |
+| `apertrust-export` | What an export writes and where, with no GPU (decision 56): settings, size, file-on-disk rules, JPEG and PNG; darktable's variables re-exported from `apertrust-base` |
 | `apertrust-library` | One photo, folders and optional Libraries, with no GPU (decisions 46, 47, 52 to 55 and 101); never depends on the engine, tools, plugin or wgpu |
 | `apertrust-fs` | Planned, only if bulk listing needs FFI that `rustix` and the `windows` crate do not cover (decision 65) |
 | `apertrust-protocol`, `apertrust-server` | Session protocol; the server, the engine for browsers (decision 58) and, later, if asked, sync (decision 71); later phases |
