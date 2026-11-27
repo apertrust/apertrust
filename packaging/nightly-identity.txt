@@ -31,7 +31,7 @@ name = "Apertrust.Edit" => name = "Apertrust.Nightly.Edit"
 Name=Apertrust => Name=Apertrust Nightly
 Icon=org.apertrust.Apertrust => Icon=org.apertrust.Apertrust.Nightly
 Exec=apertrust %F => Exec=apertrust-nightly %F
-StartupWMClass=apertrust => StartupWMClass=apertrust-nightly
+StartupWMClass=org.apertrust.Apertrust => StartupWMClass=org.apertrust.Apertrust.Nightly
 
 # linux/org.apertrust.Apertrust.metainfo.xml
 <id>org.apertrust.Apertrust</id> => <id>org.apertrust.Apertrust.Nightly</id>

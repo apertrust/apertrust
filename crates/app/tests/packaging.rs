@@ -605,6 +605,12 @@ fn every_package_names_the_app_by_one_id() {
     assert_eq!(config["identifier"].as_str(), Some(APP_ID));
     let desktop = read("packaging/linux/org.apertrust.Apertrust.desktop");
     assert!(desktop.contains(&format!("\nIcon={APP_ID}\n")), "{desktop}");
+    // The window's, which a desktop entry not named after the id, the AppImage's, is
+    // found by.
+    assert!(
+        desktop.contains(&format!("\nStartupWMClass={APP_ID}\n")),
+        "{desktop}"
+    );
     let metainfo = read("packaging/linux/org.apertrust.Apertrust.metainfo.xml");
     assert!(metainfo.contains(&format!("<id>{APP_ID}</id>")));
     assert!(metainfo.contains(&format!(
@@ -742,6 +748,10 @@ fn apertrust_nightly_is_named_by_its_own_id_in_every_package() {
     assert!(
         desktop.contains(&format!("\nIcon={id}\n")),
         "its own icon in {desktop}"
+    );
+    assert!(
+        desktop.contains(&format!("\nStartupWMClass={id}\n")),
+        "its own window in {desktop}"
     );
     let metainfo = as_nightly("packaging/linux/org.apertrust.Apertrust.metainfo.xml");
     for element in [
