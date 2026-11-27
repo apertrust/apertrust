@@ -25,6 +25,7 @@
 //! | Modal | A window centred on the main window | The same, owned by the main window: above it, minimised with it, no taskbar button of its own | The same, of the dialog window type | The same, placed by the compositor |
 //! | Modeless | A window where it was last left | The same | The same | Placed by the compositor |
 //! | A modal window's parent | Its sheet's window | Its owner | None set yet: no `WM_TRANSIENT_FOR` | `xdg_toplevel.set_parent` ([`made`]) |
+//! | Its parent while it is open | Enabled, its input kept by the app | Disabled ([`owner_enabled`]), as Windows' own modal dialogs' owners are | As macOS | As macOS |
 //! | An alert | AppKit's `NSAlert`, a sheet | None yet: no task dialog | Drawn by the host in a modal window ([`draws_alerts`]) | As X11 |
 //! | Frame | AppKit's | Drawn by the host ([`draws_frame`]) | Drawn by the host | Drawn by the host |
 //! | Border and shadow | AppKit's | The system's undecorated shadow | None: a transparent margin can show black without a compositing manager | Drawn by the host round a transparent margin ([`shadowed`]) |
@@ -33,9 +34,9 @@
 //! Under a modal dialog or a sheet the app keeps the main window's input from it on every
 //! platform (the app's `raw_input_hook`), and a click on the main window brings a modal
 //! window forward ([`super::Dialogs::raise`]). Still to build (decision 41; `docs/gui.md`,
-//! Still to build): Windows' owner disabled while it is open (winit's `set_enable`), and
-//! X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`, which winit 0.30 does not set (its
-//! parent window is a child confined to the parent, not a transient), `apertrust-display`'s.
+//! Still to build): X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL`, which winit 0.30
+//! does not set (its parent window is a child confined to the parent, not a transient),
+//! `apertrust-display`'s.
 
 use apertrust_ui::components::CaptionStyle;
 use eframe::egui::os::OperatingSystem;
@@ -158,6 +159,30 @@ pub(super) fn made(window: &Window, form: Form, parent: &Window) {
     let _ = (window, form, parent);
 }
 
+/// Whether a window shown as `form` disables its owner while it is open on `os`: a modal
+/// one on Windows, as Windows' own modal dialogs do, so the owner cannot be activated,
+/// moved, resized or closed, and a click on it or on its taskbar button brings the dialog
+/// forward. Nowhere else, where the app keeps the parent's input from it alone.
+pub fn disables_owner(form: Form, os: OperatingSystem) -> bool {
+    os == OperatingSystem::Windows && form.modal()
+}
+
+/// Disables `owner`, the window a dialog shown as `form` was made over, as the dialog is
+/// about to show, or enables it again (`enabled`) before the dialog's window is destroyed,
+/// so the system gives `owner` the activation back, where [`disables_owner`]: winit's
+/// `EnableWindow`, with no `unsafe`. Nothing elsewhere, nor for a modeless window.
+pub(super) fn owner_enabled(owner: &Window, form: Form, enabled: bool) {
+    if !disables_owner(form, OperatingSystem::from_target_os()) {
+        return;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use egui_winit::winit::platform::windows::WindowExtWindows as _;
+        owner.set_enable(enabled);
+    }
+    let _ = (owner, enabled);
+}
+
 /// Opens a hosted window's window menu at `at`, in the window's pixels, for a right-click
 /// on the frame the host draws: on Linux the compositor's or window manager's. Nothing on
 /// Windows, where winit builds the menu itself with Minimise always enabled and Maximise
@@ -278,6 +303,25 @@ mod tests {
         assert_eq!(forms(&settings), [Form::Modeless, Form::Modal, Form::Modal]);
         let jobs = jobs::Window::new(Vec::new());
         assert_eq!(forms(&jobs), [Form::Modeless; 3]);
+    }
+
+    #[test]
+    fn the_owner_is_disabled_on_windows_alone_for_a_modal_window() {
+        for wanted in [Form::Sheet, Form::Modal, Form::Modeless] {
+            let disables = PLATFORMS.map(|os| disables_owner(wanted, os));
+            assert_eq!(disables, [false, wanted.modal(), false], "{wanted:?}");
+        }
+        // Settings disables the main window on Windows; the jobs and log windows never.
+        let disabled =
+            |dialog: &dyn Dialog| PLATFORMS.map(|os| disables_owner(form(dialog.form(os), os), os));
+        let (keeper, _) = crate::settings::Keeper::nowhere();
+        let settings = settings_dialog::Settings::new(&keeper, false);
+        assert_eq!(disabled(&settings), [false, true, false]);
+        let jobs = jobs::Window::new(Vec::new());
+        assert_eq!(disabled(&jobs), [false; 3]);
+        let (kept, _) = apertrust_base::log::Kept::scoped::<&str>(&[]).expect("a kept log");
+        let log = crate::log_window::Window::new(kept, None);
+        assert_eq!(disabled(&log), [false; 3]);
     }
 
     #[test]
