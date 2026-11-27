@@ -726,7 +726,8 @@ impl FolderState {
             LibraryEvent::SourceListed { .. }
             | LibraryEvent::SourceTaken { .. }
             | LibraryEvent::SourceFailed { .. }
-            | LibraryEvent::SourceChecked { .. } => None,
+            | LibraryEvent::SourceChecked { .. }
+            | LibraryEvent::Volumes { .. } => None,
         }
     }
 

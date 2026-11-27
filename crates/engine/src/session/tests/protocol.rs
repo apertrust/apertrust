@@ -39,7 +39,7 @@ use apertrust_export::{Format, jpeg, png};
 use apertrust_library::clock::ClockError;
 use apertrust_library::ops::{
     EditState, LeftOut, RawThumbnails, Source, SourceFile, SourceShot, SourceState, Thumbnail,
-    Unreadable,
+    Unreadable, Volume,
 };
 use apertrust_library::sidecar::{Newer, Problem, Reason, SidecarError};
 use apertrust_library::summary::{Facts, Summed};
@@ -338,6 +338,7 @@ pub(super) fn every_command() -> Vec<Command> {
             photos: vec![PathBuf::from("100CANON/IMG_0001.CR3")],
             size: 256,
         }),
+        Command::Library(LibraryCommand::ListVolumes),
         Command::Selection(SelectionCommand::Set(vec![photo(), other()])),
         Command::Selection(SelectionCommand::Add(photo())),
         Command::Selection(SelectionCommand::Remove(other())),
@@ -434,7 +435,7 @@ fn picker_variant(command: &PickerCommand) -> usize {
     }
 }
 
-const LIBRARY_COMMAND_VARIANTS: usize = 10;
+const LIBRARY_COMMAND_VARIANTS: usize = 11;
 
 /// Each library command's variant; a new one takes the next index and raises the count.
 fn library_command_variant(command: &LibraryCommand) -> usize {
@@ -449,6 +450,7 @@ fn library_command_variant(command: &LibraryCommand) -> usize {
         LibraryCommand::CancelListing { .. } => 7,
         LibraryCommand::CheckSource { .. } => 8,
         LibraryCommand::SourceThumbnails { .. } => 9,
+        LibraryCommand::ListVolumes => 10,
     }
 }
 
@@ -1145,6 +1147,16 @@ fn every_event() -> Vec<Event> {
             of: 412,
             done: false,
         }),
+        Event::Library(LibraryEvent::Volumes {
+            volumes: vec![Volume {
+                name: "EOS_DIGITAL".to_owned(),
+                mount_point: PathBuf::from("/Volumes/EOS_DIGITAL"),
+                card: true,
+                removable: true,
+                available: 6_200_000_000,
+                total: 63_900_000_000,
+            }],
+        }),
         Event::Cache(CacheEvent::Sizes {
             sizes: Sizes::default(),
             limited: Usage {
@@ -1439,7 +1451,7 @@ fn event_variant(event: &Event) -> Option<usize> {
     })
 }
 
-const LIBRARY_EVENT_VARIANTS: usize = 14;
+const LIBRARY_EVENT_VARIANTS: usize = 15;
 
 /// Each library event's variant; a new one takes the next index and raises the count.
 fn library_event_variant(event: &LibraryEvent) -> usize {
@@ -1458,6 +1470,7 @@ fn library_event_variant(event: &LibraryEvent) -> usize {
         LibraryEvent::SourceTaken { .. } => 11,
         LibraryEvent::SourceFailed { .. } => 12,
         LibraryEvent::SourceChecked { .. } => 13,
+        LibraryEvent::Volumes { .. } => 14,
     }
 }
 

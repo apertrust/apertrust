@@ -40,6 +40,7 @@ crates/app/tests/packaging.rs
 crates/engine/src/session/cache/tests.rs
 crates/engine/src/session/selection.rs
 crates/engine/src/session/tests/selection.rs
+crates/engine/src/session/tests/import.rs
 crates/app/src/jobs.rs
 crates/app/src/jobs/**
 crates/app/src/menus.rs

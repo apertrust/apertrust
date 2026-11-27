@@ -54,8 +54,11 @@ use crate::listing::Options;
 pub use crate::listing::browser_order;
 use crate::sidecar::Newer;
 pub use crate::source::{LeftOut, SourceFile, Unreadable};
+pub use crate::volumes::{FreeSpace, Volume, free_space};
 pub use crate::walk::WalkedFolder;
-pub use import::{SourceShot, SourceState, Trees, check_source, list_source, relative_inside};
+pub use import::{
+    SourceShot, SourceState, Trees, check_source, list_source, relative_inside, volumes,
+};
 
 mod import;
 
@@ -151,6 +154,9 @@ pub enum LibraryCommand {
         photos: Vec<PathBuf>,
         size: u32,
     },
+    /// Lists the cards and drives mounted, for Import's Source as its sheet opens; answered
+    /// by [`LibraryEvent::Volumes`].
+    ListVolumes,
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -266,6 +272,11 @@ pub enum LibraryEvent {
         of: usize,
         done: bool,
     },
+    /// The cards and drives mounted a person would import from, in the order the system
+    /// lists them, each by its name, a card marked as one, with its free space. It answers
+    /// [`LibraryCommand::ListVolumes`] and, as volumes come and go (planned), no command, so
+    /// it carries no number: [`LibraryEvent::open`] gives it 0.
+    Volumes { volumes: Vec<Volume> },
 }
 
 impl LibraryEvent {
@@ -287,6 +298,7 @@ impl LibraryEvent {
             | LibraryEvent::SourceTaken { open, .. }
             | LibraryEvent::SourceFailed { open, .. }
             | LibraryEvent::SourceChecked { open, .. } => open,
+            LibraryEvent::Volumes { .. } => 0,
         }
     }
 }

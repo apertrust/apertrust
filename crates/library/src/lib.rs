@@ -45,6 +45,7 @@ pub mod source;
 pub mod summary;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
+pub mod volumes;
 pub mod walk;
 pub mod xmp;
 

@@ -144,6 +144,11 @@ serde = { version = "1.0.229", features = ["derive", "rc"] }
 # JSON, for the session protocol's round-trip tests (apertrust-engine and apertrust-base);
 # later the MCP adapter's (decision 108).
 serde_json = "1.0.154"
+# The volumes mounted and their free space for Import (apertrust-library, decision 85): its
+# disk part alone, the system's own calls on macOS, Linux and Windows, with no `unsafe` of
+# Apertrust's; with `linux-netdevs`, Linux's CIFS and NFS mounts, a NAS among them, which
+# it otherwise leaves out, read on a thread of the library's own.
+sysinfo = { version = "0.40.4", default-features = false, features = ["disk", "linux-netdevs"] }
 # The export's temporary files, made exclusively beside their names and renamed into place
 # (apertrust-export's disk, decision 56).
 tempfile = "3.27.0"

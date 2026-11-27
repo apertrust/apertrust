@@ -34,6 +34,9 @@ getrandom.workspace = true
 quick-xml.workspace = true
 # The commands, events and errors the session protocol carries (decision 108).
 serde.workspace = true
+# The volumes mounted, their names, mount points, removable flags and free space, for
+# Import's Source and preview (decision 85).
+sysinfo.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
