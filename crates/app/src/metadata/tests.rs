@@ -677,18 +677,20 @@ fn copy_coordinates_rests_without_a_location() {
     assert_eq!(enabled(&scene(None)), [false, false, false, false]);
 }
 
+/// What Folder's Show in Finder does: shows one photo's file, its folder open in the
+/// Browser or not, and the folder several photos share; it rests where they are in several
+/// folders, and is not drawn with no photo.
 #[test]
-fn open_this_folder_opens_the_photo_s_folder_and_rests_on_the_open_one() {
-    let mut harness = drawn(Builtin::Dark, 320.0, scene(Some(photo())));
-    harness.run();
-    harness.get_by_label("Open This Folder").click();
-    harness.run();
-    assert_eq!(
-        harness.state().actions,
-        [library::Action::Open(PathBuf::from(FOLDER))]
-    );
-    let mut state = scene(Some(photo()));
-    state.mirror.folder.folder = Folder::Open(Listing {
+fn show_in_finder_shows_the_photo_s_file_or_the_folder_the_photos_share() {
+    #[derive(Debug, PartialEq)]
+    enum Shows {
+        None,
+        Disabled,
+        Runs(library::Action),
+    }
+    let file = PathBuf::from(format!("{FOLDER}/R0001225.DNG"));
+    let mut open = scene(Some(photo()));
+    open.mirror.folder.folder = Folder::Open(Listing {
         name: "2026-07 Lisbon".to_owned(),
         path: PathBuf::from(FOLDER),
         subfolders: Vec::new(),
@@ -697,13 +699,75 @@ fn open_this_folder_opens_the_photo_s_folder_and_rests_on_the_open_one() {
         taken: None,
         thumbnails: HashMap::new(),
     });
-    let mut harness = drawn(Builtin::Dark, 320.0, state);
-    harness.run();
-    let open = harness.get_by_label("Open This Folder");
-    assert!(open.accesskit_node().is_disabled());
+    let cases = [
+        (
+            "a photo alone",
+            scene(Some(photo())),
+            None,
+            Shows::Runs(library::Action::ShowInFolder(file.clone())),
+        ),
+        (
+            "a photo in its open folder",
+            open,
+            None,
+            Shows::Runs(library::Action::ShowInFolder(file)),
+        ),
+        (
+            "several in one folder",
+            twelve(),
+            Some(twelve_in(None, false)),
+            Shows::Runs(library::Action::Reveal(PathBuf::from(FOLDER))),
+        ),
+        (
+            "several in two folders",
+            twelve_apart(),
+            Some(twelve_in(None, true)),
+            Shows::Disabled,
+        ),
+        ("no photo", scene(None), None, Shows::None),
+    ];
+    let words = Translator::new(Locale::EnGb);
+    let show = words.text(jobs::FILE_MANAGER.show_message());
+    for (case, state, summary, expected) in cases {
+        let mut harness = drawn(Builtin::Dark, 320.0, state);
+        harness.run();
+        if let Some(summary) = summary {
+            let through = harness.state().asked.len() as u64;
+            harness.state_mut().tool.receive(through, summary);
+            harness.run();
+        }
+        let shows = match harness.query_by_label(&show) {
+            None => Shows::None,
+            Some(button) if button.accesskit_node().is_disabled() => Shows::Disabled,
+            Some(button) => {
+                button.click();
+                harness.run();
+                Shows::Runs(harness.state().actions.last().cloned().expect(case))
+            }
+        };
+        assert_eq!(shows, expected, "{case}");
+    }
 }
 
 /// Twelve photos selected, the first active.
+/// [`twelve`], the odd photos in another folder.
+fn twelve_apart() -> Scene {
+    let mut state = twelve();
+    let photos: Vec<PathBuf> = (0..12)
+        .map(|n| match n % 2 {
+            0 => PathBuf::from(format!("{FOLDER}/R00012{n:02}.DNG")),
+            _ => PathBuf::from(format!("{FOLDER}-b/R00012{n:02}.DNG")),
+        })
+        .collect();
+    state.mirror.apply(Event::Selection(Selection {
+        photos: photos.clone(),
+        active: Some(photos[0].clone()),
+        previous: false,
+        through: 0,
+    }));
+    state
+}
+
 fn twelve() -> Scene {
     let mut state = scene(Some(photo()));
     let photos: Vec<PathBuf> = (0..12)
@@ -768,6 +832,11 @@ fn twelve_summarised(apart: bool) -> Arc<Summary> {
 /// The twelve photos' summary, the odd photos' latitude `odd` where it is given: another
 /// place, or none.
 fn twelve_located(odd: Option<Option<f64>>) -> Arc<Summary> {
+    twelve_in(odd, false)
+}
+
+/// [`twelve_located`]'s summary, the odd photos in a folder of their own where `two`.
+fn twelve_in(odd: Option<Option<f64>>, two: bool) -> Arc<Summary> {
     let shots: Vec<Arc<Shot>> = (0..12u8)
         .map(|n| {
             let mut exif = (*photo().exif).clone();
@@ -798,12 +867,12 @@ fn twelve_located(odd: Option<Option<f64>>) -> Arc<Summary> {
         })
         .collect();
     let names: Vec<String> = (0..12).map(|n| format!("R00012{n:02}.DNG")).collect();
-    let folder = Path::new(FOLDER);
+    let (folder, day_two) = (PathBuf::from(FOLDER), Path::new(FOLDER).join("Day two"));
     let none = Default::default();
     let photos: Vec<Summed<'_>> = (0..12)
         .map(|n| Summed {
             name: &names[n],
-            folder,
+            folder: if two && n % 2 == 1 { &day_two } else { &folder },
             size: 32_000_000,
             edited: n < 7,
             facts: Facts::Read(&shots[n]),

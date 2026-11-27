@@ -888,8 +888,9 @@ pub enum Cut {
 /// The item at a fact's end, an icon button its utility carries out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FactEnd {
-    /// Open This Folder: the photo's folder in folder mode, as Collections' is.
-    OpenFolder,
+    /// Show in Finder (Explorer, Files): the photo's file in the platform's file manager,
+    /// or the folder several photos share.
+    ShowInFolder,
 }
 
 /// A readout at a line's start ([`Row::Line::readout`]): a text the tool

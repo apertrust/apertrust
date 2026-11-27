@@ -83,9 +83,10 @@ pub enum Action {
     /// Try Again under a folder whose subfolders could not be listed.
     Retry(PathBuf),
     /// Show in Finder, Collections' option: the tree's root opened in the platform's file
-    /// manager.
+    /// manager; and the Metadata tool's Folder row's, the folder several photos share.
     Reveal(PathBuf),
-    /// Show in Folder, a folder row's: the folder shown in its parent.
+    /// Show in Folder, a folder row's: the folder shown in its parent; and the Metadata
+    /// tool's Folder row's, one photo's file shown in its folder.
     ShowInFolder(PathBuf),
     /// Remove from the List: a missing recent taken out of the recents.
     Remove(PathBuf),

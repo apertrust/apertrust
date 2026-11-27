@@ -39,8 +39,8 @@ const fn fact<'a>(label: &'a str, value: Option<&'a str>) -> Fact<'a> {
 const FACTS: [Fact<'static>; 4] = [
     Fact {
         end: Some(FactEnd {
-            icon: Icon::ChooseFolder,
-            name: "Open This Folder",
+            icon: Icon::ShowInFolder,
+            name: "Show in Finder",
             enabled: true,
             tip: None,
         }),
@@ -139,7 +139,7 @@ fn a_click_focuses_a_row_its_keys_move_and_copy() {
 fn enter_or_a_click_presses_the_end_item() {
     let mut harness = list(320.0);
     harness.run();
-    harness.get_by_label("Open This Folder").click();
+    harness.get_by_label("Show in Finder").click();
     harness.run();
     assert!(harness.state().iter().any(|out| out.end == Some(0)));
     harness.state_mut().clear();

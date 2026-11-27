@@ -59,7 +59,7 @@ pub enum FactCut {
     End,
 }
 
-/// An icon button at a row's end, as the Metadata tool's Open This Folder.
+/// An icon button at a row's end, as the Metadata tool's Show in Finder.
 #[derive(Clone, Copy, Debug)]
 pub struct FactEnd<'a> {
     pub icon: Icon,

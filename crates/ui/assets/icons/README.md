@@ -56,6 +56,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `history`, `history-filled` | Lucide's `rotate-ccw-clock`, its arrow removed |
 | `folder`, `folder-filled` | Lucide's `folder` |
 | `folder-open` | Lucide's `folder-open` |
+| `external-link` | Lucide's `external-link`, from Feather: Show in Finder, Explorer or Files, the platform's file manager |
 | `metadata`, `metadata-filled`, `kind` | Lucide's `tag` |
 | `works-on` | Lucide's `sun` |
 | `measures` | Lucide's `chart-column` |

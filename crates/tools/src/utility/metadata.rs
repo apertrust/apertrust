@@ -83,7 +83,7 @@ const BASIC: &[Row] = &[
         id: "folder",
         shown: true,
         cut: Cut::Middle,
-        end: Some(FactEnd::OpenFolder),
+        end: Some(FactEnd::ShowInFolder),
     }),
     fact("type", true),
     fact("size_on_disk", true),
