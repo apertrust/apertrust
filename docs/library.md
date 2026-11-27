@@ -483,12 +483,14 @@ Decision 54's layer 4, in `crates/library/src/ops.rs`. Clients see only `Library
 | `LibraryCommand::SourceThumbnails` | `listing`, the `ListSource`'s number; `photos: Vec<PathBuf>`, the source's files by path relative to it; `size: u32` | Planned with Import's step 20a1 ([Import in folder mode](#import-in-folder-mode)): the thumbnails of an Import source's photos, the camera's embedded pictures, read with no folder open and cached by fingerprint, each answered by `LibraryEvent::Thumbnail` in the listing's number, which the Import sheet keeps as it keeps its listing's events |
 | `LibraryCommand::Subfolders` | `folder: PathBuf`, a folder inside the tree's root | Lists its subfolders for Collections' tree, a cancellable job on `UserBackground` as the open folder's reading ([Jobs and queues](#jobs-and-queues)), answered by `LibraryEvent::SubfoldersOf`; a folder outside the tree's root, the first folder opened, kept while each later `Open` lies inside it, is refused, so the siblings of the folder open now can be listed. A new `Open` or a `Close` cancels it; with no folder open nothing is listed. |
 | `LibraryCommand::RawThumbnails` | `RawThumbnails`, the setting `library.raw_thumbnails_from` | From which size a photo with no edit shows a render of its raw rather than the camera's embedded picture, for the thumbnails and opening pictures from then on ([Thumbnails](#thumbnails)); answered by nothing. |
+| `LibraryCommand::ListSource` | `source: PathBuf`, a folder; `include_subfolders: bool`, off until the Import tool's toggle (20a2) | Lists Import's source ([Import in folder mode](#import-in-folder-mode)), whatever folder is open or none: a card's `DCIM` whole where `source` is a card, its root or any folder inside it, else the folder, raws only, nothing written on it; answered by `SourceListed` chunks then `SourceTaken`, or `SourceFailed`, in its number. The next `ListSource` or a `CancelListing` naming it cancels it. |
+| `LibraryCommand::CancelListing` | `listing`, the `ListSource`'s number | Cancels that listing, as the Import sheet closes, where it is the latest; it sends nothing more. |
 
 `Source` has `Folder` and `Photos` today; `Folder` gains Include subfolders with step 19b, and `Library`, by its id, joins them in Phase 5.
 
 ### Events
 
-Every event names the open or close it is about in its `open` field, read by `LibraryEvent::open()`: the command it answers, or, for a thumbnail, the open of its folder, for a photo alone's the latest open or close, and for the tree's walk, the open that made its root.
+Every event names the open or close it is about in its `open` field, read by `LibraryEvent::open()`: the command it answers, or, for a thumbnail, the open of its folder, for a photo alone's the latest open or close, and for the tree's walk, the open that made its root; Import's events name their own command, the source's listing ([Their numbers](#import-in-folder-mode)).
 
 | Event | Fields | Meaning |
 | --- | --- | --- |
@@ -502,6 +504,9 @@ Every event names the open or close it is about in its `open` field, read by `Li
 | `Thumbnail` | `open`, `photo: String`, `size: u32`, `image: Option<Thumbnail>` | A photo's thumbnail at the size asked for: the camera's embedded picture, upright, or `None` where the raw holds none that can be read, said too so a client asks no more. |
 | `PhotoThumbnail` | `open`, `path: PathBuf`, `size: u32`, `image: Option<Thumbnail>` | A photo opened alone's thumbnail, as `LibraryCommand::PhotoThumbnails` asked: `Thumbnail`'s, by the path asked for. A client keeps those of the photos alone it holds, so one of an earlier set no longer among them is dropped. |
 | `Walked` | `open`, `folders: Vec<WalkedFolder>`, `done: bool` | More folders of the tree under the root, walked breadth first after the root's own listing ([The tree's walk](#the-trees-walk)): each `WalkedFolder` its `folder: PathBuf`, `raws: usize`, the files the decoder reads by their extensions, `subfolders: Vec<String>` and `unreadable: Option<String>`, why it could not be read, its counts empty then. `open` is the number of the open that made the folder the tree's root, which later opens inside the tree keep; the last batch says `done`. |
+| `SourceListed` | `open`, `folder: PathBuf`, `files: Vec<SourceFile>`, `done: bool`, `left_out: Option<LeftOut>` | More of Import's source, in the `ListSource`'s number: `folder`, the folder listed, the card's `DCIM` or the folder, and its raws, each a `SourceFile` (`path`, relative to `folder`, `size`, `modified` and `local`, false for a cloud file not on the disk), in the order of their paths across chunks, at most `ops::CHUNK` (256) each; the last says `done`, an empty source sending one, and carries `left_out`: the non-raws and the sidecars counted, and each folder that could not be read, skipped, with why (`Unreadable`). |
+| `SourceTaken` | `open`, `shots: Vec<SourceShot>` | Sent once after the last chunk: each raw's `SourceShot`, in the listing's order, its capture time from its EXIF (`taken`, `None` where it holds none, cannot be read, or the file is a cloud file not on the disk) and the camera's `make` and `model` as it wrote them, read 16 at a time. |
+| `SourceFailed` | `open`, `reason: String` | Import's source could not be listed, in plain words: not there, no folder, unreadable, or gone while it was read, a card pulled out. It ends the listing. |
 
 **A `Thumbnail`** is 8-bit RGBA, rows top to bottom, four bytes a pixel, upright: its `width`, `height` and `pixels`, an `Arc<[u8]>`, so the event's copies cost nothing.
 
@@ -554,7 +559,13 @@ Each `LibraryCommand::Subfolders` is a job on `UserBackground`, beside the folde
 - its body `ops::subfolders`, handed the tree's root, the first folder opened, kept while each later `Open` lies inside it (`ops::inside`), an observer and a cancel closure as the folder's is, which refuses a folder outside that root, relative or holding a `..`, and lists through layer 3, `listing::subfolders`: a folders-only listing on the listing's own thread, waited for while the cancel is asked every 20 ms, so a share that hangs holds only that thread, never a worker or the quit;
 - a new `Open` or a `Close` cancels it, and with no folder open it is not added.
 
-The library's other long commands are to run on darktable's queues too: Move to…, Copy to…, Rename, Delete and Import… on `UserForeground`, a source's listing for Import… on `UserBackground` ([Import in folder mode](#import-in-folder-mode)); each call into a folder tree on that tree's queue with its deadline (decisions 53 and 57, planned).
+Each `LibraryCommand::ListSource` is a job on `UserBackground` too, beside the folder's reading, whatever folder is open or none:
+
+- kind `import-source`, cancellable, with no progress, so it shows in the Import sheet alone, never in the spinner or the jobs window, its description naming the source for `-d control`;
+- its body `ops::list_source`, handed the source, an observer and a cancel closure as the folder's is, which lists through layer 3, `source::list`: the card rule and the folders read on a thread of its own, waited for while the cancel is asked every 20 ms, so a card or a share that hangs holds only that thread; then the chunks, then the capture times read 16 at a time;
+- the next `ListSource`, or a `CancelListing` naming it, cancels it; an `Open` or a `Close` leaves it.
+
+The library's other long commands are to run on darktable's queues too: Move to…, Copy to…, Rename, Delete and Import… on `UserForeground` ([Import in folder mode](#import-in-folder-mode)); each call into a folder tree on that tree's queue with its deadline (decisions 53 and 57, planned).
 
 ### Order, chunks and done
 
@@ -568,7 +579,7 @@ The cancel closure is asked between calls into the folder, while the listing is 
 
 ### Kinds of event
 
-All eight are notices ([events.md](events.md#facts-and-notices)): each is about one open and comes once. A chunk is part of a listing, never the whole of a topic, `Subfolders`, though whole, is sent once an open, as `Opened` is, and a thumbnail answers one ask. The remote protocol's `Sync` is to send the open folder's listing again to a client that joins late ([session-protocol.md](session-protocol.md#remote-clients)).
+All are notices ([events.md](events.md#facts-and-notices)): each is about one open or one listing and comes once. A chunk is part of a listing, never the whole of a topic, `Subfolders`, though whole, is sent once an open, as `Opened` is, and a thumbnail answers one ask. The remote protocol's `Sync` is to send the open folder's listing again to a client that joins late ([session-protocol.md](session-protocol.md#remote-clients)).
 
 ### Opening a folder, end to end
 

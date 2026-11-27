@@ -722,6 +722,10 @@ impl FolderState {
             }
             // Taken in by `apply`, by the tree's number.
             LibraryEvent::Walked { .. } => None,
+            // Import's, numbered by its own commands, never the folder's.
+            LibraryEvent::SourceListed { .. }
+            | LibraryEvent::SourceTaken { .. }
+            | LibraryEvent::SourceFailed { .. } => None,
         }
     }
 

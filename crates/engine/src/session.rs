@@ -2963,6 +2963,10 @@ struct Engine {
     /// The job reading the edit states of the photos opened alone, which the next open or
     /// close cancels.
     alone: Option<JobId>,
+    /// The latest listing of Import's source, by its `ListSource`'s number, and its job,
+    /// which the next `ListSource` or a `CancelListing` naming it cancels; opens and closes
+    /// leave it.
+    source: Option<(u64, JobId)>,
     /// The selection, of the folder open's photos, and the active photo (decision 37).
     selection: selection::State,
     /// When a frame is published, for a test of the history's merging; else when it is.
@@ -3570,6 +3574,7 @@ impl Engine {
             tree: None,
             walk: None,
             alone: None,
+            source: None,
             selection: selection::State::default(),
             #[cfg(test)]
             published_at: None,
@@ -5904,6 +5909,19 @@ impl Engine {
                 self.subfolders(folder);
                 return;
             }
+            LibraryCommand::ListSource {
+                source,
+                include_subfolders,
+            } => {
+                self.list_source(source, include_subfolders);
+                return;
+            }
+            LibraryCommand::CancelListing { listing } => {
+                if self.source.is_some_and(|(latest, _)| latest == listing) {
+                    self.drop_listing();
+                }
+                return;
+            }
             // The live photo's thumbnail is chosen again under it.
             LibraryCommand::RawThumbnails(raw) => {
                 self.raw_thumbnails = raw;
@@ -6077,6 +6095,46 @@ impl Engine {
             })
         });
         self.subfolders.push(job);
+    }
+
+    /// [`LibraryCommand::ListSource`], the command numbered [`Self::applied`] (decision
+    /// 85): Import's source listed by a job of kind `import-source` on darktable's
+    /// `UserBackground` queue, beside a folder's reading, cancellable, with no progress, so
+    /// it shows in the Import sheet alone, never in the spinner or the jobs window; its
+    /// events go out as [`Event::Library`] in this command's number. Whatever folder is
+    /// open, or none; it cancels the listing before it.
+    fn list_source(&mut self, source: PathBuf, include_subfolders: bool) {
+        self.drop_listing();
+        let listing = self.applied;
+        let outbox = self.jobs.outbox.clone();
+        let description = format!("listing the import source {}", source.display());
+        // A test holds it with the folder's hold, which no reading has taken.
+        #[cfg(test)]
+        let hold = self.folder_hold.take();
+        let job = self.jobs.add(listing, Queue::UserBackground, |_| {
+            jobs::Job::new("import-source", description, move |context| {
+                #[cfg(test)]
+                if let Some(hold) = &hold
+                    && !hold.wait_unless(|| context.cancelled())
+                {
+                    return Ok(());
+                }
+                // The folders are read on the library's own thread, so a card or a share
+                // that hangs holds that thread alone, never this worker.
+                let tell = |event| outbox.send(Event::Library(event));
+                let cancel = || context.cancelled();
+                library::list_source(listing, &source, include_subfolders, &tell, &cancel);
+                Ok(())
+            })
+        });
+        self.source = Some((listing, job));
+    }
+
+    /// Cancels the latest listing of Import's source, which then sends nothing more.
+    fn drop_listing(&mut self) {
+        if let Some((_, job)) = self.source.take() {
+            self.jobs.control.cancel(job);
+        }
     }
 
     /// [`Command::Cache`], the command numbered [`Self::applied`] (decision 76): the limit
@@ -7560,6 +7618,7 @@ mod tests {
     mod chunks;
     mod fields;
     mod history;
+    mod import;
     mod metadata;
     mod protocol;
     mod selection;
@@ -14276,7 +14335,10 @@ mod tests {
                 | LibraryEvent::Closed { .. }
                 | LibraryEvent::Thumbnail { .. }
                 | LibraryEvent::PhotoThumbnail { .. }
-                | LibraryEvent::Walked { .. } => Topic::Notice,
+                | LibraryEvent::Walked { .. }
+                | LibraryEvent::SourceListed { .. }
+                | LibraryEvent::SourceTaken { .. }
+                | LibraryEvent::SourceFailed { .. } => Topic::Notice,
             },
             Event::Cache(event) => match event {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),

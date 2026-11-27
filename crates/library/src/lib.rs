@@ -24,8 +24,9 @@
 //! and 101), [`fields`], a virtual copy's values beside the edit, its rating and metadata fields, [`darktable`],
 //! what darktable's own `.xmp` says of them, [`listing`], one folder's raws and their sidecars, listed on a worker thread, [`index`], that listing
 //! with each sidecar read, in memory, [`walk`], the walk of a folder's whole tree for its
-//! folders' raw counts, and [`ops`], the commands and events clients see (layer 4),
-//! opening a folder first.
+//! folders' raw counts, [`source`], Import's source, the card rule and a card's `DCIM` or
+//! a folder listed for its raws (decision 85), and [`ops`], the commands and events
+//! clients see (layer 4), opening a folder first.
 
 mod reads;
 
@@ -38,6 +39,7 @@ pub mod listing;
 pub mod ops;
 pub mod presets;
 pub mod sidecar;
+pub mod source;
 pub mod summary;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
