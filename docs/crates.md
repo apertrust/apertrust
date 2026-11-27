@@ -1363,6 +1363,8 @@ The cache's `Cache::remove(kind, slot)` removes one limited entry and adjusts th
 
 - `cache`, beside what its feature holds: `KINDS` taking `indexes`, kept or limited by the folders it covers, and `offline` in place of `libraries` and `copies` (decision 101); clearing indexes, one skipped while another process holds its `lock` file; `CacheCommand::Remove { index }` beside `Limit`, `Sizes` and `Clear { kind }`, and each kept index in `CacheEvent`, with the library's step 23; the offline thumbnails with step 27.
 
+**darktable's variables** (decision 85): `variables`, with `Places`, moved from `apertrust-export`, which re-exports them, so the library expands Import's Folder pattern with the export's own code.
+
 ## apertrust-plugin
 
 The operation interface. Its one dependency of ours is `apertrust-base`, no feature, for `wire`, which reads its errors' ids: the image context and the errors the session protocol carries derive serde (decision 108).
@@ -1866,7 +1868,7 @@ One folder, not its subfolders, listed on a worker thread of its own with `std::
 - The comparison of two copies by their clock vectors.
 - Sidecar version 2's other parts: snapshots, tombstones and groups (decisions 47 and 52).
 - darktable's `.xmp`'s keywords and its history (decision 51).
-- Import in folder mode (decision 85, step 20): a source's listing, the check against Folder's tree and the default folder's (`import.default_folder`), the source left out, by size and camera name (its own or the `xmpMM:PreservedFileName` every renamed copy keeps) then the fingerprint, `PreviewImport` and the copy job in path order, skipping only a byte-for-byte duplicate at its destination, with `LibraryCommand::ListSource`, `CancelListing`, `SourceThumbnails`, `PreviewImport` and `Import` and their events; the `import` settings' statics ([library.md](library.md#import-in-folder-mode)).
+- Import in folder mode (decision 85, step 20): a source's listing, the check against Folder's tree and the default folder's (`import.default_folder`), the source left out, by size and camera name (its own or the `xmpMM:PreservedFileName` every renamed copy keeps) then the fingerprint, `PreviewImport` and the copy job in path order, skipping only a byte-for-byte duplicate at its destination, with `LibraryCommand::ListSource`, `CancelListing`, `CheckSource`, `SourceThumbnails`, `SourceSubfolders`, `ListVolumes`, `PreviewImport` and `Import` and their events, the volumes and their free space through `sysinfo`'s disk part, and the patterns expanded with `apertrust-base`'s `variables`; the `import` settings' statics ([library.md](library.md#import-in-folder-mode)).
 - Include subfolders, a folder's `.apertrust/` albums and smart albums, and Move to… and Copy to…, on the checked copy (decision 101, steps 19 to 19d); then, in Phase 5, the saved index, folder records, Libraries, Keep Available Offline and Keep Edits on This Computer (steps 21 to 33).
 - A storage interface only when a second backend comes, the server's, later, if asked (decisions 54 and 71).
 - **Built-in presets** (decision 106): Import's two, and in phase 2 darktable's presets of each ported tool, embedded by `presets` as Export's are.

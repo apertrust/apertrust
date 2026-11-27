@@ -76,7 +76,7 @@ Import… chooses photos on a card or in a folder that is not open, and holds se
 ### The build
 
 1. **The setting rows,** in `apertrust-ui`, each in the gallery with snapshots, shared with the Export tool, the warning button and the path row's ⌄ among them.
-2. **The sheet frame, with Import's first slice** ([0085](0085-import-in-folder-mode.md)'s 20a1): `Sheet` in `apertrust-ui` with its regions, the Browser's grid with check boxes as its choosing and the mark slot, `Checks`, the column drawing the Import tool from its definition with the place and its test, the footer with Help, Close and the primary button, the keys and the app's modality.
+2. **The sheet frame, with Import's first slice** ([0085](0085-import-in-folder-mode.md)'s 20a1): `Sheet` in `apertrust-ui` with its regions, the Browser's grid with check boxes as its choosing and the mark slot, `Checks`, the column drawing the Import tool from its definition with the place and its test, the footer with Help, drawn disabled until Help ([0097](0097-help-topics-and-the-apertrust-guide.md)) is built, Close and the primary button, the keys and the app's modality.
 3. **With 20a2:** day headings, Checked only, Sort, Zoom and Keep open.
 4. **The rest:** presets (20c), the larger look (20b), Import's later slices.
 
