@@ -91,7 +91,7 @@ pub use button::Button;
 pub use buttons_row::{ButtonsAction, ButtonsRow};
 pub use checkbox::Checkbox;
 pub use choice::{Choice, ChoiceAction, ChoiceBox, ChoiceStyle};
-pub use collapsible_group::CollapsibleGroup;
+pub use collapsible_group::{CollapsibleGroup, GroupOutput};
 pub use colour_swatch::ColourSwatch;
 pub use cursor_well::{CursorWell, CursorWellAction, WellCursor, WellGroup, WellSetting};
 pub use curve::{Axis, Curve, CurveAction};

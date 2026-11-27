@@ -37,6 +37,12 @@
 //! - **A warning button** may sit at the well's end, in `warning`, its menu the caller's
 //!   ([`FieldWell::warning`]); **a pull-down of fixed values** may stand in the text's place
 //!   ([`FieldWell::choice`]).
+//! - **Different,** for a field several photos hold apart ([`FieldWell::different`]): the
+//!   word in `text_secondary` where a hint would sit, until the first character typed
+//!   replaces it; nothing typed commits nothing. **A ⌄** at the well's end opens the
+//!   caller's list of the values ([`FieldWell::values`]), as Alt+↓ does while the field has
+//!   the focus. A pull-down of fixed values reads Different as its value, no option
+//!   checked, where a choice is no "nothing typed".
 //! - **Disabled,** the text in `text_disabled`, no Tab stop, its tooltip the caller's
 //!   reason.
 //! - **To screen readers** it is a text input named by its label, multi-line where it takes
@@ -49,7 +55,7 @@ use egui::{
 };
 
 use super::{field_inset, focus_ring, pull_down, truncated};
-use crate::popup::{Entry, Item};
+use crate::popup::{self, Entry, Item, Request};
 use crate::{Icon, theme};
 
 /// The lines a well shows at rest, and the most it grows to while edited.
@@ -67,6 +73,8 @@ pub struct FieldWell<'a> {
     after: Option<&'a str>,
     warning: Option<(&'a str, Vec<Entry>)>,
     choice: Option<&'a [(&'a str, &'a str)]>,
+    different: Option<(&'a str, &'a str)>,
+    values: Option<(&'a str, Vec<Entry>)>,
 }
 
 /// What a frame of the field did.
@@ -80,8 +88,8 @@ pub struct FieldOutput {
     pub editing: bool,
     /// Whether editing began this frame, which a caller marks the photo it edits at.
     pub began: bool,
-    /// The item chosen this frame in its warning button's menu, or the value chosen in its
-    /// pull-down.
+    /// The item chosen this frame in its warning button's menu, its values list, or the
+    /// value chosen in its pull-down.
     pub chosen: Option<String>,
 }
 
@@ -109,6 +117,8 @@ impl<'a> FieldWell<'a> {
             after: None,
             warning: None,
             choice: None,
+            different: None,
+            values: None,
         }
     }
 
@@ -152,6 +162,22 @@ impl<'a> FieldWell<'a> {
         self
     }
 
+    /// The photos it describes hold it apart (decision 110): `word`, "Different", drawn in
+    /// `text_secondary` while nothing is typed, its text empty; to screen readers its
+    /// value, described as `description`, "12 photos, 3 different titles. Typing replaces
+    /// them all."
+    pub fn different(mut self, word: &'a str, description: &'a str) -> Self {
+        self.different = Some((word, description));
+        self
+    }
+
+    /// A ⌄ at the well's end, named `name`, opening `menu`, as Alt+↓ does while the field
+    /// has the focus; the item chosen comes back as [`FieldOutput::chosen`].
+    pub fn values(mut self, name: &'a str, menu: Vec<Entry>) -> Self {
+        self.values = Some((name, menu));
+        self
+    }
+
     pub fn show(mut self, ui: &mut Ui) -> FieldOutput {
         let t = theme(ui.ctx());
         let font = FontId::proportional(t.text.small);
@@ -173,7 +199,10 @@ impl<'a> FieldWell<'a> {
         let note_room = note.as_ref().map_or(0.0, |(_, room)| *room);
         let well_width = (width - left - note_room).max(t.sizes.control);
         let warning = self.warning.take();
-        let warning_side = if warning.is_some() { one } else { 0.0 };
+        let values = self.values.take();
+        // The buttons at the well's end: the warning, then ⌄.
+        let buttons = usize::from(warning.is_some()) + usize::from(values.is_some());
+        let warning_side = buttons as f32 * one;
         let wrap = (well_width - 2.0 * pad.0 - warning_side).max(1.0);
 
         let key = self.id.with("editing");
@@ -212,6 +241,10 @@ impl<'a> FieldWell<'a> {
                 None => {}
             }
         }
+        // Alt+↓ opens the values list, as the ⌄ does.
+        let list_asked = values.is_some()
+            && focused
+            && ui.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowDown));
         let lines_shown = |text: &str, most: usize| -> usize {
             let galley = ui
                 .painter()
@@ -219,6 +252,7 @@ impl<'a> FieldWell<'a> {
             galley.rows.len().clamp(1, most)
         };
         let shown_text = editing.as_ref().map_or(self.text, |e| e.typed.as_str());
+        let empty = shown_text.is_empty();
         let rows = match &editing {
             Some(_) => lines_shown(shown_text, LINES.1),
             None => lines_shown(shown_text, LINES.0),
@@ -286,9 +320,15 @@ impl<'a> FieldWell<'a> {
             let field = Rect::from_min_max(well.min, well.max - vec2(warning_side, 0.0));
             out.chosen = self.pull_down(ui, field, options, &font);
             if let Some((name, menu)) = warning {
-                out.chosen = out
-                    .chosen
-                    .or(warning_button(ui, self.id, well, one, name, menu));
+                let at = well.right() - warning_side;
+                out.chosen = out.chosen.or(warning_button(
+                    ui,
+                    self.id,
+                    (at, well.top()),
+                    one,
+                    name,
+                    menu,
+                ));
             }
             return out;
         }
@@ -382,12 +422,32 @@ impl<'a> FieldWell<'a> {
                 select_all(&ctx, self.id, &rest);
             }
         }
+        // Different, where a hint would sit, until the first character typed.
+        if let Some((word, _)) = self.different.filter(|_| empty) {
+            let colour = match self.enabled {
+                true => t.colors.text_secondary,
+                false => t.colors.text_disabled,
+            };
+            let galley = ui
+                .painter()
+                .layout_no_wrap(word.to_owned(), font.clone(), colour);
+            let at = pos2(
+                inner.left() + pad.0,
+                inner.top() + (one - galley.size().y) / 2.0,
+            );
+            ui.painter().galley(at, galley, colour);
+        }
         let name = self.label.to_owned();
         let lines = self.lines;
+        let different = self.different.filter(|_| empty);
         ctx.accesskit_node_builder(self.id, |node| {
             node.set_label(name);
             if !lines {
                 node.set_role(Role::TextInput);
+            }
+            if let Some((word, description)) = different {
+                node.set_placeholder(word);
+                node.set_description(description);
             }
         });
         let whole = (!self.text.is_empty()).then_some(self.text);
@@ -409,7 +469,13 @@ impl<'a> FieldWell<'a> {
             focus_ring(ui.painter(), well, &t);
         }
         if let Some((name, menu)) = warning {
-            out.chosen = warning_button(ui, self.id, well, one, name, menu);
+            let at = (well.right() - warning_side, well.top());
+            out.chosen = warning_button(ui, self.id, at, one, name, menu);
+        }
+        if let Some((name, menu)) = values {
+            let at = (well.right() - one, well.top());
+            let chosen = values_button(ui, self.id, at, one, (name, menu), list_asked);
+            out.chosen = out.chosen.or(chosen);
         }
 
         // How editing ends.
@@ -452,14 +518,19 @@ impl<'a> FieldWell<'a> {
             Sense::hover()
         };
         let response = ui.interact(well, self.id, sense);
-        let current = (options.iter())
-            .find(|(id, _)| *id == self.text)
-            .or(options.first())
-            .map_or("", |(_, words)| *words);
-        let colour = if self.enabled {
-            t.colors.text
-        } else {
-            t.colors.text_disabled
+        // Different, where the photos hold it apart: no option is theirs.
+        let different = self.different.filter(|_| self.text.is_empty());
+        let current = match different {
+            Some((word, _)) => word,
+            None => (options.iter())
+                .find(|(id, _)| *id == self.text)
+                .or(options.first())
+                .map_or("", |(_, words)| *words),
+        };
+        let colour = match (self.enabled, different.is_some()) {
+            (false, _) => t.colors.text_disabled,
+            (true, true) => t.colors.text_secondary,
+            (true, false) => t.colors.text,
         };
         let painter = ui.painter();
         let chevron = t.sizes.icon;
@@ -490,6 +561,11 @@ impl<'a> FieldWell<'a> {
             info.current_text_value = Some(current.to_owned());
             info
         });
+        if let Some((_, description)) = different {
+            ui.ctx().accesskit_node_builder(response.id, |node| {
+                node.set_description(description);
+            });
+        }
         if let Some(tip) = self.tip {
             response
                 .clone()
@@ -498,25 +574,28 @@ impl<'a> FieldWell<'a> {
         }
         let entries = || {
             (options.iter())
-                .map(|(id, words)| Entry::Item(Item::new(*id, *words).checked(*id == self.text)))
+                .map(|(id, words)| {
+                    let checked = different.is_none() && *id == self.text;
+                    Entry::Item(Item::new(*id, *words).checked(checked))
+                })
                 .collect()
         };
         pull_down(ui, &response, self.label, entries)
     }
 }
 
-/// The warning button at the end of the well `well` of the field `id`, its side `one`, named
+/// The warning button of the field `id`, its corner at `at` and its side `one`, named
 /// `name`, opening `menu`; the item chosen in it.
 fn warning_button(
     ui: &mut Ui,
     id: Id,
-    well: Rect,
+    at: (f32, f32),
     one: f32,
     name: &str,
     menu: Vec<Entry>,
 ) -> Option<String> {
     let t = theme(ui.ctx());
-    let button = Rect::from_min_size(pos2(well.right() - one, well.top()), vec2(one, one));
+    let button = Rect::from_min_size(pos2(at.0, at.1), vec2(one, one));
     let response = ui.interact(button, id.with("warning"), Sense::click());
     let response = response.on_hover_text(name);
     response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
@@ -526,7 +605,60 @@ fn warning_button(
     pull_down(ui, &response, name, || menu)
 }
 
+/// The ⌄ of the field `id`, its corner at `at` and its side `one`, named `name`, opening
+/// `menu`, the values list, as it does where `asked` by Alt+↓; the item chosen in it.
+fn values_button(
+    ui: &mut Ui,
+    id: Id,
+    at: (f32, f32),
+    one: f32,
+    (name, menu): (&str, Vec<Entry>),
+    asked: bool,
+) -> Option<String> {
+    let t = theme(ui.ctx());
+    let button = Rect::from_min_size(pos2(at.0, at.1), vec2(one, one));
+    let response = ui.interact(button, id.with("values"), Sense::click());
+    let hovered = response.hovered();
+    let response = response.on_hover_text(name);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
+    if hovered {
+        let band = button.shrink(1.0);
+        ui.painter()
+            .rect_filled(band, t.shape.radius_small, t.colors.sunken_hover);
+    }
+    let side = vec2(t.sizes.icon, t.sizes.icon);
+    let at = Rect::from_center_size(button.center(), side);
+    Icon::ChevronDown.paint(ui.painter(), at, t.colors.text_secondary);
+    let ctx = ui.ctx();
+    let popup_id = popup::button_menu(response.id);
+    let mut menu = Some(menu);
+    if asked && !popup::is_open(ctx, popup_id) {
+        let entries = menu.take().unwrap_or_default();
+        let request = Request::pull_down(button, name, entries).opened_by(response.id);
+        popup::open(ctx, popup_id, request);
+    }
+    pull_down(ui, &response, name, || menu.unwrap_or_default())
+}
+
 impl FieldWell<'_> {
+    /// Ends the editing of the field `id` with no press to end it, as the photos it was
+    /// opened on leave the tool, and takes its focus away: what was typed, where it changed
+    /// since editing began, for the caller to commit to those photos.
+    pub fn take(ctx: &egui::Context, id: Id) -> Option<String> {
+        let key = id.with("editing");
+        let editing: Option<Editing> = ctx.data_mut(|d| {
+            let editing = d.get_temp(key);
+            d.remove::<Editing>(key);
+            editing
+        });
+        if ctx.memory(|m| m.has_focus(id)) {
+            ctx.memory_mut(|m| m.surrender_focus(id));
+        }
+        editing
+            .filter(|editing| editing.typed != editing.original)
+            .map(|editing| editing.typed)
+    }
+
     /// Forgets what the field `id` was editing and takes its focus away, committing
     /// nothing: the photo it was opened on has gone.
     pub fn forget(ctx: &egui::Context, id: Id) {
