@@ -210,7 +210,7 @@ fn every_built_in_tool_s_rows_keep_their_kinds() {
             "colorequal",
             "slider slider slider slider slider slider slider slider slider slider slider \
              slider slider slider slider slider slider slider slider slider slider slider \
-             slider slider slider slider group slider+picker toggle when slider slider \
+             slider slider slider group slider+picker slider toggle when slider slider \
              slider slider",
         ),
         ("tone_curve", "custom choice"),
