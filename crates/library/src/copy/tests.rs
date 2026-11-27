@@ -400,3 +400,271 @@ fn flip_byte(path: &Path, offset: u64) -> io::Result<()> {
     file.write_all(&[!byte[0]])?;
     file.sync_all()
 }
+
+/// The photo of [`setup`] landing under another name, its `.apxmp` from `sidecar`.
+fn renamed<'a>(setup: &'a Setup, sidecar: Option<&'a [u8]>) -> Landing<'a> {
+    Landing {
+        folder: &setup.into,
+        main: "DSCF0001_01.RAF",
+        sidecar,
+        main_file: true,
+    }
+}
+
+impl Setup {
+    fn land(
+        &self,
+        landing: &Landing<'_>,
+        cancel: &(dyn Fn() -> bool + Sync),
+        made: &mut Vec<PathBuf>,
+        hook: &mut Hook<'_>,
+    ) -> Result<Copied, CopyError> {
+        let how = (Check::ReadBack, SMALL);
+        land_with(&self.source, landing, how, cancel, &mut |_| {}, made, hook)
+    }
+}
+
+/// A copy under another main name carries its companions renamed with it, each the
+/// source's bytes and time, the main file last; the source and someone's file stay.
+#[test]
+fn a_copy_under_another_name_carries_its_companions_renamed() {
+    let setup = setup();
+    let copied = setup
+        .land(
+            &renamed(&setup, None),
+            &|| false,
+            &mut Vec::new(),
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+    let names: Vec<_> = (copied.files.iter())
+        .map(|file| file.path.file_name().unwrap().to_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "DSCF0001_01.RAF.apxmp",
+            "DSCF0001_01.RAF.apdata",
+            "DSCF0001_01.RAF.xmp",
+            "DSCF0001_01.RAF"
+        ]
+    );
+    let landed = contents(&setup.into);
+    for (name, (bytes, time)) in &setup.before {
+        let renamed = name.replacen("DSCF0001", "DSCF0001_01", 1);
+        assert_eq!(
+            landed.get(&renamed),
+            Some(&(bytes.clone(), *time)),
+            "{renamed}"
+        );
+    }
+    assert_eq!(contents(&setup.source.folder), setup.before);
+    assert_eq!(landed["DSCF0002.RAF"], setup.there["DSCF0002.RAF"]);
+}
+
+/// The `.apxmp` written from bytes lands through the temporary and the rename that never
+/// replaces, with the source's sidecar's time, in place of the source's; a new one where
+/// the source has none; and a file appearing at its name meanwhile is never replaced, the
+/// photo then leaving nothing.
+#[test]
+fn a_rewritten_sidecar_lands_through_the_temporary_and_never_replaces() {
+    let setup = setup();
+    let rewritten = b"<rewritten/>".as_slice();
+    setup
+        .land(
+            &renamed(&setup, Some(rewritten)),
+            &|| false,
+            &mut Vec::new(),
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+    let landed = contents(&setup.into);
+    let source_time = setup.before["DSCF0001.RAF.apxmp"].1;
+    assert_eq!(
+        landed["DSCF0001_01.RAF.apxmp"],
+        (rewritten.to_vec(), source_time)
+    );
+    assert_eq!(landed.len(), setup.there.len() + 4);
+
+    let setup = self::setup();
+    let result = setup.land(
+        &renamed(&setup, Some(rewritten)),
+        &|| false,
+        &mut Vec::new(),
+        &mut |step| {
+            if let At::Written { file: 0, path, .. } = step {
+                fs::write(path, b"theirs")?;
+            }
+            Ok(())
+        },
+    );
+    let path = setup.into.join("DSCF0001_01.RAF.apxmp");
+    match result.unwrap_err() {
+        CopyError::Exists { file } => assert_eq!(file, path),
+        other => panic!("{other}"),
+    }
+    assert_eq!(fs::read(&path).unwrap(), b"theirs");
+    fs::remove_file(&path).unwrap();
+    setup.assert_untouched();
+
+    // A photo with no `.apxmp` of its own gets the new one.
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("A.RAF"), b"raw").unwrap();
+    let source = PhotoFiles::find(root.path(), "A.RAF").unwrap();
+    let into = root.path().join("out");
+    let landing = Landing {
+        folder: &into,
+        main: "A_01.RAF",
+        sidecar: Some(rewritten),
+        main_file: true,
+    };
+    let made = &mut Vec::new();
+    land(&source, &landing, Check::None, &|| false, &mut |_| {}, made).unwrap();
+    assert_eq!(fs::read(into.join("A_01.RAF.apxmp")).unwrap(), rewritten);
+    assert_eq!(fs::read(into.join("A_01.RAF")).unwrap(), b"raw");
+}
+
+/// A cancel and a full disk at every place the landing of a renamed photo with its
+/// rewritten `.apxmp` can meet one: each leaves the destination as it was.
+#[test]
+fn a_renamed_landing_failing_anywhere_leaves_nothing() {
+    let setup = setup();
+    let rewritten = vec![b'x'; 3 * SMALL + 5];
+    let landing = renamed(&setup, Some(&rewritten));
+    let mut at = 0;
+    loop {
+        let asked = AtomicUsize::new(0);
+        let cancel = || asked.fetch_add(1, Ordering::Relaxed) >= at;
+        let result = setup.land(&landing, &cancel, &mut Vec::new(), &mut |_| Ok(()));
+        if result.is_ok() {
+            break;
+        }
+        assert!(matches!(result, Err(CopyError::Cancelled { .. })));
+        setup.assert_untouched();
+        at += 1;
+    }
+    assert!(at > 12, "{at} places");
+    for name in contents(&setup.into).into_keys() {
+        if name.starts_with("DSCF0001_01") {
+            fs::remove_file(setup.into.join(name)).unwrap();
+        }
+    }
+    let mut at = 0;
+    loop {
+        let calls = Cell::new(0);
+        let result = setup.land(&landing, &|| false, &mut Vec::new(), &mut |step| {
+            if !matches!(step, At::Write { .. }) {
+                return Ok(());
+            }
+            calls.set(calls.get() + 1);
+            if calls.get() > at {
+                Err(io::ErrorKind::StorageFull.into())
+            } else {
+                Ok(())
+            }
+        });
+        if result.is_ok() {
+            break;
+        }
+        assert!(matches!(result, Err(CopyError::Write { .. })));
+        setup.assert_untouched();
+        at += 1;
+    }
+    assert!(at > 10, "{at} places");
+}
+
+/// The companions alone, beside a main file there already, under its name.
+#[test]
+fn the_companions_land_alone_beside_a_copy_there() {
+    let setup = setup();
+    let landing = Landing {
+        main_file: false,
+        ..renamed(&setup, None)
+    };
+    let copied = setup
+        .land(&landing, &|| false, &mut Vec::new(), &mut |_| Ok(()))
+        .unwrap();
+    assert_eq!(copied.files.len(), 3);
+    assert!(!setup.into.join("DSCF0001_01.RAF").exists());
+    assert!(setup.into.join("DSCF0001_01.RAF.xmp").exists());
+}
+
+/// The whole-file comparison tells a file the same byte for byte from one differing in its
+/// last byte or its size, over several chunks; a read error names its file.
+#[test]
+fn the_whole_file_comparison_tells_an_identical_file_from_a_clash() {
+    let root = tempfile::tempdir().unwrap();
+    let bytes: Vec<u8> = (0..3 * SMALL + 17).map(|b| (b * 31) as u8).collect();
+    let source = root.path().join("A.RAF");
+    let there = root.path().join("B.RAF");
+    fs::write(&source, &bytes).unwrap();
+    let compare = |hook: &mut Hook<'_>| compare_with(&source, &there, SMALL, &|| false, hook);
+    fs::write(&there, &bytes).unwrap();
+    assert!(compare(&mut |_| Ok(())).unwrap());
+    assert!(same_file(&source, &there, &|| false).unwrap());
+    let mut last = bytes.clone();
+    *last.last_mut().unwrap() ^= 1;
+    fs::write(&there, &last).unwrap();
+    assert!(!compare(&mut |_| Ok(())).unwrap());
+    fs::write(&there, &bytes[..bytes.len() - 1]).unwrap();
+    assert!(!compare(&mut |_| Ok(())).unwrap());
+    fs::write(&there, &bytes).unwrap();
+    let failing = |which: usize| {
+        move |step: At<'_>| match step {
+            At::Read { file } if file == which => Err(io::ErrorKind::UnexpectedEof.into()),
+            _ => Ok(()),
+        }
+    };
+    match compare(&mut failing(0)).unwrap_err() {
+        CopyError::Read { file, .. } => assert_eq!(file, source),
+        other => panic!("{other}"),
+    }
+    match compare(&mut failing(1)).unwrap_err() {
+        CopyError::Write { file, .. } => assert_eq!(file, there),
+        other => panic!("{other}"),
+    }
+    let cancelled = compare_with(&source, &there, SMALL, &|| true, &mut |_| Ok(()));
+    assert!(matches!(cancelled, Err(CopyError::Cancelled { .. })));
+    assert_eq!(fs::read(&source).unwrap(), bytes);
+}
+
+/// The folders the copy made are reported, parents first, whether it then lands or fails,
+/// and none that was there before.
+#[test]
+fn the_folders_made_are_reported_and_none_there_before() {
+    let setup = setup();
+    let deep = setup.into.join("2026").join("Lisbon");
+    let landing = Landing {
+        folder: &deep,
+        ..renamed(&setup, None)
+    };
+    let mut made = Vec::new();
+    setup
+        .land(&landing, &|| false, &mut made, &mut |_| Ok(()))
+        .unwrap();
+    assert_eq!(made, [setup.into.join("2026"), deep.clone()]);
+    // There now: nothing more made.
+    let mut again = Vec::new();
+    let landing = Landing {
+        main: "DSCF0001_02.RAF",
+        ..landing
+    };
+    setup
+        .land(&landing, &|| false, &mut again, &mut |_| Ok(()))
+        .unwrap();
+    assert!(again.is_empty(), "{again:?}");
+    // A copy that fails still reports what it made.
+    let other = setup.into.join("Porto");
+    let landing = Landing {
+        folder: &other,
+        ..landing
+    };
+    let mut failed = Vec::new();
+    let result = setup.land(&landing, &|| false, &mut failed, &mut |step| match step {
+        At::Write { .. } => Err(io::ErrorKind::StorageFull.into()),
+        _ => Ok(()),
+    });
+    assert!(result.is_err());
+    assert_eq!(failed, std::slice::from_ref(&other));
+    assert!(other.is_dir());
+}
