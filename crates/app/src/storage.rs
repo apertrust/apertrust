@@ -85,7 +85,7 @@ impl Folders {
         let Some(folders) = folders else {
             return Folders {
                 home,
-                file_manager: crate::jobs::FILE_MANAGER,
+                file_manager: crate::reveal::FILE_MANAGER,
                 ..Folders::default()
             };
         };
@@ -99,7 +99,7 @@ impl Folders {
                 chosen: cache_chosen(folders.cache_chosen()),
             }),
             home,
-            file_manager: crate::jobs::FILE_MANAGER,
+            file_manager: crate::reveal::FILE_MANAGER,
         }
     }
 }
@@ -135,7 +135,7 @@ pub fn act(asked: Asked, send: &mut dyn FnMut(Command) -> u64, mirror: &mut Mirr
             let number = send(Command::Cache(CacheCommand::Clear { kind }));
             mirror.sent(kind, number);
         }
-        Asked::Reveal(folder) => crate::jobs::reveal(&crate::jobs::Reveal::Folder(folder)),
+        Asked::Reveal(folder) => crate::reveal::reveal(&crate::reveal::Reveal::Folder(folder)),
     }
 }
 

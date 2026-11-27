@@ -83,6 +83,7 @@ mod rating;
 mod recents;
 mod recovery;
 mod restart;
+mod reveal;
 mod scopes;
 mod selection;
 mod settings;
@@ -3821,7 +3822,7 @@ impl Shell {
             .labels(self.toolbar_labels)
             .menu_button(self.drawn_menus)
             .menu_button_style(self.menu_button)
-            .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))
+            .jobs(Jobs::new(jobs).file_manager(reveal::FILE_MANAGER))
             .saved(saved);
         if let Some(inset) = title_bar {
             bar = bar.title_bar(true).start_inset(inset);
@@ -3974,7 +3975,7 @@ impl Shell {
             .labels(draft.labels())
             .menu_button(self.drawn_menus)
             .menu_button_style(self.menu_button)
-            .jobs(Jobs::new(jobs).file_manager(jobs::FILE_MANAGER))
+            .jobs(Jobs::new(jobs).file_manager(reveal::FILE_MANAGER))
             .saved(saved)
             .customising(edit);
         if let Some(inset) = title_bar {
@@ -5711,7 +5712,7 @@ impl App {
                 true
             }
             jobs::Do::Reveal(what) => {
-                jobs::reveal(&what);
+                reveal::reveal(&what);
                 false
             }
             jobs::Do::Changed => true,
@@ -7336,8 +7337,8 @@ impl App {
                     }
                 }
                 library::Action::Retry(folder) => self.mirror.folder.forget_inside(&folder),
-                library::Action::Reveal(path) => jobs::reveal(&jobs::Reveal::Folder(path)),
-                library::Action::ShowInFolder(path) => jobs::reveal(&jobs::Reveal::File(path)),
+                library::Action::Reveal(path) => reveal::reveal(&reveal::Reveal::Folder(path)),
+                library::Action::ShowInFolder(path) => reveal::reveal(&reveal::Reveal::File(path)),
                 library::Action::Remove(path) => self.shell.forget_recent(&path),
                 library::Action::Locate(path) => self.shell.locate = Some(path),
                 // Open Recent's Clear Menu, run as its item runs, on the list as it stands.

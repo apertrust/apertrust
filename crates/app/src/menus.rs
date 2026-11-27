@@ -4873,7 +4873,7 @@ mod tests {
         apertrust_ui::set_locale(&ctx, Locale::EnGb);
         let tr = translator(&ctx);
         let keymap = Keymap::defaults(OperatingSystem::Nix);
-        let show = tr.text(crate::jobs::FILE_MANAGER.show_message());
+        let show = tr.text(crate::reveal::FILE_MANAGER.show_message());
         let open = |cancel, show, copy, state: &State| {
             let target = Target::Job(actions::JobItems { cancel, show, copy });
             context(&ctx, Place::Job, &target, &keymap, state, Rect::NOTHING)

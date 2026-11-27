@@ -38,7 +38,7 @@ use crate::folder::Folder;
 use crate::recents::OpenKind;
 use crate::tools::{Head, Pressed};
 use crate::utility::{Context, UtilityTool};
-use crate::{export, jobs};
+use crate::{export, reveal};
 
 /// Collections' id (decision 73), by which settings keep whether its section is open, and
 /// under which they keep its groups.
@@ -330,7 +330,7 @@ fn options(ui: &egui::Ui, collections: &Collections<'_>) -> Vec<Entry> {
     let words = translator(ui.ctx());
     let open = collections.root.is_some();
     let alone = alone(collections.folder);
-    let reveal = Item::new(REVEAL, words.text(jobs::FILE_MANAGER.show_message()))
+    let reveal = Item::new(REVEAL, words.text(reveal::FILE_MANAGER.show_message()))
         .enabled(open || alone.is_some());
     let mut options = vec![Entry::Item(reveal)];
     if alone.is_some() {
@@ -665,7 +665,7 @@ fn row_menu(ui: &egui::Ui, response: &egui::Response, name: &str, path: &Path) -
         vec![
             Entry::Item(Item::new(
                 "show",
-                words.text(jobs::FILE_MANAGER.show_message()),
+                words.text(reveal::FILE_MANAGER.show_message()),
             )),
             Entry::Item(Item::new("open", words.text("collections-open-row"))),
         ]
@@ -1635,7 +1635,7 @@ mod tests {
             .get_by_role_and_label(Role::Button, "Collections options")
             .click();
         harness.run();
-        let show = translator(&harness.ctx).text(jobs::FILE_MANAGER.show_message());
+        let show = translator(&harness.ctx).text(reveal::FILE_MANAGER.show_message());
         harness.get_by_role_and_label(Role::MenuItem, &show).click();
         harness.run();
         assert_eq!(*harness.state(), [Action::Reveal(portraits.to_owned())]);
@@ -1979,7 +1979,7 @@ mod tests {
             .click();
         harness.run();
         let words = translator(&harness.ctx);
-        let show = words.text(jobs::FILE_MANAGER.show_message());
+        let show = words.text(reveal::FILE_MANAGER.show_message());
         harness.get_by_role_and_label(Role::MenuItem, &show).click();
         harness.run();
         assert_eq!(
@@ -2074,7 +2074,7 @@ mod tests {
         harness.run();
         assert_eq!(*harness.state(), [Action::Open(lisbon.clone())]);
         let words = translator(&harness.ctx);
-        let show = words.text(jobs::FILE_MANAGER.show_message());
+        let show = words.text(reveal::FILE_MANAGER.show_message());
         for (item, action) in [
             ("Open This Folder", Action::Open(lisbon.clone())),
             (
@@ -2096,7 +2096,7 @@ mod tests {
     /// A folder row's right-click holds Show in Folder and Open, which chooses it.
     #[test]
     fn a_folder_row_s_right_click_shows_it_in_its_folder_or_opens_it() {
-        let show = translator(&egui::Context::default()).text(jobs::FILE_MANAGER.show_message());
+        let show = translator(&egui::Context::default()).text(reveal::FILE_MANAGER.show_message());
         for (item, action) in [
             (
                 show.as_str(),

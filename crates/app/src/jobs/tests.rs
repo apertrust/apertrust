@@ -806,24 +806,6 @@ fn dismissing_an_ended_row_takes_it_away() {
     assert!(mirror.view(&english()).is_empty());
 }
 
-#[cfg(target_os = "macos")]
-#[test]
-fn finder_selects_a_file_and_opens_a_folder() {
-    let file = Reveal::File(PathBuf::from("/out/a b.jpg"));
-    let (program, args) = reveal_command(&file);
-    assert_eq!(
-        (program, args),
-        ("open", vec!["-R".into(), "/out/a b.jpg".into()])
-    );
-    let folder = Reveal::Folder(PathBuf::from("/out"));
-    let (program, args) = reveal_command(&folder);
-    assert_eq!((program, args), ("open", vec!["/out".into()]));
-    // A relative name starting with a dash is made absolute, never read as an option.
-    let dashed = Reveal::Folder(PathBuf::from("-p"));
-    let (_, args) = reveal_command(&dashed);
-    assert!(Path::new(&args[0]).is_absolute(), "{args:?}");
-}
-
 #[test]
 fn every_cause_the_engine_names_has_words_in_every_language() {
     let causes = [

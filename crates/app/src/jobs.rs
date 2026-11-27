@@ -35,7 +35,7 @@
 //! - **What its buttons do** is the app's: the ✕ sends `CancelJob`, Try again on a failed
 //!   row that offers it sends `RetryJob`, its job's row taking the failed one's place,
 //!   Dismiss and Clear Finished change the mirror, and Show in Finder reveals the job's
-//!   destination through the platform ([`reveal`]), a file selected in its folder.
+//!   destination through the platform ([`crate::reveal::reveal`]), a file selected in its folder.
 //! - **A row's menu** (decision 91) holds Cancel while the job can be stopped, Show in
 //!   Folder once it has written a file and Copy Error once it failed, each hidden where it
 //!   cannot act ([`Mirror::items`]); a row with none has no menu. The window reports the
@@ -52,7 +52,7 @@ use apertrust_engine::jobs::{
 };
 use apertrust_engine::session::{Command, Event};
 use apertrust_ui::components::{
-    ActivityAction, FileManager, Job, JobFailure, JobMessage, JobPhase, Jobs, RowMenu, failure_line,
+    ActivityAction, Job, JobFailure, JobMessage, JobPhase, Jobs, RowMenu, failure_line,
 };
 use apertrust_ui::{Theme, Translator, popup, tr, translator};
 use eframe::egui;
@@ -61,6 +61,7 @@ use eframe::egui::os::OperatingSystem;
 use crate::actions::{self, Emit, Intent, JobItem, JobItems, Keymap};
 use crate::dialog_host::{AppDialogs, Asks, Dialog, Form, Keys, Look, Output};
 use crate::menus;
+use crate::reveal::{FILE_MANAGER, Reveal};
 use crate::settings::Position;
 
 /// One job's row, each part as the job's events last set it.
@@ -151,15 +152,6 @@ pub enum Do {
     /// Open a row's menu, `asked`, holding what `items` allow, for the app to build and
     /// hand to the window ([`Window::open_menu`]).
     Menu { asked: RowMenu, items: JobItems },
-}
-
-/// What Show in Finder reveals.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Reveal {
-    /// A file written, selected in its folder.
-    File(PathBuf),
-    /// A folder, opened.
-    Folder(PathBuf),
 }
 
 impl Mirror {
@@ -557,57 +549,6 @@ fn file_name(path: &Path) -> String {
     )
 }
 
-/// The program and arguments that show `what` in the platform's file manager.
-pub fn reveal_command(what: &Reveal) -> (&'static str, Vec<std::ffi::OsString>) {
-    let (file, path) = match what {
-        Reveal::File(path) => (true, path),
-        Reveal::Folder(path) => (false, path),
-    };
-    // Absolute, so a name that starts with `-` is never read as an option.
-    let path = &std::path::absolute(path).unwrap_or_else(|_| path.clone());
-    if cfg!(target_os = "macos") {
-        // Finder opens the folder with the file selected, or the folder itself.
-        let mut args = Vec::new();
-        if file {
-            args.push("-R".into());
-        }
-        args.push(path.into());
-        ("open", args)
-    } else if cfg!(target_os = "windows") {
-        let mut arg = std::ffi::OsString::from(if file { "/select," } else { "" });
-        arg.push(path);
-        ("explorer", vec![arg])
-    } else {
-        // The desktop's file manager opens a folder; a file shows by its folder.
-        let folder = if file {
-            path.parent().unwrap_or(path)
-        } else {
-            path
-        };
-        ("xdg-open", vec![folder.into()])
-    }
-}
-
-/// Shows `what` in the platform's file manager, started and left to its own: the UI thread
-/// never waits for it.
-pub fn reveal(what: &Reveal) {
-    let (program, args) = reveal_command(what);
-    match std::process::Command::new(program).args(args).spawn() {
-        Ok(mut child) => {
-            // Reaped by a thread of its own, so it never lingers as a zombie; a failed
-            // call is logged.
-            std::thread::spawn(move || match child.wait() {
-                Ok(status) if !status.success() => {
-                    tracing::warn!(target: "pipe", "the file manager call failed: {status}");
-                }
-                Err(e) => tracing::warn!(target: "pipe", "the file manager call failed: {e}"),
-                Ok(_) => {}
-            });
-        }
-        Err(e) => tracing::warn!(target: "pipe", "cannot show the export in the file manager: {e}"),
-    }
-}
-
 /// The menu of the row `asked` for, holding what `items` allow, as the app builds every
 /// menu (decision 91): `menus::context` at `Place::Job`, from `keymap` and `state`, hung
 /// where it was asked, the focus going back to the row as it closes.
@@ -623,15 +564,6 @@ pub fn row_menu(
     let request = menus::context(ctx, menus::Place::Job, &target, keymap, state, anchor);
     request.opened_by(asked.row)
 }
-
-/// The platform's file manager, for the button's words.
-pub const FILE_MANAGER: FileManager = if cfg!(target_os = "macos") {
-    FileManager::Finder
-} else if cfg!(target_os = "windows") {
-    FileManager::Explorer
-} else {
-    FileManager::Files
-};
 
 /// What `show` asks of the jobs window, after the session's events are taken in: it opens,
 /// if the event is a user job's, waiting for `opened`, the jobs that opened it, to close
