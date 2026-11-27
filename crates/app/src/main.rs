@@ -63,6 +63,7 @@ mod exposure;
 mod fade;
 mod find;
 mod folder;
+mod frame_times;
 mod hardware;
 mod history;
 mod info;
@@ -1461,6 +1462,8 @@ struct App {
     panels: Panels,
     /// Whether tagging the window's colour space failed, reported once.
     tag_failed: bool,
+    /// The window's frame times under `-d perf` ([`App::time_frame`]).
+    frame_times: frame_times::FrameTimes,
     /// Whether placing the window's buttons in the Toolbar failed, reported once.
     buttons_failed: bool,
     /// Whether the last frame handed a window move to the system, whose release egui
@@ -5247,6 +5250,7 @@ impl App {
             shell,
             panels: Panels::default(),
             tag_failed: false,
+            frame_times: frame_times::FrameTimes::default(),
             buttons_failed: false,
             handed_off: false,
             resize: None,
@@ -7970,6 +7974,34 @@ impl App {
         central_menu(ctx, slot, photo, picking, &self.shell.keymap, &state, asked)
     }
 
+    /// The window's frame times under `-d perf`, a line a second while a gesture or a
+    /// render is under way ([`frame_times`]; decision 112): the frame's start, its interval
+    /// since the frame before counted where that one ended under way
+    /// ([`App::time_frame_end`]). Nothing is done with `perf` off.
+    fn time_frame(&mut self, frame: &eframe::Frame) {
+        if !tracing::enabled!(target: "perf", tracing::Level::DEBUG) {
+            return;
+        }
+        let cpu_ms = (frame.info().cpu_usage).map(|seconds| f64::from(seconds) * 1e3);
+        if let Some(line) = self.frame_times.start(Instant::now(), cpu_ms) {
+            tracing::debug!(target: "perf", "{line}");
+        }
+    }
+
+    /// The frame's end for [`App::time_frame`], once its actions have run, so the frame that
+    /// sends an edit counts the interval to the next: under way while egui drags something,
+    /// a slider, the photo or a panel's edge, or while an edit sent is pending, its report
+    /// not yet arrived, since its frame comes with it.
+    fn time_frame_end(&mut self, ctx: &egui::Context) {
+        if !tracing::enabled!(target: "perf", tracing::Level::DEBUG) {
+            return;
+        }
+        let under_way = ctx.dragged_id().is_some() || !self.mirror.pending.is_empty();
+        if let Some(line) = self.frame_times.end(under_way) {
+            tracing::debug!(target: "perf", "{line}");
+        }
+    }
+
     /// Whether the main window is the start window this frame ([`shows_start`]): it becomes
     /// it as nothing is open, the first recent chosen and the recents checked again, and the
     /// main window again as something opens, shown if it was hidden. The window takes the
@@ -9205,12 +9237,14 @@ impl eframe::App for App {
             self.tag_failed = true;
         }
         let ctx = ui.ctx().clone();
+        self.time_frame(frame);
         // What says when this frame reaches the window, while the start marker waits.
         self.marker.mark(&ctx);
         // With nothing open the main window is the start window, and draws nothing else.
         self.follow_start(&ctx, frame);
         if self.start.shown {
             self.start_frame(ui, frame);
+            self.time_frame_end(&ctx);
             return;
         }
         let t = theme(&ctx);
@@ -9374,6 +9408,7 @@ impl eframe::App for App {
         // have taken them this frame has drawn, a found tool's picker on the photo or a
         // popup, and the frame's actions have run, F6 moving the focus among them.
         self.shell.find_keys(&ctx, tools_panel.response.rect);
+        self.time_frame_end(&ctx);
     }
 
     /// What was chosen in the menus runs here, at once: eframe calls this before each frame,
