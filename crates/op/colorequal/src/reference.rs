@@ -142,7 +142,7 @@ fn prefilter(
     sat_shift: f32,
     weights: &[f32],
     in_place: bool,
-) {
+) -> Applied {
     let grid = Grid::new(sigma, size.map(|s| s as u32));
     assert!(
         !(in_place && grid.resized),
@@ -176,22 +176,15 @@ fn prefilter(
         // darktable blurred the image's own UV in place.
         uv.copy_from_slice(&ds_uv);
     }
-    gaussian_mean_blur(&mut a, ds[0], ds[1], 4, grid.sigma);
-    gaussian_mean_blur(&mut b, ds[0], ds[1], 2, grid.sigma);
-    if grid.resized {
-        a = interpolate_bilinear(&a, ds, size, 4);
-        b = interpolate_bilinear(&b, ds, size, 2);
-    }
+    let applied = Applied::new(a, b, uv, &grid, size);
     for k in 0..size[0] * size[1] {
+        let cv = applied.at(k);
         let (u, v) = (uv[2 * k], uv[2 * k + 1]);
-        let cv = [
-            a[4 * k] * u + a[4 * k + 1] * v + b[2 * k],
-            a[4 * k + 2] * u + a[4 * k + 3] * v + b[2 * k + 1],
-        ];
         let w = satweight(weights, saturation[k] - sat_shift);
         uv[2 * k] = w * (cv[0] - u) + u;
         uv[2 * k + 1] = w * (cv[1] - v) + v;
     }
+    applied
 }
 
 /// darktable `_guide_with_chromaticity`, `uv`, `corrections` and `b_corrections` in place.
@@ -211,7 +204,7 @@ fn guide(
     sat_shift: f32,
     weights: &[f32],
     in_place: bool,
-) {
+) -> Applied {
     let grid = Grid::new(sigma, size.map(|s| s as u32));
     assert!(
         !(in_place && grid.resized),
@@ -270,24 +263,57 @@ fn guide(
         corrections.copy_from_slice(&ds_corrections);
         b_corrections.copy_from_slice(&ds_b);
     }
-    gaussian_mean_blur(&mut a, ds[0], ds[1], 4, grid.sigma);
-    gaussian_mean_blur(&mut b, ds[0], ds[1], 2, grid.sigma);
-    if grid.resized {
-        a = interpolate_bilinear(&a, ds, size, 4);
-        b = interpolate_bilinear(&b, ds, size, 2);
-    }
+    let applied = Applied::new(a, b, uv, &grid, size);
     for k in 0..size[0] * size[1] {
-        let (u, v) = (uv[2 * k], uv[2 * k + 1]);
-        let cv = [
-            a[4 * k] * u + a[4 * k + 1] * v + b[2 * k],
-            a[4 * k + 2] * u + a[4 * k + 3] * v + b[2 * k + 1],
-        ];
+        let cv = applied.at(k);
         corrections[2 * k + 1] =
             1.0 + (cv[0] - 1.0) * satweight(weights, saturation[k] - sat_shift);
         let gradient_weight = 1.0 - gradients[k].clamp(0.0, 1.0);
         b_corrections[k] =
             cv[1] * gradient_weight * satweight(weights, saturation[k] - bright_shift);
     }
+    applied
+}
+
+/// What a guided filter's last apply reads at each pixel: its coefficients, at the
+/// image's size, and the chromaticity it applies them to, which is the filter's blur of
+/// it where the filter blurs in place.
+struct Applied {
+    a: Vec<f32>,
+    b: Vec<f32>,
+    uv: Vec<f32>,
+}
+
+impl Applied {
+    /// A filter's coefficients `a` and `b` on its grid, blurred and brought to the
+    /// image's `size`, applied to `uv`.
+    fn new(mut a: Vec<f32>, mut b: Vec<f32>, uv: &[f32], grid: &Grid, size: [usize; 2]) -> Self {
+        let ds = grid.size.map(|s| s as usize);
+        gaussian_mean_blur(&mut a, ds[0], ds[1], 4, grid.sigma);
+        gaussian_mean_blur(&mut b, ds[0], ds[1], 2, grid.sigma);
+        if grid.resized {
+            a = interpolate_bilinear(&a, ds, size, 4);
+            b = interpolate_bilinear(&b, ds, size, 2);
+        }
+        Self {
+            a,
+            b,
+            uv: uv.to_vec(),
+        }
+    }
+
+    /// The filter's output at pixel `k`, `a uv + b`.
+    fn at(&self, k: usize) -> [f32; 2] {
+        let (a, b, uv) = (&self.a[4 * k..], &self.b[2 * k..], &self.uv[2 * k..]);
+        affine(a, b, [uv[0], uv[1]])
+    }
+}
+
+fn affine(a: &[f32], b: &[f32], uv: [f32; 2]) -> [f32; 2] {
+    [
+        a[0] * uv[0] + a[1] * uv[1] + b[0],
+        a[2] * uv[0] + a[3] * uv[1] + b[1],
+    ]
 }
 
 /// What darktable's `process()` applies at each pixel in its last step: the
@@ -326,6 +352,27 @@ pub fn guided(
     profile: &WorkingProfile,
     in_place: InPlace,
 ) -> Guided {
+    run(settings, width, height, pixels, scale, profile, in_place).0
+}
+
+/// What [`guided`]'s steps read from other pixels: the saturation's and the gradient's
+/// blurs, and each filter's last apply.
+struct Parts {
+    saturation: Vec<f32>,
+    gradients: Vec<f32>,
+    prefilter: Option<Applied>,
+    guide: Option<Applied>,
+}
+
+fn run(
+    settings: &Settings,
+    width: usize,
+    height: usize,
+    pixels: &[[f32; 4]],
+    scale: f32,
+    profile: &WorkingProfile,
+    in_place: InPlace,
+) -> (Guided, Parts) {
     let size = [width, height];
     let setup = Setup::new(settings, [width as u32, height as u32], scale, profile);
     let p = setup.process;
@@ -358,7 +405,7 @@ pub fn guided(
     gaussian_mean_blur(&mut saturation, width, height, 1, p.sat_sigma);
 
     // STEP 2
-    if settings.use_filter {
+    let prefiltered_with = settings.use_filter.then(|| {
         prefilter(
             &mut uv,
             &saturation,
@@ -367,8 +414,8 @@ pub fn guided(
             p.sat_shift,
             &setup.weights,
             in_place_of(&setup.prefilter),
-        );
-    }
+        )
+    });
     // What the last step's HSB is computed from, before the guide blurs it.
     let prefiltered = uv.as_chunks::<2>().0.to_vec();
 
@@ -399,7 +446,7 @@ pub fn guided(
         }
     }
 
-    if settings.use_filter {
+    let guided_with = settings.use_filter.then(|| {
         gaussian_mean_blur(&mut l_scharr, width, height, 1, p.scharr_sigma);
         // STEP 4
         guide(
@@ -414,14 +461,132 @@ pub fn guided(
             p.sat_shift,
             &setup.weights,
             in_place_of(&setup.guide),
-        );
-    }
-    Guided {
+        )
+    });
+    let guided = Guided {
         uv: prefiltered,
         corrections: (0..n)
             .map(|k| [corrections[2 * k], corrections[2 * k + 1], b_corrections[k]])
             .collect(),
-    }
+    };
+    let parts = Parts {
+        saturation,
+        gradients: l_scharr,
+        prefilter: prefiltered_with,
+        guide: guided_with,
+    };
+    (guided, parts)
+}
+
+/// The number of values [`whole`] gives each pixel.
+pub const WHOLE: usize = 19;
+
+/// What darktable's `process()` reads at each pixel of a `width` × `height` RGBA image at
+/// full resolution from other pixels, for decision 15 (2)'s baseline (`docs/engine.md`,
+/// Pipes): the saturation's blur; the prefilter's coefficients `a` and `b` and the
+/// chromaticity it applies them to; the gradient's blur; the guide's coefficients and
+/// chromaticity; and the hue correction the guide leaves, which is its blur where it
+/// blurs in place. Downscaled by the viewport's box filter, [`held`] takes them.
+pub fn whole(
+    settings: &Settings,
+    width: usize,
+    height: usize,
+    pixels: &[[f32; 4]],
+    profile: &WorkingProfile,
+) -> Vec<[f32; WHOLE]> {
+    let (guided, parts) = run(
+        settings,
+        width,
+        height,
+        pixels,
+        1.0,
+        profile,
+        InPlace::Darktable,
+    );
+    let applied = |applied: &Option<Applied>, k: usize, values: &mut [f32]| {
+        if let Some(applied) = applied {
+            values[..4].copy_from_slice(&applied.a[4 * k..4 * k + 4]);
+            values[4..6].copy_from_slice(&applied.b[2 * k..2 * k + 2]);
+            values[6..8].copy_from_slice(&applied.uv[2 * k..2 * k + 2]);
+        }
+    };
+    (0..width * height)
+        .map(|k| {
+            let mut values = [0.0; WHOLE];
+            values[0] = parts.saturation[k];
+            applied(&parts.prefilter, k, &mut values[1..9]);
+            values[9] = parts.gradients[k];
+            applied(&parts.guide, k, &mut values[10..18]);
+            values[18] = guided.corrections[k][0];
+            values
+        })
+        .collect()
+}
+
+/// darktable `process()` at each of `pixels`, the viewport's own, with every value a
+/// pixel reads from other pixels taken from `whole`, [`whole`]'s values downscaled to the
+/// same pixels, and every value computed from the pixel's own: decision 15 (2)'s baseline.
+/// `export` is the setup at full resolution, whose grids say where the export's filters
+/// blur in place.
+pub fn held(
+    settings: &Settings,
+    export: &Setup,
+    pixels: &[[f32; 4]],
+    whole: &[[f32; WHOLE]],
+) -> Vec<[f32; 3]> {
+    let p = export.process;
+    let weight = |saturation: f32, shift: f32| satweight(&export.weights, saturation - shift);
+    pixels
+        .iter()
+        .zip(whole)
+        .map(|(pixel, w)| {
+            let xyy = ucs::d65_xyz_to_xyy(apply(
+                &export.rgb_to_xyz_d65,
+                [pixel[0], pixel[1], pixel[2]],
+            ));
+            let l_star = ucs::y_to_l_star(xyy[2]);
+            let saturation = w[0];
+            // STEP 2
+            let mut uv = ucs::xy_to_uv_star_prime([xyy[0], xyy[1]]);
+            if settings.use_filter {
+                let from = if export.prefilter.in_place {
+                    [w[7], w[8]]
+                } else {
+                    uv
+                };
+                let cv = affine(&w[1..5], &w[5..7], from);
+                let weight = weight(saturation, p.sat_shift);
+                uv = [0, 1].map(|c| weight * (cv[c] - from[c]) + from[c]);
+            }
+            // STEP 3
+            let jch = ucs::luv_to_jch(l_star, p.white, uv);
+            let hsb = ucs::jch_to_hsb(jch);
+            let mut corrections = if jch[1] > NORM_MIN {
+                [
+                    lookup(&export.curves.hue, hsb[0]),
+                    lookup(&export.curves.saturation, hsb[0]),
+                    hsb[1] * (lookup(&export.curves.brightness, hsb[0]) - 1.0),
+                ]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+            // STEP 4
+            if settings.use_filter {
+                let (from, hue) = if export.guide.in_place {
+                    ([w[16], w[17]], w[18])
+                } else {
+                    (uv, corrections[0])
+                };
+                let cv = affine(&w[10..14], &w[14..16], from);
+                corrections = [
+                    hue,
+                    1.0 + (cv[0] - 1.0) * weight(saturation, p.sat_shift),
+                    cv[1] * (1.0 - w[9].clamp(0.0, 1.0)) * weight(saturation, p.bright_shift),
+                ];
+            }
+            finish(export, l_star, uv, corrections)
+        })
+        .collect()
 }
 
 /// darktable `process()`'s last step at a pixel of lightness `l_star` whose

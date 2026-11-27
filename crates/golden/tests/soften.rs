@@ -31,6 +31,15 @@ use apertrust_engine::gpu::{GpuContext, GpuOptions};
 use apertrust_engine::pipeline::{self, Derivative, Instance, Pipe, Pipeline, Plan};
 use apertrust_operations::soften::{self, Settings, Soften, hsl};
 use apertrust_plugin::{Camera, ImageContext, Operation, Pattern};
+use viewport::{Scale, missed, report};
+
+mod viewport;
+
+/// What soften's measure names its baseline and share.
+const LABELS: [&str; 2] = [
+    "with the export's blur",
+    "the softened image's and blur's share",
+];
 
 fn gpu() -> &'static GpuContext {
     static GPU: OnceLock<GpuContext> = OnceLock::new();
@@ -374,22 +383,6 @@ fn the_amounts_derivative_is_the_whole_renders() {
     );
 }
 
-/// One viewport size of decision 15's measure (`docs/engine.md`, Pipes): soften's
-/// viewport against its export downscaled by the viewport's box filter, mean ΔE2000, and
-/// the per-step baseline, the viewport's mix with the export's blur downscaled (decisions
-/// 15 (4) and 116).
-struct Scale {
-    /// The viewport's box, in which the image is fitted.
-    box_size: [u32; 2],
-    width: usize,
-    height: usize,
-    stats: golden::delta_e::Stats,
-    baseline: f64,
-    /// The mean less the baseline, which the target bounds.
-    share: f64,
-    target: f64,
-}
-
 /// Decision 15's measure of soften with `settings` over `input` in `image`, at 2400×1600
 /// and at 1/2, 1/4 and 1/8 of the image: the viewport, the operation run on the fitted
 /// image, against the export downscaled, less the same for the viewport's mix with the
@@ -439,12 +432,7 @@ fn viewport_against_export(
     );
     let blurred = upload(width, height, &rgba(blur));
     let mut scales = Vec::new();
-    for (box_size, target) in [
-        ([2400, 1600], 0.15),
-        ([width / 2, height / 2], 0.15),
-        ([width / 4, height / 4], 0.4),
-        ([width / 8, height / 8], 0.4),
-    ] {
+    for (box_size, target) in viewport::boxes(width, height) {
         let pipe = Pipe::Viewport {
             width: box_size[0],
             height: box_size[1],
@@ -462,44 +450,14 @@ fn viewport_against_export(
         let held = Image::new(fitted.width, fitted.height, held).unwrap();
         let (_, stats) = delta_e::compare(&downscaled, &viewport, Tolerance::DARKTABLE).unwrap();
         let (_, baseline) = delta_e::compare(&downscaled, &held, Tolerance::DARKTABLE).unwrap();
-        scales.push(Scale {
-            box_size,
-            width: viewport.width,
-            height: viewport.height,
-            share: stats.mean - baseline.mean,
-            baseline: baseline.mean,
+        scales.push(Scale::new(
+            (box_size, target),
+            (viewport.width, viewport.height),
             stats,
-            target,
-        });
+            &baseline,
+        ));
     }
     scales
-}
-
-/// What a scale misses of decision 15's target, if anything.
-fn missed(scale: &Scale) -> Option<String> {
-    use golden::delta_e::Tolerance;
-
-    let over_mean = scale.box_size == [2400, 1600] && scale.stats.mean > Tolerance::DARKTABLE.mean;
-    (scale.share > scale.target || over_mean).then(|| {
-        format!(
-            "at {}×{}: share {:.4} against {}, mean {:.4}",
-            scale.width, scale.height, scale.share, scale.target, scale.stats.mean
-        )
-    })
-}
-
-fn report(what: &str, scale: &Scale) {
-    eprintln!(
-        "{what} at {}×{}: mean {:.4}, p95 {:.4}, max {:.3}; with the export's blur {:.4}; \
-         the softened image's and blur's share {:.4}",
-        scale.width,
-        scale.height,
-        scale.stats.mean,
-        scale.stats.p95,
-        scale.stats.max,
-        scale.baseline,
-        scale.share
-    );
 }
 
 /// Decision 15's viewport target on the case's input, darktable's render of mire1 before
@@ -532,7 +490,7 @@ fn the_viewport_is_within_decision_80s_target_of_the_export() {
     let values = ports::plan_values(case).unwrap().unwrap();
     let settings = soften::settings(&Soften.schema().resolve(&values).unwrap());
     for scale in viewport_against_export(&settings, &input, &image) {
-        report("soften", &scale);
+        report("soften", LABELS, &scale);
         assert!(missed(&scale).is_none(), "{:?}", missed(&scale));
     }
 }
@@ -547,11 +505,6 @@ fn the_viewport_is_within_decision_80s_target_of_the_export() {
 #[test]
 #[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
 fn the_viewport_is_within_decision_80s_target_on_the_corpus() {
-    use std::cmp::Ordering;
-
-    use apertrust_engine::edit::{self, Edit};
-    use apertrust_engine::export::{BUDGET, Tiling, export};
-
     let corpus = golden::render::corpus_dir().unwrap();
     let names = include_str!("../../raw/tests/corpus/files.sha256")
         .lines()
@@ -567,25 +520,12 @@ fn the_viewport_is_within_decision_80s_target_on_the_corpus() {
                 continue;
             }
         };
-        let Some(mosaic) = apertrust_engine::raw::upload(gpu(), &raw) else {
+        let Some((context, developed)) =
+            golden::render::developed_before(gpu(), &raw, &place).unwrap()
+        else {
             eprintln!("{name}: skipped, not a colour mosaic the pipeline takes");
             continue;
         };
-        let context = apertrust_engine::raw::image_context(&raw);
-        let before: Vec<Instance> = edit::instances(
-            &Edit::default(),
-            apertrust_operations::OPERATIONS,
-            apertrust_tools::TOOLS,
-            &context,
-        )
-        .all()
-        .unwrap()
-        .into_iter()
-        .filter(|i| i.operation.manifest().slot.pipeline_order(&place) == Ordering::Less)
-        .collect();
-        let tiling = Tiling::Auto { budget: BUDGET };
-        let developed =
-            pollster::block_on(export(gpu(), &before, &context, mosaic.unwrap(), tiling)).unwrap();
         let (width, height) = (developed.desc.width, developed.desc.height);
         let input = upload(width, height, &developed.pixels);
         drop(developed);
@@ -594,7 +534,7 @@ fn the_viewport_is_within_decision_80s_target_on_the_corpus() {
             ..ImageContext::full(width, height)
         };
         for scale in viewport_against_export(&settings, &input, &image) {
-            report(name, &scale);
+            report(name, LABELS, &scale);
             if let Some(miss) = missed(&scale) {
                 misses.push(format!("{name} {miss}"));
             }

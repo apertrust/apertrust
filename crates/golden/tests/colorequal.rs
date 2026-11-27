@@ -33,6 +33,12 @@ use apertrust_engine::pipeline::{self, Derivative, Instance, Pipe, Pipeline, Pla
 use apertrust_operations::colorequal::reference::{self, InPlace};
 use apertrust_operations::colorequal::{self, ColorEqual, Grid, Process, Settings, Setup};
 use apertrust_plugin::{ImageContext, Operation};
+use viewport::{Scale, missed, report};
+
+mod viewport;
+
+/// What the colour equalizer's measure names its baseline and share.
+const LABELS: [&str; 2] = ["per-step baseline", "the whole-image passes' share"];
 
 fn gpu() -> &'static GpuContext {
     static GPU: OnceLock<GpuContext> = OnceLock::new();
@@ -153,16 +159,13 @@ fn largest_relative_difference(a: &[[f32; 4]], b: &[[f32; 4]]) -> f32 {
         .fold(0.0, f32::max)
 }
 
-#[test]
-fn the_operation_equals_its_restatement_on_the_cpu() {
-    let (width, height) = (64, 60);
-    let pixels = patches(width, height);
-    let input = upload(width, height, &pixels);
+/// The settings the restatement is held to on [`patches`]: without the filter; with it at
+/// darktable's defaults, both grids the image and blurring in place; test 0159's radii,
+/// the guide's grid a fourth of the image; both grids downsampled, by 3, with the other
+/// settings off their defaults.
+fn restated() -> [Settings; 4] {
     let defaults = Settings::default();
-    // Without the filter; with it at darktable's defaults, both grids the image; test
-    // 0159's radii, the guide's grid a fourth of the image; both grids downsampled, by 3,
-    // with the other settings off their defaults.
-    let cases = [
+    [
         Settings {
             use_filter: false,
             white_level: 0.9,
@@ -185,8 +188,15 @@ fn the_operation_equals_its_restatement_on_the_cpu() {
             hue_shift: 10.0,
             ..curves(defaults)
         },
-    ];
-    for settings in cases {
+    ]
+}
+
+#[test]
+fn the_operation_equals_its_restatement_on_the_cpu() {
+    let (width, height) = (64, 60);
+    let pixels = patches(width, height);
+    let input = upload(width, height, &pixels);
+    for settings in restated() {
         let scale = 1.0;
         let prefilter = Grid::new(Process::new(&settings, scale).hue_sigma, [width, height]);
         let guide = Grid::new(Process::new(&settings, scale).par_sigma, [width, height]);
@@ -209,6 +219,39 @@ fn the_operation_equals_its_restatement_on_the_cpu() {
         assert!(gap < 2e-4, "{settings:?}: {gap}");
         assert!(effect > 1e-2, "{settings:?}: {effect}");
         assert!(ours.iter().zip(&pixels).all(|(o, p)| o[3] == p[3]));
+    }
+}
+
+/// Decision 15 (2)'s baseline (`reference::held`) at full resolution is the restatement:
+/// with every value a pixel reads from other pixels the image's own (`reference::whole`),
+/// and the filters blurring in place where darktable's do, it renders what
+/// `reference::process` does.
+#[test]
+fn the_per_step_baseline_at_full_resolution_is_the_restatement() {
+    let (width, height) = (64, 60);
+    let pixels = patches(width, height);
+    let profile = WorkingProfile::linear_rec2020();
+    let size = (width as usize, height as usize);
+    for settings in restated() {
+        let export = Setup::new(&settings, [width, height], 1.0, &profile);
+        let whole = reference::whole(&settings, size.0, size.1, &pixels, &profile);
+        let held: Vec<[f32; 4]> = reference::held(&settings, &export, &pixels, &whole)
+            .into_iter()
+            .zip(&pixels)
+            .map(|([r, g, b], pixel)| [r, g, b, pixel[3]])
+            .collect();
+        let process = reference::process(
+            &settings,
+            size.0,
+            size.1,
+            &pixels,
+            1.0,
+            &profile,
+            InPlace::Darktable,
+        );
+        let gap = largest_relative_difference(&process, &held);
+        eprintln!("filter {}: gap {gap:.2e}", settings.use_filter);
+        assert!(gap < 1e-6, "{settings:?}: {gap}");
     }
 }
 
@@ -421,28 +464,24 @@ fn the_slots_derivatives_are_the_whole_renders_without_the_filter() {
     }
 }
 
-/// Decision 15's viewport target (`docs/engine.md`, Pipes) on test 0159's input,
-/// darktable's render of mire1 before the module: the viewport, the operation run on the
-/// fitted image, against the export downscaled by the viewport's box filter, mean
-/// ΔE2000, less decision 15's baseline, the same gap for the same edit without its
-/// filtering, darktable's own mode without the guided filter, as the tone equalizer's
-/// baseline is its unfiltered mask: at most 0.15 at 2400×1600 and at 1/2, 0.4 at 1/4 and
-/// 1/8, and within `Tolerance::DARKTABLE`'s mean in all at 2400×1600. It also prints
-/// decision 15 (4)'s baseline, the last step at the viewport's pixels with the export's
-/// prefiltered chromaticity and guided corrections downscaled, restated on the CPU, which
-/// also counts the curves' own per-pixel gap, since the corrections come out of a
-/// whole-image pass (docs/ports/colorequal.md, Results). Needs darktable-cli and the
-/// integration images; run by hand.
-#[test]
-#[ignore = "needs darktable-cli and APERTRUST_TEST_IMAGES"]
-fn the_viewport_is_within_decision_80s_target_of_the_export() {
-    use golden::darktable::DarktableCli;
+/// Decision 15's viewport target (`docs/engine.md`, Pipes) for `settings` on a `width` ×
+/// `height` RGBA input: at 2400×1600 and at 1/2, 1/4 and 1/8, the viewport, the operation
+/// run on the fitted image, against the export downscaled by the viewport's box filter,
+/// mean ΔE2000, less the same for decision 15 (2)'s baseline (`reference::held`): every
+/// value a pixel reads from other pixels held at the export's, from `reference::whole` at
+/// full resolution downscaled by the viewport's box filter, and every value from the
+/// pixel's own at the viewport's (docs/ports/colorequal.md, Results).
+fn viewport_against_export(
+    settings: &Settings,
+    width: u32,
+    height: u32,
+    pixels: &[[f32; 4]],
+) -> Vec<Scale> {
     use golden::delta_e::{self, Tolerance};
     use golden::pfm::Image;
-    use golden::{cases, ports, render};
 
-    let darktable = DarktableCli::locate().unwrap();
-    let images = render::images_dir().unwrap();
+    use apertrust_operations::colorequal::reference::WHOLE;
+
     let downloaded = |plan: Plan, input: &GpuImage| {
         let mut pipeline = pollster::block_on(Pipeline::new(gpu(), plan, input.clone())).unwrap();
         pipeline.render(gpu()).unwrap();
@@ -455,6 +494,97 @@ fn the_viewport_is_within_decision_80s_target_of_the_export() {
         let rgb = pixels.iter().map(|&[r, g, b, _]| [r, g, b]).collect();
         Image::new(width, height, rgb).unwrap()
     };
+    let profile = WorkingProfile::linear_rec2020();
+    let input = upload(width, height, pixels);
+    let exported = upload(width, height, &exported(settings, &input));
+    let export = Setup::new(settings, [width, height], 1.0, &profile);
+    let whole = reference::whole(settings, width as usize, height as usize, pixels, &profile);
+    let mut scales = Vec::new();
+    for (box_size, target) in viewport::boxes(width, height) {
+        let pipe = Pipe::Viewport {
+            width: box_size[0],
+            height: box_size[1],
+        };
+        let viewport = image(downloaded(plan_for(Some(settings), &input, pipe), &input));
+        let downscaled = image(downloaded(plan_for(None, &exported, pipe), &exported));
+        let (fitted_width, fitted_height, fitted) =
+            downloaded(plan_for(None, &input, pipe), &input);
+        // The whole-image values downscaled as the image is, three to an image.
+        let mut held_whole = vec![[0.0; WHOLE]; fitted.len()];
+        for first in (0..WHOLE).step_by(3) {
+            let channels = first..WHOLE.min(first + 3);
+            let packed: Vec<[f32; 4]> = whole
+                .iter()
+                .map(|values| {
+                    let mut rgba = [0.0, 0.0, 0.0, 1.0];
+                    rgba[..channels.len()].copy_from_slice(&values[channels.clone()]);
+                    rgba
+                })
+                .collect();
+            let packed = upload(width, height, &packed);
+            let (_, _, down) = downloaded(plan_for(None, &packed, pipe), &packed);
+            for (values, rgba) in held_whole.iter_mut().zip(&down) {
+                values[channels.clone()].copy_from_slice(&rgba[..channels.len()]);
+            }
+        }
+        let held = reference::held(settings, &export, &fitted, &held_whole);
+        let held = Image::new(fitted_width, fitted_height, held).unwrap();
+        let (_, stats) = delta_e::compare(&downscaled, &viewport, Tolerance::DARKTABLE).unwrap();
+        let (_, baseline) = delta_e::compare(&downscaled, &held, Tolerance::DARKTABLE).unwrap();
+        scales.push(Scale::new(
+            (box_size, target),
+            (fitted_width, fitted_height),
+            stats,
+            &baseline,
+        ));
+    }
+    scales
+}
+
+/// The operation with `settings` on `input` as an export renders it, in tiles where it
+/// does not fit the memory budget, each round of them its own submission, so a large
+/// image's whole-image passes stay within the GPU's time limit.
+fn exported(settings: &Settings, input: &GpuImage) -> Vec<[f32; 4]> {
+    use apertrust_engine::export::{BUDGET, Tiling, export};
+
+    let desc = input.desc();
+    let instances = [Instance {
+        operation: &ColorEqual,
+        params: ColorEqual
+            .schema()
+            .resolve(&colorequal::values(settings))
+            .unwrap(),
+    }];
+    let image = ImageContext::full(desc.width, desc.height);
+    let tiling = Tiling::Auto { budget: BUDGET };
+    pollster::block_on(export(gpu(), &instances, &image, input.clone(), tiling))
+        .unwrap()
+        .pixels
+}
+
+/// darktable's defaults and test 0159's settings, the two decision 15's measurement takes.
+fn measured_settings() -> [(&'static str, Settings); 2] {
+    use golden::{cases, ports};
+
+    let case = cases::find("colorequal").unwrap();
+    let values = ports::plan_values(case).unwrap().unwrap();
+    let test_0159 = colorequal::settings(&ColorEqual.schema().resolve(&values).unwrap());
+    [("defaults", Settings::default()), ("test 0159", test_0159)]
+}
+
+/// Decision 15's viewport target ([`viewport_against_export`]) on test 0159's input,
+/// darktable's render of mire1 before the module, at darktable's defaults and test
+/// 0159's settings. Each scale is reported; the test fails at the end on any that misses
+/// the target. Needs darktable-cli and the integration images; run by hand.
+#[test]
+#[ignore = "needs darktable-cli and APERTRUST_TEST_IMAGES"]
+fn the_viewport_is_within_decision_80s_target_of_the_export() {
+    use golden::darktable::DarktableCli;
+    use golden::pfm::Image;
+    use golden::{cases, render};
+
+    let darktable = DarktableCli::locate().unwrap();
+    let images = render::images_dir().unwrap();
     let case = cases::find("colorequal").unwrap();
     let source = Image::read(
         &render::render_case(&darktable, case, &images)
@@ -468,101 +598,57 @@ fn the_viewport_is_within_decision_80s_target_of_the_export() {
         .map(|&[r, g, b]| [r, g, b, 1.0])
         .collect();
     let (width, height) = (source.width as u32, source.height as u32);
-    let input = upload(width, height, &rgba);
-    let values = ports::plan_values(case).unwrap().unwrap();
-    let settings = colorequal::settings(&ColorEqual.schema().resolve(&values).unwrap());
-    let unfiltered = Settings {
-        use_filter: false,
-        ..settings
-    };
-    let profile = WorkingProfile::linear_rec2020();
-    let exported = |settings: &Settings| {
-        let export = downloaded(plan(settings, &input), &input).2;
-        upload(width, height, &export)
-    };
-    let (exported, exported_unfiltered) = (exported(&settings), exported(&unfiltered));
-    // The export's whole-image results, as two images to downscale: the prefiltered
-    // chromaticity and the hue correction, then the saturation and brightness ones.
-    let guided = reference::guided(
-        &settings,
-        width as usize,
-        height as usize,
-        &rgba,
-        1.0,
-        &profile,
-        InPlace::Darktable,
-    );
-    let first: Vec<[f32; 4]> = guided
-        .uv
-        .iter()
-        .zip(&guided.corrections)
-        .map(|(uv, c)| [uv[0], uv[1], c[0], 1.0])
-        .collect();
-    let second: Vec<[f32; 4]> = guided
-        .corrections
-        .iter()
-        .map(|c| [c[1], c[2], 0.0, 1.0])
-        .collect();
-    let (first, second) = (
-        upload(width, height, &first),
-        upload(width, height, &second),
-    );
-    let mut failures = Vec::new();
-    for (box_size, target) in [
-        ([2400, 1600], 0.15),
-        ([width / 2, height / 2], 0.15),
-        ([width / 4, height / 4], 0.4),
-        ([width / 8, height / 8], 0.4),
-    ] {
-        let pipe = Pipe::Viewport {
-            width: box_size[0],
-            height: box_size[1],
-        };
-        let gap = |settings: &Settings, exported: &GpuImage| {
-            let viewport = image(downloaded(plan_for(Some(settings), &input, pipe), &input));
-            let downscaled = image(downloaded(plan_for(None, exported, pipe), exported));
-            delta_e::compare(&downscaled, &viewport, Tolerance::DARKTABLE)
-                .unwrap()
-                .1
-        };
-        let stats = gap(&settings, &exported);
-        let baseline = gap(&unfiltered, &exported_unfiltered);
-
-        let downscaled = image(downloaded(plan_for(None, &exported, pipe), &exported));
-        let (fitted_width, fitted_height, fitted) =
-            downloaded(plan_for(None, &input, pipe), &input);
-        let first = downloaded(plan_for(None, &first, pipe), &first).2;
-        let second = downloaded(plan_for(None, &second, pipe), &second).2;
-        let setup = colorequal::Setup::new(
-            &settings,
-            [fitted_width as u32, fitted_height as u32],
-            1.0,
-            &profile,
-        );
-        let held: Vec<[f32; 3]> = fitted
-            .iter()
-            .zip(first.iter().zip(&second))
-            .map(|(pixel, (a, b))| {
-                let l_star = reference::l_star(&setup, [pixel[0], pixel[1], pixel[2]]);
-                reference::finish(&setup, l_star, [a[0], a[1]], [a[2], b[0], b[1]])
-            })
-            .collect();
-        let held = Image::new(fitted_width, fitted_height, held).unwrap();
-        let (_, exact) = delta_e::compare(&downscaled, &held, Tolerance::DARKTABLE).unwrap();
-
-        let share = stats.mean - baseline.mean;
-        eprintln!(
-            "colorequal at {fitted_width}×{fitted_height}: mean {:.4}, p95 {:.4}, max {:.3}; \
-             unfiltered {:.4}; the filter's share {share:.4}; with the export's whole-image \
-             results {:.4}",
-            stats.mean, stats.p95, stats.max, baseline.mean, exact.mean
-        );
-        if share > target {
-            failures.push(format!("at {box_size:?}: {share}, {stats:?}"));
-        }
-        if box_size == [2400, 1600] && stats.mean > Tolerance::DARKTABLE.mean {
-            failures.push(format!("at {box_size:?}: {stats:?}"));
+    let mut misses = Vec::new();
+    for (name, settings) in measured_settings() {
+        for scale in viewport_against_export(&settings, width, height, &rgba) {
+            let what = format!("mire1, {name}");
+            report(&what, LABELS, &scale);
+            if let Some(miss) = missed(&scale) {
+                misses.push(format!("{what} {miss}"));
+            }
         }
     }
-    assert!(failures.is_empty(), "{failures:#?}");
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// The corpus raws decision 15's measurement takes (`docs/engine.md`, Pipes): a Nikon, a
+/// Canon and a DNG, 16 to 30 MP. The corpus's one Olympus, the E-M1 Mark III's, is an
+/// 80 MP high-resolution shot.
+const CORPUS: [&str; 3] = [
+    "Nikon/D5100/00.nikon.12b-lossy-raw.nef",
+    "Adobe DNG Converter/Canon EOS 5D Mark III/5G4A9394-compressed-lossless.DNG",
+    "Canon/EOS 5D Mark IV/B13A0729.CR2",
+];
+
+/// Decision 15's corpus measurement, which comes before the Colour equalizer tool ships
+/// (`docs/engine.md`, Pipes; docs/ports/colorequal.md, Results): on each of [`CORPUS`],
+/// its default pipeline up to the colour equalizer's place, exported at full resolution,
+/// as the input, at darktable's defaults and test 0159's settings
+/// ([`viewport_against_export`]). Each scale is reported; the test fails at the end on any
+/// that misses the target. Needs the raw.pixls.us corpus; run by hand.
+#[test]
+#[ignore = "needs the raw.pixls.us corpus (APERTRUST_RAW_CORPUS)"]
+fn the_viewport_is_within_decision_80s_target_on_the_corpus() {
+    let corpus = golden::render::corpus_dir().unwrap();
+    let place = ColorEqual.manifest().slot;
+    let mut misses = Vec::new();
+    for name in CORPUS {
+        let raw = apertrust_raw::decode_file(corpus.join(name)).unwrap();
+        let (_, developed) = golden::render::developed_before(gpu(), &raw, &place)
+            .unwrap()
+            .expect("a colour mosaic the pipeline takes");
+        let (width, height) = (developed.desc.width, developed.desc.height);
+        let pixels = developed.pixels;
+        eprintln!("{name}: {width}×{height}");
+        for (settings_name, settings) in measured_settings() {
+            for scale in viewport_against_export(&settings, width, height, &pixels) {
+                let what = format!("{name}, {settings_name}");
+                report(&what, LABELS, &scale);
+                if let Some(miss) = missed(&scale) {
+                    misses.push(format!("{what} {miss}"));
+                }
+            }
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
 }
