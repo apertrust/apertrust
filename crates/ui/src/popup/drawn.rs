@@ -562,7 +562,7 @@ fn draw(ctx: &Context, id: Id, open: &mut Open) -> Pointer {
                 // bottom would cut it.
                 let size = vec2(
                     layout.width + 2.0 * edge,
-                    entries.len() as f32 * t.sizes.row + 2.0 * edge,
+                    entries.iter().map(|e| line_height(ctx, &t, e)).sum::<f32>() + 2.0 * edge,
                 );
                 let under = anchor.bottom() + t.spacing.xxs;
                 let over = anchor.top() - t.spacing.xxs - size.y;
@@ -883,6 +883,9 @@ impl Layout {
                             check = Icon::Check.size() + t.spacing.s;
                         }
                         words_width = words_width.max(measure(&item.text, font.clone()));
+                        if let Some(detail) = &item.detail {
+                            words_width = words_width.max(measure(detail, key_font(t)));
+                        }
                         if let Some(keys) = &item.shortcut {
                             end = end.max(measure(keys, key_font(t)));
                         }
@@ -906,7 +909,18 @@ impl Layout {
     }
 }
 
-/// The font of an item's keys, at its end.
+/// How tall a line of an item is: a row, and with a second line under its words
+/// ([`Item::detail`](crate::popup::Item::detail())) the small text's height more.
+fn line_height(ctx: &Context, t: &Theme, entry: &Entry) -> f32 {
+    match entry {
+        Entry::Item(item) if item.detail.is_some() => {
+            t.sizes.row + ctx.fonts_mut(|f| f.row_height(&key_font(t)))
+        }
+        _ => t.sizes.row,
+    }
+}
+
+/// The font of an item's keys, at its end, and of its second line.
 fn key_font(t: &Theme) -> FontId {
     FontId::proportional(t.text.small)
 }
@@ -972,12 +986,19 @@ impl Line<'_> {
                 .widget_info(|| WidgetInfo::labeled(Role::Label, true, text));
             return None;
         }
-        let (_, rect) = ui.allocate_space(vec2(layout.width, t.sizes.row));
+        let height = line_height(ui.ctx(), t, self.entry);
+        let (_, rect) = ui.allocate_space(vec2(layout.width, height));
         let response = ui.interact(rect, self.id, Sense::click());
         let (shortcut, checked, enabled) = match self.entry {
             Entry::Item(item) => (item.shortcut.as_deref(), item.checked, item.enabled),
             _ => (None, None, true),
         };
+        let (radio, detail) = match self.entry {
+            Entry::Item(item) => (item.radio, item.detail.as_deref()),
+            _ => (false, None),
+        };
+        // The words' row, at the line's top; a second line under them in the rest.
+        let words_row = Rect::from_min_size(rect.min, vec2(rect.width(), t.sizes.row));
         let (shown, access_key) = shown(self.entry, self.top);
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
@@ -997,7 +1018,10 @@ impl Line<'_> {
                 // The leading mark is a step quieter than its words until the line is lit.
                 Icon::Check.paint(
                     painter,
-                    Rect::from_min_size(pos2(x, rect.center().y - size / 2.0), vec2(size, size)),
+                    Rect::from_min_size(
+                        pos2(x, words_row.center().y - size / 2.0),
+                        vec2(size, size),
+                    ),
                     if self.chosen { colour } else { secondary },
                 );
             }
@@ -1010,17 +1034,22 @@ impl Line<'_> {
             };
             let galley = painter.layout_job(job);
             painter.galley(
-                pos2(x, rect.center().y - galley.size().y / 2.0),
+                pos2(x, words_row.center().y - galley.size().y / 2.0),
                 galley,
                 colour,
             );
+            if let Some(detail) = detail {
+                let galley = painter.layout_no_wrap(detail.to_owned(), key_font(t), secondary);
+                let at = pos2(x, words_row.bottom() - t.spacing.xxs);
+                painter.galley(at, galley, secondary);
+            }
             let end = rect.right() - t.spacing.m;
             if let Some(keys) = shortcut {
                 let galley = painter.layout_no_wrap(keys.to_owned(), key_font(t), secondary);
                 painter.galley(
                     pos2(
                         end - galley.size().x,
-                        rect.center().y - galley.size().y / 2.0,
+                        words_row.center().y - galley.size().y / 2.0,
                     ),
                     galley,
                     secondary,
@@ -1038,6 +1067,7 @@ impl Line<'_> {
             }
         }
         response.widget_info(|| match checked {
+            Some(on) if radio => WidgetInfo::selected(Role::MenuItemRadio, enabled, on, &shown),
             Some(on) => WidgetInfo::selected(Role::MenuItemCheckBox, enabled, on, &shown),
             None => WidgetInfo::labeled(Role::MenuItem, enabled, &shown),
         });
@@ -1047,7 +1077,12 @@ impl Line<'_> {
             response.clone().on_hover_text(tip);
         }
         let submenu = matches!(self.entry, Entry::Submenu(_));
+        // Its second line is its description to screen readers, its words its name.
+        let detail = detail.map(str::to_owned);
         ui.ctx().accesskit_node_builder(response.id, |node| {
+            if let Some(detail) = detail {
+                node.set_description(detail);
+            }
             if submenu {
                 node.set_has_popup(HasPopup::Menu);
                 node.set_expanded(self.open);

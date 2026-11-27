@@ -67,6 +67,14 @@ pub struct Item {
     /// For an item that turns something on or is the chosen one of a set: whether it is,
     /// shown by a check mark. None for a command.
     pub checked: Option<bool>,
+    /// Whether it is one of a set of which one is chosen, a radio item to screen readers,
+    /// rather than one that turns something on; only for an item that can be checked.
+    pub radio: bool,
+    /// A second line under its words, translated, in the small text in `text_secondary`:
+    /// what the item stands for, as a pattern's choice shows its pattern. Drawn on every
+    /// platform: AppKit's menus have no such line, so a request holding one is never the
+    /// installed [`Service`]'s.
+    pub detail: Option<String>,
     /// A disabled item is drawn so, reached by the keys and read as unavailable, and
     /// cannot be chosen.
     pub enabled: bool,
@@ -87,9 +95,11 @@ impl Item {
             text: text.into(),
             shortcut: None,
             checked: None,
+            radio: false,
             enabled: true,
             tip: None,
             alternate: None,
+            detail: None,
         }
     }
 
@@ -101,6 +111,21 @@ impl Item {
     /// Makes it an item that can be checked, checked while `on`.
     pub fn checked(mut self, on: bool) -> Self {
         self.checked = Some(on);
+        self
+    }
+
+    /// Makes it the item of a set whose one chosen is checked, chosen while `on`: a radio
+    /// item to screen readers.
+    pub fn radio(mut self, on: bool) -> Self {
+        self.checked = Some(on);
+        self.radio = true;
+        self
+    }
+
+    /// A second line under its words, translated, in the small text: what the item stands
+    /// for.
+    pub fn detail(mut self, text: impl Into<String>) -> Self {
+        self.detail = Some(text.into());
         self
     }
 
@@ -260,6 +285,19 @@ impl Request {
     pub fn opened_by(mut self, control: Id) -> Self {
         self.opener = Some(control);
         self
+    }
+
+    /// Whether an item of it, at any level, has a second line ([`Item::detail()`]), which
+    /// only the drawn popups show.
+    pub fn has_details(&self) -> bool {
+        fn any(entries: &[Entry]) -> bool {
+            entries.iter().any(|entry| match entry {
+                Entry::Item(item) => item.detail.is_some(),
+                Entry::Submenu(submenu) => any(&submenu.entries),
+                Entry::Separator | Entry::Heading(_) => false,
+            })
+        }
+        any(&self.entries)
     }
 
     /// The index of its checked item at its top: a dropdown's chosen option.

@@ -29,15 +29,16 @@ use crate::components::{
     CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
     ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
     Customising, EndItem, Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldWell,
-    FieldsRow, FileManager, FindBar, FindBarAction, GridCell, Histogram, HistogramBins, IconButton,
-    Job, JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker,
-    MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
-    Patches, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace, Place, PlainGroup,
-    Quad, Rail, RailLine, RailNode, ReadoutRow, Reference, ReferenceRow, RowField, SaveState,
-    Scale, Scope, ScopeView, Section, SectionAction, Segmented, SliderAction, SliderRow, Swatch,
-    SwatchFill, Swatches, Switch, TabBar, TabBarAction, Tag, Thumb, Toggle, ToggleRow, ToolButton,
-    Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track, VectorscopeBins, ViewMarks,
-    ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
+    FieldsRow, FileManager, FindBar, FindBarAction, Fix, GridCell, Histogram, HistogramBins,
+    IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark,
+    Marker, MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
+    Patches, PathChoice, PathRow, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace,
+    Place, PlainGroup, Problem, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
+    ReferenceRow, RowField, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
+    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Tag,
+    TextFieldRow, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, ToolbarButton,
+    ToolbarEntry, Track, Variable, VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction,
+    WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -164,6 +165,12 @@ impl Gallery {
     /// snapshot tests photograph it.
     pub fn show_fields_row_given(&mut self, ui: &mut Ui) {
         fields_row(ui, &mut self.demo.fields, Fold::Given);
+    }
+
+    /// Draws the Setting rows section's rows alone, at `width` points, as the snapshot
+    /// tests photograph them at 296 and 440.
+    pub fn show_setting_rows(&mut self, ui: &mut Ui, width: f32) {
+        setting_rows(ui, width);
     }
 
     /// Draws the Settings controls section alone, as the snapshot tests photograph it in
@@ -297,7 +304,154 @@ impl Gallery {
         ui.add_space(t.spacing.l);
         heading(ui, "Customising the Toolbar");
         toolbar_customising(ui, &t);
+        ui.add_space(t.spacing.l);
+        heading(ui, "Setting rows");
+        for width in [296.0, 440.0] {
+            setting_rows(ui, width);
+            ui.add_space(t.spacing.s);
+        }
     }
+}
+
+/// The variables the setting rows' path fields offer.
+const PATH_VARIABLES: [Variable; 5] = [
+    Variable {
+        insert: "DAY",
+        description: "day of the month",
+    },
+    Variable {
+        insert: "IMPORT_NAME",
+        description: "the import's name",
+    },
+    Variable {
+        insert: "MONTH",
+        description: "month",
+    },
+    Variable {
+        insert: "PICTURES_FOLDER",
+        description: "the pictures folder",
+    },
+    Variable {
+        insert: "YEAR",
+        description: "year",
+    },
+];
+
+/// Subfolder's choices in its ⌄'s menu: two patterns, one chosen, and one not yet built.
+const SUBFOLDER_CHOICES: [PathChoice; 3] = [
+    PathChoice {
+        id: "by-day",
+        name: "By day, with the import's name",
+        pattern: Some("$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)"),
+        chosen: true,
+        disabled: None,
+    },
+    PathChoice {
+        id: "by-month",
+        name: "By month",
+        pattern: Some("$(YEAR)/$(MONTH)"),
+        chosen: false,
+        disabled: None,
+    },
+    PathChoice {
+        id: "by-camera",
+        name: "By camera",
+        pattern: Some("$(MAKER)/$(MODEL)"),
+        chosen: false,
+        disabled: Some("Comes in a later version"),
+    },
+];
+
+/// The setting rows the Tools panel lacks (`docs/gui.md`, The rows the tool panel lacks),
+/// `width` points wide, as the Import tool's form has them: path rows at rest, with a
+/// problem that warns and one that stops the job, a long pattern scrolling in its field,
+/// and disabled; then text field rows the same.
+fn setting_rows(ui: &mut Ui, width: f32) {
+    const FIX_MONTH: [Fix; 1] = [Fix {
+        id: "use-month",
+        text: "Use $(MONTH)",
+    }];
+    const FIX_FOLDER: [Fix; 1] = [Fix {
+        id: "choose-folder",
+        text: "Choose a folder…",
+    }];
+    let later = "Comes in a later version";
+    ui.push_id(("setting rows", width as u32), |ui| {
+        ui.allocate_ui(vec2(width, 0.0), |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let base = ui.scope_id();
+            let id = |name: &str| base.with(name);
+            PathRow::new(
+                id("folder"),
+                "Folder",
+                "$(PICTURES_FOLDER)/Apertrust",
+                &PATH_VARIABLES,
+            )
+            .folder("Choose a folder")
+            .tip("~/Pictures/Apertrust")
+            .show(ui);
+            PathRow::new(
+                id("subfolder"),
+                "Subfolder",
+                "$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)",
+                &PATH_VARIABLES,
+            )
+            .choices("Subfolders", &SUBFOLDER_CHOICES)
+            .problem(Some(
+                Problem::new("Two imports on one day go into one folder").fixes(&FIX_MONTH),
+            ))
+            .show(ui);
+            PathRow::new(id("broken"), "Subfolder", "$(YEAR)$(MONT)", &PATH_VARIABLES)
+                .choices("Subfolders", &SUBFOLDER_CHOICES)
+                .problem(Some(
+                    Problem::new("Unknown variable $(MONT)")
+                        .stops(true)
+                        .fixes(&FIX_MONTH),
+                ))
+                .show(ui);
+            PathRow::new(
+                id("long"),
+                "Folder",
+                "/Volumes/Photos NAS/Clients/2026/Weddings/$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)",
+                &PATH_VARIABLES,
+            )
+            .problem(Some(
+                Problem::new("Photos NAS is not connected").fixes(&FIX_FOLDER),
+            ))
+            .folder("Choose a folder")
+            .show(ui);
+            PathRow::new(
+                id("file name"),
+                "File name",
+                "$(FILE_NAME).$(FILE_EXTENSION)",
+                &PATH_VARIABLES,
+            )
+            .choices("File names", &SUBFOLDER_CHOICES)
+            .problem(Some(Problem::new("Not drawn while disabled")))
+            .disabled(later)
+            .show(ui);
+            TextFieldRow::new(id("name"), "Import name", "Wedding")
+                .tip("Fills $(IMPORT_NAME)")
+                .show(ui);
+            TextFieldRow::new(id("empty name"), "Import name", "")
+                .hint("Optional")
+                .problem(Some(Problem::new(
+                    "Without a name, today's imports share a folder",
+                )))
+                .show(ui);
+            TextFieldRow::new(id("bad name"), "Import name", "Wed/ding")
+                .problem(Some(Problem::new("A name cannot hold /").stops(true)))
+                .show(ui);
+            TextFieldRow::new(
+                id("job code"),
+                "A label longer than its line can hold",
+                "Wedding",
+            )
+            .disabled(later)
+            .show(ui);
+        });
+    });
 }
 
 /// Each state of the three pressable controls side by side, pinned with their `state`

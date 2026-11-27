@@ -1112,7 +1112,7 @@ Context menus are built as a pull-down at the pointer, or under the control from
 - **The menu button's menu** on Windows and Linux is a pull-down from a button too, its items the menus as submenus, drawn as every popup is there (decision 39). The Mac has no menu button, its menus being the native menu bar's.
 - **Customise tabs, Phase 3's visual editor for workspaces (decision 96), is a dialog,** not a popup: its menu item ends in "…", since it asks for more before it acts, so it is a native modal window (decision 41).
 - **Inside a dialog's window** popups work as in the main window: a drawn one stays inside the dialog's window, so a long list there scrolls; on the Mac a native one opens over it.
-- **A native popup is a plain list:** items of text, enabled or not, a check mark when one is on or chosen, an action's shortcut from the keymap, separators and submenus. Anything else is drawn.
+- **A native popup is a plain list:** items of text, enabled or not, a check mark when one is on or chosen, an action's shortcut from the keymap, separators and submenus. Anything else is drawn, a list whose items carry a second line among it (`Item::detail`, a path row's ⌄ naming each choice's pattern under its name).
 - **Hover previews stay drawn,** on the Mac too: the quality bar's "preview on hover" needs the photo to repaint while the pointer moves over the items, and the item under the pointer reported, which a native menu does not give winit.
 - **Words** are the component's translated messages, so a popup opened after a language switch speaks the new language.
 
@@ -1153,7 +1153,7 @@ sequenceDiagram
 - **A `Request`** holds:
   - the kind (`Kind::PullDown` and `Kind::Dropdown` so far);
   - the anchor and a name for screen readers;
-  - the entries: `Item` (an id, its words, its keys, a check mark, whether it is enabled and a tip for the pointer), `Separator`, and `Submenu`, a top-level one's `&` its access key, which `Request::access_key` finds;
+  - the entries: `Item` (an id, its words, its keys, a check mark, whether it is enabled, a tip for the pointer, whether it is a radio item, one of a set whose one chosen is checked, and a second line under its words in the small text, `Item::radio` and `Item::detail`), `Separator`, and `Submenu`, a top-level one's `&` its access key, which `Request::access_key` finds;
   - `expanded`, a top-level submenu open as it opens;
   - `opener`, the control the focus goes back to as it closes (`Request::opened_by`), which `Choice` and `components::pull_down` set to their row and button. A press leaves egui's focus on nothing, so what had it as the popup opened is no target.
 - **`popup::Service`,** a trait the app installs in an egui context with `popup::install`: `takes(&Request)`, whether it shows a request itself, `open(id, Request)` and `close(id)`.
@@ -1165,7 +1165,7 @@ sequenceDiagram
 
 ### The native popups
 
-- **The app's service** on macOS (`crates/app/src/popups.rs`) is installed on the main window's context in `App::new` and on each dialog window's by the dialog host. It takes both kinds, every one a plain list, and only holds a request. Once the frame ends, `popups::show` turns each into `apertrust_display::PopUpMenu` and hands it to `apertrust_display::pop_up_menu` with the window the context draws.
+- **The app's service** on macOS (`crates/app/src/popups.rs`) is installed on the main window's context in `App::new` and on each dialog window's by the dialog host. It takes both kinds, every one a plain list, but a list with an item's second line (`Request::has_details`), and only holds a request. Once the frame ends, `popups::show` turns each into `apertrust_display::PopUpMenu` and hands it to `apertrust_display::pop_up_menu` with the window the context draws.
   - `PopUpMenu` is plain data of the display crate's own, which depends on nothing of ours: the titles, the enabled and on states, the tips, separators and submenus, a top-level submenu's `&` taken out, the anchor in the window's points (the egui points times the interface's scale), the dropdown's checked option as the item over the control, the keys the keymap spells parsed back into a key equivalent, and the appearance.
   - The answer comes back through a callback on the main thread once the menu has closed, which calls `popup::answered`. A menu that cannot be shown is dismissed and logged under `gpu`.
 - **The menu,** from `apertrust-display` with AppKit directly (`crates/display/src/popup_menu.rs`):
@@ -1636,6 +1636,7 @@ Each is built from what the tool panel already draws and added to the design sys
 | Size | One 24-point line: the label at the start; at the end `ValueField` (54) · 4 · × · 4 · `ValueField` (54) · 4 · the unit, and in the print modes · 8 · @ · 8 · `ValueField` (54) · 4 · dpi; ×, @ and the units in the small text, `text_secondary`; the last unit's ink ending 5 points from the row's end, where slider values and choice chevrons end. Over the format's limit the field is outlined in `error`. Where the row is narrower than it needs, its label goes on a line above the fields |
 | Indented toggle | `ToggleRow` with its label 20 points in, so it lines up under its parent's label, its switch at the row's end as any |
 
+- **Built** (`components::setting_rows`, in the gallery's Setting rows): the warning button (`WarningButton`, a `Problem` with its `Fix`es, its menu through `components::pull_down`, a Status node said assertively holding the problem while it stands), the Import tool's form of the path row (`PathRow`, its ⌄ of `PathChoice`s radio items with their patterns under them, opened by Alt+↓ on the field too), the field row's text form (`TextFieldRow`, its warning button before its field so the field's end stays on the content's end; Return reported as `TextRowOutput::returned`), and a problem drawn in the field's text (`TextField::problem`, `PathField::problem`). The Export tool's label-less path row, the slider with no kept marker, the note, the field row's number form, the size row and the indented toggle come with their first user.
 - **The tool's body has the tool panel's 12-point sides,** the header's chevron at 8, so at 440 points the rows are 415 wide and stretch with the column, as a tool's rows do in a widened Tools panel: labels at the start, values, options and chevrons on one end column 5 points in. The scroll bar lies in the end margin, so rows never move when it appears.
 - **Rows stack with no spacing,** each carrying its own padding, as in the Tools panel: 4 under the header, 4 above each collapsible group's row, none where it is the first; 8 before a plain group, none as the first row under a group, and 2 between its title and its rows. The hover band runs 4 points past the content at each end, and the focus ring goes round the whole row.
 
