@@ -2967,6 +2967,8 @@ struct Engine {
     /// The latest listing of Import's source, its jobs and its checks, which the next
     /// `ListSource` or a `CancelListing` naming it cancels; opens and closes leave it.
     source: Option<import::SourceListing>,
+    /// The job listing the volumes mounted, which the next `ListVolumes` cancels.
+    volumes: Option<JobId>,
     /// The selection, of the folder open's photos, and the active photo (decision 37).
     selection: selection::State,
     /// When a frame is published, for a test of the history's merging; else when it is.
@@ -3575,6 +3577,7 @@ impl Engine {
             walk: None,
             alone: None,
             source: None,
+            volumes: None,
             selection: selection::State::default(),
             #[cfg(test)]
             published_at: None,
@@ -5928,6 +5931,9 @@ impl Engine {
                 if (self.source.as_ref()).is_some_and(|source| source.listing == listing) {
                     self.drop_listing();
                 }
+                if let Some(volumes) = self.volumes.take() {
+                    self.jobs.control.cancel(volumes);
+                }
                 return;
             }
             LibraryCommand::CheckSource {
@@ -5950,6 +5956,10 @@ impl Engine {
                 size,
             } => {
                 self.source_thumbnails(listing, photos, size);
+                return;
+            }
+            LibraryCommand::ListVolumes => {
+                self.list_volumes();
                 return;
             }
             // The live photo's thumbnail is chosen again under it.
@@ -6277,6 +6287,27 @@ impl Engine {
                 .retain(|&job| control.state(job).is_some());
             source.thumbnails.extend(jobs);
         }
+    }
+
+    /// [`LibraryCommand::ListVolumes`]: the cards and drives mounted, listed by a job of kind
+    /// `volumes` on darktable's `UserBackground` queue with no progress, the one before it
+    /// cancelled, as a `CancelListing` cancels it, answered by [`LibraryEvent::Volumes`],
+    /// which carries no number.
+    fn list_volumes(&mut self) {
+        if let Some(older) = self.volumes.take() {
+            self.jobs.control.cancel(older);
+        }
+        let outbox = self.jobs.outbox.clone();
+        let job = self.jobs.add(self.applied, Queue::UserBackground, |_| {
+            jobs::Job::new("volumes", "listing the volumes", move |context| {
+                // The mounts are read on the library's own thread, so a share that hangs
+                // holds that thread alone, never this worker.
+                let tell = |event| outbox.send(Event::Library(event));
+                library::volumes(&tell, &|| context.cancelled());
+                Ok(())
+            })
+        });
+        self.volumes = Some(job);
     }
 
     /// Cancels the latest listing of Import's source, its check and its photos'
@@ -14508,7 +14539,8 @@ mod tests {
                 | LibraryEvent::SourceListed { .. }
                 | LibraryEvent::SourceTaken { .. }
                 | LibraryEvent::SourceFailed { .. }
-                | LibraryEvent::SourceChecked { .. } => Topic::Notice,
+                | LibraryEvent::SourceChecked { .. }
+                | LibraryEvent::Volumes { .. } => Topic::Notice,
             },
             Event::Cache(event) => match event {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),

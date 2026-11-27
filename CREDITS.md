@@ -327,6 +327,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - objc2-encode 4.1.0: MIT
 - objc2-foundation 0.2.2: MIT
 - objc2-foundation 0.3.2: MIT
+- objc2-io-kit 0.3.2: Zlib OR Apache-2.0 OR MIT
 - objc2-metal 0.3.2: Zlib OR Apache-2.0 OR MIT
 - objc2-quartz-core 0.3.2: Zlib OR Apache-2.0 OR MIT
 - objc2-ui-kit 0.2.2: MIT
@@ -434,6 +435,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - syn 2.0.119: MIT OR Apache-2.0
 - syn 3.0.10: MIT OR Apache-2.0
 - synstructure 0.14.0: MIT
+- sysinfo 0.40.4: MIT
 - target-features 0.1.6: MIT OR Apache-2.0
 - tempfile 3.27.0: MIT OR Apache-2.0
 - thiserror 1.0.69: MIT OR Apache-2.0

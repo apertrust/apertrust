@@ -103,10 +103,11 @@ Radiance HDR, PFM, binary PNM, QOI and BMP are read by Apertrust's own code, por
 
 ### The volumes and their free space: sysinfo
 
-Import's Source lists the cards and drives mounted, and its preview the destination's free space (decision 85), through `sysinfo` (MIT), a dependency of `apertrust-library` alone, its default features off and only `disk` on, checked with `cargo deny check` when it is added with Import's volumes.
+Import's Source lists the cards and drives mounted, and its preview the destination's free space (decision 85), through `sysinfo` 0.40.4 (MIT), a dependency of `apertrust-library` alone, its default features off and only `disk` and `linux-netdevs` on (`crates/library/src/volumes.rs`): the second so Linux's CIFS and NFS mounts, a NAS's, are listed, which `sysinfo` otherwise leaves out since asking a hard mount that is down for its space can hang; the library reads the mounts on a thread of its own for that.
 
 - **What it gives,** on macOS, Linux and Windows alike: each volume's name, mount point, removable flag and free and total space, so the library holds no `unsafe` of its own and the CLI has the free space too.
-- **Rust over the system's own calls:** on macOS through the objc2 bindings to IOKit and Core Foundation, frameworks the OS provides; on Linux `/proc/mounts` and `statvfs`; on Windows the `windows` crate. Nothing in C is compiled in.
+- **Rust over the system's own calls:** on macOS through the objc2 bindings to IOKit and Core Foundation, frameworks the OS provides, `objc2-io-kit` (Zlib OR Apache-2.0 OR MIT) the one crate it adds besides itself; on Linux `/proc/mounts` and `statvfs` through `libc`; on Windows the `windows` crate the tree has already. Nothing in C is compiled in.
+- **What Apertrust tells of them,** as its own pure rules tested on every system: the system's own volumes left out (macOS's `/System/Volumes/*` and Time Machine's snapshots, Linux's boot, snap, run-time and virtual file systems), a Linux volume, where `sysinfo` gives the device's name, and one with no label named by its mount point's last part, a Windows drive by its letter.
 - **Where it stops:** it reads the volumes when asked, not as they come and go; those notifications (20c) and Eject stay in `apertrust-display`'s platform code.
 - **Not used:** the volumes through `apertrust-display`'s own FFI on three systems, for what `sysinfo` gives in Rust; `fs4` and `fs2`, which give a path's free space but no list of the volumes.
 

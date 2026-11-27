@@ -245,6 +245,47 @@ pub fn check_source(
     )
 }
 
+/// Lists the volumes mounted a person would import from ([`crate::volumes`]) and tells
+/// `observer` once, with [`LibraryEvent::Volumes`]. A blocking call, made by a job's body:
+/// the mounts are read on a thread of their own, waited for while `cancel` is asked every
+/// 20 ms, so a share that hangs holds that thread alone; once `cancel` answers true it
+/// returns and sends nothing.
+pub fn volumes(
+    observer: &(dyn Fn(LibraryEvent) + Send + Sync),
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Ended {
+    let (sent, answer) = std::sync::mpsc::sync_channel(1);
+    let reading = std::thread::Builder::new()
+        .name("volumes".to_owned())
+        .spawn(move || {
+            let mounts = crate::volumes::mounts();
+            let _ = sent.send(crate::volumes::volumes(
+                &mounts,
+                crate::volumes::System::THIS,
+            ));
+        });
+    if let Err(error) = reading {
+        tracing::warn!("the volumes' listing cannot start: {error}");
+        return Ended::Failed;
+    }
+    loop {
+        if cancel() {
+            return Ended::Cancelled;
+        }
+        match answer.recv_timeout(std::time::Duration::from_millis(20)) {
+            Ok(volumes) => {
+                if cancel() {
+                    return Ended::Cancelled;
+                }
+                observer(LibraryEvent::Volumes { volumes });
+                return Ended::Listed;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Ended::Failed,
+        }
+    }
+}
+
 /// Whether `path` names a file inside the folder it is relative to: not empty, and each of
 /// its parts a name, none a root, a drive, `.` or `..`, so that joined to the folder it
 /// never leads out of it. A source's thumbnails are asked for by such paths.

@@ -482,3 +482,33 @@ fn a_new_listing_cancels_its_thumbnails_and_one_asked_twice_is_read_once() {
     drop(session);
     remove(&path);
 }
+
+/// The volumes mounted come as one event with no number, from a job with no progress, so
+/// no job event shows it; the boot volume among them on a Mac, each with its space.
+#[test]
+fn the_volumes_come_unnumbered_from_a_job_with_no_progress() {
+    let gpu = gpu();
+    let (session, wakes) = start_with(&gpu, &[], synthetic);
+    let asked = session.send(Command::Library(LibraryCommand::ListVolumes));
+    let told = |e: &Event| matches!(e, Event::Library(LibraryEvent::Volumes { .. }));
+    let events = until(&session, &wakes, told);
+    let volumes: Vec<&library::Volume> = (events.iter())
+        .filter_map(|event| match event {
+            Event::Library(LibraryEvent::Volumes { volumes }) => Some(volumes),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert!(of_job(&events, asked).is_none(), "{events:?}");
+    assert!(
+        volumes
+            .iter()
+            .all(|volume| volume.available <= volume.total)
+    );
+    if cfg!(target_os = "macos") {
+        let root = volumes
+            .iter()
+            .any(|volume| volume.mount_point == Path::new("/"));
+        assert!(root, "{volumes:?}");
+    }
+}
