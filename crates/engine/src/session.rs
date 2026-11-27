@@ -163,7 +163,7 @@ use crate::export_job::{self, Live, Numbering, Snapshot, Stamp};
 pub use crate::export_job::{Cause, ExportStatus, Failure, PhotoResult, Summary, Why};
 use crate::export_preview;
 pub use crate::export_preview::ExportPreview;
-use crate::gpu::{GpuContext, SubmitGate};
+use crate::gpu::{GpuContext, Submissions, SubmitGate};
 pub use crate::history::{
     BatchId, Clock, ControlChange, History, HistoryStep, Move, Note, RatingChange, StepId,
     StepSource, ToolChange,
@@ -6215,7 +6215,30 @@ impl Engine {
     /// a gesture's changes alone, the gesture still under way: zoomed past Fit, a change
     /// that would rerun a whole-image round of the detail then leaves the detail pending
     /// and renders the fitted frame alone (decision 99).
+    ///
+    /// Under `-d perf`, a frame's line follows its pipelines': its time, its passes' GPU
+    /// time, its submissions and their summed wait for the submit gate (decision 112's
+    /// measurement).
     fn render(
+        &mut self,
+        since: Instant,
+        dragging: bool,
+        events: &mut Vec<Event>,
+    ) -> Result<Option<Frame>, SessionError> {
+        let timed = tracing::enabled!(target: "perf", tracing::Level::DEBUG)
+            .then(|| (Instant::now(), Submissions::so_far()));
+        let rendered = self.render_retrying(since, dragging, events);
+        if let (Some((start, before)), Ok(Some(frame))) = (timed, &rendered) {
+            let submissions = Submissions::so_far().since(before);
+            let line = frame_line(start.elapsed(), &frame.timings, submissions);
+            tracing::debug!(target: "perf", "{line}");
+        }
+        rendered
+    }
+
+    /// [`Self::render`]'s frame: rendered again without the reduction where a tool's picker
+    /// in its submission failed it.
+    fn render_retrying(
         &mut self,
         since: Instant,
         dragging: bool,
@@ -6928,6 +6951,29 @@ impl Engine {
     }
 }
 
+/// The perf domain's line for a live frame that took `wall` from the render's start to its
+/// publication: its passes' GPU time from `timings`, left out where NaN, without timestamp
+/// queries, and its `submissions` (decision 112's measurement).
+fn frame_line(wall: Duration, timings: &Timings, submissions: Submissions) -> String {
+    let gpu_ms: f64 = timings.passes.iter().map(|(_, ms)| ms).sum();
+    let gpu = if gpu_ms.is_nan() {
+        String::new()
+    } else {
+        format!(", GPU: {gpu_ms:.1} ms")
+    };
+    let Submissions { count, waited } = submissions;
+    format!(
+        "live frame in {:.1} ms{gpu}, {count} {}, gate wait: {:.1} ms",
+        wall.as_secs_f64() * 1e3,
+        if count == 1 {
+            "submission"
+        } else {
+            "submissions"
+        },
+        waited.as_secs_f64() * 1e3
+    )
+}
+
 impl Open {
     /// The orientation the live frame shows the photo in: Orientation's option in its edit,
     /// a tool the eye hides as if reset, the photo's own at auto (decision 99).
@@ -7523,6 +7569,36 @@ mod tests {
 
     /// The build the tests' sessions record in the edits they write.
     const BUILD: &str = "0.4.0+12~g1a2b3c4";
+
+    #[test]
+    fn a_live_frame_s_line_gives_its_times_and_its_submissions() {
+        let timings = Timings {
+            passes: vec![("demosaic", 30.0), ("colorequal", 48.3)],
+            wall_ms: 80.0,
+        };
+        let submissions = Submissions {
+            count: 2,
+            waited: Duration::from_micros(4100),
+        };
+        let wall = Duration::from_micros(85_040);
+        assert_eq!(
+            frame_line(wall, &timings, submissions),
+            "live frame in 85.0 ms, GPU: 78.3 ms, 2 submissions, gate wait: 4.1 ms"
+        );
+        // Without timestamp queries the GPU time is left out.
+        let untimed = Timings {
+            passes: vec![("demosaic", f64::NAN)],
+            wall_ms: 80.0,
+        };
+        let one = Submissions {
+            count: 1,
+            waited: Duration::ZERO,
+        };
+        assert_eq!(
+            frame_line(wall, &untimed, one),
+            "live frame in 85.0 ms, 1 submission, gate wait: 0.0 ms"
+        );
+    }
 
     /// `testing::image`'s photo, whatever the path; one called `bias.ARW` records an
     /// exposure bias of −0.7 EV, one called `held.ARW` a bias of −⅔ EV and 1 EV held back
