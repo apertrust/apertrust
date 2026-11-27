@@ -2122,6 +2122,7 @@ sheet-column-width = Szerokość kolumny narzędzia
 ## główny z powodem, dla którego jest niedostępny. $source to nazwa woluminu karty lub
 ## nazwa folderu.
 
+import-heading-none = Import
 import-heading = Import · { $source }
 import-sheet-name = Import, { $source }
 import-grid-name = { $source }, { photo-count }, zaznaczono: { $checked }
@@ -2145,7 +2146,74 @@ import-primary = Importuj { photo-count }
 import-why-no-source = Wybierz, skąd importować.
 import-why-listing = Trwa listowanie { $source }
 import-why-none-checked = Nie zaznaczono żadnych zdjęć
+import-why-previewing = Ustalanie, dokąd trafią zdjęcia…
 import-why-empty-card = Brak zdjęć na { $source }.
 import-why-empty-folder = Brak zdjęć w { $source }.
 import-why-removed = Wysunięto { $source }.
 import-why-failed = Nie można odczytać { $source }: { $reason }
+
+## Pasek i stopka arkusza importu (docs/gui.md, The Import sheet, The footer): liczniki,
+## przyciski zaznaczania, co mówi siatka, gdy nie ma nic do pokazania, dwa wiersze
+## podsumowania i problem w stopce z nazwą jego wiersza. Słowa problemu następują po nazwie
+## wiersza, więc zaczynają się małą literą.
+
+import-bar-name = Pasek siatki importu
+import-select-new = Zaznacz nowe
+import-select-all = Zaznacz wszystkie
+import-select-none = Odznacz wszystkie
+import-counts = { photo-count }
+import-counts-before = { photo-count }, zaimportowane wcześniej: { $before }
+import-counts-listing = Listowanie { $source }… na razie { $count }
+import-counts-checking = Sprawdzanie w { $folder }… { $checked } z { $of }
+import-counts-checking-start = Sprawdzanie… { $checked } z { $of }
+import-grid-no-source = Wybierz, skąd importować.
+import-grid-no-source-note = Telefon podłączony kablem nie jest tu jeszcze widoczny: najpierw skopiuj jego zdjęcia do folderu.
+import-grid-all-on = Wszystkie { photo-count } na { $source } są już zaimportowane.
+import-grid-all-in = Wszystkie { photo-count } w { $source } są już zaimportowane.
+import-summary-lead = { $checked } z { photo-count } · { $size } z { $free } wolnego →{ " " }
+import-summary-lead-unknown = { $checked } z { photo-count } · { $size } →{ " " }
+import-summary-lead-waiting = { $checked } z { photo-count }
+import-summary-new-folder = , nowy folder
+import-summary-there = , już tam: { photo-count }
+import-summary-new-folders =
+    { $count ->
+        [one] , { $count } nowy folder
+        [few] , { $count } nowe foldery
+        [many] , { $count } nowych folderów
+       *[other] , { $count } nowego folderu
+    }
+import-summary-new-folders-by-day =
+    { $count ->
+        [one] , { $count } nowy folder według dnia zrobienia
+        [few] , { $count } nowe foldery według dnia zrobienia
+        [many] , { $count } nowych folderów według dnia zrobienia
+       *[other] , { $count } nowego folderu według dnia zrobienia
+    }
+import-summary-folders-there = , do istniejących folderów: { $count }
+import-summary-tip = { $size } z { $free } wolnego na { $volume }
+import-note-copies = Tylko kopiowanie; nic na { $source } się nie zmienia.
+import-note-again =
+    { $count ->
+        [one] { $count } z nich zaimportowano wcześniej; zostanie skopiowane ponownie.
+        [few] { $count } z nich zaimportowano wcześniej; zostaną skopiowane ponownie.
+        [many] { $count } z nich zaimportowano wcześniej; zostaną skopiowane ponownie.
+       *[other] { $count } z nich zaimportowano wcześniej; zostaną skopiowane ponownie.
+    }
+import-row-folder = Folder
+import-row-subfolder = Podfolder
+import-problem = { $row }: { $problem }
+import-problem-nameless = brak nazwy zmiennej po „$(”.
+import-problem-unknown = nieznana zmienna $({ $name }).
+import-problem-unclosed = brak „{ $expected }” po „{ $variable }”.
+import-problem-no-operation = „{ $found }” po { $variable } nie jest operacją.
+import-problem-too-deep = zmienne zagnieżdżono głębiej niż { $depth } poziomów.
+import-problem-outside-folder = „{ $subfolder }” wychodzi poza folder.
+import-problem-not-absolute = to nie jest pełna ścieżka.
+import-problem-not-connected = dysk nie jest podłączony.
+import-problem-not-a-folder = w miejscu „{ $folder }” jest plik.
+import-problem-read-only = „{ $folder }” jest tylko do odczytu.
+import-problem-unreadable = nie można zapisać w „{ $folder }”: { $why }.
+import-problem-is-source = to jest źródło.
+import-problem-inside-source = to jest wewnątrz źródła.
+import-problem-on-card = to jest na tej samej karcie co źródło.
+import-problem-space = potrzeba { $needed }; na { $volume } wolne jest { $available }.

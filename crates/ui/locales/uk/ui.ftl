@@ -2118,6 +2118,7 @@ sheet-column-width = Ширина стовпця інструмента
 ## кожної клітинки, що чують програми читання екрана наприкінці переліку, і основна кнопка
 ## з причиною, чому вона недоступна. $source — назва тому картки або назва теки.
 
+import-heading-none = Імпорт
 import-heading = Імпорт · { $source }
 import-sheet-name = Імпорт, { $source }
 import-grid-name = { $source }, { photo-count }, позначено: { $checked }
@@ -2141,7 +2142,74 @@ import-primary = Імпортувати { photo-count }
 import-why-no-source = Виберіть, звідки імпортувати.
 import-why-listing = Ще триває перелік { $source }
 import-why-none-checked = Не позначено жодного знімка
+import-why-previewing = З’ясовуємо, куди підуть знімки…
 import-why-empty-card = На { $source } немає знімків.
 import-why-empty-folder = У { $source } немає знімків.
 import-why-removed = { $source } від’єднано.
 import-why-failed = Не вдається прочитати { $source }: { $reason }
+
+## Панель і нижній рядок аркуша імпорту (docs/gui.md, The Import sheet, The footer):
+## лічильники, кнопки вибору, що каже сітка, коли показувати нічого, два рядки підсумку і
+## проблема в нижньому рядку з назвою її рядка. Слова проблеми йдуть після назви рядка,
+## тож починаються з малої літери.
+
+import-bar-name = Панель сітки імпорту
+import-select-new = Вибрати нові
+import-select-all = Вибрати всі
+import-select-none = Зняти вибір
+import-counts = { photo-count }
+import-counts-before = { photo-count }, імпортовано раніше: { $before }
+import-counts-listing = Перелік { $source }… поки що { $count }
+import-counts-checking = Перевірка в { $folder }… { $checked } із { $of }
+import-counts-checking-start = Перевірка… { $checked } із { $of }
+import-grid-no-source = Виберіть, звідки імпортувати.
+import-grid-no-source-note = Телефон, під’єднаний кабелем, тут ще не показується: спершу скопіюйте його знімки в теку.
+import-grid-all-on = Усі { photo-count } на { $source } уже імпортовано.
+import-grid-all-in = Усі { photo-count } у { $source } уже імпортовано.
+import-summary-lead = { $checked } із { photo-count } · { $size } із { $free } вільних →{ " " }
+import-summary-lead-unknown = { $checked } із { photo-count } · { $size } →{ " " }
+import-summary-lead-waiting = { $checked } із { photo-count }
+import-summary-new-folder = , нова тека
+import-summary-there = , уже там: { photo-count }
+import-summary-new-folders =
+    { $count ->
+        [one] , { $count } нова тека
+        [few] , { $count } нові теки
+        [many] , { $count } нових тек
+       *[other] , { $count } нової теки
+    }
+import-summary-new-folders-by-day =
+    { $count ->
+        [one] , { $count } нова тека за днями зйомки
+        [few] , { $count } нові теки за днями зйомки
+        [many] , { $count } нових тек за днями зйомки
+       *[other] , { $count } нової теки за днями зйомки
+    }
+import-summary-folders-there = , у наявні теки: { $count }
+import-summary-tip = { $size } із { $free } вільних на { $volume }
+import-note-copies = Лише копіювання; на { $source } нічого не змінюється.
+import-note-again =
+    { $count ->
+        [one] { $count } з них уже імпортовано раніше; його буде скопійовано знову.
+        [few] { $count } з них уже імпортовано раніше; їх буде скопійовано знову.
+        [many] { $count } з них уже імпортовано раніше; їх буде скопійовано знову.
+       *[other] { $count } з них уже імпортовано раніше; їх буде скопійовано знову.
+    }
+import-row-folder = Тека
+import-row-subfolder = Підтека
+import-problem = { $row }: { $problem }
+import-problem-nameless = після «$(» бракує назви змінної.
+import-problem-unknown = невідома змінна $({ $name }).
+import-problem-unclosed = бракує «{ $expected }» після «{ $variable }».
+import-problem-no-operation = «{ $found }» після { $variable } не є операцією.
+import-problem-too-deep = змінні вкладено глибше ніж на { $depth } рівнів.
+import-problem-outside-folder = «{ $subfolder }» веде за межі теки.
+import-problem-not-absolute = це не повний шлях.
+import-problem-not-connected = диск не під’єднано.
+import-problem-not-a-folder = на місці «{ $folder }» файл.
+import-problem-read-only = «{ $folder }» лише для читання.
+import-problem-unreadable = не вдається записати в «{ $folder }»: { $why }.
+import-problem-is-source = це і є джерело.
+import-problem-inside-source = це всередині джерела.
+import-problem-on-card = це на тій самій картці, що й джерело.
+import-problem-space = потрібно { $needed }; на { $volume } вільно { $available }.
