@@ -47,6 +47,13 @@
 //! copy again, or copy into another folder.
 //!
 //! The function always copies, on one volume too: Move to…'s rename there is its own.
+//!
+//! Import adds to it ([`land`], decision 85): the photo lands under another main file's
+//! name, its companions following it (`DSCF1033_01.RAF`, `DSCF1033_01.RAF.apxmp`); its
+//! `.apxmp` written from bytes Import gives, through the same temporary and rename; its
+//! companions alone, beside a main file there already; and each folder the copy made
+//! reported, parents first, so the caller can remove those left empty. [`same_file`]
+//! compares a file there with its source whole, as the source is read.
 
 use std::fs;
 use std::io::{self, Read, Write};
@@ -98,6 +105,7 @@ impl PhotoFiles {
     }
 
     /// Every name, in the order they are copied: the companions, then the main file.
+    #[cfg(test)]
     fn names(&self) -> impl Iterator<Item = &str> {
         self.companions
             .iter()
@@ -179,15 +187,145 @@ pub fn copy_photo(
     cancel: &(dyn Fn() -> bool + Sync),
     progress: &mut dyn FnMut(u64),
 ) -> Result<Copied, CopyError> {
-    copy_with(
+    let landing = Landing::same(source, into);
+    land(source, &landing, check, cancel, progress, &mut Vec::new())
+}
+
+/// Where and how a photo lands, for Import (decision 85): under `main` in `folder`, the
+/// companions following its name, `DSCF1033_01.RAF.apxmp` for `DSCF1033_01.RAF`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Landing<'a> {
+    pub folder: &'a Path,
+    /// The main file's name at the destination.
+    pub main: &'a str,
+    /// The `.apxmp` written in place of the source's, or where it has none: a copy named
+    /// otherwise than its source keeps its camera name in it.
+    pub sidecar: Option<&'a [u8]>,
+    /// Whether the main file lands too; without it the companions land alone, beside a copy
+    /// of the main file there already.
+    pub main_file: bool,
+}
+
+impl<'a> Landing<'a> {
+    /// `source` landing whole in `folder` under its own names, as [`copy_photo`] lands it.
+    pub fn same(source: &'a PhotoFiles, folder: &'a Path) -> Self {
+        Landing {
+            folder,
+            main: &source.main,
+            sidecar: None,
+            main_file: true,
+        }
+    }
+}
+
+/// Copies the photo `source` as `landing` says, whole or not at all, each file as
+/// [`copy_photo`] copies it, the `.apxmp` from `landing`'s bytes through the same temporary
+/// and rename, given its source's modified time where the source has one. Each folder it
+/// makes, as the first file is about to land, is added to `made`, parents first, whether
+/// the copy then lands or not; removing those left empty is the caller's. A blocking call,
+/// made by a job's body.
+pub fn land(
+    source: &PhotoFiles,
+    landing: &Landing<'_>,
+    check: Check,
+    cancel: &(dyn Fn() -> bool + Sync),
+    progress: &mut dyn FnMut(u64),
+    made: &mut Vec<PathBuf>,
+) -> Result<Copied, CopyError> {
+    land_with(
         source,
-        into,
-        check,
-        CHUNK,
+        landing,
+        (check, CHUNK),
         cancel,
         progress,
+        made,
         &mut |_| Ok(()),
     )
+}
+
+/// Whether the file `there` is the same as `source`, byte for byte: their sizes, then both
+/// read whole in chunks of [`CHUNK`], the cancel asked before each. A blocking call. A read
+/// of the source that fails is a [`CopyError::Read`], of the file there a
+/// [`CopyError::Write`], naming it, as the read-back does.
+pub fn same_file(
+    source: &Path,
+    there: &Path,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Result<bool, CopyError> {
+    compare_with(source, there, CHUNK, cancel, &mut |_| Ok(()))
+}
+
+/// [`same_file`] in chunks of `chunk`, with a test's hook, called before each chunk of the
+/// source, `At::Read { file: 0 }`, and of the file there, `At::Read { file: 1 }`.
+fn compare_with(
+    source: &Path,
+    there: &Path,
+    chunk: usize,
+    cancel: &(dyn Fn() -> bool + Sync),
+    hook: &mut Hook<'_>,
+) -> Result<bool, CopyError> {
+    let read = |source: io::Error, file: &Path| CopyError::Read {
+        file: file.to_owned(),
+        source,
+    };
+    let write = |source: io::Error| CopyError::Write {
+        file: there.to_owned(),
+        source,
+    };
+    let mut ours = fs::File::open(source).map_err(|e| read(e, source))?;
+    let mut theirs = fs::File::open(there).map_err(write)?;
+    let ours_len = ours.metadata().map_err(|e| read(e, source))?.len();
+    if theirs.metadata().map_err(write)?.len() != ours_len {
+        return Ok(false);
+    }
+    let (mut a, mut b) = (vec![0u8; chunk], vec![0u8; chunk]);
+    loop {
+        if cancel() {
+            return Err(CopyError::Cancelled {
+                file: source.to_owned(),
+            });
+        }
+        hook(At::Read { file: 0 }).map_err(|e| read(e, source))?;
+        let got = read_full(&mut ours, &mut a).map_err(|e| read(e, source))?;
+        hook(At::Read { file: 1 }).map_err(write)?;
+        let got_there = read_full(&mut theirs, &mut b).map_err(write)?;
+        if got != got_there || a[..got] != b[..got] {
+            return Ok(false);
+        }
+        if got == 0 {
+            return Ok(true);
+        }
+    }
+}
+
+/// Fills `buffer` from `file` as far as it goes: fewer bytes only at its end.
+fn read_full(file: &mut fs::File, buffer: &mut [u8]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        match file.read(&mut buffer[filled..]) {
+            Ok(0) => break,
+            Ok(got) => filled += got,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(filled)
+}
+
+/// Makes `folder` and each of its parents that is missing, adding each it made to `made`,
+/// parents first; one another program makes meanwhile is not the copy's.
+fn make_folder(folder: &Path, made: &mut Vec<PathBuf>) -> io::Result<()> {
+    let missing: Vec<&Path> = (folder.ancestors())
+        .take_while(|folder| !folder.as_os_str().is_empty() && !folder.is_dir())
+        .collect();
+    for folder in missing.into_iter().rev() {
+        match fs::create_dir(folder) {
+            Ok(()) => made.push(folder.to_owned()),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists && folder.is_dir() => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
 }
 
 /// Where the copy calls a test's hook, which fails the step with its error: before each
@@ -212,6 +350,7 @@ enum At<'a> {
 type Hook<'h> = dyn FnMut(At<'_>) -> io::Result<()> + 'h;
 
 /// [`copy_photo`] in chunks of `chunk`, with a test's hook.
+#[cfg(test)]
 fn copy_with(
     source: &PhotoFiles,
     into: &Path,
@@ -221,17 +360,73 @@ fn copy_with(
     progress: &mut dyn FnMut(u64),
     hook: &mut Hook<'_>,
 ) -> Result<Copied, CopyError> {
-    let mut files = Vec::new();
-    for (index, name) in source.names().enumerate() {
-        let file = Part {
+    let landing = Landing::same(source, into);
+    let made = &mut Vec::new();
+    land_with(
+        source,
+        &landing,
+        (check, chunk),
+        cancel,
+        progress,
+        made,
+        hook,
+    )
+}
+
+/// The parts of `source` as `landing` lands them, in their order: the companions, the
+/// `.apxmp` from its bytes in the source's place, each under the main file's new name, then
+/// the main file.
+fn parts<'a>(source: &PhotoFiles, landing: &Landing<'a>) -> Vec<Part<'a>> {
+    let sidecar = format!("{}{}", source.main, crate::sidecar::SUFFIX);
+    let to = |name: &str| {
+        let suffix = name.strip_prefix(&source.main).unwrap_or_default();
+        landing.folder.join(format!("{}{suffix}", landing.main))
+    };
+    let mut parts = Vec::new();
+    if let Some(bytes) = landing.sidecar {
+        parts.push((source.folder.join(&sidecar), to(&sidecar), Some(bytes)));
+    }
+    for name in &source.companions {
+        if landing.sidecar.is_none() || *name != sidecar {
+            parts.push((source.folder.join(name), to(name), None));
+        }
+    }
+    if landing.main_file {
+        let main = &source.main;
+        parts.push((source.folder.join(main), to(main), None));
+    }
+    (parts.into_iter().enumerate())
+        .map(|(index, (from, to, bytes))| Part {
             index,
-            from: source.folder.join(name),
-            to: into.join(name),
-        };
+            from,
+            to,
+            bytes,
+        })
+        .collect()
+}
+
+/// [`land`] as `(check, chunk)` says, with a test's hook.
+fn land_with(
+    source: &PhotoFiles,
+    landing: &Landing<'_>,
+    (check, chunk): (Check, usize),
+    cancel: &(dyn Fn() -> bool + Sync),
+    progress: &mut dyn FnMut(u64),
+    made: &mut Vec<PathBuf>,
+    hook: &mut Hook<'_>,
+) -> Result<Copied, CopyError> {
+    let into = landing.folder;
+    let mut files = Vec::new();
+    for file in parts(source, landing) {
         let copied = if cancel() {
             Err(CopyError::Cancelled { file: file.from })
         } else {
-            copy_file(&file, into, check, chunk, cancel, progress, hook)
+            let how = How {
+                check,
+                chunk,
+                made: &mut *made,
+            };
+            copy_file(&file, into, how, cancel, progress, hook)
         };
         match copied {
             Ok(copied) => files.push(copied),
@@ -244,11 +439,21 @@ fn copy_with(
     Ok(Copied { files })
 }
 
-/// One of a photo's files: its place in the copy, its source and its destination.
-struct Part {
+/// One of a photo's files: its place in the copy, its source and its destination, and the
+/// bytes it is written from in place of the source's, which then only gives its time.
+struct Part<'a> {
     index: usize,
     from: PathBuf,
     to: PathBuf,
+    bytes: Option<&'a [u8]>,
+}
+
+/// How a file is copied: checked or not, in chunks of `chunk`, the folders made added to
+/// `made`.
+struct How<'m> {
+    check: Check,
+    chunk: usize,
+    made: &'m mut Vec<PathBuf>,
 }
 
 /// Removes the files of a photo that landed before one of its files failed: the copy's
@@ -264,10 +469,9 @@ fn remove_landed(files: &[CopiedFile]) {
 
 /// Copies one file, the module's steps.
 fn copy_file(
-    file: &Part,
+    file: &Part<'_>,
     into: &Path,
-    check: Check,
-    chunk: usize,
+    How { check, chunk, made }: How<'_>,
     cancel: &(dyn Fn() -> bool + Sync),
     progress: &mut dyn FnMut(u64),
     hook: &mut Hook<'_>,
@@ -288,11 +492,21 @@ fn copy_file(
             file: file.to.clone(),
         });
     }
-    let mut from = fs::File::open(&file.from).map_err(read)?;
-    let modified = from.metadata().and_then(|m| m.modified()).map_err(read)?;
+    // Bytes given in place of the source take its time where it has one.
+    let (mut from, modified): (Box<dyn Read>, Option<_>) = match file.bytes {
+        Some(bytes) => {
+            let modified = fs::metadata(&file.from).and_then(|m| m.modified()).ok();
+            (Box::new(bytes), modified)
+        }
+        None => {
+            let from = fs::File::open(&file.from).map_err(read)?;
+            let modified = from.metadata().and_then(|m| m.modified()).map_err(read)?;
+            (Box::new(from), Some(modified))
+        }
+    };
     let name = file.to.file_name().map(|n| n.to_string_lossy());
     let name = name.ok_or_else(|| read(io::ErrorKind::InvalidInput.into()))?;
-    fs::create_dir_all(into).map_err(write)?;
+    make_folder(into, made).map_err(write)?;
     // Dropped on any error below, which removes it.
     let mut temp = apertrust_base::fs::create(into, &name).map_err(write)?;
     if check == Check::ReadBack {
@@ -361,7 +575,9 @@ fn copy_file(
     // The source's time only once the file has its name: the temporary keeps its write's
     // age, so a listing of the folder meanwhile never takes it for one a crash left a day
     // ago. The file has landed whole, so a time not set is logged, never a failed copy.
-    if let Err(error) = landed.set_modified(modified) {
+    if let Some(modified) = modified
+        && let Err(error) = landed.set_modified(modified)
+    {
         tracing::warn!(
             "{}: cannot set its modified time: {error}",
             file.to.display()
