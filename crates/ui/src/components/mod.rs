@@ -36,6 +36,7 @@ mod browser_edge;
 mod button;
 mod buttons_row;
 mod checkbox;
+mod checks;
 mod choice;
 mod collapsible_group;
 mod colour_swatch;
@@ -63,6 +64,7 @@ mod section;
 mod segmented;
 mod setting_rows;
 pub mod settings;
+mod sheet;
 mod slider;
 mod steps;
 mod swatches;
@@ -91,6 +93,7 @@ pub use browser_edge::{BrowserEdge, BrowserEdgeAction};
 pub use button::Button;
 pub use buttons_row::{ButtonsAction, ButtonsRow};
 pub use checkbox::Checkbox;
+pub use checks::{CheckGesture, Checks};
 pub use choice::{Choice, ChoiceAction, ChoiceBox, ChoiceStyle};
 pub use collapsible_group::{CollapsibleGroup, GroupOutput};
 pub use colour_swatch::ColourSwatch;
@@ -101,8 +104,8 @@ pub use fact_list::{Fact, FactCut, FactEnd, FactList, FactListOutput, FactMarks,
 pub use field_well::{FieldOutput, FieldWell};
 pub use fields_row::{FieldsRow, RowField};
 pub use grid_cell::{
-    CellAction, CellPicture, CellRating, CellStatus, ColourLabel, ColourLabels, GridCell,
-    GridCellOutput, RatingNotes, rating_notes, set_rating_notes,
+    CellAction, CellCheck, CellMark, CellPicture, CellRating, CellStatus, ColourLabel,
+    ColourLabels, GridCell, GridCellOutput, RatingNotes, rating_notes, set_rating_notes,
 };
 pub use group::{PlainGroup, group_label_text};
 pub use histogram::{
@@ -131,6 +134,10 @@ pub use segmented::Segmented;
 pub use setting_rows::{
     Fix, PathChoice, PathRow, PathRowOutput, Problem, TEXT_FIELD_WIDTH, TextFieldRow,
     TextRowOutput, WarningButton,
+};
+pub use sheet::{
+    COLUMN_LEAST, COLUMN_MOST, COLUMN_WIDTH, FOOTER, Returned, SelectButton, Sheet, SheetCell,
+    SheetOutput, Summary,
 };
 pub use slider::{Mark, Quad, SliderAction, SliderRow, Track, takes_digits};
 pub use swatches::{Swatch, SwatchFill, Swatches};

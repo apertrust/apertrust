@@ -65,6 +65,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `output` | Lucide's `arrow-right-from-line` |
 | `library` | Lucide's `library`, its third book drawn as a face |
 | `search` | Lucide's `search`, from Feather |
+| `help` | Lucide's `circle-question-mark`: a footer's Help (decision 97) |
 | `photo`, `photo-filled` | Lucide's `image` |
 | `photo-off` | Lucide's `image-off` |
 | `adjust`, `raw` and their filled forms | Lucide's `settings-2` and `camera`: Edit's Adjust and Raw tabs (decision 38) |

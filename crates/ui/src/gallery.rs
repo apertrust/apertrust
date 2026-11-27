@@ -25,20 +25,22 @@ use egui::emath::GuiRounding as _;
 use egui::{Align2, Color32, FontFamily, FontId, Frame, RichText, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::components::{
-    About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, CaptionStyle, CellPicture,
-    CellRating, CellStatus, Checkbox, Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup,
-    ColourLabel, ColourLabels, ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction,
-    Customising, EndItem, Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldWell,
-    FieldsRow, FileManager, FindBar, FindBarAction, Fix, GridCell, Histogram, HistogramBins,
-    IconButton, Job, JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark,
-    Marker, MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
+    About, ActionRow, Axis, Browser, BrowserAction, Button, ButtonState, COLUMN_WIDTH,
+    CaptionStyle, CellMark, CellPicture, CellRating, CellStatus, CheckGesture, Checkbox, Checks,
+    Choice, ChoiceAction, ChoiceStyle, Clipped, CollapsibleGroup, ColourLabel, ColourLabels,
+    ColourSwatch, CursorWell, CursorWellAction, Curve, CurveAction, Customising, EndItem,
+    Equalizer, EqualizerAction, Fact, FactCut, FactEnd, FactList, FieldWell, FieldsRow,
+    FileManager, FindBar, FindBarAction, Fix, GridCell, Histogram, HistogramBins, IconButton, Job,
+    JobFailure, JobMessage, JobPhase, Jobs, LineRow, LineStart, Margin, Mark, Marker,
+    MaskHistogram, MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, Patch,
     Patches, PathChoice, PathRow, PhotoCaption, PhotoFrame, PickerButton, PickerMarks, PickerPlace,
     Place, PlainGroup, Problem, Quad, Rail, RailLine, RailNode, ReadoutRow, Reference,
-    ReferenceRow, RowField, SaveState, Scale, Scope, ScopeView, Section, SectionAction, Segmented,
-    SliderAction, SliderRow, Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Tag,
-    TextFieldRow, Thumb, Toggle, ToggleRow, ToolButton, Toolbar, ToolbarAction, ToolbarButton,
-    ToolbarEntry, Track, Variable, VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction,
-    WarningRow, WaveformBins, WellCursor, WellGroup, WellSetting, Zoom,
+    ReferenceRow, Returned, RowField, SaveState, Scale, Scope, ScopeView, Section, SectionAction,
+    Segmented, SelectButton, Sheet, SheetCell, SheetOutput, SliderAction, SliderRow, Summary,
+    Swatch, SwatchFill, Swatches, Switch, TabBar, TabBarAction, Tag, TextFieldRow, Thumb, Toggle,
+    ToggleRow, ToolButton, Toolbar, ToolbarAction, ToolbarButton, ToolbarEntry, Track, Variable,
+    VectorscopeBins, ViewMarks, ViewerBar, ViewerBarAction, WarningRow, WaveformBins, WellCursor,
+    WellGroup, WellSetting, Zoom,
 };
 use crate::fonts::{MEDIUM, SEMIBOLD};
 use crate::i18n::{Args, Locale, Translator};
@@ -165,6 +167,18 @@ impl Gallery {
     /// snapshot tests photograph it.
     pub fn show_fields_row_given(&mut self, ui: &mut Ui) {
         fields_row(ui, &mut self.demo.fields, Fold::Given);
+    }
+
+    /// Draws the sample sheet over the whole of `ui`'s room, its column at the start where
+    /// `at_start` says, as the Tools panel's side, as the snapshot tests photograph it at a
+    /// window's sizes. Returns what it reported, which the gallery applies too.
+    pub fn show_sheet(&mut self, ui: &mut Ui, at_start: bool) -> SheetOutput<()> {
+        sheet(ui, &mut self.demo.sheet, at_start)
+    }
+
+    /// The sample sheet's checks, as its gestures left them.
+    pub fn sheet_checks(&self) -> &Checks {
+        &self.demo.sheet.checks
     }
 
     /// Draws the Setting rows section's rows alone, at `width` points, as the snapshot
@@ -309,6 +323,142 @@ impl Gallery {
         for width in [296.0, 440.0] {
             setting_rows(ui, width);
             ui.add_space(t.spacing.s);
+        }
+        ui.add_space(t.spacing.l);
+        heading(ui, "Sheet");
+        // As wide as the page's content, under the 592 points that keep the column at 296.
+        let size = vec2(560.0, 480.0);
+        ui.allocate_ui(size, |ui| {
+            ui.set_min_size(size);
+            sheet(ui, &mut self.demo.sheet, false);
+        });
+    }
+}
+
+/// The sample sheet, Import's: forty photos of a card, the first eight imported before,
+/// dimmed while unchecked and marked, its column holding the Import tool's setting rows. It
+/// applies what the sheet reports, as its caller does.
+fn sheet(ui: &mut Ui, demo: &mut SheetDemo, at_start: bool) -> SheetOutput<()> {
+    const SELECT: [SelectButton; 3] = [
+        SelectButton {
+            id: "new",
+            text: "Select new",
+        },
+        SelectButton {
+            id: "all",
+            text: "Select all",
+        },
+        SelectButton {
+            id: "none",
+            text: "Select none",
+        },
+    ];
+    let ctx = ui.ctx().clone();
+    let names: Vec<String> = (0..SHEET_PHOTOS)
+        .map(|i| format!("DSCF{}.RAF", 1001 + i))
+        .collect();
+    let check_names: Vec<String> = names.iter().map(|n| format!("Import {n}")).collect();
+    let checks = &demo.checks;
+    let checked = checks.checked_count();
+    let grid_name = format!("EOS_DIGITAL, {SHEET_PHOTOS} photos, {checked} checked");
+    let said = format!("{checked} checked");
+    let lead = format!("{checked} of {SHEET_PHOTOS} photos · 1.2 GB of 412 GB free → ");
+    let primary = format!("Import {checked} photos");
+    let imported = |i: usize| i < IMPORTED_BEFORE;
+    let mark = CellMark {
+        icon: Icon::Import,
+        words: "Imported before",
+    };
+    let wide = sample_picture(&ctx, true);
+    let tall = sample_picture(&ctx, false);
+    let out = Sheet::new(
+        "Import · EOS_DIGITAL",
+        "Import, EOS_DIGITAL",
+        SHEET_PHOTOS,
+        checks.active(),
+        |i| SheetCell {
+            name: &names[i],
+            picture: Some(if i % 5 == 3 { tall } else { wide }),
+            no_preview: false,
+            checked: checks.is_checked(i),
+            check_name: &check_names[i],
+            dimmed: imported(i) && !checks.is_checked(i),
+            mark: imported(i).then_some(mark),
+        },
+    )
+    .counts("40 photos, 8 imported before")
+    .bar_name("Import grid bar")
+    .select(&SELECT)
+    .grid_name(&grid_name, &said)
+    .column(demo.column, at_start)
+    .summary(Summary {
+        lead: &lead,
+        path: "~/Pictures/Apertrust/20261115_Wedding",
+        tail: ", a new folder",
+        tip: Some("~/Pictures/Apertrust/20261115_Wedding on Macintosh HD"),
+        note: "Copies only; nothing on EOS_DIGITAL is changed.",
+        warning: false,
+    })
+    .primary(&primary, (checked == 0).then_some("No photos checked"))
+    .show(ui, |ui, returned| {
+        let rows = &mut demo.rows;
+        Section::new("Import", true)
+            .utility_reset("Default settings")
+            .reset(false)
+            .utility_presets("Import presets")
+            .presets(false)
+            .options(false)
+            .show(ui, |ui| setting_rows_of(ui, rows, returned));
+    });
+    if let Some(gesture) = out.gesture {
+        demo.checks.apply(gesture);
+    }
+    match out.select.as_deref() {
+        Some("all") => demo.checks.apply(CheckGesture::All),
+        Some("none") => demo.checks.apply(CheckGesture::None),
+        Some("new") => {
+            for photo in 0..SHEET_PHOTOS {
+                demo.checks.set(photo, !imported(photo));
+            }
+        }
+        _ => {}
+    }
+    match out.column {
+        Some(PanelEdgeAction::Resize(width)) => demo.column = width,
+        Some(PanelEdgeAction::Reset) => demo.column = COLUMN_WIDTH,
+        None => {}
+    }
+    out
+}
+
+/// The Import tool's rows in the sample sheet's column: Folder, Subfolder with a problem
+/// that warns, and Import name, whose Return presses the sheet's primary button; `rows`
+/// holds what they hold, as typed.
+fn setting_rows_of(ui: &mut Ui, rows: &mut [String; 3], returned: &mut Returned) {
+    const FIX_MONTH: [Fix; 1] = [Fix {
+        id: "use-month",
+        text: "Use $(MONTH)",
+    }];
+    let base = ui.scope_id();
+    let id = |name: &str| base.with(name);
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let folder = PathRow::new(id("folder"), "Folder", &rows[0], &PATH_VARIABLES)
+        .folder("Choose a folder")
+        .show(ui);
+    let subfolder = PathRow::new(id("subfolder"), "Subfolder", &rows[1], &PATH_VARIABLES)
+        .choices("Subfolders", &SUBFOLDER_CHOICES)
+        .problem(Some(
+            Problem::new("Two imports on one day go into one folder").fixes(&FIX_MONTH),
+        ))
+        .show(ui);
+    let name = TextFieldRow::new(id("name"), "Import name", &rows[2]).show(ui);
+    returned.0 |= name.returned;
+    for (row, text) in [folder.text, subfolder.text, name.text]
+        .into_iter()
+        .enumerate()
+    {
+        if let Some(text) = text {
+            rows[row] = text;
         }
     }
 }
@@ -2092,6 +2242,42 @@ struct Demo {
     cursors: CursorsDemo,
     /// The fields row's width and height in pixels.
     fields: [f64; 2],
+    /// The sheet's checks and its column's width, as its caller keeps them.
+    sheet: SheetDemo,
+}
+
+/// The sheet's state, which its caller keeps (`docs/gui.md`, Sheets): its photos' checks,
+/// the eight imported before left unchecked and the rest checked, the first new one active,
+/// and its column's width.
+#[derive(Clone, Debug)]
+struct SheetDemo {
+    checks: Checks,
+    column: f32,
+    /// The Import tool's rows: Folder, Subfolder and Import name, as typed.
+    rows: [String; 3],
+}
+
+/// The sample sheet's photos, and how many of the first were imported before.
+const SHEET_PHOTOS: usize = 40;
+const IMPORTED_BEFORE: usize = 8;
+
+impl Default for SheetDemo {
+    fn default() -> Self {
+        let mut checks = Checks::new(SHEET_PHOTOS);
+        for photo in IMPORTED_BEFORE..SHEET_PHOTOS {
+            checks.set(photo, true);
+        }
+        checks.set_active(Some(IMPORTED_BEFORE));
+        SheetDemo {
+            checks,
+            column: COLUMN_WIDTH,
+            rows: [
+                "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+                "$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)".to_owned(),
+                "Wedding".to_owned(),
+            ],
+        }
+    }
 }
 
 /// The cursors' well's state, which the app keeps (`docs/cursors.md`, A cursor): the chosen
@@ -2197,6 +2383,7 @@ impl Default for Demo {
             settings: SettingsDemo::default(),
             cursors: CursorsDemo::default(),
             fields: [2048.0, 1365.0],
+            sheet: SheetDemo::default(),
         }
     }
 }

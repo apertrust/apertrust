@@ -171,6 +171,8 @@ pub enum Icon {
     Library,
     /// A magnifier: the Tools panel's search field and Find's tab.
     Search,
+    /// The round ?: a footer's Help, opening its topic in the Apertrust Guide (decision 97).
+    Help,
     /// One photo: Collections' top line while a photo is open alone.
     Photo,
     /// A photo struck through: the Browser's empty state, a folder with no raws.
@@ -255,7 +257,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 126] = [
+    pub const ALL: [Icon; 127] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -326,6 +328,7 @@ impl Icon {
         Icon::Metadata,
         Icon::Library,
         Icon::Search,
+        Icon::Help,
         Icon::Photo,
         Icon::PhotoOff,
         Icon::Histogram,
@@ -563,6 +566,7 @@ impl Icon {
             Icon::Metadata => derived!("metadata", "tag", 22.0),
             Icon::Library => derived!("library", "library", 16.0),
             Icon::Search => derived!("search", "search", 16.0),
+            Icon::Help => derived!("help", "circle-question-mark", 16.0),
             Icon::Photo => derived!("photo", "image", 14.0),
             Icon::PhotoOff => derived!("photo-off", "image-off", 16.0),
             Icon::Histogram => own!("histogram", 14.0),

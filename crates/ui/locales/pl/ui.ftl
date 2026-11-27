@@ -2080,3 +2080,12 @@ metadata-sensitivity_type-7 = SOS, REI i czułość ISO
 metadata-flash_return-1 = Światło odbite: zarezerwowane
 metadata-flash_return-2 = Nie wykryto światła odbitego lampy
 metadata-flash_return-3 = Wykryto światło odbite lampy
+
+## A sheet, full-window inside the main window, as Import… opens (docs/gui.md, Sheets): its
+## bar's Select ▾, its footer's Help and Close, and its tool column's edge
+
+sheet-select = Zaznacz
+sheet-close = Zamknij
+sheet-help = Pomoc
+sheet-help-later = Pojawi się w późniejszej wersji
+sheet-column-width = Szerokość kolumny narzędzia

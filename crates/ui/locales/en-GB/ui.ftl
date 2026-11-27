@@ -2526,3 +2526,12 @@ metadata-sensitivity_type-7 = SOS, REI and ISO speed
 metadata-flash_return-1 = Return light: reserved
 metadata-flash_return-2 = Strobe return light not detected
 metadata-flash_return-3 = Strobe return light detected
+
+## A sheet, full-window inside the main window, as Import… opens (docs/gui.md, Sheets): its
+## bar's Select ▾, its footer's Help and Close, and its tool column's edge
+
+sheet-select = Select
+sheet-close = Close
+sheet-help = Help
+sheet-help-later = Comes in a later version
+sheet-column-width = Tool column width
