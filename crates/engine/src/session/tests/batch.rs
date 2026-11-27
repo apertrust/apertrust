@@ -1906,3 +1906,470 @@ fn undo_batch_takes_a_rating_back_under_a_later_edit() {
     assert_eq!(saved_rating(&others[0]), rated(0, false, 0));
     remove(&active);
 }
+
+/// `SetMetadata` of the title `typed` naming `photos` (decision 110).
+fn titled(photos: &[PathBuf], typed: Option<&str>) -> Command {
+    Command::SetMetadata {
+        photos: photos.to_vec(),
+        values: Vec::new(),
+        fields: vec![("dc:title".to_owned(), typed.map(str::to_owned))],
+    }
+}
+
+/// The first copy's fields the sidecar beside `photo` holds, as saved: none where there is
+/// no sidecar.
+fn saved_fields(photo: &Path) -> Vec<apertrust_library::fields::FieldEntry> {
+    let Ok(xml) = std::fs::read_to_string(sidecar::path_for(photo)) else {
+        return Vec::new();
+    };
+    let file = sidecar::Edits::parse(&xml, 0).unwrap();
+    file.copies
+        .first()
+        .map_or_else(Vec::new, |copy| copy.fields.clone())
+}
+
+/// The title the sidecar beside `photo` holds, as saved.
+fn saved_title(photo: &Path) -> Option<String> {
+    (saved_fields(photo).into_iter())
+        .find(|entry| entry.field == "dc:title")
+        .and_then(|entry| entry.value)
+        .map(|value| value.shown())
+}
+
+/// A title on twelve photos, the active one among them, one with only darktable's `.xmp`
+/// beside it and one open for viewing only: one batch, the active photo at once with an
+/// undo record naming the twelve, the others by a quiet `set-metadata` job reading no raw,
+/// each file, the active photo's too, holding the title at the batch's wall time, its log untouched, darktable's
+/// fields copied into the new `.apxmp`, the view-only photo skipped and named, its file
+/// untouched.
+#[test]
+fn a_title_on_twelve_photos_is_one_batch_the_active_photo_at_once() {
+    let active = scratch("batch-title");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 11);
+    let xmp = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF
+        xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
+        xmlns:acdsee="http://ns.acdsee.com/iptc/1.0/" acdsee:notes="Warmer crop"/>
+        </rdf:RDF></x:xmpmeta>"#;
+    std::fs::write(apertrust_library::darktable::path_for(&others[0]), xmp).unwrap();
+    let newer = sidecar::to_xml(&Edit::default(), OPERATIONS, TOOLS, "9.0.0")
+        .replace(r#"apertrust:version="1""#, r#"apertrust:version="3""#);
+    // A newer version's file, which this build opens for viewing only.
+    assert!(newer.contains(r#"apertrust:version="3""#), "{newer}");
+    std::fs::write(sidecar::path_for(&others[1]), &newer).unwrap();
+    let named = [vec![active.clone()], others.clone()].concat();
+    let events = driven.run([titled(&named, Some("Tram 28"))]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert_eq!(changed(&events), std::slice::from_ref(&active));
+    let open = driven.engine.open.as_ref().unwrap();
+    let title = apertrust_library::fields::value(open.fields(), "dc:title");
+    assert_eq!(title.map(|value| value.shown()).as_deref(), Some("Tram 28"));
+    let undo = events.iter().rev().find_map(|event| match event {
+        Event::History(history) => Some(history.undo),
+        _ => None,
+    });
+    assert_eq!(
+        undo,
+        Some(Some(Move::Metadata {
+            field: Some("dc:title"),
+            photos: 12
+        }))
+    );
+    let heard = until_ended(&mut driven);
+    let added = heard.iter().find_map(|event| match event {
+        Event::Job {
+            event: JobEvent::Added { kind, quiet, .. },
+            ..
+        } => Some((*kind, *quiet)),
+        _ => None,
+    });
+    assert_eq!(added, Some(("set-metadata", true)));
+    let Some(BatchEvent::Ended {
+        what,
+        changed,
+        skipped,
+        named,
+        ..
+    }) = ended(&heard)
+    else {
+        unreachable!()
+    };
+    assert_eq!(*what, Batched::Metadata(vec!["dc:title".to_owned()]));
+    assert_eq!((*named, changed.len()), (12, 11));
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ViewOnly(_))] if *photo == others[1]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert_eq!(
+        std::fs::read_to_string(sidecar::path_for(&others[1])).unwrap(),
+        newer
+    );
+    let written: Vec<&PathBuf> = others.iter().filter(|photo| **photo != others[1]).collect();
+    let wall = |photo: &Path| {
+        let entry = saved_fields(photo)
+            .into_iter()
+            .find(|e| e.field == "dc:title");
+        entry.and_then(|entry| entry.clock).map(|clock| clock.when)
+    };
+    let first = wall(written[0]);
+    assert!(first.is_some());
+    // The active photo, reached at once, at the same wall time.
+    assert_eq!(
+        wall(&active),
+        first,
+        "one wall time, the active photo's too"
+    );
+    for photo in &written {
+        assert_eq!(saved_title(photo).as_deref(), Some("Tram 28"));
+        assert_eq!(wall(photo), first, "one wall time, {}", photo.display());
+        assert!(saved_log(photo).steps().is_empty(), "{}", photo.display());
+    }
+    // darktable's notes copied in, with a clock, at the first write.
+    let notes = saved_fields(&others[0])
+        .into_iter()
+        .find(|e| e.field == "apertrust:notes");
+    assert!(notes.is_some_and(|entry| entry.clock.is_some()));
+    remove(&active);
+}
+
+/// A field or a value no field takes, with photos named, refuses the command whole: no
+/// batch, no photo changed.
+#[test]
+fn a_metadata_batch_with_a_field_it_cannot_set_is_refused_whole() {
+    let active = scratch("batch-title-refused");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    let unknown = Command::SetMetadata {
+        photos: others.clone(),
+        values: Vec::new(),
+        fields: vec![
+            ("dc:title".to_owned(), Some("Tram".to_owned())),
+            ("dc:subject".to_owned(), Some("harbour".to_owned())),
+        ],
+    };
+    let events = driven.run([unknown]);
+    assert!(
+        matches!(failures(&events)[..], [SessionError::UnknownField { .. }]),
+        "{events:?}"
+    );
+    assert!(driven.engine.batches.is_empty());
+    assert!(driven.engine.remembered.is_empty());
+    remove(&active);
+}
+
+/// A title on two photos that leaves the active one as it was is answered as written, so a
+/// client waiting for the write stops waiting.
+#[test]
+fn a_metadata_batch_leaving_the_active_photo_as_it_was_is_answered_saved() {
+    let active = scratch("batch-title-same");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 1);
+    driven.run([titled(std::slice::from_ref(&active), Some("Tram 28"))]);
+    driven.writes();
+    let named = [vec![active.clone()], others.clone()].concat();
+    let events = driven.run([titled(&named, Some("Tram 28"))]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    assert!(changed(&events).is_empty(), "{events:?}");
+    let through = driven.engine.applied;
+    let saved = driven.writes();
+    assert!(
+        (saved.iter()).any(|e| matches!(e, Event::Saved { through: t, .. } if *t >= through)),
+        "{saved:?}"
+    );
+    until_ended(&mut driven);
+    driven.writes();
+    assert_eq!(saved_title(&others[0]).as_deref(), Some("Tram 28"));
+    remove(&active);
+}
+
+/// The sidecar beside `photo` retitled `title` at a clock after its own, as another
+/// program would write it.
+fn retitle(photo: &Path, title: &str) {
+    use apertrust_library::clock::{Clock, MachineId};
+    use apertrust_library::fields::FieldValue;
+    let path = sidecar::path_for(photo);
+    let mut file = sidecar::Edits::parse(&std::fs::read_to_string(&path).unwrap(), 0).unwrap();
+    let copy = crate::session::fields::copy_mut(&mut file);
+    let latest = copy.clocks.iter().max().copied();
+    let wall = apertrust_library::clock::wall_clock() + 1_000;
+    let clock = Clock::at(wall, latest.as_ref(), MachineId::UNKNOWN);
+    let value = FieldValue::LangAlt(vec![("x-default".to_owned(), title.to_owned())]);
+    apertrust_library::fields::set(&mut copy.fields, "dc:title", Some(value), clock);
+    copy.clocks.push(clock);
+    std::fs::write(&path, file.to_xml()).unwrap();
+}
+
+/// A title on three photos, the active one among them, then one of the others retitled by
+/// another program: Undo on the active photo takes the batch back there and on the other photo still
+/// holding it, and names the one changed since, which keeps its own; Redo puts it back on
+/// those Undo took it back on; the notice's Undo takes it back again from another photo.
+#[test]
+fn undo_takes_a_title_back_where_it_still_holds_and_names_a_photo_changed_since() {
+    let active = scratch("batch-title-undo");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    std::fs::write(&active, b"a raw").ok();
+    let named = [vec![active.clone()], others.clone()].concat();
+    driven.run([titled(&named, Some("Tram 28"))]);
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    // The first other retitled since, as by another program.
+    driven.writes();
+    retitle(&others[0], "Tram 12");
+    driven.run([Command::Undo]);
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!(changed, &[active.clone(), others[1].clone()]);
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ChangedSince)] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert_eq!(saved_title(&others[0]).as_deref(), Some("Tram 12"));
+    assert_eq!(saved_title(&others[1]), None);
+    let open = driven.engine.open.as_ref().unwrap();
+    assert_eq!(
+        apertrust_library::fields::value(open.fields(), "dc:title"),
+        None
+    );
+    // Redo puts it back where Undo took it back.
+    driven.run([Command::Redo]);
+    let heard = until_ended(&mut driven);
+    let [(action, changed, _)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::PutBack);
+    assert_eq!(changed, &[active.clone(), others[1].clone()]);
+    driven.writes();
+    assert_eq!(saved_title(&others[0]).as_deref(), Some("Tram 12"));
+    assert_eq!(saved_title(&others[1]).as_deref(), Some("Tram 28"));
+    // The notice's Undo, from a photo outside the batch.
+    let outside = photos(&active, "outside", 1).remove(0);
+    driven.open(&outside);
+    let events = driven.run([Command::UndoBatch { batch }]);
+    assert!(failures(&events).is_empty(), "{events:?}");
+    let heard = until_ended(&mut driven);
+    let [(action, changed, _)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!(changed.len(), 2, "{changed:?}");
+    driven.writes();
+    assert_eq!(saved_title(&active), None);
+    assert_eq!(saved_title(&others[1]), None);
+    assert_eq!(saved_title(&others[0]).as_deref(), Some("Tram 12"));
+    remove(&active);
+}
+
+/// A title on many photos cancelled midway keeps the photos written, and the notice's
+/// Undo takes the batch back on those alone.
+#[test]
+fn a_cancelled_title_batch_keeps_those_written_and_undo_takes_them_back() {
+    let active = scratch("batch-title-cancel");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 30);
+    let mut heard = driven.run([titled(&others, Some("Tram 28"))]);
+    let deadline = Instant::now() + TEST_WAIT;
+    let job = loop {
+        assert!(Instant::now() < deadline, "the job is added");
+        heard.extend(driven.saved.events());
+        let added = heard.iter().find_map(|event| match event {
+            Event::Job {
+                event: JobEvent::Added { job, .. },
+                ..
+            } => Some(*job),
+            _ => None,
+        });
+        if let Some(job) = added {
+            break job;
+        }
+    };
+    for _ in 0..5 {
+        let route = next_route(&mut driven);
+        driven.engine.routes.push(route);
+        driven.engine.take_routes();
+    }
+    let sixth = next_route(&mut driven);
+    driven.run([Command::CancelJob { job }]);
+    driven.engine.routes.push(sixth);
+    driven.engine.take_routes();
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended {
+        batch,
+        changed,
+        cancelled,
+        ..
+    }) = ended(&heard)
+    else {
+        unreachable!()
+    };
+    assert!(*cancelled);
+    assert_eq!(changed, &others[..5]);
+    let batch = *batch;
+    driven.writes();
+    let titled_now = |photo: &PathBuf| saved_title(photo).is_some();
+    assert_eq!(others.iter().filter(|photo| titled_now(photo)).count(), 5);
+    driven.run([Command::UndoBatch { batch }]);
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!((changed.len(), skipped.len()), (5, 0), "{skipped:?}");
+    driven.writes();
+    assert!(!others.iter().any(titled_now));
+    remove(&active);
+}
+
+/// A file another program changes between the job's read and its write is read again: the
+/// title lands beside the other program's field.
+#[test]
+fn a_title_batch_reads_a_file_changed_before_its_write_again() {
+    let active = scratch("batch-title-changed");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 1);
+    driven.run([titled(&others, Some("Tram 28"))]);
+    let route = next_route(&mut driven);
+    // Another program's city, written after the job read the file.
+    let mut file = sidecar::Edits::new(BUILD);
+    let copy = crate::session::fields::copy_mut(&mut file);
+    let clock =
+        apertrust_library::clock::Clock::at(1, None, apertrust_library::clock::MachineId::UNKNOWN);
+    let city = apertrust_library::fields::FieldValue::Text("Lisbon".to_owned());
+    apertrust_library::fields::set(&mut copy.fields, "photoshop:City", Some(city), clock);
+    copy.clocks.push(clock);
+    std::fs::write(sidecar::path_for(&others[0]), file.to_xml()).unwrap();
+    driven.engine.routes.push(route);
+    driven.engine.take_routes();
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended {
+        changed, skipped, ..
+    }) = ended(&heard)
+    else {
+        unreachable!()
+    };
+    assert_eq!((changed, skipped.len()), (&others, 0), "{skipped:?}");
+    driven.writes();
+    let fields = saved_fields(&others[0]);
+    assert!(fields.iter().any(|entry| entry.field == "photoshop:City"));
+    assert_eq!(saved_title(&others[0]).as_deref(), Some("Tram 28"));
+    remove(&active);
+}
+
+/// A title's batch and a style's on one photo land in the order sent, one batch job at a
+/// time.
+#[test]
+fn a_title_batch_and_a_style_land_in_the_order_sent() {
+    let active = scratch("batch-title-order");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 1);
+    driven.run([titled(&others, Some("Tram 28")), warm(40.0, &others)]);
+    let heard = until_ends(&mut driven, 2);
+    let whats: Vec<Batched> = (heard.iter())
+        .filter_map(|event| match event {
+            Event::Batch(BatchEvent::Ended { what, .. }) => Some(what.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        matches!(whats[..], [Batched::Metadata(_), Batched::Style(_)]),
+        "{whats:?}"
+    );
+    driven.writes();
+    assert_eq!(saved_title(&others[0]).as_deref(), Some("Tram 28"));
+    assert!(grained(&others[0]));
+    remove(&active);
+}
+
+/// The title the turn's `Metadata` fact tells, if it sent one.
+fn told_title(events: &[Event]) -> Option<Option<String>> {
+    events.iter().rev().find_map(|event| match event {
+        Event::Metadata(state) => Some(
+            (state.fields.iter())
+                .find(|(field, _)| field == "dc:title")
+                .and_then(|(_, value)| value.as_ref())
+                .map(|value| value.shown()),
+        ),
+        _ => None,
+    })
+}
+
+/// A title's batch reaching a photo opened while its job runs, through the job's route, and
+/// its Undo reaching it the same way, each tells the photo's fields (`Metadata`).
+#[test]
+fn a_title_routed_to_the_open_photo_is_told() {
+    let active = scratch("batch-title-routed");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 1);
+    driven.run([titled(&others, Some("Tram 28"))]);
+    let route = next_route(&mut driven);
+    driven.open(&others[0]);
+    driven.engine.routes.push(route);
+    let events = driven.engine.take_routes();
+    assert_eq!(told_title(&events), Some(Some("Tram 28".to_owned())));
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    driven.writes();
+    // Opened again in a session of its own, which holds no record of the batch: the
+    // notice's Undo reaches it by the job's route.
+    driven.open(&active);
+    driven.open(&others[0]);
+    driven.run([Command::UndoBatch { batch }]);
+    let route = next_route(&mut driven);
+    driven.engine.routes.push(route);
+    let events = driven.engine.take_routes();
+    assert_eq!(told_title(&events), Some(None));
+    remove(&active);
+}
+
+/// A photo whose title was changed since the batch and set back to the batch's value, at a
+/// later clock, keeps it: Undo takes back only a field that still holds the batch's clock.
+#[test]
+fn undo_leaves_a_title_set_back_to_the_batch_s_value_since() {
+    let active = scratch("batch-title-set-back");
+    let mut driven = Driven::new(TOOLS);
+    driven.open(&active);
+    let others = photos(&active, "other", 2);
+    driven.run([titled(&others, Some("Tram 28"))]);
+    let heard = until_ended(&mut driven);
+    let Some(BatchEvent::Ended { batch, .. }) = ended(&heard) else {
+        unreachable!()
+    };
+    let batch = *batch;
+    driven.writes();
+    retitle(&others[0], "Tram 12");
+    retitle(&others[0], "Tram 28");
+    driven.run([Command::UndoBatch { batch }]);
+    let heard = until_ended(&mut driven);
+    let [(action, changed, skipped)] = &ends(&heard)[..] else {
+        panic!("{heard:?}")
+    };
+    assert_eq!(*action, BatchAction::TakenBack);
+    assert_eq!(changed, std::slice::from_ref(&others[1]));
+    assert!(
+        matches!(&skipped[..], [(photo, Skip::ChangedSince)] if *photo == others[0]),
+        "{skipped:?}"
+    );
+    driven.writes();
+    assert_eq!(saved_title(&others[0]).as_deref(), Some("Tram 28"));
+    assert_eq!(saved_title(&others[1]), None);
+    remove(&active);
+}

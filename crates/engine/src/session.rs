@@ -337,20 +337,32 @@ pub enum Command {
         photos: Vec<PathBuf>,
         change: RatingChange,
     },
-    /// Sets the Metadata tool's fields of the active photo's open copy (decision 110), each
-    /// the photo's current value with its clock in its `.apxmp`, never a history step:
-    /// `fields` names each by its property's qualified name (`dc:title`,
+    /// Sets the Metadata tool's fields of `photos`' open copies (decision 110), each the
+    /// photo's current value with its clock in its `.apxmp`, never a history step: `fields`
+    /// names each by its property's qualified name (`dc:title`,
     /// `apertrust_library::fields::FIELDS`) with what was typed, made a value by the field's
     /// kind (`FieldValue::from_typed`: trimmed, a list split at `;`, an XMP date), `None` or
-    /// empty clearing it. Several fields are one change, one Undo; a quick commit of the same
-    /// fields again merges into it. Refused whole for a field none of `FIELDS` is, or the
-    /// rating's ([`SessionError::UnknownField`]), for a value its field cannot hold
-    /// ([`SessionError::FieldValue`]) and on a photo open for viewing only; allowed before
-    /// it is live. No command on the edit: it ends no gesture and sends no `Values`, but
-    /// `Metadata` where it changed a field and `History` for Undo's words. The log stays as
-    /// the file holds it, so a photo only titled stays unedited.
+    /// empty clearing it. Several fields are one change, one Undo. Refused whole for a field
+    /// none of `FIELDS` is, or the rating's ([`SessionError::UnknownField`]), and for a value
+    /// its field cannot hold ([`SessionError::FieldValue`]). `photos` empty, or naming the
+    /// active photo alone, for the active photo: a quick commit of the same fields again
+    /// merges into it; refused on a photo open for viewing only, allowed before it is live.
+    /// Naming another, each by its absolute path as `Selection::photos` names it, one batch
+    /// on every photo named, as [`Command::Rate`]'s (decision 109): the active photo at
+    /// once, skipped and named where it is open for viewing only, the others by a
+    /// `set-metadata` job reading no raw, a photo with no sidecar given one, `Event::Batch`
+    /// telling each and the end, `UndoBatch` or Undo on the active photo taking it back on
+    /// all; refused whole while the active photo opens. No command on the edit: it ends no
+    /// gesture and sends no `Values`, but `Metadata` where it changed a field of the active
+    /// photo and `History` for Undo's words. The log stays as the file holds it, so a photo
+    /// only titled stays unedited.
     SetMetadata {
+        photos: Vec<PathBuf>,
         fields: Vec<(String, Option<String>)>,
+        /// Fields set to a value as it is, never typed again, as one chosen from the values
+        /// several photos hold, a list's item holding "; " kept whole.
+        #[serde(default)]
+        values: Vec<(String, FieldValue)>,
     },
     /// Renames the active photo's open copy (decision 110), `name` on one line and trimmed,
     /// an empty one clearing it, as [`Command::SetMetadata`] sets a field: its `apertrust:name` with its
@@ -829,12 +841,13 @@ pub(crate) enum Inbox {
     /// What the reading of a folder found of its photos, a `Listed` chunk or its failure,
     /// which the selection follows ([`selection`]), after the commands sent before it.
     Listing(LibraryEvent),
-    /// Edit states of the photos opened alone by the library command numbered `open`, as
-    /// their job reads them, each by its path as given ([`Engine::photos_alone`]), which the
-    /// selection follows as it follows a listing's chunks.
+    /// Edit states and fields of the photos opened alone by the library command numbered
+    /// `open`, as their job reads them, each by its path as given
+    /// ([`Engine::photos_alone`]), which the selection follows as it follows a listing's
+    /// chunks.
     Classified {
         open: u64,
-        photos: Vec<(PathBuf, library::EditState)>,
+        photos: Vec<selection::Classified>,
     },
     /// A photo of a batch on several photos, as its job's worker built its file, for the
     /// engine thread to route ([`batch`]).
@@ -847,6 +860,12 @@ pub(crate) enum Inbox {
     Facts {
         open: u64,
         facts: Vec<(PathBuf, Option<Arc<library::Shot>>)>,
+    },
+    /// A photo's fields as a batch's job wrote them ([`batch`]), which the selection keeps
+    /// for the next summary.
+    Fields {
+        photo: PathBuf,
+        fields: Arc<apertrust_library::fields::Fields>,
     },
     Stop,
 }
@@ -1982,6 +2001,9 @@ impl Session {
                             // Facts a summary read, kept for the next; no change of the
                             // selection, so taken in whenever they come.
                             Inbox::Facts { open, facts } => engine.selection.facts(open, facts),
+                            Inbox::Fields { photo, fields } => {
+                                engine.selection.set_fields(&photo, fields);
+                            }
                             // Sent after the batch's commands, it is applied after them, as
                             // the next turn's first: the selection follows the listing and
                             // the commands in the order they were sent.
@@ -4187,17 +4209,40 @@ impl Engine {
                         save |= effect.save;
                     })
                 }
-                Command::SetMetadata { fields } => {
+                Command::SetMetadata {
+                    photos,
+                    fields,
+                    values,
+                } => {
+                    let set = fields::MetadataSet { fields, values };
                     // Earlier batches still to come on the active photo first, as a
                     // rating's.
                     let caught = self.catch_up(None, &mut events);
                     (render, save) = (render | caught.render, save | caught.save);
-                    // One that changes nothing is answered as written, so a client waiting
-                    // for its write stops waiting.
-                    self.set_metadata(&fields, at).map(|changed| match changed {
-                        true => save = true,
-                        false => answer = true,
-                    })
+                    let active = |photo: &PathBuf| {
+                        (self.open.as_ref())
+                            .is_some_and(|open| sidecar::path_for(photo) == open.sidecar)
+                    };
+                    if photos.iter().all(active) {
+                        // One that changes nothing is answered as written, so a client
+                        // waiting for its write stops waiting.
+                        self.set_metadata(&set, at).map(|changed| match changed {
+                            true => save = true,
+                            false => answer = true,
+                        })
+                    } else {
+                        // Refused whole before any photo is changed.
+                        fields::wanted(None, &set).and_then(|_| {
+                            let change = batch::Change::Metadata(set);
+                            self.batch_to(change, photos, &mut events).map(|effect| {
+                                render |= effect.render;
+                                save |= effect.save;
+                                // The open photo left as it was is answered as written,
+                                // as above: the client waits for its write.
+                                answer |= !effect.save;
+                            })
+                        })
+                    }
                 }
                 Command::RenameCopy { name } => {
                     let caught = self.catch_up(None, &mut events);
@@ -4594,9 +4639,22 @@ impl Engine {
             self.applied += 1;
             // A refused change is refused as it would have been; no one is told.
             // The Metadata fields and the copy's name are no command on the edit: set as a
-            // turn sets them, for the end to save.
+            // turn sets them, for the end to save, the open photo's alone, which no job
+            // started now outlives.
             let _ = match command {
-                Command::SetMetadata { fields } => self.set_metadata(&fields, at).map(drop),
+                Command::SetMetadata {
+                    photos,
+                    fields,
+                    values,
+                } => {
+                    let open = self.open.as_ref().map(|open| open.sidecar.clone());
+                    let named = |photo: &PathBuf| Some(sidecar::path_for(photo)) == open;
+                    let set = fields::MetadataSet { fields, values };
+                    match photos.is_empty() || photos.iter().any(named) {
+                        true => self.set_metadata(&set, at).map(drop),
+                        false => Ok(()),
+                    }
+                }
                 Command::RenameCopy { name } => self.rename_copy(&name, at).map(drop),
                 command => self.apply_edit(command, at).map(drop),
             };
@@ -5782,7 +5840,17 @@ impl Engine {
         }
         // The open photo's edit as the batch has left it so far, as Unedited reads it.
         self.settle_edited();
-        let (open, known) = self.selection.known(&photos);
+        let (open, mut known) = self.selection.known(&photos);
+        // The open photo's fields as the session holds them, a change not yet written among
+        // them.
+        if let Some(live) = &self.open {
+            let fields = Arc::new(apertrust_library::fields::Fields::of(&live.file.copies));
+            for photo in known.iter_mut() {
+                if sidecar::path_for(&photo.path) == live.sidecar {
+                    photo.fields = Arc::clone(&fields);
+                }
+            }
+        }
         let run = summary::Run {
             through,
             open,
@@ -8736,6 +8804,9 @@ mod tests {
                     | Inbox::Classified { .. }
                     | Inbox::Facts { .. }
                     | Inbox::Stop => {}
+                    Inbox::Fields { photo, fields } => {
+                        self.engine.selection.set_fields(&photo, fields);
+                    }
                 }
             }
             events
@@ -12153,6 +12224,8 @@ mod tests {
         session.send(Command::Synthetic(long));
         heard.until(&Told::Began("long", 1));
         session.send(Command::SetMetadata {
+            photos: Vec::new(),
+            values: Vec::new(),
             fields: vec![("dc:title".to_owned(), Some("Morning market".to_owned()))],
         });
         session.send(Command::RenameCopy {

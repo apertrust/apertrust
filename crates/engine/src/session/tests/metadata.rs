@@ -34,6 +34,8 @@ const CITY: &str = "photoshop:City";
 
 fn set_field(field: &str, typed: Option<&str>) -> Command {
     Command::SetMetadata {
+        photos: Vec::new(),
+        values: Vec::new(),
         fields: vec![(field.to_owned(), typed.map(str::to_owned))],
     }
 }
@@ -217,6 +219,8 @@ fn unknown_fields_bad_values_and_view_only_photos_are_refused() {
     let mut driven = Driven::new(&[&Sample]);
     driven.open(&path);
     let both = Command::SetMetadata {
+        photos: Vec::new(),
+        values: Vec::new(),
         fields: vec![
             (TITLE.to_owned(), Some("Kept out".to_owned())),
             ("dc:subject".to_owned(), Some("harbour".to_owned())),

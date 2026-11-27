@@ -184,6 +184,8 @@ pub(super) fn every_command() -> Vec<Command> {
             change: RatingChange::Label { label: 2, on: true },
         },
         Command::SetMetadata {
+            photos: vec![photo(), other()],
+            values: Vec::new(),
             fields: vec![
                 ("dc:title".to_owned(), Some("Morning market".to_owned())),
                 ("photoshop:City".to_owned(), None),

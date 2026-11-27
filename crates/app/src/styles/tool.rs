@@ -259,6 +259,7 @@ pub fn batch_notice(event: &BatchEvent, words: &Translator) -> Option<(String, O
     let (style, rating) = match what {
         Batched::Style(name) => (name.clone(), false),
         Batched::Rating(change) => (crate::rating::undo_words(*change, words), true),
+        Batched::Metadata(_) => (words.text("history-metadata"), false),
     };
     let (message, undo) = match action {
         BatchAction::Applied if rating => ("batch-rated", Some(*batch)),

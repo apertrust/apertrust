@@ -1404,6 +1404,8 @@ fn a_title_typed_and_return_sends_one_set_metadata_and_esc_sends_nothing() {
     assert_eq!(
         harness.state().sent,
         [Command::SetMetadata {
+            photos: Vec::new(),
+            values: Vec::new(),
             fields: vec![(
                 "dc:title".to_owned(),
                 Some("Morning market, Alfama today".to_owned())

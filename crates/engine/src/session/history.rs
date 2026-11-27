@@ -1171,7 +1171,7 @@ impl PhotoHistory {
     /// does, but one changed since. The edit as it stands.
     fn put_fields(&mut self, mut record: FieldRecord, copy: &mut VirtualCopy, back: bool) -> Edit {
         let clock = Clock::now(self.clock.as_ref(), self.machine);
-        record.put(copy, back, clock);
+        record.put(copy, (back, false), clock);
         let other = if back {
             &mut self.undone
         } else {
@@ -1182,15 +1182,29 @@ impl PhotoHistory {
     }
 
     /// The clock the next change of a field takes, which [`Self::rated`] then makes the
-    /// history's.
-    pub(super) fn next_clock(&self) -> Clock {
-        Clock::now(self.clock.as_ref(), self.machine)
+    /// history's: now, or at a batch's wall time `wall`, after the latest clock read, as its
+    /// other photos take it (decision 109).
+    pub(super) fn next_clock(&self, wall: Option<u64>) -> Clock {
+        match wall {
+            Some(wall) => Clock::at(wall, self.clock.as_ref(), self.machine),
+            None => Clock::now(self.clock.as_ref(), self.machine),
+        }
     }
 
     /// A clock of its own, the vector advanced with it, for what a write adds that is no
     /// change of the person's: darktable's fields copied in at the first write.
     pub(super) fn stamp(&mut self) -> Clock {
-        let clock = self.next_clock();
+        let clock = self.next_clock(None);
+        self.clock = Some(clock);
+        advance(&mut self.clocks, clock);
+        clock
+    }
+
+    /// [`Self::stamp`] at the wall time `wall`, a batch's, after the latest clock read
+    /// (decision 109): one time on every photo of the batch unless a photo's clocks were
+    /// ahead of it.
+    pub(super) fn stamp_at(&mut self, wall: u64) -> Clock {
+        let clock = Clock::at(wall, self.clock.as_ref(), self.machine);
         self.clock = Some(clock);
         advance(&mut self.clocks, clock);
         clock

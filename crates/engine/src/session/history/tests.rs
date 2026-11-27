@@ -1208,3 +1208,15 @@ fn value_json(value: &ControlValue) -> String {
         }
     }
 }
+
+/// A field's clock in a batch is taken at the batch's wall time, as its other photos take
+/// it, after the history's latest clock where that is ahead (decision 109); with none, now.
+#[test]
+fn a_batch_s_field_clock_is_at_its_wall_time_after_the_latest() {
+    let history = reopened(&exposed(0.5));
+    let latest = 1_773_497_331_120;
+    assert_eq!(history.next_clock(Some(latest + 5)).when, latest + 5);
+    let behind = history.next_clock(Some(latest - 5));
+    assert_eq!((behind.when, behind.counter), (latest, 1));
+    assert!(history.next_clock(None).when > latest);
+}
