@@ -19,10 +19,10 @@
 //! sliders shown, its controls in `gui_init`'s order under its labels.
 //!
 //! - **Hue, Saturation and Brightness:** each tab the eight nodes of its curve, red to
-//!   magenta; Node placement above them on every tab, and Hue curve on the Hue tab.
-//! - **Options,** collapsible, under every tab: White level, Use guided filter, and the
-//!   guided filter's Hue analysis radius, Saturation threshold, Contrast and Effect
-//!   radius, shown only while it is in use.
+//!   magenta; Node placement under them on every tab.
+//! - **Options,** collapsible, under every tab: White level, Hue curve, Use guided filter,
+//!   and the guided filter's Hue analysis radius, Saturation threshold, Contrast and
+//!   Effect radius, shown only while it is in use.
 //!
 //! Each control is one `colorequal` parameter, shown as darktable's slider shows it: the
 //! saturation and brightness nodes as 100 times the gain less 100, so 1 is 0 %; the
@@ -99,7 +99,7 @@ const fn gain(control: &'static str) -> Parameter {
 }
 
 /// Every number control's parameter, in the page's order: the nodes tab by tab, then
-/// Node placement, Hue curve and the options. The controls are darktable's parameter
+/// Node placement and the options, White level and Hue curve first. The controls are darktable's parameter
 /// names.
 pub static PARAMETERS: [Parameter; 31] = [
     plain("hue_red"),
@@ -127,8 +127,8 @@ pub static PARAMETERS: [Parameter; 31] = [
     gain("bright_lavender"),
     gain("bright_magenta"),
     plain("hue_shift"),
-    plain("smoothing_hue"),
     plain("white_level"),
+    plain("smoothing_hue"),
     plain("chroma_size"),
     Parameter {
         control: "threshold",
@@ -201,8 +201,8 @@ static CONTROLS: [Control; 32] = [
     node_gain("bright_lavender"),
     node_gain("bright_magenta"),
     number("hue_shift", (-23.0, 23.0), 0.1, 0.0, Some(Unit::Degrees)),
-    number("smoothing_hue", (0.05, 2.0), 0.01, 1.0, None),
     number("white_level", (-2.0, 16.0), 0.01, 1.0, Some(Unit::Ev)),
+    number("smoothing_hue", (0.05, 2.0), 0.01, 1.0, None),
     Control {
         id: USE_FILTER,
         kind: ControlKind::Bool { default: true },
@@ -220,10 +220,9 @@ const fn slider(control: &'static str) -> Row {
     Row::Slider(Slider::new(control))
 }
 
-/// A tab's eight node sliders, `<prefix>_red` to `<prefix>_magenta` in darktable's order,
-/// then any `more` rows.
+/// A tab's eight node sliders, `<prefix>_red` to `<prefix>_magenta` in darktable's order.
 macro_rules! nodes {
-    ($prefix:literal $(, $more:expr)*) => {
+    ($prefix:literal) => {
         &[
             slider(concat!($prefix, "_red")),
             slider(concat!($prefix, "_orange")),
@@ -233,7 +232,6 @@ macro_rules! nodes {
             slider(concat!($prefix, "_blue")),
             slider(concat!($prefix, "_lavender")),
             slider(concat!($prefix, "_magenta")),
-            $($more,)*
         ]
     };
 }
@@ -264,8 +262,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         tabs: &[
             Tab {
                 id: Some("hue"),
-                // darktable shows its hue curve, in its options, on the Hue tab alone.
-                rows: nodes!("hue", slider("smoothing_hue")),
+                rows: nodes!("hue"),
             },
             Tab {
                 id: Some("saturation"),
@@ -276,33 +273,38 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
                 rows: nodes!("bright"),
             },
         ],
-        // darktable's curve graph comes before Node placement, once a widget draws it.
-        before: &[decimals("hue_shift", 0)],
-        after: &[Row::Group(Group {
-            id: "options",
-            kind: GroupKind::Collapsible,
-            rows: &[
-                Row::Slider(
-                    Slider::new("white_level")
-                        .soft(-2.0, 2.0)
-                        .end(End::Picker("white_level")),
-                ),
-                Row::Toggle {
-                    control: USE_FILTER,
-                    end: &[],
-                },
-                Row::When {
-                    control: USE_FILTER,
-                    is: &["true"],
-                    rows: &[
-                        decimals("chroma_size", 1),
-                        decimals("threshold", 1),
-                        decimals("contrast", 3),
-                        decimals("param_size", 1),
-                    ],
-                },
-            ],
-        })],
+        // darktable's curve graph goes over the tabs, once a widget draws it.
+        before: &[],
+        after: &[
+            decimals("hue_shift", 0),
+            Row::Group(Group {
+                id: "options",
+                kind: GroupKind::Collapsible,
+                rows: &[
+                    Row::Slider(
+                        Slider::new("white_level")
+                            .soft(-2.0, 2.0)
+                            .end(End::Picker("white_level")),
+                    ),
+                    // darktable shows it among its options on the Hue tab alone.
+                    slider("smoothing_hue"),
+                    Row::Toggle {
+                        control: USE_FILTER,
+                        end: &[],
+                    },
+                    Row::When {
+                        control: USE_FILTER,
+                        is: &["true"],
+                        rows: &[
+                            decimals("chroma_size", 1),
+                            decimals("threshold", 1),
+                            decimals("contrast", 3),
+                            decimals("param_size", 1),
+                        ],
+                    },
+                ],
+            }),
+        ],
         reset: Reset::Tool,
         presets: true,
         open_at_first: false,
@@ -496,8 +498,8 @@ mod tests {
         gain("bright_magenta"),
         // `set_digits(0)` after the "°" format.
         shown("hue_shift", (-23.0, 23.0), 0),
-        shown("smoothing_hue", (0.05, 2.0), 2),
         shown("white_level", (-2.0, 16.0), 2).soft(-2.0, 2.0),
+        shown("smoothing_hue", (0.05, 2.0), 2),
         shown("chroma_size", (1.0, 10.0), 1),
         // `set_digits(3)`, then the "%" format's factor of 100 takes two of them.
         shown("threshold", (0.0, 0.3), 1).shown_as(100.0, 0.0),

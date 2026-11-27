@@ -20,9 +20,8 @@ It drives one operation, `colorequal` ([../ports/colorequal.md](../ports/coloreq
 darktable has two layouts, which a middle-click on its graph switches (`plugins/darkroom/colorequal/show_sliders`): the graph alone, its default, or the graph with each tab's sliders and the options as a fourth tab. The graph is a widget still to come, so the page is darktable's layout with the sliders, laid out as the tool model holds darktable's rows outside its notebook (`before` and `after`, [gui.md](../gui.md)):
 
 - **Tabs:** Hue, Saturation and Brightness, darktable's notebook, each its curve's eight nodes from red to magenta.
-- **Over every tab:** Node placement, the nodes' hue moved together, where darktable draws it under its graph.
-- **The Hue tab** ends with Hue curve, which darktable shows among its options on that tab alone.
-- **Options,** collapsible, under every tab: White level, Use guided filter, then Hue analysis radius, Saturation threshold, Contrast and Effect radius, shown only while the guided filter is in use, as darktable's `gui_changed` shows them (`Row::When`).
+- **Under every tab:** Node placement, the nodes' hue moved together, after the tab's eight nodes.
+- **Options,** collapsible, under every tab, after Node placement: White level, Hue curve, Use guided filter, then Hue analysis radius, Saturation threshold, Contrast and Effect radius, shown only while the guided filter is in use, as darktable's `gui_changed` shows them (`Row::When`). darktable shows Hue curve among its options on the Hue tab alone.
 
 ## Controls
 
@@ -90,8 +89,8 @@ Measured on the Radeon 780M (RADV):
 ## Design choices
 
 1. **darktable's layout with its sliders,** not its default of the graph alone: until the graph's widget exists, the sliders are the only way to set the nodes, and darktable's own layout shows them.
-2. **Options under every tab,** collapsible, where darktable's sliders layout makes them a fourth tab: the tool model holds rows outside the notebook (`after`), as darktable's graph layout draws them. Hue curve, which darktable shows among them only while the Hue tab is chosen, ends the Hue tab.
-3. **Node placement over every tab** (`before`), where darktable draws it under its graph; the graph comes before it once it is built.
+2. **Options under every tab,** collapsible, where darktable's sliders layout makes them a fourth tab: the tool model holds rows outside the notebook (`after`), as darktable's graph layout draws them. Hue curve, which darktable shows among them only while the Hue tab is chosen, is there on every tab, after White level, so it is in one place whichever tab is chosen.
+3. **Node placement under every tab** (`after`), after the nodes it moves and before Options; darktable's graph goes over the tabs once it is built.
 
 ## To come
 
