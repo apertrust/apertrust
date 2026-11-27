@@ -196,8 +196,8 @@ sequenceDiagram
 
 **Measurement, before A and after it:**
 
-- **The window,** in the app under `-d perf`: a line once a second while a gesture or a render is under way, with the frame interval between `App::update` calls (median, 95th percentile, worst, and how many passed 20 ms), its CPU time (eframe's `frame.info().cpu_usage`, 95th percentile) and the rest of the frame, the interval less the CPU time: the acquire, the present, vsync's pacing and any idle time, not a wait (the gate's wait is measured in the engine, next).
-- **The engine,** under `-d perf`: the time `GpuContext::submit` waits for the gate, logged above 0.5 ms; per render, its submissions, their summed gate wait, the GPU time and the wall time.
+- **The window,** built ([Performance](gui.md#performance)), in the app under `-d perf`: a line once a second while a gesture or a render is under way, with the frame interval between `App::ui` calls (median, 95th percentile, worst, and how many passed 20 ms), its CPU time (eframe's `frame.info().cpu_usage`, 95th percentile) and the rest of the frame, the interval less the CPU time: the acquire, the present, vsync's pacing and any idle time, not a wait (the gate's wait is measured in the engine, next).
+- **The engine,** built ([The submit gate](#the-submit-gate)), under `-d perf`: the time `GpuContext::submit` waits for the gate, logged above 0.5 ms; per render, its submissions, their summed gate wait, the GPU time and the wall time.
 - **Checks that need no code:** on Linux, Mesa's overlay layer (`VK_INSTANCE_LAYERS=VK_LAYER_MESA_overlay`, its config with `acquire_timing`), whose acquire time approaches the render's during a drag; on macOS, the Metal HUD (`MTL_HUD_ENABLED=1`) for the frame interval, and Instruments' Metal System Trace for the queue and the drawable waits.
 - **Before A,** the three must show the cause during a Colour equalizer drag on the 780M: the rest of the window's frame close to the render's length, the engine's gate wait up to a display frame a submission, and the window's frame interval at the render's length. A hand check on the 780M comes with them: whether the whole desktop stutters during a long render, the GPU's hardware queue being every app's.
 - **Done for A:** the window's frame time stays under about 20 ms during a render of 100 ms or more, on the Radeon 780M, the M4 and the RTX 5060.
@@ -1141,6 +1141,14 @@ Decision 18, `apertrust-engine::gpu`. The window's device is the engine's (decis
 - **The gate's hold includes the acquire.** `Gated` holds the gate through the whole callback, so through the acquire's wait behind queued work and for vsync. Each submission of the engine's therefore waits for its turn up to a display frame, longer during a resize, whose reconfigure holds the gate while the GPU finishes the work already submitted (above); that is why the live frame's chunks are about 12 ms under today's gate, one a window frame, rather than 4.
 - **Planned with wgpu 31:** once wgpu 31 and an egui-wgpu on it are out, and a stress test of resizes during renders passes on the M4, Linux and Windows, the gate shrinks to a reconfigure's own span, or goes, and the chunks drop to about 4 ms (decision 112). A reconfigure still waits for what is queued: two chunks at most, plus any other turn ahead of them, such as an export's step.
 - **Loops inside callbacks.** A loop of its own inside a callback, a modal dialog or a menu's tracking, holds the gate as long as it runs and stops the engine's frames meanwhile. So such loops run from the run loop, outside eframe's callbacks. The dialogs, native modal windows (decision 41), run no such loop: the app's dialog host draws each one's window inside `Gated`'s held callbacks, the Mac's sheets return at once, and Windows' task dialog runs on a thread of its own.
+- **Under `-d perf`** (decision 112's measurement): a submission that waited more than 0.5 ms for the gate says so (`GpuContext::submit`, `gpu::GATE_WAIT_LOGGED`), timed only with `perf` on; and each live frame, after its pipelines' `rendered` lines, gives its time from the render's start to its publication, its passes' GPU time, and its submissions with their summed wait for the gate, the scopes' count and a picker's sample among them (`gpu::Submissions`, counted per thread, `Engine::render`):
+
+  ```text
+      12.4410 [perf] submit waited 14.2 ms for the gate
+      12.5003 [perf] rendered 31 passes from colorequal in 80.6 ms, GPU: 78.3 ms
+      12.5012 [perf] live frame in 85.0 ms, GPU: 78.3 ms, 2 submissions, gate wait: 14.2 ms
+  ```
+
 - **Measured** on the M4: with another thread holding the gate in 15 ms slices and no pause between them, a frame comes 12 to 23 ms after its change, against 0.8 to 1.6 ms with the gate free (the pipeline timings). The session's and the gate's tests check the order of turns, not the time, which fails under load: a frame waits while the gate is held, and comes while the next hold, asked at once, lasts.
 
 ### Commands

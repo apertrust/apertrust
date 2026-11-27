@@ -40,7 +40,7 @@ The GPU-resident pipeline, with no UI dependencies.
 ### GPU and submission
 
 - GPU setup and the image kernel runner.
-- Every submission goes through `GpuContext::submit`, which holds a `SubmitGate`. A window client holds the gate while its toolkit reconfigures the surface. The holds take turns in the order asked, and a viewport frame is one submission (decision 18); planned, in submissions of bounded GPU time (decision 112, below).
+- Every submission goes through `GpuContext::submit`, which holds a `SubmitGate`. A window client holds the gate while its toolkit reconfigures the surface. The holds take turns in the order asked, and a viewport frame is one submission (decision 18); planned, in submissions of bounded GPU time (decision 112, below). Under `-d perf` a submission's wait for the gate past 0.5 ms is logged, and each live frame's submissions with their summed wait beside its time and GPU time (`gpu::Submissions`; [engine.md](engine.md#the-submit-gate)).
 - `gpu::AdapterChoice`: an adapter a flag names that is not there is an error; one a setting names is a warning, and wgpu's choice is used.
 - `gpu::matching` (decision 82): the adapter a name opens, the one of exactly that name first, then the first whose name holds it, ignoring case; `gpu::CPU`, `cpu`, the first software adapter, whatever the platform calls it. `GpuContext::new` and `gpu::choose_adapter` both find by it.
 - `gpu::choose_adapter`, for a window that creates the engine's device, in wgpu's order; a test holds it against `request_adapter`. `gpu::automatic` is its choice among adapters' kinds, `gpu::rank` the order, `gpu::power_preference` the preference, `WGPU_POWER_PREF`'s or high performance; Settings lists the graphics cards in that order.
@@ -527,6 +527,7 @@ flowchart LR
 - A start that fails is returned as an error; uncaptured GPU errors are logged once each.
 - While the window resizes, the photo's new size waits until the window has kept its size for 150 ms, and the last frame is drawn scaled meanwhile.
 - One raw is shown in the Viewer, rendered by the engine's session through every ported operation and drawn by a paint callback (decision 17).
+- Under `-d perf`, a line a second of the window's frame intervals, CPU time and the rest of each frame while a gesture or a render is under way (`frame_times`; [gui.md](gui.md#performance)).
 
 ### Packaging
 
