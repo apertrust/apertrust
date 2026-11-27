@@ -254,6 +254,7 @@ const STYLE: SettingWords = words(
     Some("export-style-later"),
     &[Word::Message("export-style-none")],
 );
+const NOTES: SettingWords = words("export-notes", Some("export-notes-tip"), NO_YES);
 
 /// A custom row of Export's own widget.
 const fn custom(widget: Widget) -> Row {
@@ -393,6 +394,17 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
                         setting("style", None, choice(&["none"], 0), &STYLE),
                     ],
                 }),
+                // Drawn disabled, closed, until metadata in exports is built.
+                Row::Group(Group {
+                    id: "metadata",
+                    kind: GroupKind::Collapsible,
+                    rows: &[setting(
+                        "notes",
+                        Some("export.metadata.notes"),
+                        ControlKind::Bool { default: false },
+                        &NOTES,
+                    )],
+                }),
                 custom(Widget::ExportLater),
                 custom(Widget::ExportEnd),
             ],
@@ -412,6 +424,7 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
         ("storage_options", "export-storage-options"),
         ("format_options", "export-format-options"),
         ("global", "export-global-options"),
+        ("metadata", "export-metadata"),
     ],
     open: &["global"],
     rows_shown: false,

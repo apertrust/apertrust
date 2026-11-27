@@ -72,9 +72,9 @@ use apertrust_export::jpeg::{self, Subsample};
 use apertrust_export::png::{self, BitDepth};
 use apertrust_export::settings::registry::{
     EXPORT_DISK_ON_CONFLICT, EXPORT_DISK_PATH, EXPORT_FORMAT, EXPORT_JPEG_QUALITY,
-    EXPORT_JPEG_SUBSAMPLE, EXPORT_PNG_BIT_DEPTH, EXPORT_PNG_COMPRESSION, EXPORT_PROFILE,
-    EXPORT_SIZE_DPI, EXPORT_SIZE_HEIGHT, EXPORT_SIZE_HIGH_QUALITY, EXPORT_SIZE_MODE,
-    EXPORT_SIZE_SCALE, EXPORT_SIZE_UPSCALE, EXPORT_SIZE_WIDTH,
+    EXPORT_JPEG_SUBSAMPLE, EXPORT_METADATA_NOTES, EXPORT_PNG_BIT_DEPTH, EXPORT_PNG_COMPRESSION,
+    EXPORT_PROFILE, EXPORT_SIZE_DPI, EXPORT_SIZE_HEIGHT, EXPORT_SIZE_HIGH_QUALITY,
+    EXPORT_SIZE_MODE, EXPORT_SIZE_SCALE, EXPORT_SIZE_UPSCALE, EXPORT_SIZE_WIDTH,
 };
 use apertrust_export::settings::{FileFormat, OnConflict, Profile, SizeMode, registry};
 use apertrust_export::size::{self, Request};
@@ -129,6 +129,9 @@ pub struct Values {
     pub upscale: bool,
     pub high_quality: bool,
     pub profile: Profile,
+    /// Whether an exported file carries the photo's Notes: the Metadata group's, drawn
+    /// disabled with it until metadata in exports is built.
+    pub notes: bool,
 }
 
 impl Default for Values {
@@ -150,6 +153,7 @@ impl Default for Values {
             upscale: EXPORT_SIZE_UPSCALE.default(),
             high_quality: EXPORT_SIZE_HIGH_QUALITY.default(),
             profile: EXPORT_PROFILE.default(),
+            notes: EXPORT_METADATA_NOTES.default(),
         }
     }
 }
@@ -173,6 +177,7 @@ impl Values {
             upscale: store.get(&EXPORT_SIZE_UPSCALE),
             high_quality: store.get(&EXPORT_SIZE_HIGH_QUALITY),
             profile: store.get(&EXPORT_PROFILE),
+            notes: store.get(&EXPORT_METADATA_NOTES),
         }
     }
 
@@ -225,6 +230,9 @@ impl Values {
         if self.profile != was.profile {
             store.set(&EXPORT_PROFILE, self.profile);
         }
+        if self.notes != was.notes {
+            store.set(&EXPORT_METADATA_NOTES, self.notes);
+        }
     }
 
     /// How many of the size's settings off their defaults the print and scale lines count,
@@ -264,6 +272,7 @@ impl Values {
             "export.size.upscale" => Kept::Bool(self.upscale),
             "export.size.high_quality" => Kept::Bool(self.high_quality),
             "export.profile" => Kept::Choice(id_of(self.profile)),
+            "export.metadata.notes" => Kept::Bool(self.notes),
             _ => return None,
         })
     }
@@ -315,6 +324,7 @@ impl Values {
             "export.size.upscale" => self.upscale = on.unwrap_or(self.upscale),
             "export.size.high_quality" => self.high_quality = on.unwrap_or(self.high_quality),
             "export.profile" => choose(value, &mut self.profile),
+            "export.metadata.notes" => self.notes = on.unwrap_or(self.notes),
             _ => {}
         }
     }
@@ -715,6 +725,11 @@ impl UtilityTool for Export {
             _ => {}
         }
         Vec::new()
+    }
+
+    /// Metadata, whose rows wait for metadata in exports.
+    fn group_later(&self, group: &str, words: &Translator) -> Option<String> {
+        (group == "metadata").then(|| words.text("export-later"))
     }
 
     /// Default settings: every export setting at darktable's default, but those `--conf`
@@ -1219,12 +1234,10 @@ impl Export {
     /// before it, as in a tool, drawn disabled.
     fn later_groups(ui: &mut Ui) {
         let later = tr(ui.ctx(), "export-later");
-        for id in ["export-metadata", "export-multi-preset"] {
-            let title = tr(ui.ctx(), id);
-            CollapsibleGroup::new(&title, false)
-                .disabled(&later)
-                .show(ui, |_| {});
-        }
+        let title = tr(ui.ctx(), "export-multi-preset");
+        CollapsibleGroup::new(&title, false)
+            .disabled(&later)
+            .show(ui, |_| {});
     }
 
     /// The Summary, open at first, of what an export would write, none with no photo; then

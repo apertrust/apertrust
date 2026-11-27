@@ -177,7 +177,7 @@ path = "/Users/me/Pictures/Wedding"
 - the app's, in its `build.rs`;
 - the engine's, in `apertrust-engine`'s, as `apertrust_engine::settings`, whose `Options::read` builds `GpuOptions` and the budget from a store;
 - the tools', in `apertrust-tools`', as `apertrust_tools::settings::registry`, Exposure's first;
-- the export settings, the Export tool's, in `apertrust-export`'s, a third owner, `export` (decision 56): `apertrust_export::settings::registry`, written by the app, which keeps the tool's settings there as darktable keeps its conf, and read by the CLI's store with the engine's, its `export` taking the format's options from it, as darktable-cli reads darktablerc.
+- the export settings, the Export tool's, in `apertrust-export`'s, a third owner, `export` (decision 56): `apertrust_export::settings::registry`, written by the app, which keeps the tool's settings there as darktable keeps its conf, and read by the CLI's store with the engine's, its `export` taking the format's options from it, as darktable-cli reads darktablerc. One is Apertrust's own, with no darktable key: `export.metadata.notes` (boolean, off by default, applied at once), whether an exported file carries the photo's Notes, which are private (decision 110), the Notes row of Export's Metadata group, drawn disabled with the group; nothing is written into exported files yet, so it changes nothing until metadata in exports is built.
 
 **The engine never opens a folder or reads a file of settings.** The binaries read the store and hand it plain options.
 
