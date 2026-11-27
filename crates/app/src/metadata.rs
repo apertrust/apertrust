@@ -58,7 +58,7 @@ use crate::actions::ActionId;
 use crate::mirror::Mirror;
 use crate::presets::{self, Item as PresetItem, Line, Menu, Settings};
 use crate::utility::{Context, UtilityTool};
-use crate::{jobs, library};
+use crate::{library, reveal};
 use apertrust_engine::session::facts::FieldSummary;
 use apertrust_engine::session::facts::{FactSummary, Summary};
 use apertrust_engine::session::library::{EditState, Photo as Listed};
@@ -1220,7 +1220,7 @@ struct Drawn {
 }
 
 /// A row's end item, Folder's Show in Finder: what it shows in the platform's file manager,
-/// the app starting it as Collections' Show in Finder (`jobs::reveal`), disabled with none,
+/// the app starting it as Collections' Show in Finder (`reveal::reveal`), disabled with none,
 /// and why, where it says.
 struct End {
     why: String,
@@ -1290,7 +1290,7 @@ impl UtilityTool for Metadata {
         let column = self.column(ui, cx.words);
         let drawn = self.rows(facts, cx);
         // The platform's words, as the Jobs window's Show in Finder.
-        let show = cx.words.text(jobs::FILE_MANAGER.show_message());
+        let show = cx.words.text(reveal::FILE_MANAGER.show_message());
         let list: Vec<parts::Fact<'_>> = drawn
             .iter()
             .map(|row| parts::Fact {

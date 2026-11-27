@@ -727,7 +727,7 @@ fn show_in_finder_shows_the_photo_s_file_or_the_folder_the_photos_share() {
         ("no photo", scene(None), None, Shows::None),
     ];
     let words = Translator::new(Locale::EnGb);
-    let show = words.text(jobs::FILE_MANAGER.show_message());
+    let show = words.text(reveal::FILE_MANAGER.show_message());
     for (case, state, summary, expected) in cases {
         let mut harness = drawn(Builtin::Dark, 320.0, state);
         harness.run();

@@ -1287,7 +1287,7 @@ pub static ACTIONS: [Action; 176] = [
     // the Mac.
     Action {
         id: ActionId::JOB_SHOW_IN_FOLDER,
-        message: crate::jobs::FILE_MANAGER.show_message(),
+        message: crate::reveal::FILE_MANAGER.show_message(),
         keys: &[],
         scope: Scope::App,
         trigger: Trigger::Press,
