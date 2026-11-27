@@ -728,7 +728,8 @@ impl FolderState {
             | LibraryEvent::SourceFailed { .. }
             | LibraryEvent::SourceChecked { .. }
             | LibraryEvent::Volumes { .. }
-            | LibraryEvent::ImportPreview { .. } => None,
+            | LibraryEvent::ImportPreview { .. }
+            | LibraryEvent::Imported { .. } => None,
         }
     }
 

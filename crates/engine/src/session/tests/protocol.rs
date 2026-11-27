@@ -38,10 +38,10 @@ use apertrust_export::variables::{NotHere, PatternError, Unavailable};
 use apertrust_export::{Format, jpeg, png};
 use apertrust_library::clock::ClockError;
 use apertrust_library::ops::{
-    EditState, Fix, FolderPreview, FreeSpace, ImportFate, ImportPhotos, ImportPreview,
-    ImportProblem, ImportSettings, LeftOut, OnSource, PhotoPreview, Problem as ImportProblemKind,
-    RawThumbnails, Row, Source, SourceFile, SourceShot, SourceState, Thumbnail, Unreadable,
-    Unwritable, Uses, Volume,
+    EditState, Fix, FolderPreview, FreeSpace, ImportCause, ImportFate, ImportPhotos, ImportPreview,
+    ImportProblem, ImportResult, ImportSettings, ImportedPhoto, LeftOut, OnSource, PhotoPreview,
+    Problem as ImportProblemKind, RawThumbnails, Row, Source, SourceFile, SourceShot, SourceState,
+    Thumbnail, Unreadable, Unwritable, Uses, Volume,
 };
 use apertrust_library::sidecar::{Newer, Problem, Reason, SidecarError};
 use apertrust_library::summary::{Facts, Summed};
@@ -367,6 +367,10 @@ pub(super) fn every_command() -> Vec<Command> {
             photos: import_photos(),
             settings: import_settings(),
         }),
+        Command::Library(LibraryCommand::Import {
+            photos: import_photos(),
+            settings: import_settings(),
+        }),
         Command::Selection(SelectionCommand::Set(vec![photo(), other()])),
         Command::Selection(SelectionCommand::Add(photo())),
         Command::Selection(SelectionCommand::Remove(other())),
@@ -463,7 +467,7 @@ fn picker_variant(command: &PickerCommand) -> usize {
     }
 }
 
-const LIBRARY_COMMAND_VARIANTS: usize = 13;
+const LIBRARY_COMMAND_VARIANTS: usize = 14;
 
 /// Each library command's variant; a new one takes the next index and raises the count.
 fn library_command_variant(command: &LibraryCommand) -> usize {
@@ -481,6 +485,7 @@ fn library_command_variant(command: &LibraryCommand) -> usize {
         LibraryCommand::ListVolumes => 10,
         LibraryCommand::SourceSubfolders { .. } => 11,
         LibraryCommand::PreviewImport { .. } => 12,
+        LibraryCommand::Import { .. } => 13,
     }
 }
 
@@ -1191,6 +1196,10 @@ fn every_event() -> Vec<Event> {
             open: 12,
             preview: Box::new(import_preview()),
         }),
+        Event::Library(LibraryEvent::Imported {
+            open: 13,
+            photos: imported(),
+        }),
         Event::Cache(CacheEvent::Sizes {
             sizes: Sizes::default(),
             limited: Usage {
@@ -1573,7 +1582,38 @@ fn import_preview() -> ImportPreview {
     }
 }
 
-const LIBRARY_EVENT_VARIANTS: usize = 16;
+/// An import's photos, each way one can end.
+fn imported() -> Vec<ImportedPhoto> {
+    let shoot = PathBuf::from("/home/me/Pictures/Apertrust/20261115_Wedding");
+    let results = [
+        ImportResult::Copied {
+            copy: shoot.join("IMG_0001_01.CR3"),
+        },
+        ImportResult::There {
+            copy: shoot.join("IMG_0002.CR3"),
+        },
+        ImportResult::Diverged {
+            copy: shoot.join("IMG_0003.CR3"),
+            sidecar: shoot.join("IMG_0003.CR3.apxmp"),
+        },
+        ImportResult::Failed {
+            cause: ImportCause::Exists,
+            reason: "IMG_0004.CR3: a file of that name is there already".to_owned(),
+        },
+        ImportResult::Failed {
+            cause: ImportCause::DiskFull,
+            reason: "the disk is full".to_owned(),
+        },
+    ];
+    (results.into_iter().enumerate())
+        .map(|(i, result)| ImportedPhoto {
+            source: PathBuf::from(format!("100CANON/IMG_000{}.CR3", i + 1)),
+            result,
+        })
+        .collect()
+}
+
+const LIBRARY_EVENT_VARIANTS: usize = 17;
 
 /// Each library event's variant; a new one takes the next index and raises the count.
 fn library_event_variant(event: &LibraryEvent) -> usize {
@@ -1594,6 +1634,7 @@ fn library_event_variant(event: &LibraryEvent) -> usize {
         LibraryEvent::SourceChecked { .. } => 13,
         LibraryEvent::Volumes { .. } => 14,
         LibraryEvent::ImportPreview { .. } => 15,
+        LibraryEvent::Imported { .. } => 16,
     }
 }
 
@@ -2090,6 +2131,13 @@ fn every_command_states_its_access() {
                 settings: import_settings(),
             }),
             Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::Import {
+                photos: import_photos(),
+                settings: import_settings(),
+            }),
+            Access::Organise,
         ),
         (
             Command::Selection(SelectionCommand::Set(vec![photo()])),

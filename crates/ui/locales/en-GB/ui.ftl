@@ -522,7 +522,7 @@ jobs-live-started = Started: { $message }
 
 ## The jobs' own messages, as darktable words its jobs
 
-job-import = Importing { $done } / { $total }
+job-import = Importing { photo-count }
 job-delete = Deleting { $done } / { $total }
 job-thumbnails = Creating thumbnails
 # A folder being read as it opens; $folder is its path.
@@ -672,6 +672,34 @@ job-export-cancelled =
        *[other] Export cancelled: { $written } of { $total } photos exported
     }
 
+## What an import job reports of itself for its row (decision 85). $count is how many
+## photos it copies; $photo the file name under way; $copied, $skipped and $failed the
+## photos copied, skipped as already there or with an edit of their own there, and failed,
+## of $total. A single photo is the exact number 1, never the plural category one.
+
+# The line under its bar while a photo is under way.
+job-import-now = now { $photo }
+# Its title once it has ended, which says how it went.
+job-import-finished =
+    { $skipped ->
+        [0]
+            { $copied ->
+                [1] 1 photo imported
+               *[other] { $copied } photos imported
+            }
+       *[other] { $copied } of { $total } photos imported, { $skipped } already there
+    }
+job-import-failed-outcome =
+    { $total ->
+        [1] The photo could not be imported
+       *[other] Import failed: { $copied } of { $total } photos imported
+    }
+job-import-cancelled =
+    { $total ->
+        [1] Import cancelled
+       *[other] Import cancelled: { $copied } of { $total } photos imported
+    }
+
 ## Why a job failed, in words, without a full stop: a code the engine sends. They end a
 ## line such as "IMG_2047.ARW: could not write IMG_2047.jpg: the disk is full."
 
@@ -691,6 +719,9 @@ job-cause-write = the file could not be written
 job-cause-engine = the engine stopped unexpectedly
 job-cause-cache-remove = some of the cache's files could not be removed
 job-cause-cache-read = the cache's folder cannot be read
+job-cause-exists = a file of that name appeared at the destination
+job-cause-folder-pattern = a folder pattern is not valid
+job-cause-on-source = the destination is on the source
 
 ## A job's row in the jobs window: its lines and buttons. $folder is where its results go,
 ## $time when it ended on the local clock ("14:02"), $photo the item it failed on, $file the

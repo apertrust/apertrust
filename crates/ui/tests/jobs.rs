@@ -982,10 +982,16 @@ fn counted(id: u64, phase: JobPhase, message: &str, done: f64, total: f64) -> Jo
     Job::new(id, phase, message).progress(done as u64, Some(total as u64))
 }
 
+/// An import of nine photos, `done` of them copied, as the engine words its title.
+fn import(id: u64, phase: JobPhase, done: f64) -> Job {
+    let message = JobMessage::new("job-import").number("count", 9.0);
+    Job::new(id, phase, message).progress(done as u64, Some(9))
+}
+
 #[test]
 fn jobs_are_listed_newest_first_whatever_order_they_come_in() {
     let jobs = vec![
-        counted(2, JobPhase::Running, "job-import", 5.0, 9.0),
+        import(2, JobPhase::Running, 5.0),
         other(9, JobPhase::Running, true),
         export(5, JobPhase::Queued),
         counted(1, JobPhase::Finished, "job-delete", 9.0, 9.0),
@@ -1003,7 +1009,7 @@ fn jobs_are_listed_newest_first_whatever_order_they_come_in() {
     let order = [
         top("Creating thumbnails"),
         top("Exporting 0 / 12 to file on disk"),
-        top("Importing 5 / 9"),
+        top("Importing 9 photos"),
         top("Finished: Deleting 9 / 9"),
     ];
     assert!(
@@ -1015,12 +1021,12 @@ fn jobs_are_listed_newest_first_whatever_order_they_come_in() {
 #[test]
 fn a_queued_job_says_so_and_one_that_cannot_be_cancelled_has_no_cancel() {
     let mut harness = window(vec![
-        counted(1, JobPhase::Queued, "job-import", 0.0, 9.0),
+        import(1, JobPhase::Queued, 0.0),
         counted(2, JobPhase::Running, "job-delete", 4.0, 9.0),
         other(3, JobPhase::Running, true),
     ]);
     harness.run();
-    let waiting = row(&harness, "Importing 0 / 9");
+    let waiting = row(&harness, "Importing 9 photos");
     assert!(has_in(&waiting, "Waiting for other jobs"));
     // Its bar is empty while it waits.
     let bar = waiting.query_by_role(Role::ProgressIndicator);

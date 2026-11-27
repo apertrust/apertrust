@@ -656,3 +656,166 @@ fn an_import_s_preview_comes_in_its_number_and_makes_nothing() {
     drop(session);
     remove(&path);
 }
+
+/// A folder beside `folder`, never inside it, for an import's destination.
+fn beside(folder: &Path, what: &str) -> PathBuf {
+    let mut name = folder.file_name().unwrap().to_owned();
+    name.push(format!(" {what}"));
+    folder.with_file_name(name)
+}
+
+/// The photos an `Imported` of the import numbered `import` names among `events`, with
+/// what became of each.
+fn imported(events: &[Event], import: u64) -> Vec<library::ImportedPhoto> {
+    (library_of(events, import).into_iter())
+        .flat_map(|event| match event {
+            LibraryEvent::Imported { photos, .. } => photos.clone(),
+            other => panic!("{other:?}"),
+        })
+        .collect()
+}
+
+/// An import is a job of kind `import` on `UserForeground`, cancellable, its events in
+/// order from `Added`, with its title and the photos as its total, to `Ended`, its
+/// destination the folder the photos go to, each photo told in its number.
+#[test]
+fn an_import_is_a_job_from_added_to_ended() {
+    let gpu = gpu();
+    let (folder, path) = photo_folder("import-job");
+    let destination = beside(&folder, "imported");
+    let (session, wakes) = start_with(&gpu, &[], synthetic);
+    let photos = library::ImportPhotos {
+        folder: folder.clone(),
+        files: vec![PathBuf::from("B.ARW"), PathBuf::from("A.ARW")],
+    };
+    let import = session.send(Command::Library(LibraryCommand::Import {
+        photos,
+        settings: into(&destination),
+    }));
+    let mut events = Vec::new();
+    let (job, own) = follow(&session, &wakes, &mut events, import, ended);
+    let JobEvent::Added {
+        kind,
+        queue,
+        title,
+        cancellable,
+        progress,
+        retries,
+        ..
+    } = &own[0]
+    else {
+        panic!("{own:?}");
+    };
+    assert_eq!(*kind, "import");
+    assert_eq!(*queue, Some(Queue::UserForeground));
+    assert_eq!(*title, jobs::Message::new("job-import").with("count", 2));
+    assert!(*cancellable && retries.is_none());
+    assert_eq!(progress.total, Some(2));
+    let destinations: Vec<_> = (own.iter())
+        .filter_map(|event| match event {
+            JobEvent::Destination { destination, .. } => Some(destination.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        destinations,
+        [jobs::Destination::Folder(destination.clone())]
+    );
+    let Some(JobEvent::Ended {
+        state,
+        outcome,
+        failure,
+        offers,
+        ..
+    }) = own.last()
+    else {
+        panic!("{own:?}");
+    };
+    assert_eq!(*state, jobs::State::Finished);
+    assert!(failure.is_none() && offers.is_empty(), "{own:?}");
+    let finished = jobs::Message::new("job-import-finished")
+        .with("copied", 2)
+        .with("skipped", 0)
+        .with("failed", 0)
+        .with("total", 2);
+    assert_eq!(outcome.as_ref(), Some(&finished));
+    let copies: Vec<_> = imported(&events, import)
+        .into_iter()
+        .map(|photo| (photo.source, photo.result))
+        .collect();
+    let copied = |name: &str| library::ImportResult::Copied {
+        copy: destination.join(name),
+    };
+    assert_eq!(
+        copies,
+        [
+            (PathBuf::from("A.ARW"), copied("A.ARW")),
+            (PathBuf::from("B.ARW"), copied("B.ARW"))
+        ]
+    );
+    assert!(destination.join("A.ARW").is_file() && destination.join("B.ARW").is_file());
+    assert_eq!(job_of(&own[0]), job);
+    drop(session);
+    remove(&path);
+    let _ = std::fs::remove_dir_all(&destination);
+}
+
+/// An import with a photo that could not be read offers Try again, which copies that photo
+/// alone, once, its job naming the one it tries again.
+#[cfg(unix)]
+#[test]
+fn try_again_copies_the_photo_that_failed_once() {
+    use std::os::unix::fs::PermissionsExt;
+    let gpu = gpu();
+    let (folder, path) = photo_folder("import-retry");
+    let destination = beside(&folder, "imported");
+    let locked = folder.join("B.ARW");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let (session, wakes) = start_with(&gpu, &[], synthetic);
+    let photos = library::ImportPhotos {
+        folder: folder.clone(),
+        files: vec![PathBuf::from("A.ARW"), PathBuf::from("B.ARW")],
+    };
+    let import = session.send(Command::Library(LibraryCommand::Import {
+        photos,
+        settings: into(&destination),
+    }));
+    let mut events = Vec::new();
+    let (job, own) = follow(&session, &wakes, &mut events, import, ended);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let Some(JobEvent::Ended {
+        failure: Some(failure),
+        offers,
+        ..
+    }) = own.last()
+    else {
+        panic!("{own:?}");
+    };
+    assert_eq!(failure.cause, "unreadable");
+    assert_eq!(failure.item.as_deref(), Some(locked.as_path()));
+    assert_eq!(offers, &[jobs::Offer::Retry { items: 1 }]);
+
+    let retry = session.send(Command::RetryJob { job });
+    let mut events = Vec::new();
+    let (_, own) = follow(&session, &wakes, &mut events, retry, ended);
+    let JobEvent::Added { retries, title, .. } = &own[0] else {
+        panic!("{own:?}");
+    };
+    assert_eq!(*retries, Some(job));
+    assert_eq!(*title, jobs::Message::new("job-import").with("count", 1));
+    let copies: Vec<_> = (imported(&events, retry).into_iter())
+        .map(|photo| photo.source)
+        .collect();
+    assert_eq!(copies, [PathBuf::from("B.ARW")]);
+    assert!(destination.join("B.ARW").is_file());
+
+    let again = session.send(Command::RetryJob { job });
+    let refused = |e: &Event| {
+        matches!(e, Event::Failed(SessionError::Refused { command, error })
+            if *command == again && matches!(**error, SessionError::NotRetryable { .. }))
+    };
+    until(&session, &wakes, refused);
+    drop(session);
+    remove(&path);
+    let _ = std::fs::remove_dir_all(&destination);
+}

@@ -333,7 +333,7 @@ fn make_folder(folder: &Path, made: &mut Vec<PathBuf>) -> io::Result<()> {
 /// read back), before its read-back and its rename.
 #[derive(Debug)]
 #[cfg_attr(not(test), allow(dead_code))]
-enum At<'a> {
+pub(crate) enum At<'a> {
     Read {
         file: usize,
     },
@@ -347,7 +347,7 @@ enum At<'a> {
     },
 }
 
-type Hook<'h> = dyn FnMut(At<'_>) -> io::Result<()> + 'h;
+pub(crate) type Hook<'h> = dyn FnMut(At<'_>) -> io::Result<()> + 'h;
 
 /// [`copy_photo`] in chunks of `chunk`, with a test's hook.
 #[cfg(test)]
@@ -405,8 +405,9 @@ fn parts<'a>(source: &PhotoFiles, landing: &Landing<'a>) -> Vec<Part<'a>> {
         .collect()
 }
 
-/// [`land`] as `(check, chunk)` says, with a test's hook.
-fn land_with(
+/// [`land`] as `(check, chunk)` says, with a test's hook, which the import job's tests
+/// inject their faults through too.
+pub(crate) fn land_with(
     source: &PhotoFiles,
     landing: &Landing<'_>,
     (check, chunk): (Check, usize),

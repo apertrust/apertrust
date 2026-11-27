@@ -822,6 +822,8 @@ impl Command {
                 | LibraryCommand::Subfolders { .. } => Access::View,
                 // The person's setting `library.raw_thumbnails_from`.
                 LibraryCommand::RawThumbnails(_) => Access::Organise,
+                // It copies photos into the person's folders.
+                LibraryCommand::Import { .. } => Access::Organise,
             },
             Command::Selection(selection) => match selection {
                 SelectionCommand::Set(_)
@@ -3375,6 +3377,23 @@ impl Retries {
         kept.remove(at)
             .map(|(_, command, numbering)| (command, numbering))
     }
+}
+
+/// An import's ended row's title: what became of its photos, cancelled, failed, or
+/// finished, "214 photos imported".
+fn import_outcome(end: &library::ImportEnd) -> jobs::Message {
+    let id = if end.cancelled {
+        "job-import-cancelled"
+    } else if end.refused.is_some() || end.failure.is_some() {
+        "job-import-failed-outcome"
+    } else {
+        "job-import-finished"
+    };
+    jobs::Message::new(id)
+        .with("copied", end.copied)
+        .with("skipped", end.there + end.diverged)
+        .with("failed", end.failed)
+        .with("total", end.total)
 }
 
 /// The open under way (decision 77): its number, its job, which a newer open cancels,
@@ -5946,7 +5965,13 @@ impl Engine {
                 self.export(photos, settings, places, Some((job, numbering)));
                 Ok(())
             }
-            // Only an export leaves a retry.
+            Some((Command::Library(LibraryCommand::Import { photos, settings }), _)) => {
+                let count = photos.files.len();
+                tracing::debug!(target: "control", "trying job {job} again: {count} photos");
+                self.import(photos, settings, Some(job));
+                Ok(())
+            }
+            // Only an export and an import leave a retry.
             _ => Err(SessionError::NotRetryable { job }),
         }
     }
@@ -6117,6 +6142,10 @@ impl Engine {
             }
             LibraryCommand::PreviewImport { photos, settings } => {
                 self.preview_import(photos, settings);
+                return;
+            }
+            LibraryCommand::Import { photos, settings } => {
+                self.import(photos, settings, None);
                 return;
             }
             // The live photo's thumbnail is chosen again under it.
@@ -6499,6 +6528,87 @@ impl Engine {
             })
         });
         self.import_preview = Some(job);
+    }
+
+    /// [`LibraryCommand::Import`], the command numbered [`Self::applied`] (decision 85): the
+    /// photos copied by a job of kind `import` on darktable's `UserForeground` queue, as
+    /// `dt_control_import`, cancellable, its title "Importing 214 photos", its progress the
+    /// photos done of all, its detail the photo under way and its destination the folder the
+    /// photos go to, the deepest common one; each photo as it ends in
+    /// [`LibraryEvent::Imported`] chunks in this command's number. As it ends, its outcome
+    /// counts what landed; one stopped by the source or the destination failing fails with
+    /// that, else with its first photo's failure; and one that had photos fail or not
+    /// reached, but not cancelled nor refused, offers Try again, which copies those with the
+    /// same settings. Where it is a retry, `retry` names the job it tries again. Whatever
+    /// folder is open, or none.
+    fn import(
+        &mut self,
+        photos: library::ImportPhotos,
+        settings: library::ImportSettings,
+        retry: Option<JobId>,
+    ) {
+        let import = self.applied;
+        let outbox = self.jobs.outbox.clone();
+        let retries = self.jobs.retries.clone();
+        let build = self.build.clone();
+        let now = crate::names::now();
+        let total = photos.in_order().len();
+        let description = format!("import {total} images from {}", photos.folder.display());
+        let title = jobs::Message::new("job-import").with("count", total);
+        self.jobs.add(import, Queue::UserForeground, |_| {
+            let job = jobs::Job::new("import", description, move |context| {
+                let tell = |event| outbox.send(Event::Library(event));
+                let step = |step: library::ImportStep<'_>| match step {
+                    library::ImportStep::Destination(folder) => {
+                        context.set_destination(jobs::Destination::Folder(folder.to_owned()));
+                    }
+                    library::ImportStep::Photo { name, .. } => {
+                        let now = jobs::Message::new("job-import-now").with("photo", name);
+                        context.set_detail(Some(now));
+                    }
+                    library::ImportStep::Done { done, total } => {
+                        context.set_progress(done as u64, Some(total as u64));
+                    }
+                };
+                let cancel = || context.cancelled();
+                let end = library::run_import(
+                    import, &photos, &settings, now, &build, &tell, &step, &cancel,
+                );
+                context.set_outcome(import_outcome(&end));
+                // Its retry is kept before the body returns, so before the offer reaches a
+                // client.
+                if !end.cancelled && end.refused.is_none() && !end.left.is_empty() {
+                    context.offer(jobs::Offer::Retry {
+                        items: end.left.len() as u64,
+                    });
+                    let left = library::ImportPhotos {
+                        folder: photos.folder.clone(),
+                        files: end.left.clone(),
+                    };
+                    let again = Command::Library(LibraryCommand::Import {
+                        photos: left,
+                        settings: settings.clone(),
+                    });
+                    retries.keep(context.job(), again, Numbering::of(end.left.len()));
+                }
+                match end.refused.or(end.failure) {
+                    Some(failure) => {
+                        let ended = jobs::Failure::new(failure.cause.id(), failure.reason);
+                        Err(match failure.photo {
+                            Some(photo) => ended.item(photos.folder.join(photo)),
+                            None => ended,
+                        })
+                    }
+                    None => Ok(()),
+                }
+            })
+            .progress(title, true)
+            .total(total as u64);
+            match retry {
+                Some(old) => job.retries(old),
+                None => job,
+            }
+        });
     }
 
     /// [`LibraryCommand::SourceSubfolders`], the command numbered [`Self::applied`]: a
@@ -14770,7 +14880,8 @@ mod tests {
                 | LibraryEvent::SourceFailed { .. }
                 | LibraryEvent::SourceChecked { .. }
                 | LibraryEvent::Volumes { .. }
-                | LibraryEvent::ImportPreview { .. } => Topic::Notice,
+                | LibraryEvent::ImportPreview { .. }
+                | LibraryEvent::Imported { .. } => Topic::Notice,
             },
             Event::Cache(event) => match event {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),

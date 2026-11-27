@@ -522,7 +522,7 @@ fn only_a_job_on_a_user_queue_that_this_app_started_opens_the_window() {
 fn a_job_with_no_outcome_says_why_it_failed() {
     let id = ids(1)[0];
     let mut mirror = Mirror::new(None);
-    let message = Message::new("job-import").with("done", 2).with("total", 9);
+    let message = Message::new("job-import").with("count", 9);
     let event = JobEvent::Added {
         job: id,
         kind: "import",
@@ -540,9 +540,7 @@ fn a_job_with_no_outcome_says_why_it_failed() {
     let row = only(&mirror);
     assert_eq!(
         row.title,
-        JobMessage::new("job-import")
-            .number("done", 2.0)
-            .number("total", 9.0)
+        JobMessage::new("job-import").number("count", 9.0)
     );
     let failure = Failure::new("import", "the card was removed.");
     mirror.apply(&ended(id, State::Finished, Some(failure)));
