@@ -98,7 +98,7 @@ With `in` the module's input, darktable's steps:
 
 ## GPU plan
 
-Every pass is `[numthreads(16, 16, 1)]`. With the filter, `prepare` gives, in order (the GPU plan for darktable's defaults on mire1 has 46 passes):
+Every pass is `[numthreads(16, 16, 1)]` but the row passes, `[numthreads(32, 1, 1)]` (below). With the filter, `prepare` gives, in order (the GPU plan for darktable's defaults on mire1 has 46 passes):
 
 | Pass | Kind | Size | Reads | Writes |
 | --- | --- | --- | --- | --- |
@@ -118,6 +118,8 @@ Every pass is `[numthreads(16, 16, 1)]`. With the filter, `prepare` gives, in or
 | 3 × `blur_columns2`, `blur_rows2` | whole-image | a line each | `a`, `b` | the same |
 | `guide_apply` | whole-image | the image | the UV it applies to, `a`, `b`, the weights, the gradient | the saturation and brightness corrections |
 | `main` | per pixel | the image | the pixel, UV and the corrections at its place | the pixel |
+
+**The row passes are staged through workgroup memory.** A column pass's invocations, a column each, read neighbouring addresses, which the GPU coalesces; a row pass walked the same way, a row each, reads addresses a row apart, which it cannot. So `blur_rows2` and `blur_rows1` take 32 rows a workgroup, 16 values of each at a time: the chunk loaded across the workgroup, coalesced, each invocation walking its own row through it, then stored across the workgroup, the anticausal sweep loading the causal sums back to add to them. Each row's sums are `dt_gaussian_blur()`'s in its order, so the output is the same, bit for bit. A row pass uses 8.5 KiB of workgroup memory for float2 and 4.25 KiB for float, each element written before it is read (decision 80), every barrier outside the walks' branch.
 
 One run (decision 15): `sample` reads the input, every later whole-image pass only scratch. The scratch: the image's UV, corrections and weights (float2), saturation, L* and brightness correction (float), a temporary for the Gaussians' columns, and the grids' buffers, `GRID_UV`, `P1`, `P2`, `C1`, `C2`, each float2, the 4×2 covariance, correlations and coefficients in float2 halves as the line passes need (decision 15), plus the guide's corrections on its grid where it does not blur in place. 84 bytes a pixel where both filters blur in place (darktable's defaults), about 77 with test 0159's downsampled guide: 0.85 GB for mire1, 5.1 GB at 61 MP, beside the operation's input and output. Each pass binds at most eight storage buffers (`setup.rs`'s test). The passes' uniforms hold only what they read (decision 15): the prefilter's neither the curves nor the effect radius (a unit test); every parameter but the node placement's effect through the curves feeds some whole-image pass, so a change of any reruns the filter, and only `main`'s gradient slots' values are its own.
 
@@ -201,6 +203,17 @@ Known non-smooth spots: the neutral threshold (`C > NORM_MIN`), the clipping of 
 **Golden** (Apple M4, a one-instance plan of the engine): the table at the top.
 
 **Speed** (Apple M4, a render of the plan, every pass, GPU timestamps, 3908×2602): with the guided filter on test 0159, 175 to 189 ms a render, the medians of three runs (minimums 150 to 155 ms), of which the line passes take about 100 ms (the 15 float2 column passes about 43 ms and row passes 60 ms, most of them the prefilter's six blurs at full resolution), `sample` 5 to 7 ms and each per-pixel pass over the image 6 to 10 ms. The line passes are latency-bound: 3908 or 2602 invocations, each walking its line's recursion in order. Without the filter, test 0158: 4 to 8 ms a render, one per-pixel pass.
+
+On the Radeon 780M (RADV, Linux, on battery), an export through the default pipeline with test 0159's colour equalizer (`apertrust-golden export --add colorequal -d perf -d verbose`), GPU timestamps, two runs each, the rows walked one invocation a row before staging and staged after:
+
+| Raw | Export, before | Export, staged | `blur_rows2` (15×), before → staged | `blur_rows1` (3×), before → staged |
+| --- | --- | --- | --- | --- |
+| Pixel 4a, 4016×3008 | 449 to 452 ms | 266 to 269 ms | 205 to 210 → 74 ms | 57 to 64 → 12 ms |
+| Nikon D5100, 4928×3264 | 646 to 682 ms | 342 to 346 ms | 341 to 357 → 96 to 99 ms | 73 to 93 → 14 ms |
+| Canon 5D Mark III DNG, 5760×3840 | over 2 s: the driver resets the GPU | 448 ms | → 116 ms | → 18 ms |
+| Canon 5D Mark IV, 6720×4480 | not run | 595 ms | → 144 ms | → 23 ms |
+
+The export runs as one submission, and this kernel driver resets a GPU whose submission runs past 2 s (amdgpu's `lockup_timeout`), as the 22 MP DNG's did before staging. The exports' pixels before and after staging are the same.
 
 **On the GPU, needing no darktable** (`crates/golden/tests/colorequal.rs`): the operation equals darktable's `process()` restated on the CPU (`apertrust_op_colorequal::reference`, loop by loop with its buffers blurred in place as darktable's are) within 7.3e-6 of each pixel's largest channel on a 64×60 image of every hue at five saturations and four values, without the filter, at darktable's defaults (both grids the image), at test 0159's radii (the guide's grid a fourth) and with both grids a third; alpha passes through. At a fourth of a 256×240 image, with test 0159's effect radius and a hue analysis radius of 10, whose export downsamples by 4 and 3 while the view's grids are the image, it equals the restatement whose filters blur copies as the export's do within 6.5e-6, and is 0.22 from darktable's preview, which blurs in place (`a_smaller_view_does_the_exports_processing_at_its_scale`).
 
