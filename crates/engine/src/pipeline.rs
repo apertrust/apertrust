@@ -4051,6 +4051,46 @@ pub enum Derivative {
     ForwardDiff,
 }
 
+/// The GPU time a live render's submission takes at most, in milliseconds, by the
+/// timestamps of the last render of the same plan (decision 112): about one chunk per
+/// window frame while the submit gate holds through the window's acquire.
+pub const CHUNK_BOUND: f64 = 12.0;
+
+/// The chunks a render of passes whose last GPU times are `times`, in milliseconds and in
+/// the order they run, takes as submissions, as ranges over them (decision 112): each
+/// takes passes in order while the sum of their times stays within `bound`. A pass with
+/// no time yet, in a new plan's first render, a pass not run before or on a device
+/// without timestamp queries, is a chunk of its own, and so is a pass longer than
+/// `bound`. Every pass is in exactly one chunk, in order; no passes, no chunks.
+pub fn chunks(times: &[Option<f64>], bound: f64) -> Vec<Range<usize>> {
+    let mut chunks = Vec::new();
+    // The chunk being filled: its first pass and its passes' summed time.
+    let mut filling: Option<(usize, f64)> = None;
+    for (pass, &time) in times.iter().enumerate() {
+        match (time.filter(|&time| time <= bound), filling) {
+            (Some(time), Some((first, sum))) if sum + time <= bound => {
+                filling = Some((first, sum + time));
+            }
+            (Some(time), _) => {
+                if let Some((first, _)) = filling {
+                    chunks.push(first..pass);
+                }
+                filling = Some((pass, time));
+            }
+            (None, _) => {
+                if let Some((first, _)) = filling.take() {
+                    chunks.push(first..pass);
+                }
+                chunks.push(pass..pass + 1);
+            }
+        }
+    }
+    if let Some((first, _)) = filling {
+        chunks.push(first..times.len());
+    }
+    chunks
+}
+
 /// A plan's GPU resources: its compiled kernels, its passes with their uniforms, tables
 /// and bind groups, the buffers they read and write, and its cache points.
 pub struct Pipeline {
@@ -5757,6 +5797,91 @@ mod tests {
                 "pass agx: 3.7 ms",
             ]
         );
+    }
+
+    /// The passes' times `chunks` sums, by their chunk.
+    fn sums(times: &[Option<f64>], chunks: &[Range<usize>]) -> Vec<f64> {
+        let time = |pass: usize| times[pass].unwrap_or(f64::NAN);
+        chunks
+            .iter()
+            .map(|chunk| chunk.clone().map(time).sum())
+            .collect()
+    }
+
+    /// Each chunk of several passes stays within the bound, filled in order: a pass that
+    /// would take a chunk past it starts the next.
+    #[test]
+    fn chunks_stay_within_the_bound_but_for_a_single_pass() {
+        let times = [3.0, 4.0, 5.0, 2.0, 9.0, 1.5, 0.5, 11.5].map(Some);
+        let cut = chunks(&times, 12.0);
+        assert_eq!(cut, [0..3, 3..5, 5..7, 7..8]);
+        assert_eq!(sums(&times, &cut), [12.0, 11.0, 2.0, 11.5]);
+        // A pass longer than the bound is a chunk of its own, and the passes round it
+        // chunks of their own too.
+        let times = [2.0, 1.0, 20.0, 2.0, 12.5, 3.0].map(Some);
+        assert_eq!(chunks(&times, 12.0), [0..2, 2..3, 3..4, 4..5, 5..6]);
+    }
+
+    /// A pass with no time yet, as in a new plan's first render or on a device without
+    /// timestamp queries, is a chunk of its own; so is one whose time is NaN.
+    #[test]
+    fn a_pass_with_no_time_is_a_chunk_of_its_own() {
+        let times = [
+            Some(1.0),
+            Some(1.0),
+            None,
+            Some(1.0),
+            Some(f64::NAN),
+            Some(2.0),
+        ];
+        assert_eq!(chunks(&times, 12.0), [0..2, 2..3, 3..4, 4..5, 5..6]);
+        let first = [None; 4];
+        assert_eq!(chunks(&first, 12.0), [0..1, 1..2, 2..3, 3..4]);
+    }
+
+    /// A render within the bound is one chunk, one submission, as before; no passes, no
+    /// chunks.
+    #[test]
+    fn a_render_within_the_bound_is_one_chunk() {
+        let times = [0.4, 2.0, 1.1, 0.0, 3.5].map(Some);
+        assert_eq!(chunks(&times, CHUNK_BOUND), vec![0..5]);
+        assert_eq!(chunks(&times, 7.5), vec![0..5]);
+        assert!(chunks(&[], CHUNK_BOUND).is_empty());
+    }
+
+    /// Whatever the times and the bound, every pass is in exactly one chunk, the chunks
+    /// in order, each but a single pass within the bound.
+    #[test]
+    fn every_pass_is_in_exactly_one_chunk_in_order() {
+        // A fixed pseudo-random sequence, a pass in seven with no time.
+        let mut state = 0x9e37_79b9_u32;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        for bound in [0.0, 0.5, 4.0, CHUNK_BOUND, 100.0] {
+            for len in 0..40 {
+                let times: Vec<Option<f64>> = (0..len)
+                    .map(|_| {
+                        let n = next();
+                        (n % 7 != 0).then(|| f64::from(n % 2000) / 100.0)
+                    })
+                    .collect();
+                let cut = chunks(&times, bound);
+                let passes: Vec<usize> = cut.iter().flat_map(Clone::clone).collect();
+                assert_eq!(
+                    passes,
+                    (0..len).collect::<Vec<_>>(),
+                    "{times:?} within {bound}"
+                );
+                assert!(cut.iter().all(|chunk| !chunk.is_empty()));
+                for (chunk, sum) in cut.iter().zip(sums(&times, &cut)) {
+                    assert!(chunk.len() == 1 || sum <= bound, "{chunk:?} of {times:?}");
+                }
+            }
+        }
     }
 
     /// Plans as [`super::plan`] does on a GPU that binds anything.
