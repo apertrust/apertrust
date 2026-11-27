@@ -22,7 +22,7 @@ darktable at the reference release, commit 20891f6c6f. darktable's code is the r
 
 Their users, built apart from this port:
 
-- File on disk, which expands the path pattern for each photo: `apertrust-export`'s `disk`, with the values filled in `apertrust-cli`'s `names.rs`;
+- File on disk, which expands the path pattern for each photo: `apertrust-export`'s `disk`, with the values filled in `apertrust-engine`'s `names.rs`;
 - the dialog's `$(` list, which takes [`variables::list`](#the-list).
 
 No kernel: this is no darktable module a person edits, but darktable's text expansion of an export's path, ported as its size is (`docs/ports/finalscale.md`).
@@ -108,8 +108,8 @@ Formats are C's, in the C locale ([Deliberate differences](#deliberate-differenc
 | `EXIF.EXPOSURE.PROGRAM` | Exiv2's name of ExposureProgram, nothing for 0 | Exiv2 0.28's names restated |
 | `EXIF.EXPOSURE`, `EXIF_EXPOSURE` | `dt_util_format_exposure()`: `1/250`, `1/2.5`, `2″`, `0.7″`, its `/` written `_` but in the image information | the same, in f32 as darktable |
 | `EXIF.APERTURE`, `EXIF_APERTURE` | `%.1f` | the same |
-| `EXIF.CROP_FACTOR` | `%.1f` of the crop factor, from FocalLengthIn35mmFilm or the focal plane's resolution, 1.0 by default | nothing here: rawler reads neither tag |
-| `EXIF.FOCAL.LENGTH.EQUIV` | the focal length times the crop factor | nothing here, as above |
+| `EXIF.CROP_FACTOR` | `%.1f` of the crop factor, from FocalLengthIn35mmFilm or the focal plane's resolution: 1.0 where the file has no tag to work it out from (`dt_image_init()`), 0.0 where a tag is there but gives none | `Exif::crop_factor`, 0.0 where it is none, either way |
+| `EXIF.FOCAL.LENGTH.EQUIV` | `%.1f` of the focal length times the crop factor, in float | the same |
 | `EXIF.FOCAL.LENGTH`, `EXIF_FOCAL_LENGTH` | `%.1f` | the same |
 | `EXIF.FOCUS.DISTANCE`, `EXIF_FOCUS_DISTANCE` | `%.2f`, 0 where unknown | SubjectDistance ([EXIF](#the-exif-fields)) |
 | `EXIF.FLASH.ICON`, `EXIF.FLASH` | ⚡ where Flash's bit 0 is set; yes, no, or "no info" without the tag | the same, in English |
@@ -121,7 +121,8 @@ Formats are C's, in the C locale ([Deliberate differences](#deliberate-differenc
 | `EXIF.LENS`, `LENS` | `exif_lens` | [EXIF](#the-exif-fields) |
 | `IMAGE.ID.NEXT`, `ID`, `IMAGE.ID` | the library's ids, `%0*u` with `[n]` digits | nothing here: no library yet (D7) |
 | `IMAGE.EXIF` | `dt_image_print_exif()`: "1/250 f/8.0 18mm ISO 500", its `/` kept | the same |
-| `VERSION.NAME`, `VERSION_NAME`, `VERSION.IF_MULTI`, `VERSION_IF_MULTI`, `VERSION` | the duplicate's version and name | nothing here: no duplicates yet (D7); planned, the virtual copy's number and name, darktable's version name read into it (decision 110) |
+| `VERSION.NAME`, `VERSION_NAME` | the duplicate's version name, `Xmp.darktable.version_name` | the exported copy's name, empty for none, darktable's version name read into it (decision 110) |
+| `VERSION.IF_MULTI`, `VERSION_IF_MULTI`; `VERSION` | `%d` of the duplicate's version, 0 for the first, where the photo has several duplicates, else nothing; the version always | the exported copy's number from 0, where the photo has several copies |
 | `JOBCODE`, `IMPORT_NAME` | the job code, "export" | the same; `IMPORT_NAME` is Apertrust's own name for it, which Import's patterns use, `JOBCODE` kept so darktable's patterns work unchanged (decision 85; planned with Import's 20a1) |
 | `ROLL.NAME`, `ROLL_NAME` | the folder's last `[n]` parts, 1 by default | the same |
 | `FILE.DIRECTORY`, `FILE_DIRECTORY`, `FILE.FOLDER`, `FILE_FOLDER` | `g_path_get_dirname()` of the path | the same |
@@ -146,10 +147,12 @@ Formats are C's, in the C locale ([Deliberate differences](#deliberate-differenc
 | `SIDECAR_TXT` | the `.txt` sidecar, in the image information only | nothing here, as in darktable's export |
 | `DARKTABLE.VERSION`, `DARKTABLE_VERSION`; `DARKTABLE.NAME`, `DARKTABLE_NAME` | darktable's version and name | Apertrust's (D7) |
 | `APERTRUST.VERSION`, `APERTRUST.NAME` | none | Apertrust's version, as the banner shows it, and "Apertrust" (D7) |
-| `Xmp.dc.creator`, `CREATOR` | the creator, which the import takes from Artist | Artist ([EXIF](#the-exif-fields)) |
-| `Xmp.dc.rights`, `RIGHTS` | the rights, from Copyright | Copyright |
-| `Xmp.dc.description`, `DESCRIPTION` | the description, from UserComment or ImageDescription | an ASCII UserComment, the one rawler reads |
-| `Xmp.dc.title`, `TITLE`; `Xmp.dc.publisher`, `PUBLISHER`; `Xmp.acdsee.notes`; `Xmp.darktable.version_name`; `Xmp.darktable.image_id`; `Xmp.xmpMM.PreservedFileName` | the photo's metadata | nothing here: no metadata yet (D7) |
+| `Xmp.dc.creator`, `CREATOR` | the creator, which the import takes from Artist | the copy's Creator, its names joined by ", "; where it has none, Artist ([EXIF](#the-exif-fields)) |
+| `Xmp.dc.rights`, `RIGHTS` | the rights, from Copyright | the copy's Copyright notice; where none, Copyright |
+| `Xmp.dc.description`, `DESCRIPTION` | the description, from UserComment or ImageDescription | the copy's Description; where none, an ASCII UserComment, the one rawler reads |
+| `Xmp.dc.title`, `TITLE`; `Xmp.dc.publisher`, `PUBLISHER`; `Xmp.acdsee.notes`; `Xmp.xmpMM.PreservedFileName` | the photo's metadata, as Exiv2 writes an XMP value as text | the copy's Title, Publisher, Notes and preserved file name (decision 110), a list's items joined by ", " and a language alternative's `x-default` item, else its first |
+| `Xmp.darktable.version_name` | the duplicate's version name | as `VERSION.NAME` |
+| `Xmp.darktable.image_id` | the library's id | nothing here: no image ids yet (D7) |
 
 The metadata names are darktable's nine default fields (`data.meta_data`, made by `database.c`'s schema version 13), which `_get_base_value()` tests last, in their display order. darktable's person can add fields of their own (`dt_metadata_add_metadata()`); Apertrust knows only the nine.
 
@@ -163,7 +166,7 @@ Its EXIF values hold what darktable's image holds when the file records none (`d
 - `None` where darktable keeps the case apart (the bias's `DT_EXIF_TAG_UNINITIALIZED`, Flash's -1, the location's NaN);
 - for a photo with no valid DateTimeOriginal, darktable's origin, 0001-01-01 00:00:00.
 
-The export fills it (`apertrust-cli export` does, `crates/cli/src/names.rs`): the path, the sequence, the start time, the largest size and upscaling, the version, the person's folders, `RawImage`'s camera, ISO and bias, `read_exif_file`'s fields, and the sizes.
+The export fills it (`apertrust-engine`'s `names`): the path, the sequence, the start time, the largest size and upscaling, the version, the person's folders, `RawImage`'s camera, ISO and bias, `read_exif_file`'s fields, the crop factor among them, the exported copy's metadata fields, name, number and count (`Metadata`, `Field`), and the sizes.
 
 ## The EXIF fields
 
@@ -211,9 +214,8 @@ An empty path is File on disk's to refuse (`disk::Error::Empty`).
 
 - `$(DARKTABLE.NAME)` and `$(DARKTABLE.VERSION)` read as Apertrust's, "Apertrust" and its version; `$(APERTRUST.NAME)` and `$(APERTRUST.VERSION)` are added.
 - **Nothing here:** a variable darktable has and Apertrust cannot fill expands to nothing, and the export goes on. `Pattern::not_here` lists each such variable the pattern holds, once, with why (`NotHere`), for the dialog's line. They are:
-  - OPENCL.ACTIVATED, WORKSPACE.LABEL, IMAGE.ID and the VERSION family, which D7 names;
-  - the ratings, colour labels, tags and the metadata no EXIF tag seeds, until the library and Metadata bring them;
-  - the crop factor and its equivalent focal length, which rawler cannot read;
+  - OPENCL.ACTIVATED, WORKSPACE.LABEL and IMAGE.ID, which D7 names, and darktable's image id;
+  - the ratings, colour labels and tags, until the library brings them;
   - `NL`, `LABELS.ICONS` and `SIDECAR_TXT`, which darktable expands only in its image information and so to nothing in its export too.
 
 ## The list
@@ -241,7 +243,9 @@ Then come the default metadata fields that are not internal, in their display or
   - two matches that overlap (`$(VAR//aa/b)` on "aaa") are replaced left to right, as bash replaces them, where darktable's `dt_util_str_replace()` fails;
   - a suffix longer than the value matches nothing, where darktable reads before its start.
 - **A name stops at its name characters:** after a name the parser wants an operation, a parameter or `)`. darktable's `$(NLFILE_NAME)` in an export, which skips the infos-only NL and then reads FILE_NAME, is an unknown variable.
-- **EXIF as far as rawler reaches** ([The EXIF fields](#the-exif-fields)): the focus distance, the white balance and the lens where darktable reads a maker note first, and the crop factor, which is nothing here.
+- **EXIF as far as rawler reaches** ([The EXIF fields](#the-exif-fields)): the focus distance, the white balance and the lens where darktable reads a maker note first.
+- **No crop factor is 0.0:** `Exif::crop_factor` is none both where the file has no tag to work it out from, where darktable's image keeps its 1.0, and where a tag gives none, where darktable's is 0.0.
+- **The metadata from the copy's fields** (decision 110): a language alternative gives its `x-default` item alone, where darktable's metadata, read from an XMP through Exiv2, holds the other languages' items after it, each with its `lang="…"`; and the camera's Artist, Copyright and UserComment stand in at expansion for a Creator, Copyright notice or Description the copy has none of, a cleared one included, where darktable seeds its metadata with them once, at import, so a field cleared there expands to nothing.
 - **The creator and rights from the EXIF:** darktable's import takes Artist and Copyright at its default sidecar mode, and darktable-cli, which turns sidecars off, takes neither. Apertrust follows darktable's import, so a comparison of names with darktable-cli differs there (Results).
 - **Paths on Windows:** `\` and `/` both separate, as glib's. A drive's root and UNC paths are not given glib's special cases in `$(FILE.FOLDER)` yet, which matter only for a raw at a drive's root.
 
@@ -257,7 +261,7 @@ Kept as darktable has them, though odd (darktable-cli does each, Results):
 ## Test plan
 
 - darktable's own `src/tests/variables.c`, its six tests case by case, each with its file name, job code and sequence (`crates/export/tests/variables.rs`): every case darktable expands as it expects, expanded the same; its cases on `NONEXISTANT`, `$(FILE_NAME`, `$(FILE_FOLDER/home` and `foo$(bar…`, which darktable expands to nothing or leaves as text, refused with their errors.
-- Every name, in darktable's order, the table held to `NAMES` whole, expanded for a photo with every value set; every one with no value here expanding to nothing and listed by `not_here`; a photo without EXIF data expanding as darktable's image without them (`crates/export/src/variables/tests.rs`).
+- Every name, in darktable's order, the table held to `NAMES` whole, expanded for a photo with every value set; every one with no value here expanding to nothing and listed by `not_here`; a photo without EXIF data expanding as darktable's image without them; each metadata field with a value, with none and with the camera's text; `VERSION.IF_MULTI` with one copy and with two; a Creator of two names; a language alternative with no `x-default` item (`crates/export/src/variables/tests.rs`).
 - D8: unknown names with and without a suggestion, its place, wrong case, a name with more after it, inside an operation, no name; each `Unclosed` and `NoOperation`; the messages.
 - Parameters: SEQUENCE's digits and start, its older form, 0 digits, text that is no number; ROLL.NAME's levels clamped; the others read and empty; every entry of the list read once filled.
 - The helpers: `dt_util_format_exposure()`'s branches, glib's dirname and basename, ROLL.NAME's levels, the export size, `strtol()`; that no name starts with one before it; the suggestions (unit tests).

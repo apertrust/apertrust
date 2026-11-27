@@ -65,6 +65,22 @@ fn photo() -> Values {
         creator: Some("Ansel".to_owned()),
         rights: Some("CC BY".to_owned()),
         description: None,
+        metadata: Metadata {
+            title: Some(Field::Alternative(vec![
+                ("x-default".to_owned(), "Garden at dawn".to_owned()),
+                ("de".to_owned(), "Garten im Morgengrauen".to_owned()),
+            ])),
+            description: None,
+            creator: Some(Field::List(vec!["Ansel".to_owned(), "Ada".to_owned()])),
+            publisher: Some(Field::List(vec!["Garden Press".to_owned()])),
+            rights: None,
+            notes: Some(Field::Text("Print for Ana".to_owned())),
+            preserved_file_name: Some("DSC_0042.NEF".to_owned()),
+        },
+        version_name: "Square".to_owned(),
+        copy_version: 1,
+        copies: 2,
+        crop_factor: 1.5,
         sensor: Size {
             width: 4992,
             height: 3280,
@@ -147,8 +163,8 @@ const EXPECTED: &[(&str, &str)] = &[
     ("EXIF_EXPOSURE", "1_50"),
     ("EXIF.APERTURE", "8.0"),
     ("EXIF_APERTURE", "8.0"),
-    ("EXIF.CROP_FACTOR", ""),
-    ("EXIF.FOCAL.LENGTH.EQUIV", ""),
+    ("EXIF.CROP_FACTOR", "1.5"),
+    ("EXIF.FOCAL.LENGTH.EQUIV", "27.0"),
     ("EXIF.FOCAL.LENGTH", "18.0"),
     ("EXIF_FOCAL_LENGTH", "18.0"),
     ("EXIF.FOCUS.DISTANCE", "0.40"),
@@ -175,11 +191,11 @@ const EXPECTED: &[(&str, &str)] = &[
     ("ID", ""),
     ("IMAGE.ID", ""),
     ("IMAGE.EXIF", "1/50 f/8.0 18mm ISO 500"),
-    ("VERSION.NAME", ""),
-    ("VERSION_NAME", ""),
-    ("VERSION.IF_MULTI", ""),
-    ("VERSION_IF_MULTI", ""),
-    ("VERSION", ""),
+    ("VERSION.NAME", "Square"),
+    ("VERSION_NAME", "Square"),
+    ("VERSION.IF_MULTI", "1"),
+    ("VERSION_IF_MULTI", "1"),
+    ("VERSION", "1"),
     ("JOBCODE", "export"),
     ("ROLL.NAME", "Garden"),
     ("ROLL_NAME", "Garden"),
@@ -248,19 +264,19 @@ const EXPECTED: &[(&str, &str)] = &[
     ("DARKTABLE_VERSION", "0.4.0+12~gabcdef0"),
     ("DARKTABLE.NAME", "Apertrust"),
     ("DARKTABLE_NAME", "Apertrust"),
-    ("Xmp.dc.title", ""),
+    ("Xmp.dc.title", "Garden at dawn"),
     ("Xmp.dc.description", ""),
-    ("Xmp.dc.creator", "Ansel"),
-    ("Xmp.dc.publisher", ""),
+    ("Xmp.dc.creator", "Ansel, Ada"),
+    ("Xmp.dc.publisher", "Garden Press"),
     ("Xmp.dc.rights", "CC BY"),
-    ("Xmp.acdsee.notes", ""),
-    ("Xmp.darktable.version_name", ""),
+    ("Xmp.acdsee.notes", "Print for Ana"),
+    ("Xmp.darktable.version_name", "Square"),
     ("Xmp.darktable.image_id", ""),
-    ("Xmp.xmpMM.PreservedFileName", ""),
-    ("TITLE", ""),
+    ("Xmp.xmpMM.PreservedFileName", "DSC_0042.NEF"),
+    ("TITLE", "Garden at dawn"),
     ("DESCRIPTION", ""),
-    ("PUBLISHER", ""),
-    ("CREATOR", "Ansel"),
+    ("PUBLISHER", "Garden Press"),
+    ("CREATOR", "Ansel, Ada"),
     ("RIGHTS", "CC BY"),
     ("APERTRUST.VERSION", "0.4.0+12~gabcdef0"),
     ("APERTRUST.NAME", "Apertrust"),
@@ -331,4 +347,123 @@ fn a_photo_without_its_data_expands_as_darktables_image_without_them() {
         let expanded = Pattern::parse(pattern).unwrap().expand(&photo);
         assert_eq!(expanded, expected, "{pattern}");
     }
+}
+
+#[test]
+fn the_copy_s_fields_expand_as_darktable_holds_them() {
+    let text = |text: &str| Some(Field::Text(text.to_owned()));
+    let expand = |pattern: &str, values: &Values| Pattern::parse(pattern).unwrap().expand(values);
+    // A photo with none: darktable's empty metadata, its first version, and no crop factor.
+    let none = Values::default();
+    for (pattern, expected) in [
+        ("$(TITLE)$(DESCRIPTION)$(CREATOR)$(PUBLISHER)$(RIGHTS)", ""),
+        ("$(Xmp.acdsee.notes)$(Xmp.xmpMM.PreservedFileName)", ""),
+        ("$(VERSION.NAME)", ""),
+        ("$(VERSION)", "0"),
+        ("$(VERSION.IF_MULTI)", ""),
+        ("$(EXIF.CROP_FACTOR) $(EXIF.FOCAL.LENGTH.EQUIV)", "0.0 0.0"),
+    ] {
+        assert_eq!(expand(pattern, &none), expected, "{pattern}");
+    }
+    // Each with a value.
+    let mut values = Values {
+        focal_length: 50.0,
+        crop_factor: 28.0 / 18.3,
+        version_name: "Black and white".to_owned(),
+        metadata: Metadata {
+            title: text("Morning market"),
+            description: text("Stalls at seven"),
+            creator: text("Ana"),
+            publisher: text("Lisbon Press"),
+            rights: text("CC BY-SA"),
+            notes: text("Ask before printing"),
+            preserved_file_name: Some("IMG_0001.CR3".to_owned()),
+        },
+        ..Values::default()
+    };
+    for (pattern, expected) in [
+        ("$(TITLE)", "Morning market"),
+        ("$(DESCRIPTION)", "Stalls at seven"),
+        ("$(CREATOR)", "Ana"),
+        ("$(PUBLISHER)", "Lisbon Press"),
+        ("$(RIGHTS)", "CC BY-SA"),
+        ("$(Xmp.acdsee.notes)", "Ask before printing"),
+        ("$(Xmp.xmpMM.PreservedFileName)", "IMG_0001.CR3"),
+        ("$(VERSION.NAME)", "Black and white"),
+        // `%.1f` of the crop factor, and of the focal length times it in float.
+        ("$(EXIF.CROP_FACTOR)", "1.5"),
+        ("$(EXIF.FOCAL.LENGTH.EQUIV)", "76.5"),
+    ] {
+        assert_eq!(expand(pattern, &values), expected, "{pattern}");
+    }
+    // The camera's own text where the copy holds none, and the copy's over it.
+    values.creator = Some("Artist".to_owned());
+    values.rights = Some("Copyright".to_owned());
+    values.description = Some("UserComment".to_owned());
+    let fields = "$(CREATOR)|$(RIGHTS)|$(DESCRIPTION)";
+    assert_eq!(expand(fields, &values), "Ana|CC BY-SA|Stalls at seven");
+    values.metadata.creator = None;
+    values.metadata.rights = None;
+    values.metadata.description = None;
+    assert_eq!(expand(fields, &values), "Artist|Copyright|UserComment");
+    // The title and the publisher have no camera's text.
+    values.metadata = Metadata::default();
+    assert_eq!(expand("$(TITLE)$(PUBLISHER)", &values), "");
+}
+
+#[test]
+fn the_version_is_written_where_the_photo_has_several_copies() {
+    let expand = |copies, copy_version| {
+        let values = Values {
+            copies,
+            copy_version,
+            ..Values::default()
+        };
+        Pattern::parse("$(VERSION.IF_MULTI)|$(VERSION)")
+            .unwrap()
+            .expand(&values)
+    };
+    assert_eq!(expand(1, 0), "|0");
+    // darktable's first version is 0, written as such among several.
+    assert_eq!(expand(2, 0), "0|0");
+    assert_eq!(expand(2, 1), "1|1");
+}
+
+#[test]
+fn a_list_is_joined_and_an_alternative_gives_its_default_item() {
+    let items = |items: &[(&str, &str)]| {
+        let items = items
+            .iter()
+            .map(|(lang, text)| ((*lang).to_owned(), (*text).to_owned()));
+        Field::Alternative(items.collect())
+    };
+    // Exiv2 writes a list's items with ", " between them, as darktable then holds them.
+    let creators = Field::List(vec!["Ana Silva".to_owned(), "Jo\u{e3}o Costa".to_owned()]);
+    assert_eq!(creators.text(), "Ana Silva, Jo\u{e3}o Costa");
+    let values = Values {
+        metadata: Metadata {
+            creator: Some(creators),
+            ..Metadata::default()
+        },
+        ..Values::default()
+    };
+    let creator = Pattern::parse("$(CREATOR)").unwrap().expand(&values);
+    assert_eq!(creator, "Ana Silva, Jo\u{e3}o Costa");
+    // The x-default item, wherever it is; with none, the first.
+    let title = items(&[("pl", "Targ"), ("x-default", "Market")]);
+    assert_eq!(title.text(), "Market");
+    let title = items(&[("pt-PT", "Mercado"), ("en-GB", "Market")]);
+    assert_eq!(title.text(), "Mercado");
+    let values = Values {
+        metadata: Metadata {
+            title: Some(title),
+            ..Metadata::default()
+        },
+        ..Values::default()
+    };
+    assert_eq!(
+        Pattern::parse("$(TITLE)").unwrap().expand(&values),
+        "Mercado"
+    );
+    assert_eq!(items(&[]).text(), "");
 }

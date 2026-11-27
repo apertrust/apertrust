@@ -329,10 +329,22 @@ pub struct Values {
     pub longitude: Option<f64>,
     pub elevation: Option<f64>,
     /// The metadata darktable's import takes from the EXIF: the creator from Artist, the
-    /// rights from Copyright, the description from UserComment.
+    /// rights from Copyright, the description from UserComment; each the fallback where
+    /// `metadata` holds none.
     pub creator: Option<String>,
     pub rights: Option<String>,
     pub description: Option<String>,
+    /// The exported copy's metadata fields (decision 110), darktable's metadata.
+    pub metadata: Metadata,
+    /// The exported copy's name, empty for none (`$(VERSION.NAME)`); its number,
+    /// darktable's version, 0 for a photo's first (`$(VERSION)`); and how many copies the
+    /// photo has (`$(VERSION.IF_MULTI)`).
+    pub version_name: String,
+    pub copy_version: u32,
+    pub copies: u32,
+    /// The crop factor, 0 where it is unknown, as darktable's image holds it
+    /// (`$(EXIF.CROP_FACTOR)`, `$(EXIF.FOCAL.LENGTH.EQUIV)`).
+    pub crop_factor: f32,
     /// The raw's whole readout (`$(WIDTH.SENSOR)`), the image raw preparation keeps
     /// (`$(WIDTH.RAW)`) and the image after every geometry, before the export's size
     /// (`$(WIDTH.CROP)`); the export's comes from it and `max` (`$(WIDTH.EXPORT)`).
@@ -376,9 +388,63 @@ impl Default for Values {
             creator: None,
             rights: None,
             description: None,
+            metadata: Metadata::default(),
+            version_name: String::new(),
+            copy_version: 0,
+            copies: 1,
+            crop_factor: 0.0,
             sensor: Size::default(),
             raw: Size::default(),
             crop: Size::default(),
+        }
+    }
+}
+
+/// The exported copy's metadata fields darktable's variables name, each `None` where the
+/// copy holds none.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Metadata {
+    /// `$(TITLE)`, `$(Xmp.dc.title)`.
+    pub title: Option<Field>,
+    /// `$(DESCRIPTION)`, `$(Xmp.dc.description)`, the camera's description where none.
+    pub description: Option<Field>,
+    /// `$(CREATOR)`, `$(Xmp.dc.creator)`, the camera's Artist where none.
+    pub creator: Option<Field>,
+    /// `$(PUBLISHER)`, `$(Xmp.dc.publisher)`.
+    pub publisher: Option<Field>,
+    /// `$(RIGHTS)`, `$(Xmp.dc.rights)`, the camera's Copyright where none.
+    pub rights: Option<Field>,
+    /// `$(Xmp.acdsee.notes)`, the notes: private, but a pattern the person writes names
+    /// what they chose to put in the file name.
+    pub notes: Option<Field>,
+    /// `$(Xmp.xmpMM.PreservedFileName)`.
+    pub preserved_file_name: Option<String>,
+}
+
+/// One metadata field's value, in the form XMP gives it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Field {
+    Text(String),
+    /// A language alternative's items, each its language and its text.
+    Alternative(Vec<(String, String)>),
+    /// A list's items, in order.
+    List(Vec<String>),
+}
+
+impl Field {
+    /// As darktable's metadata holds it, read from XMP as Exiv2 writes the value as text
+    /// (`_exif_decode_xmp_data`): a list's items joined by ", "; a language alternative's
+    /// `x-default` item, else its first, where darktable would keep the other languages'
+    /// items after it, each with its `lang="…"` (`docs/gui.md`, The Export tool).
+    pub fn text(&self) -> String {
+        match self {
+            Field::Text(text) => text.clone(),
+            Field::Alternative(items) => (items.iter())
+                .find(|(lang, _)| lang == "x-default")
+                .or(items.first())
+                .map(|(_, text)| text.clone())
+                .unwrap_or_default(),
+            Field::List(items) => items.join(", "),
         }
     }
 }

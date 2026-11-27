@@ -149,7 +149,7 @@ fn test_simple_substitutions() {
 
 #[test]
 fn test_recursive_substitutions() {
-    // TITLE is darktable's legacy name of the title, which Apertrust has not yet.
+    // TITLE is darktable's legacy name of the title, which this photo has none of.
     let values = values(NAME, JOB, 23);
     expands(
         &values,
@@ -439,7 +439,7 @@ fn darktables_names_read_as_apertrusts() {
 #[test]
 fn a_variable_with_no_value_here_expands_to_nothing_and_says_why() {
     let pattern = Pattern::parse(
-        "$(FILE_NAME)_$(OPENCL.ACTIVATED)$(VERSION-$(IMAGE.ID))$(WORKSPACE.LABEL)$(VERSION)",
+        "$(FILE_NAME)_$(OPENCL.ACTIVATED)$(STARS-$(IMAGE.ID))$(WORKSPACE.LABEL)$(STARS)",
     )
     .unwrap();
     let values = values("/photos/IMG_0001.CR3", "export", 1);
@@ -452,8 +452,8 @@ fn a_variable_with_no_value_here_expands_to_nothing_and_says_why() {
                 why: NotHere::OpenCl,
             },
             Unavailable {
-                name: "VERSION",
-                why: NotHere::Duplicates,
+                name: "STARS",
+                why: NotHere::Ratings,
             },
             Unavailable {
                 name: "IMAGE.ID",
