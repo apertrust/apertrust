@@ -26,7 +26,8 @@
 //! with each sidecar read, in memory, [`walk`], the walk of a folder's whole tree for its
 //! folders' raw counts, [`source`], Import's source, the card rule and a card's `DCIM` or
 //! a folder listed for its raws (decision 85), [`imported`], the destination's trees
-//! walked for the copies of a source's photos, and [`ops`], the commands and events
+//! walked for the copies of a source's photos, [`settings`], Import's settings,
+//! [`destination`], where Import puts each photo, and [`ops`], the commands and events
 //! clients see (layer 4), opening a folder first.
 
 mod reads;
@@ -34,12 +35,14 @@ mod reads;
 pub mod clock;
 pub mod copy;
 pub mod darktable;
+pub mod destination;
 pub mod fields;
 pub mod imported;
 pub mod index;
 pub mod listing;
 pub mod ops;
 pub mod presets;
+pub mod settings;
 pub mod sidecar;
 pub mod source;
 pub mod summary;

@@ -280,6 +280,7 @@ const EXPECTED: &[(&str, &str)] = &[
     ("RIGHTS", "CC BY"),
     ("APERTRUST.VERSION", "0.4.0+12~gabcdef0"),
     ("APERTRUST.NAME", "Apertrust"),
+    ("IMPORT_NAME", "export"),
 ];
 
 #[test]
@@ -499,4 +500,24 @@ fn a_pattern_s_fixed_part_ends_at_its_first_other_variable() {
     );
     assert_eq!(fixed("$(HOME)/Shoot_$(JOBCODE)"), cut("/home/ana/Shoot_"));
     assert_eq!(fixed("$(EXIF.YEAR)"), cut(""));
+}
+
+/// Import's name for the job code expands as `$(JOBCODE)` does, its operations too, so
+/// darktable's patterns and Import's give the same (decision 85).
+#[test]
+fn the_import_name_is_the_job_code() {
+    let values = Values {
+        jobcode: "Wedding".to_owned(),
+        ..Values::default()
+    };
+    let expand = |text: &str| Pattern::parse(text).unwrap().expand(&values);
+    assert_eq!(expand("$(IMPORT_NAME)"), "Wedding");
+    assert_eq!(expand("$(JOBCODE)"), "Wedding");
+    assert_eq!(expand("$(IMPORT_NAME^^)"), "WEDDING");
+    assert!(
+        Pattern::parse("$(IMPORT_NAME)")
+            .unwrap()
+            .not_here()
+            .is_empty()
+    );
 }

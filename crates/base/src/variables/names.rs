@@ -211,9 +211,10 @@ impl fmt::Display for NotHere {
 
 /// Every name, in `_get_base_value`'s order: legacy aliases beside their names, darktable's
 /// image information's own (`NL`, `LABELS.ICONS`, `SIDECAR_TXT`), the default metadata
-/// fields after them, then darktable's legacy aliases of those (`_legacy_aliases`) and
-/// Apertrust's two (D7). darktable takes the first that the text starts with; no name
-/// here starts with one before it, so that is the longest.
+/// fields after them, then darktable's legacy aliases of those (`_legacy_aliases`),
+/// Apertrust's two (D7) and its name for the job code, `IMPORT_NAME` (decision 85).
+/// darktable takes the first that the text starts with; no name here starts with one
+/// before it, so that is the longest.
 pub(crate) const NAMES: &[(&str, Key)] = &[
     ("YEAR.SHORT", Key::YearShort),
     ("SHORT_YEAR", Key::YearShort),
@@ -396,6 +397,9 @@ pub(crate) const NAMES: &[(&str, Key)] = &[
     // D7.
     ("APERTRUST.VERSION", Key::ProgramVersion),
     ("APERTRUST.NAME", Key::ProgramName),
+    // Import's name for darktable's job code, which Import's patterns use; `JOBCODE` stays,
+    // so darktable's patterns work unchanged (decision 85).
+    ("IMPORT_NAME", Key::Jobcode),
 ];
 
 /// The name `text` starts with, the longest, with what it expands to.

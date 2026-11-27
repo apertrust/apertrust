@@ -1295,7 +1295,7 @@ What every program sets up as it starts, nothing that decodes or processes image
 
 - its `Kind`: boolean, number, choice, text, and lists and `Table`s of any kind. Whole numbers and folders come with the first setting that needs one;
 - `DefaultValue`, a value or `Computed`;
-- `Owner` (`App`, `Engine`, `Export`, `Tool`) and `Applies`;
+- `Owner` (`App`, `Engine`, `Export`, `Import`, `Tool`) and `Applies`;
 - a number's `above`, an exclusive minimum; a number on a page declares its `decimals`, and its `min`, `max`, `step`, `above` and default each lie on 10^-decimals, which the generator checks;
 - `requires`, the boolean setting whose row must be on for its own to be enabled;
 - `platforms`, the `Platform`s (`windows`, `macos`, `linux` in the schema) the Settings dialog draws its row on, None for every one; the value is read everywhere alike;
@@ -1303,7 +1303,7 @@ What every program sets up as it starts, nothing that decodes or processes image
 
 `Choice` is a type's options, each with its stable id.
 
-**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's (`engine.adapter`, `engine.backend`, `engine.memory_budget`, and the cache's `cache.*`, decision 76) and the export settings (`export.*`, decision 56). The language and the Tools panel's width are computed, and the window's place is `optional`.
+**The schema**, `data/settings.schema.toml` (decision 45): the app's settings, the engine's (`engine.adapter`, `engine.backend`, `engine.memory_budget`, and the cache's `cache.*`, decision 76) the export settings (`export.*`, decision 56) and Import's (`import.*`, decision 85). The language and the Tools panel's width are computed, and the window's place is `optional`.
 
 **The generator**, `settings::codegen`, reads the schema with toml_edit, in the file's order.
 
@@ -1375,11 +1375,12 @@ The cache's `Cache::remove(kind, slot)` removes one limited entry and adjusts th
 
 `variables`, behind the `variables` feature ([docs/ports/variables.md](ports/variables.md)): darktable's variables.c, which the export's path and the import's patterns expand (decision 85), `apertrust-export` re-exporting it under its old path with `Places`.
 
-- `Pattern::parse` and `expand` over `Values`: every name with its legacy aliases, and darktable's operations; the exported copy's metadata fields (`Metadata`, each a `Field`, a list joined by ", " and a language alternative's `x-default` item), its name, number and count, and the crop factor, the camera's text standing in for a Creator, Copyright notice or Description the copy lacks.
+- `Pattern::parse` and `expand` over `Values`: every name with its legacy aliases, `IMPORT_NAME` Apertrust's own name for the job code, `$(JOBCODE)` (decision 85), and darktable's operations; the exported copy's metadata fields (`Metadata`, each a `Field`, a list joined by ", " and a language alternative's `x-default` item), its name, number and count, and the crop factor, the camera's text standing in for a Creator, Copyright notice or Description the copy lacks.
 - `not_here` (D7): darktable's names read as Apertrust's, and the no-value names listed: the ratings, labels and tags, the image ids, OpenCL, workspaces and the image information's own.
 - D8's refusals: `Unknown`, with the nearest name; `Unclosed`; `NoOperation`; and `TooDeep`, past 64 levels.
 - `list`, darktable's entries with their descriptions.
 - `Pattern::expand_fixed`: the pattern expanded up to its first variable that is not the person's own folder or name, and whether it went to the end, the part of Import's Folder pattern its check walks (decision 85).
+- `Pattern::reads`: what its variables read of `Values`, nested ones included, told from the variables themselves (`Reads`): the time it is expanded at, the photo's capture time, and its path or camera; Import's preview reads a photo's EXIF only where its patterns need it (decision 85).
 - `Places`, the person's home, Pictures and desktop folders and login name, which a client sends beside a pattern, the engine reading no platform folder (decision 43).
 - It uses `wire::Id`, serde and thiserror alone.
 
@@ -1738,7 +1739,7 @@ Metadata ([docs/gui.md](gui.md#the-build-in-steps), The Export tool).
 
 ## apertrust-library
 
-One photo, folders and optional Libraries (decisions 46, 47, 52 to 55 and 101), with no GPU. It depends on quick-xml, thiserror, tracing, blake3, chrono, machine-uid, getrandom, `apertrust-base`'s `fs` and `variables` parts and its `settings::Choice`, sysinfo's disk part, and `apertrust-raw`, never on the engine, tools, plugin or wgpu.
+One photo, folders and optional Libraries (decisions 46, 47, 52 to 55 and 101), with no GPU. It depends on quick-xml, thiserror, tracing, blake3, chrono, machine-uid, getrandom, `apertrust-base`'s `fs` and `variables` parts and its settings, whose generator its `build.rs` runs, sysinfo's disk part, and `apertrust-raw`, never on the engine, tools, plugin or wgpu.
 
 A rendered thumbnail's version is the library's, for the engine and the index alike: `ops::rendered_version` and `rendered_matches`, with `THUMBNAIL_RENDER_VERSION`, and `UNALTERED`, `rendered_unaltered`, `unaltered_version` and `unaltered_facts` for a photo with no edit, whose version records the raw's facts, where the render came from (`Origin`: `Opened`, made from the live photo and shown at every size, or `Rule`, shown where the rule shows one, as an entry written before the origin was recorded reads), and the raw's size and modified time (`RawStamp`, `raw_stamp`) ([cache.md](cache.md#thumbnails)). So is darktable's raw-thumbnail setting, `ops::RawThumbnails`, the `Choice` of the engine's `library.raw_thumbnails_from`, with darktable's levels (`LEVELS`, `level`), what its rule reads of a raw (`RawFacts`) and `shows_render` ([library.md](library.md#thumbnails)).
 
@@ -1905,13 +1906,26 @@ Where a source's photos may have been imported before (decision 85), told by the
 - `imported::tree_root(pattern, places)`: a folder pattern expanded through `apertrust-base`'s `Pattern::expand_fixed` up to its first variable that is not the person's own folder or name, cut back to the last whole folder, a leading `~` the home, `$(PICTURES_FOLDER)` the home's `Pictures` where the client sends no Pictures folder, as darktable's `_init_expansion` falls back; none for no absolute folder and for the file system's root, which would walk the whole system: `/` on macOS and Linux, the system drive on Windows, the drive holding Windows (`%SystemDrive%`, `C:` where it is not set); any other drive's root or volume, a card's or a backup disk's, is a tree as any folder is. Each system's forms are tested on every system. `imported::trees(base_folder, default_folder, places)`: Folder's tree, and the default folder's where Folder's does not hold it, one tree inside the other walked once as the outer.
 - `imported::candidates(trees, source, listed, sought, cancel)`, a `Walked`: `Found`, `Cancelled`, or `Failed` where the walk could not start or panicked, which `ops::check_source` tells as every photo new, warned of, never silence; on a thread of its own, waited for while the cancel is asked every 20 ms, each tree walked breadth first as the tree's walk walks (`listing::kind`, links never walked into, on Unix no other device), the source's own folders' files left out, compared as the system resolves them; each raw of a name sought, or with an `.apxmp` beside it, measured, and a `Candidate` of each sought photo (`Sought`) of its size whose name is the photo's or the one its `.apxmp` keeps (`Edits::preserved_file_name`, `xmpMM:PreservedFileName`), the sidecar read only for a raw of a size sought. A tree not there holds nothing.
 
+### settings
+
+Import's settings (decision 85; [settings.md](settings.md)), the owner `import`, generated by `build.rs` from the schema as `settings::registry`, each key with the slice that first uses it: 20a1's `import.base_folder` and `import.default_folder` (`$(PICTURES_FOLDER)/Apertrust`), `import.subfolder` (`$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)`) and `import.job_code` (`no_name`). `ImportSettings`, the plain data `PreviewImport` and `Import` carry: the four and the client's `Places`, filled from a store by `ImportSettings::read`; every photo keeps its camera name and no date overrides today's until 20a2.
+
+### destination
+
+Where Import puts a photo (decision 85): Folder, then Subfolder worked out for it, then its camera name, as darktable's import session builds its path.
+
+- `Patterns::parse(settings)`: Folder's and Subfolder's patterns read whole, or each one's `PatternError` with its `Row` (`Folder`, `Subfolder`), Folder's first.
+- `Patterns::folder(now, shot)` and `destination(now, shot)`: Folder expanded, a leading `~` the home folder, and the photo's folder, Subfolder under it, straight into Folder where Subfolder is empty or expands to nothing, a separator it starts with dropped; a Subfolder that expands to anything but folder names, a `..`, a root or a drive, is refused with what it expanded to, as it would lead out of Folder or replace it. The job code is the import name, `$(YEAR)` and its kin the import's time `now`, `$(EXIF.YEAR)` and its kin the photo's `Shot`, its file name, make and model too, the folders and name the client's `Places`, the Pictures folder the home's `Pictures` where the platform has none, as darktable takes it (`destination::pictures`).
+- `Patterns::uses()`: which of the import's time, the photo's capture time and its camera or file name each pattern reads (`Uses`), told from its variables, nested ones included (`Pattern::reads`), never from what they expand to.
+- `destination::taken(exif, modified, now)`: the photo's capture time for its patterns, its EXIF's, else its file's modified time on the local clock (`destination::local`), as darktable's import takes it, else the import's time; `destination::deepest_existing(path)`, the deepest folder of a path that is there.
+
 ### Planned
 
 - Apertrust's own rendered thumbnails of the other photos; then bulk listing (with spike L1).
 - The comparison of two copies by their clock vectors.
 - Sidecar version 2's other parts: snapshots, tombstones and groups (decisions 47 and 52).
 - darktable's `.xmp`'s keywords and its history (decision 51).
-- Import in folder mode (decision 85, step 20), beside what is read before a photo is copied (the source's listing, its thumbnails, the check against Folder's tree and the default folder's, the volumes and a place's subfolders): `LibraryCommand::PreviewImport` and the copy job, `Import`, in path order, skipping only a byte-for-byte duplicate at its destination, and their events; the `import` settings' statics ([library.md](library.md#import-in-folder-mode)).
+- Import in folder mode (decision 85, step 20), beside what is read before a photo is copied (the source's listing, its thumbnails, the check against Folder's tree and the default folder's, the volumes and a place's subfolders): `LibraryCommand::PreviewImport` and the copy job, `Import`, in path order, skipping only a byte-for-byte duplicate at its destination, and their events ([library.md](library.md#import-in-folder-mode)).
 - Include subfolders, a folder's `.apertrust/` albums and smart albums, and Move to… and Copy to…, on the checked copy (decision 101, steps 19 to 19d); then, in Phase 5, the saved index, folder records, Libraries, Keep Available Offline and Keep Edits on This Computer (steps 21 to 33).
 - A storage interface only when a second backend comes, the server's, later, if asked (decisions 54 and 71).
 - **Built-in presets** (decision 106): Import's two, and in phase 2 darktable's presets of each ported tool, embedded by `presets` as Export's are.

@@ -75,9 +75,8 @@ fn tree_root_as(
     let lossy =
         |path: &Option<PathBuf>| (path.as_ref()).map(|path| path.to_string_lossy().into_owned());
     // darktable's own fallback (`_init_expansion`): the home's Pictures where the system
-    // names no Pictures folder.
-    let pictures = (places.pictures.clone())
-        .or_else(|| places.home.as_ref().map(|home| home.join("Pictures")));
+    // names no Pictures folder, as Import's destination takes it.
+    let pictures = crate::destination::pictures(places);
     let values = Values {
         home: lossy(&places.home).unwrap_or_default(),
         pictures: lossy(&pictures).unwrap_or_default(),

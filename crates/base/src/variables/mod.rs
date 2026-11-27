@@ -226,6 +226,88 @@ impl Pattern {
         }
         (text, true)
     }
+
+    /// What its variables read of [`Values`] beside the job code and the person's own,
+    /// nested ones included, told from the variables themselves, never from what they
+    /// expand to (decision 85).
+    pub fn reads(&self) -> Reads {
+        let mut reads = Reads::default();
+        reads_of(&self.parts, &mut reads);
+        reads
+    }
+}
+
+/// What a pattern's variables read ([`Pattern::reads`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Reads {
+    /// [`Values::now`]: `$(YEAR)` and its kin, `$(DATE)`.
+    pub now: bool,
+    /// [`Values::taken`]: `$(EXIF.YEAR)` and its kin, `$(EXIF.DATE)`.
+    pub taken: bool,
+    /// [`Values::path`], `maker` or `model`: `$(FILE_NAME)` and its kin, `$(MAKER)`,
+    /// `$(MODEL)`.
+    pub photo: bool,
+}
+
+fn reads_of(parts: &[Part], reads: &mut Reads) {
+    for part in parts {
+        let Part::Variable(variable) = part else {
+            continue;
+        };
+        match variable.key {
+            Key::YearShort
+            | Key::Year
+            | Key::MonthShort
+            | Key::MonthLong
+            | Key::Month
+            | Key::Day
+            | Key::HourAmPm
+            | Key::Hour
+            | Key::Minute
+            | Key::Second
+            | Key::Msec
+            | Key::Date => reads.now = true,
+            Key::ExifDateRegional
+            | Key::ExifTimeRegional
+            | Key::ExifYearShort
+            | Key::ExifYear
+            | Key::ExifMonthShort
+            | Key::ExifMonthLong
+            | Key::ExifMonth
+            | Key::ExifDay
+            | Key::ExifHourAmPm
+            | Key::ExifHour
+            | Key::ExifMinute
+            | Key::ExifSecond
+            | Key::ExifMsec
+            | Key::ExifDate => reads.taken = true,
+            Key::Maker
+            | Key::Model
+            | Key::RollName
+            | Key::FileFolder
+            | Key::ImageFilename
+            | Key::FileName
+            | Key::FileExtension => reads.photo = true,
+            _ => {}
+        }
+        match &variable.operation {
+            Some(
+                Operation::Default(parts)
+                | Operation::Alternative(parts)
+                | Operation::RemovePrefix(parts)
+                | Operation::RemoveSuffix(parts),
+            ) => reads_of(parts, reads),
+            Some(Operation::Replace {
+                pattern,
+                replacement,
+                ..
+            }) => {
+                reads_of(pattern, reads);
+                reads_of(replacement, reads);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect(parts: &[Part], found: &mut Vec<Unavailable>) {
