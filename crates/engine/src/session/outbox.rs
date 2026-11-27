@@ -229,6 +229,7 @@ fn kind(event: &Event) -> &'static str {
             LibraryEvent::SourceFailed { .. } => "Library SourceFailed",
             LibraryEvent::SourceChecked { .. } => "Library SourceChecked",
             LibraryEvent::Volumes { .. } => "Library Volumes",
+            LibraryEvent::ImportPreview { .. } => "Library ImportPreview",
         },
         Event::Cache(_) => "Cache",
         Event::History(_) => "History",

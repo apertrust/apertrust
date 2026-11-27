@@ -48,16 +48,20 @@ pub use apertrust_raw::DateTime;
 use apertrust_raw::{Exif, RawFile, RawImage};
 use serde::{Deserialize, Serialize};
 
+pub use crate::destination::{Row, Uses};
 use crate::fields::{Fields, Rating};
 use crate::index::{Index, READERS, Sidecar};
 use crate::listing::Options;
 pub use crate::listing::browser_order;
+pub use crate::settings::ImportSettings;
 use crate::sidecar::Newer;
 pub use crate::source::{LeftOut, SourceFile, Unreadable};
 pub use crate::volumes::{FreeSpace, Volume, free_space};
 pub use crate::walk::WalkedFolder;
 pub use import::{
-    SourceShot, SourceState, Trees, check_source, list_source, relative_inside, volumes,
+    FateCounts, Fix, FolderPreview, ImportFate, ImportPhotos, ImportPreview, ImportProblem,
+    OnSource, PhotoPreview, Problem, SourceShot, SourceState, Trees, Unwritable, check_source,
+    list_source, preview_import, relative_inside, volumes,
 };
 
 mod import;
@@ -163,6 +167,14 @@ pub enum LibraryCommand {
     /// relative `folder`, or one with a `..` in it, is refused. A second ask for the same
     /// folder, or a [`CancelListing`](LibraryCommand::CancelListing), drops it.
     SourceSubfolders { folder: PathBuf },
+    /// Works out where each of `photos`, the source's checked photos, would go with
+    /// `settings`, and what stands in the way, before anything is copied (decision 85):
+    /// answered by [`LibraryEvent::ImportPreview`] in this command's number. The next
+    /// `PreviewImport` cancels it, which then sends nothing. Nothing is written or made.
+    PreviewImport {
+        photos: ImportPhotos,
+        settings: ImportSettings,
+    },
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -283,6 +295,13 @@ pub enum LibraryEvent {
     /// [`LibraryCommand::ListVolumes`] and, as volumes come and go (planned), no command, so
     /// it carries no number: [`LibraryEvent::open`] gives it 0.
     Volumes { volumes: Vec<Volume> },
+    /// Where each checked photo would go and what stands in the way, as
+    /// [`LibraryCommand::PreviewImport`] numbered `open` asked ([`ImportPreview`]). A client
+    /// keeps only the latest preview's.
+    ImportPreview {
+        open: u64,
+        preview: Box<ImportPreview>,
+    },
 }
 
 impl LibraryEvent {
@@ -303,7 +322,8 @@ impl LibraryEvent {
             | LibraryEvent::SourceListed { open, .. }
             | LibraryEvent::SourceTaken { open, .. }
             | LibraryEvent::SourceFailed { open, .. }
-            | LibraryEvent::SourceChecked { open, .. } => open,
+            | LibraryEvent::SourceChecked { open, .. }
+            | LibraryEvent::ImportPreview { open, .. } => open,
             LibraryEvent::Volumes { .. } => 0,
         }
     }
