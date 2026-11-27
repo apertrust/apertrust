@@ -38,7 +38,8 @@ use apertrust_export::variables::{NotHere, PatternError, Unavailable};
 use apertrust_export::{Format, jpeg, png};
 use apertrust_library::clock::ClockError;
 use apertrust_library::ops::{
-    EditState, LeftOut, RawThumbnails, Source, SourceFile, SourceShot, Thumbnail, Unreadable,
+    EditState, LeftOut, RawThumbnails, Source, SourceFile, SourceShot, SourceState, Thumbnail,
+    Unreadable,
 };
 use apertrust_library::sidecar::{Newer, Problem, Reason, SidecarError};
 use apertrust_library::summary::{Facts, Summed};
@@ -321,8 +322,17 @@ pub(super) fn every_command() -> Vec<Command> {
         Command::Library(LibraryCommand::ListSource {
             source: PathBuf::from("/Volumes/EOS_DIGITAL"),
             include_subfolders: false,
+            base_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+            default_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+            places: places(),
         }),
         Command::Library(LibraryCommand::CancelListing { listing: 9 }),
+        Command::Library(LibraryCommand::CheckSource {
+            listing: 9,
+            base_folder: "/Volumes/Albums/Wedding".to_owned(),
+            default_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+            places: Places::default(),
+        }),
         Command::Selection(SelectionCommand::Set(vec![photo(), other()])),
         Command::Selection(SelectionCommand::Add(photo())),
         Command::Selection(SelectionCommand::Remove(other())),
@@ -419,7 +429,7 @@ fn picker_variant(command: &PickerCommand) -> usize {
     }
 }
 
-const LIBRARY_COMMAND_VARIANTS: usize = 8;
+const LIBRARY_COMMAND_VARIANTS: usize = 9;
 
 /// Each library command's variant; a new one takes the next index and raises the count.
 fn library_command_variant(command: &LibraryCommand) -> usize {
@@ -432,6 +442,7 @@ fn library_command_variant(command: &LibraryCommand) -> usize {
         LibraryCommand::RawThumbnails(_) => 5,
         LibraryCommand::ListSource { .. } => 6,
         LibraryCommand::CancelListing { .. } => 7,
+        LibraryCommand::CheckSource { .. } => 8,
     }
 }
 
@@ -1111,6 +1122,23 @@ fn every_event() -> Vec<Event> {
             open: 9,
             reason: "/Volumes/EOS_DIGITAL is not there".to_owned(),
         }),
+        Event::Library(LibraryEvent::SourceChecked {
+            open: 9,
+            check: 2,
+            folders: vec![PathBuf::from("/Users/ana/Pictures/Apertrust")],
+            states: vec![
+                SourceState::New,
+                SourceState::ImportedBefore {
+                    copy: PathBuf::from("/Users/ana/Pictures/Apertrust/20261108/IMG_0002.CR3"),
+                },
+                SourceState::ProbablyImported {
+                    candidate: PathBuf::from("/Users/ana/Pictures/Apertrust/IMG_0003.CR3"),
+                },
+            ],
+            checked: 3,
+            of: 412,
+            done: false,
+        }),
         Event::Cache(CacheEvent::Sizes {
             sizes: Sizes::default(),
             limited: Usage {
@@ -1405,7 +1433,7 @@ fn event_variant(event: &Event) -> Option<usize> {
     })
 }
 
-const LIBRARY_EVENT_VARIANTS: usize = 13;
+const LIBRARY_EVENT_VARIANTS: usize = 14;
 
 /// Each library event's variant; a new one takes the next index and raises the count.
 fn library_event_variant(event: &LibraryEvent) -> usize {
@@ -1423,6 +1451,7 @@ fn library_event_variant(event: &LibraryEvent) -> usize {
         LibraryEvent::SourceListed { .. } => 10,
         LibraryEvent::SourceTaken { .. } => 11,
         LibraryEvent::SourceFailed { .. } => 12,
+        LibraryEvent::SourceChecked { .. } => 13,
     }
 }
 

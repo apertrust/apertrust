@@ -106,6 +106,8 @@ pub const FIRST_COPY: &str = "00000000";
 const YOU: &str = "you";
 /// Every step source by its name, as `apertrust:source` holds it (decision 78).
 pub const SOURCES: [&str; 5] = [YOU, "auto", "style", "assistant", "default"];
+/// The namespace of `xmpMM:PreservedFileName` ([`Edits::preserved_file_name`]).
+const MEDIA_MANAGEMENT: &str = "http://ns.adobe.com/xap/1.0/mm/";
 
 /// A photo's `.apxmp` of version 2 as text: the photo it belongs to and its virtual copies.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,6 +382,15 @@ impl Edits {
     /// index counts a photo edited.
     pub fn edited(&self) -> bool {
         self.copies.iter().any(VirtualCopy::edited)
+    }
+
+    /// Its `xmpMM:PreservedFileName`, the camera name a copy Import named otherwise keeps,
+    /// as darktable writes it (decision 85), where it holds one.
+    pub fn preserved_file_name(&self) -> Option<String> {
+        (self.other.iter())
+            .find(|property| property.name.is(MEDIA_MANAGEMENT, "PreservedFileName"))
+            .and_then(|property| property.node.as_str())
+            .map(str::to_owned)
     }
 
     /// Reads an `.apxmp` file's XMP through the XMP layer, `modified` its modified time in

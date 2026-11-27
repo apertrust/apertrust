@@ -237,21 +237,21 @@ fn read(
 
 /// The device `path` is on, where the system says so cheaply: on Unix.
 #[cfg(unix)]
-fn device(path: &Path) -> Option<u64> {
+pub(crate) fn device(path: &Path) -> Option<u64> {
     use std::os::unix::fs::MetadataExt as _;
     fs::metadata(path).ok().map(|meta| meta.dev())
 }
 
 /// Elsewhere, none: a folder on another volume is walked as any other.
 #[cfg(not(unix))]
-fn device(_path: &Path) -> Option<u64> {
+pub(crate) fn device(_path: &Path) -> Option<u64> {
     None
 }
 
 /// Whether the folder `entry` names is on `device`, the root's: a mount point inside the
 /// tree is named but not walked into. A folder whose device cannot be read is walked.
 #[cfg(unix)]
-fn same_device(entry: &fs::DirEntry, device: Option<u64>) -> bool {
+pub(crate) fn same_device(entry: &fs::DirEntry, device: Option<u64>) -> bool {
     use std::os::unix::fs::MetadataExt as _;
     match (device, entry.metadata()) {
         (Some(device), Ok(meta)) => meta.dev() == device,
@@ -261,7 +261,7 @@ fn same_device(entry: &fs::DirEntry, device: Option<u64>) -> bool {
 
 /// Elsewhere every folder is walked.
 #[cfg(not(unix))]
-fn same_device(_entry: &fs::DirEntry, _device: Option<u64>) -> bool {
+pub(crate) fn same_device(_entry: &fs::DirEntry, _device: Option<u64>) -> bool {
     true
 }
 
