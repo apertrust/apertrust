@@ -20,7 +20,7 @@
 
 use super::names::Key;
 use super::parse::strtol;
-use super::{DateTime, Operation, Params, Part, Replace, Size, Values, Variable};
+use super::{DateTime, Field, Operation, Params, Part, Replace, Size, Values, Variable};
 
 pub(super) fn parts(parts: &[Part], values: &Values) -> String {
     let mut expanded = String::new();
@@ -287,18 +287,28 @@ fn base_value(variable: &Variable, values: &Values) -> String {
         Key::ExportHeight => size(export_size(values), true),
         Key::ProgramName => "Apertrust".to_owned(),
         Key::ProgramVersion => values.version.clone(),
-        Key::Creator => values.creator.clone().unwrap_or_default(),
-        Key::Rights => values.rights.clone().unwrap_or_default(),
-        Key::Description => values.description.clone().unwrap_or_default(),
+        Key::CropFactor => fixed(f64::from(values.crop_factor), 1),
+        // In float, as darktable multiplies.
+        Key::FocalLengthEquivalent => fixed(f64::from(values.focal_length * values.crop_factor), 1),
+        Key::VersionName => values.version_name.clone(),
+        // darktable counts the photo's copies, its duplicates, and writes the version only
+        // where there are several.
+        Key::VersionIfMulti if values.copies > 1 => values.copy_version.to_string(),
+        Key::VersionIfMulti => String::new(),
+        Key::Version => values.copy_version.to_string(),
+        Key::Title => text(&values.metadata.title),
+        Key::Publisher => text(&values.metadata.publisher),
+        Key::Notes => text(&values.metadata.notes),
+        Key::PreservedFileName => (values.metadata.preserved_file_name.clone()).unwrap_or_default(),
+        // The copy's field, else the camera's own text, which darktable's import seeds it
+        // with.
+        Key::Creator => or_camera(&values.metadata.creator, &values.creator),
+        Key::Rights => or_camera(&values.metadata.rights, &values.rights),
+        Key::Description => or_camera(&values.metadata.description, &values.description),
         // D7: nothing here.
         Key::NewLine
-        | Key::CropFactor
-        | Key::FocalLengthEquivalent
         | Key::ImageIdNext
         | Key::ImageId
-        | Key::VersionName
-        | Key::VersionIfMulti
-        | Key::Version
         | Key::Stars
         | Key::RatingIcons
         | Key::LabelsIcons
@@ -309,11 +319,20 @@ fn base_value(variable: &Variable, values: &Values) -> String {
         | Key::TagsHierarchy
         | Key::Tags
         | Key::SidecarTxt
-        | Key::Title
-        | Key::Publisher
-        | Key::Notes
-        | Key::ImageIdMetadata
-        | Key::PreservedFileName => String::new(),
+        | Key::ImageIdMetadata => String::new(),
+    }
+}
+
+/// A metadata field's text, as darktable holds it ([`Field::text`]); nothing for none.
+fn text(field: &Option<Field>) -> String {
+    field.as_ref().map(Field::text).unwrap_or_default()
+}
+
+/// A metadata field's text where it holds some, else the camera's.
+fn or_camera(field: &Option<Field>, camera: &Option<String>) -> String {
+    match text(field) {
+        text if text.is_empty() => camera.clone().unwrap_or_default(),
+        text => text,
     }
 }
 

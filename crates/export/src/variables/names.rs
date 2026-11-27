@@ -164,14 +164,11 @@ impl Key {
         Some(match self {
             Key::NewLine | Key::LabelsIcons | Key::SidecarTxt => NotHere::ImageInformation,
             Key::ImageIdNext | Key::ImageId | Key::ImageIdMetadata => NotHere::Library,
-            Key::VersionName | Key::VersionIfMulti | Key::Version => NotHere::Duplicates,
             Key::Stars | Key::RatingIcons => NotHere::Ratings,
             Key::Labels => NotHere::Labels,
             Key::Category | Key::TagsHierarchy | Key::Tags => NotHere::Tags,
-            Key::Title | Key::Publisher | Key::Notes | Key::PreservedFileName => NotHere::Metadata,
             Key::OpenCl => NotHere::OpenCl,
             Key::WorkspaceLabel => NotHere::Workspaces,
-            Key::CropFactor | Key::FocalLengthEquivalent => NotHere::CropFactor,
             _ => return None,
         })
     }
@@ -186,23 +183,16 @@ pub enum NotHere {
     ImageInformation,
     /// A library's image ids, which Apertrust has not yet.
     Library,
-    /// Duplicates and their version names, which Apertrust has not yet.
-    Duplicates,
     /// Star ratings, which Apertrust has not yet.
     Ratings,
     /// Colour labels, which Apertrust has not yet.
     Labels,
     /// Tags, which Apertrust has not yet.
     Tags,
-    /// A metadata field the raw's EXIF does not seed, while Apertrust has no metadata.
-    Metadata,
     /// Whether OpenCL runs: Apertrust has no OpenCL.
     OpenCl,
     /// darktable's workspaces, which Apertrust has not.
     Workspaces,
-    /// The crop factor, from FocalLengthIn35mmFilm or the focal plane's resolution,
-    /// which the raw decoder does not read.
-    CropFactor,
 }
 
 impl fmt::Display for NotHere {
@@ -210,14 +200,11 @@ impl fmt::Display for NotHere {
         f.write_str(match self {
             NotHere::ImageInformation => "darktable shows it only in its image information",
             NotHere::Library => "Apertrust has no image ids yet",
-            NotHere::Duplicates => "Apertrust has no duplicates yet",
             NotHere::Ratings => "Apertrust has no ratings yet",
             NotHere::Labels => "Apertrust has no colour labels yet",
             NotHere::Tags => "Apertrust has no tags yet",
-            NotHere::Metadata => "Apertrust has no metadata yet",
             NotHere::OpenCl => "Apertrust does not use OpenCL",
             NotHere::Workspaces => "Apertrust has no workspaces",
-            NotHere::CropFactor => "Apertrust cannot read the crop factor from raws yet",
         })
     }
 }

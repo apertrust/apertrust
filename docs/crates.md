@@ -1706,8 +1706,8 @@ It reads no presets: Export's are `.appreset` files, which the clients read thro
 
 `variables` ([docs/ports/variables.md](ports/variables.md)): darktable's variables.c.
 
-- `Pattern::parse` and `expand` over `Values`: every name with its legacy aliases, and darktable's operations.
-- `not_here` (D7): darktable's names read as Apertrust's, and the no-value names listed.
+- `Pattern::parse` and `expand` over `Values`: every name with its legacy aliases, and darktable's operations; the exported copy's metadata fields (`Metadata`, each a `Field`, a list joined by ", " and a language alternative's `x-default` item), its name, number and count, and the crop factor, the camera's text standing in for a Creator, Copyright notice or Description the copy lacks.
+- `not_here` (D7): darktable's names read as Apertrust's, and the no-value names listed: the ratings, labels and tags, the image ids, OpenCL, workspaces and the image information's own.
 - D8's refusals: `Unknown`, with the nearest name; `Unclosed`; `NoOperation`; and `TooDeep`, past 64 levels.
 - `list`, darktable's entries with their descriptions.
 
