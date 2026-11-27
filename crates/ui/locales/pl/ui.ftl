@@ -192,6 +192,12 @@ batch-rated =
        *[other] { $style } na { $count } zdjęcia
     }
 batch-rated-some = { $style } na { $changed } z { $count } zdjęć
+batch-written =
+    { $count ->
+        [one] { $style }: zapisano na { $count } zdjęciu
+       *[other] { $style }: zapisano na { $count } zdjęciach
+    }
+batch-written-some = { $style }: zapisano na { $changed } z { $count } zdjęć
 batch-taken-back =
     { $count ->
         [one] Cofnięto „{ $style }” na { $count } zdjęciu
@@ -476,6 +482,30 @@ job-redo-rate-outcome =
         [few] Przywrócono ocenę na { $changed } z { $count } zdjęć
         [many] Przywrócono ocenę na { $changed } z { $count } zdjęć
        *[other] Przywrócono ocenę na { $changed } z { $count } zdjęcia
+    }
+job-set-metadata = Zapisywanie pola „{ $field }” · { photo-count }
+job-set-metadata-outcome =
+    { $count ->
+        [one] { $field }: zapisano na { $changed } z { $count } zdjęcia
+        [few] { $field }: zapisano na { $changed } z { $count } zdjęć
+        [many] { $field }: zapisano na { $changed } z { $count } zdjęć
+       *[other] { $field }: zapisano na { $changed } z { $count } zdjęcia
+    }
+job-undo-metadata = Cofanie pola „{ $field }” · { photo-count }
+job-redo-metadata = Ponawianie pola „{ $field }” · { photo-count }
+job-undo-metadata-outcome =
+    { $count ->
+        [one] { $field }: cofnięto na { $changed } z { $count } zdjęcia
+        [few] { $field }: cofnięto na { $changed } z { $count } zdjęć
+        [many] { $field }: cofnięto na { $changed } z { $count } zdjęć
+       *[other] { $field }: cofnięto na { $changed } z { $count } zdjęcia
+    }
+job-redo-metadata-outcome =
+    { $count ->
+        [one] { $field }: ponowiono na { $changed } z { $count } zdjęcia
+        [few] { $field }: ponowiono na { $changed } z { $count } zdjęć
+        [many] { $field }: ponowiono na { $changed } z { $count } zdjęć
+       *[other] { $field }: ponowiono na { $changed } z { $count } zdjęcia
     }
 
 job-export-photo =
@@ -1760,6 +1790,14 @@ alert-preset-delete-message = Jego plik zostanie usunięty.
 alert-preset-delete-button = Usuń
 alert-style-delete-title = Usunąć styl „{ $name }”?
 alert-style-delete-message = Jego plik zostanie usunięty. Zdjęcia, do których go zastosowano, zachowają swoje edycje.
+alert-clear-metadata-title =
+    { $count ->
+        [1] Wyczyścić pola metadanych tego zdjęcia?
+        [few] Wyczyścić pola metadanych { $count } zdjęć?
+       *[other] Wyczyścić pola metadanych { $count } zdjęć?
+    }
+alert-clear-metadata-message = Notatki i nazwy kopii zostaną zachowane.
+alert-clear-metadata-button = Wyczyść
 
 ## Narzędzie Informacje.
 
@@ -1892,7 +1930,35 @@ metadata-not-a-date-why = Wpisz datę jako { $example } albo jako 2026-07-04.
 metadata-not-saved = { $field }: nie zapisano
 metadata-try-again = Spróbuj ponownie
 metadata-copy-of = { $number } z { $count }
-metadata-several-later = Edycja kilku zdjęć pojawi się w późniejszej wersji
+metadata-field-of = { $field } · { $count ->
+        [one] { $count } zdjęcie
+        [few] { $count } zdjęcia
+       *[other] { $count } zdjęć
+    }
+metadata-different-description = { $count ->
+        [one] { $count } zdjęcie
+        [few] { $count } zdjęcia
+       *[other] { $count } zdjęć
+    }, różnych wartości: { $values }. Wpisany tekst zastąpi je wszystkie.
+metadata-values-of = Wartości pola „{ $field }” na { $count ->
+        [one] { $count } zdjęciu
+       *[other] { $count } zdjęciach
+    }
+metadata-clear-on =
+    { $count ->
+        [one] Wyczyść na { $count } zdjęciu
+       *[other] Wyczyść na { $count } zdjęciach
+    }
+metadata-rename-one = Aby zmienić nazwę kopii, zaznacz jedno zdjęcie
+metadata-all-view-only = Wszystkie zaznaczone zdjęcia są tylko do odczytu i zachowają swoje pola
+metadata-view-only-some = { $count } z { $of } zdjęć jest tylko do odczytu i zachowa swoje pola
+metadata-view-only-some-why = { $count } z { $of } zdjęć jest tylko do odczytu i zachowa swoje pola.
+metadata-select-editable = Zaznacz tylko zdjęcia do edycji
+metadata-clear-fields = Wyczyść pola metadanych…
+metadata-clear-fields-on = Wyczyść pola metadanych na { $count ->
+        [one] { $count } zdjęciu
+       *[other] { $count } zdjęciach
+    }…
 metadata-copyright-unknown = Nieznany
 metadata-copyright-copyrighted = Chronione prawem autorskim
 metadata-copyright-public-domain = Domena publiczna

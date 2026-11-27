@@ -255,28 +255,40 @@ pub fn batch_notice(event: &BatchEvent, words: &Translator) -> Option<(String, O
     else {
         return None;
     };
-    // A style by its name, a rating by its action's (decision 110): "3 stars on 12 photos".
-    let (style, rating) = match what {
-        Batched::Style(name) => (name.clone(), false),
-        Batched::Rating(change) => (crate::rating::undo_words(*change, words), true),
-        Batched::Metadata(_) => (words.text("history-metadata"), false),
+    // A style by its name, a rating by its action's (decision 110): "3 stars on 12 photos";
+    // fields by the one's label, several as Metadata: "Title written to 12 photos".
+    let (style, applied) = match what {
+        Batched::Style(name) => (name.clone(), "batch-applied"),
+        Batched::Rating(change) => (crate::rating::undo_words(*change, words), "batch-rated"),
+        Batched::Metadata(fields) => match &fields[..] {
+            [field] => (
+                crate::metadata::fields::label(field, words),
+                "batch-written",
+            ),
+            _ => (words.text("history-metadata"), "batch-written"),
+        },
     };
     let (message, undo) = match action {
-        BatchAction::Applied if rating => ("batch-rated", Some(*batch)),
-        BatchAction::Applied => ("batch-applied", Some(*batch)),
+        BatchAction::Applied => (applied, Some(*batch)),
         BatchAction::TakenBack => ("batch-taken-back", None),
         BatchAction::PutBack => ("batch-put-back", Some(*batch)),
     };
     // Nothing to take back where it changed no photo.
     let undo = undo.filter(|_| !changed.is_empty());
-    // "Warm film applied to 12 photos", or "to 11 of 12 photos" where fewer changed.
-    let message = match changed.len() < *named {
+    // The photos it reached: those it named but those it skipped, a photo that already held
+    // what it sets among them; those it changed where a cancel left the rest.
+    let reached = match *cancelled {
+        true => changed.len(),
+        false => named.saturating_sub(skipped.len()),
+    };
+    // "Warm film applied to 12 photos", or "to 11 of 12 photos" where fewer were reached.
+    let message = match reached < *named {
         true => format!("{message}-some"),
         false => message.to_owned(),
     };
     let mut args = Args::new();
     args.set("style", style.as_str());
-    args.set("changed", changed.len() as f64);
+    args.set("changed", reached as f64);
     args.set("count", *named as f64);
     let mut said = words.text_with(&message, Some(&args));
     if let Some((photo, skip)) = skipped.first() {

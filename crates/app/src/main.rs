@@ -5598,7 +5598,17 @@ impl App {
             alerts::Then::Leave => self.quit_again = true,
             alerts::Then::UpdatePreset => self.preset_confirmed(true, ctx),
             alerts::Then::DeletePreset => self.preset_confirmed(false, ctx),
+            alerts::Then::ClearMetadata => {
+                if let Some(command) = self.metadata.cleared(true) {
+                    let sent = command.clone();
+                    let number = self.send_edit(command);
+                    self.metadata.command_sent(&sent, number);
+                }
+            }
             alerts::Then::Told => {}
+        }
+        if purpose == alerts::Purpose::ClearMetadata {
+            self.metadata.cleared(false);
         }
     }
 
@@ -5744,6 +5754,9 @@ impl App {
     /// Opens what Open…, a drop, Open With or the command line asked for, or asks the alert
     /// that says why nothing opens, naming the path it refused.
     fn carry_out_opening(&mut self, opening: Opening, ctx: &egui::Context) {
+        if opening.is_ok() {
+            self.send_drafts(ctx);
+        }
         match opening {
             Ok(Opens::Photos(paths)) => self.open_alone(paths),
             Ok(Opens::Folder(path)) => self.open_folder(path),
@@ -6795,6 +6808,17 @@ impl App {
         self.view_sync.flush(view, Instant::now(), send);
     }
 
+    /// Each Metadata field's draft ended with no press, sent to the photos it began on while
+    /// they are still the session's (decision 110), before a command that leaves them: a
+    /// batch is refused while the next photo opens.
+    fn send_drafts(&mut self, ctx: &egui::Context) {
+        for command in self.metadata.drafts(ctx, &translator(ctx)) {
+            let sent = command.clone();
+            let number = self.send_edit(command);
+            self.metadata.command_sent(&sent, number);
+        }
+    }
+
     fn run_actions(
         &mut self,
         ids: impl IntoIterator<Item = ActionId>,
@@ -6818,6 +6842,10 @@ impl App {
             // In the Browser's sort as an earlier action may have left it, which Next Photo
             // and Previous Photo read.
             self.mirror.folder.sort(self.shell.browser.sort);
+            // A field's draft goes to its photos before an action that leaves them.
+            if LEAVES_PHOTOS.contains(&id) || ActionId::OPEN_RECENT.contains(&id) {
+                self.send_drafts(ctx);
+            }
             // A pan or a zoom an earlier action made goes first, so a turn or another photo
             // this one asks for carries it (`docs/gui.md`, The zoom's centre).
             self.flush_view();
@@ -7099,9 +7127,12 @@ impl App {
         {
             self.change(change, ui.ctx());
         }
-        // The commands the utilities send: History's, none of Collections' and Export's yet.
+        // The commands the utilities send: History's and the Metadata tool's, none of
+        // Collections' and Export's yet.
         for command in tab.commands {
-            self.send_edit(command);
+            let sent = command.clone();
+            let number = self.send_edit(command);
+            self.metadata.command_sent(&sent, number);
         }
         let export = photos.export;
         // An item of its presets (decision 106).
@@ -7132,6 +7163,15 @@ impl App {
         }
         if let Some(text) = photos.copied.take() {
             ui.ctx().copy_text(text);
+        }
+        // Clear Metadata Fields…: its alert first, with the count (decision 110).
+        if photos.metadata_clear
+            && let Some(count) = self.metadata.ask_clear(&self.mirror)
+        {
+            let request = alerts::clear_metadata_request(ui.ctx(), count);
+            let purpose = alerts::Purpose::ClearMetadata;
+            self.alerts
+                .ask(&mut self.dialogs, purpose, &request, ui.ctx());
         }
         // Show in Metadata: the Metadata tool opened in its tab, as Add Tool ▸ shows a tool.
         if photos.show_metadata {
@@ -7269,8 +7309,15 @@ impl App {
             match action {
                 library::Action::OpenFolder => self.shell.open_folder = true,
                 library::Action::OpenFiles => self.shell.open = true,
-                library::Action::Open(path) => self.open_folder(path),
-                library::Action::Choose(path) => self.choose_folder(path),
+                // A field's draft goes to its photos before another folder leaves them.
+                library::Action::Open(path) => {
+                    self.send_drafts(ctx);
+                    self.open_folder(path);
+                }
+                library::Action::Choose(path) => {
+                    self.send_drafts(ctx);
+                    self.choose_folder(path);
+                }
                 library::Action::Toggle => self.shell.toggle_collections(false),
                 library::Action::ToggleFolders => self.shell.toggle_collections(true),
                 library::Action::ToggleTree(path) => {
@@ -9445,6 +9492,11 @@ impl eframe::App for App {
         if let Some((purpose, answer)) = self.alerts.answered(&mut self.dialogs) {
             self.alert_answered(purpose, answer, ctx);
         }
+        // A close asked of the window sends the Metadata tool's drafts first, as Quit does
+        // (decision 110), so their write holds it below.
+        if ctx.input(|i| i.viewport().close_requested()) {
+            self.send_drafts(ctx);
+        }
         // The main window's close button, held while a job the user started runs or the edit
         // is not on disk, for Quit to wait or ask.
         let edit = quit_edit(&self.mirror.saving);
@@ -10750,6 +10802,22 @@ struct PhotosTools<'t, 'a> {
     export: &'t mut export::Export,
 }
 
+/// The actions that change the photos the Metadata tool describes, or leave them with the
+/// window, before which a field's draft is sent to the photos it began on; Open Recent's
+/// too.
+const LEAVES_PHOTOS: [ActionId; 10] = [
+    ActionId::QUIT,
+    ActionId::CLOSE_WINDOW,
+    ActionId::NEXT_PHOTO,
+    ActionId::PREVIOUS_PHOTO,
+    ActionId::SELECT_ALL,
+    ActionId::SELECT_NONE,
+    ActionId::INVERT_SELECTION,
+    ActionId::SELECT_UNEDITED,
+    ActionId::PREVIOUS_SELECTION,
+    ActionId::CLOSE,
+];
+
 /// What Collections and Export asked for, drawn in the tab shown ([`photos_tool`]).
 #[derive(Debug, Default)]
 struct PhotosDrawn {
@@ -10774,6 +10842,8 @@ struct PhotosDrawn {
     metadata_toggle: bool,
     metadata_preset: Option<presets::Item>,
     copied: Option<String>,
+    /// Whether the Metadata tool's Clear Metadata Fields… was chosen.
+    metadata_clear: bool,
     /// Whether the Metadata tool was drawn, which asks for several photos' summary.
     metadata_drawn: bool,
     /// Whether the Info tool's header was toggled, and its Show in Metadata chosen; what
@@ -10903,6 +10973,7 @@ fn metadata_section(
             tools::Pressed::Run(id) => out.run.push(*id),
             tools::Pressed::Toggle => out.metadata_toggle = true,
             tools::Pressed::Preset(id) => out.metadata_preset = presets::Item::of(id),
+            tools::Pressed::Own(id) if id == metadata::CLEAR_FIELDS => out.metadata_clear = true,
             tools::Pressed::Own(id) => out.copied = metadata.copied(id, cx),
             _ => {}
         }
@@ -26008,6 +26079,7 @@ mod tests {
                             alerts::Then::Leave => d.quit_again = true,
                             alerts::Then::UpdatePreset
                             | alerts::Then::DeletePreset
+                            | alerts::Then::ClearMetadata
                             | alerts::Then::Told => {}
                         }
                     }

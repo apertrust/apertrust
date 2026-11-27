@@ -270,6 +270,14 @@ batch-rated =
        *[other] { $style } on { $count } photos
     }
 batch-rated-some = { $style } on { $changed } of { $count } photos
+# The Metadata tool's fields on several photos (decision 110): $style is the field's
+# label, "Title written to 12 photos".
+batch-written =
+    { $count ->
+        [one] { $style } written to { $count } photo
+       *[other] { $style } written to { $count } photos
+    }
+batch-written-some = { $style } written to { $changed } of { $count } photos
 batch-taken-back =
     { $count ->
         [one] { $style } taken back on { $count } photo
@@ -597,6 +605,26 @@ job-redo-rate-outcome =
     { $count ->
         [one] Rating put back on { $changed } of { $count } photo
        *[other] Rating put back on { $changed } of { $count } photos
+    }
+# The Metadata tool's fields on several photos, and their Undo and Redo on the batch's
+# other photos (decision 110): $field is the field's label.
+job-set-metadata = Writing { $field } to { photo-count }
+job-set-metadata-outcome =
+    { $count ->
+        [one] { $field } written to { $changed } of { $count } photo
+       *[other] { $field } written to { $changed } of { $count } photos
+    }
+job-undo-metadata = Taking back { $field } on { photo-count }
+job-redo-metadata = Putting back { $field } on { photo-count }
+job-undo-metadata-outcome =
+    { $count ->
+        [one] { $field } taken back on { $changed } of { $count } photo
+       *[other] { $field } taken back on { $changed } of { $count } photos
+    }
+job-redo-metadata-outcome =
+    { $count ->
+        [one] { $field } put back on { $changed } of { $count } photo
+       *[other] { $field } put back on { $changed } of { $count } photos
     }
 
 ## What an export job reports of itself for its row. $number is the photo under way,
@@ -2220,6 +2248,14 @@ alert-preset-delete-message = Its file is removed.
 alert-preset-delete-button = Delete
 alert-style-delete-title = Delete the style “{ $name }”?
 alert-style-delete-message = Its file is removed. Photos it was applied to keep their edits.
+# The Metadata tool's Clear Metadata Fields… (decision 110): $count the photos.
+alert-clear-metadata-title =
+    { $count ->
+        [1] Clear the metadata fields of this photo?
+       *[other] Clear the metadata fields of { $count } photos?
+    }
+alert-clear-metadata-message = Notes and copy names are kept.
+alert-clear-metadata-button = Clear
 
 ## The Info tool: the active photo at a glance. Its ⋯ items; its one line with no photo,
 ## and its lens line with none; the white balance's tags, auto and manual, after the
@@ -2352,7 +2388,23 @@ metadata-not-a-date-why = Type a date as { $example }, or as 2026-07-04.
 metadata-not-saved = { $field } was not saved
 metadata-try-again = Try Again
 metadata-copy-of = { $number } of { $count }
-metadata-several-later = Editing several photos comes in a later version
+# Several photos' fields (decision 110): a field's tooltip and its values list, $field its
+# label, $count the photos; the view-only warning, $count of $of photos; ⋯'s Clear.
+metadata-field-of = { $field } of { $count } photos
+metadata-different-description = { $count } photos, { $values } different values. Typing replaces them all.
+metadata-values-of = Values of { $field } on { $count } photos
+metadata-clear-on =
+    { $count ->
+        [one] Clear on { $count } Photo
+       *[other] Clear on { $count } Photos
+    }
+metadata-rename-one = Rename a copy with one photo selected
+metadata-all-view-only = Every selected photo is view-only and keeps its fields
+metadata-view-only-some = { $count } of { $of } photos are view-only and keep their fields
+metadata-view-only-some-why = { $count } of { $of } photos are view-only and keep their fields.
+metadata-select-editable = Select Only Editable Photos
+metadata-clear-fields = Clear Metadata Fields…
+metadata-clear-fields-on = Clear Metadata Fields on { $count } Photos…
 metadata-copyright-unknown = Unknown
 metadata-copyright-copyrighted = Copyrighted
 metadata-copyright-public-domain = Public domain

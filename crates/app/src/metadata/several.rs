@@ -95,6 +95,16 @@ impl Asking {
         }
     }
 
+    /// The number of the `Summarise` sent last.
+    pub fn asked(&self) -> u64 {
+        self.sent
+    }
+
+    /// The number of the command the summary held answers, if one is held.
+    pub fn held_number(&self) -> Option<u64> {
+        self.held.as_ref().map(|(through, _)| *through)
+    }
+
     /// The summary held, where it is of the selection as of its `through`, the one asked
     /// for; none for an earlier selection's, while the new one is asked.
     pub fn held(&self, through: u64) -> Option<&Summary> {

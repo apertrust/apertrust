@@ -188,6 +188,15 @@ pub trait UtilityTool {
         false
     }
 
+    /// The warning button at the end of its group `group`'s title row, its name and menu,
+    /// where a problem covers the whole group ([`tools::Rows::group_warning`]).
+    fn group_warning(&self, _group: &str, _cx: &Context<'_>) -> Option<(String, Vec<MenuEntry>)> {
+        None
+    }
+
+    /// The item `chosen` in the menu of its group `group`'s warning button.
+    fn group_warned(&mut self, _group: &str, _chosen: &str, _cx: &mut Context<'_>) {}
+
     /// What its header's ＋ opens, where its declaration has one (`rows_shown`), in
     /// `words`: its groups, each a submenu of its rows, checked where shown.
     fn rows_menu(&self, _words: &Translator) -> Vec<MenuEntry> {
@@ -400,6 +409,16 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
 
     fn hidden(&self, row: &Row) -> bool {
         self.drawn.borrow().0.hidden(row)
+    }
+
+    fn group_warning(&self, id: &str) -> Option<(String, Vec<MenuEntry>)> {
+        let (tool, cx, _) = &*self.drawn.borrow();
+        tool.group_warning(id, cx)
+    }
+
+    fn group_warned(&self, id: &str, chosen: &str) {
+        let (tool, cx, _) = &mut *self.drawn.borrow_mut();
+        tool.group_warned(id, chosen, cx);
     }
 
     /// A run of facts, by the utility's [`UtilityTool::facts`].

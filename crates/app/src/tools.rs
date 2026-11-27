@@ -1304,6 +1304,16 @@ pub trait Rows {
         None
     }
 
+    /// The warning button at the end of its group `id`'s title row, where a problem covers
+    /// the whole group, as the Metadata tool's view-only photos among those selected
+    /// (decision 110): its name and its menu.
+    fn group_warning(&self, _id: &str) -> Option<(String, Vec<popup::Entry>)> {
+        None
+    }
+
+    /// The item `chosen` in the menu of its group `id`'s warning button.
+    fn group_warned(&self, _id: &str, _chosen: &str) {}
+
     /// The title of its group `id` of the kind `kind`: the one its id and kind imply,
     /// unless a utility declares its own (decision 93).
     fn title(&self, id: &str, kind: GroupKind) -> String {
@@ -2789,12 +2799,16 @@ fn group_row(
     let open = page.group_open(id);
     let set = page.set_in(rows);
     // A scope, whose response is the group's row while it is closed, carries the tooltip.
+    let warning = page.group_warning(id);
     let group = ui.scope(|ui| {
         let mut group = CollapsibleGroup::new(&title, open).first(first).set(set);
         if let Some(tip) = &tip {
             group = group.tip(tip);
         }
-        group.show(ui, |ui| draw_rows(ui, page, rows, changes))
+        if let Some((name, menu)) = &warning {
+            group = group.end_warning(name, menu.clone());
+        }
+        group.show_with(ui, |ui| draw_rows(ui, page, rows, changes))
     });
     if !open && set > 0 {
         let mut args = Args::new();
@@ -2803,7 +2817,10 @@ fn group_row(
         let tip = page.words().text_with("collapsible-group-tip", Some(&args));
         group.response.on_hover_text(tip);
     }
-    if group.inner {
+    if let Some(chosen) = &group.inner.chosen {
+        page.group_warned(id, chosen);
+    }
+    if group.inner.toggled {
         changes.push(Change::Group { tool, group: id });
     }
 }

@@ -141,6 +141,9 @@ pub enum Shown {
     Nothing,
 }
 
+/// How many refused commands the mirror keeps the numbers of.
+pub const REFUSED_KEPT: usize = 32;
+
 impl Shown {
     /// Whether the Tools panel's resets are drawn enabled.
     pub fn editable(self) -> bool {
@@ -235,6 +238,12 @@ pub struct Mirror {
     /// How many batches on several photos have ended, which the Metadata tool asks again
     /// after, their edits and ratings changing no selection.
     pub batches_ended: u64,
+    /// The number of the latest command whose batch on several photos has ended: batches
+    /// end in the order sent (decision 109).
+    pub batch_ended_through: u64,
+    /// The numbers of the latest commands the session refused, the latest
+    /// [`REFUSED_KEPT`], which a value shown for one of them stops showing at.
+    pub refused: std::collections::VecDeque<u64>,
     /// The orientation the session last reported for the photo, its frames', whatever change
     /// of Orientation is still pending, which `values` shows at once: what the zoom's
     /// retained centre turns with (`docs/gui.md`, The zoom's centre).
@@ -302,6 +311,8 @@ impl Mirror {
             rating: None,
             metadata: None,
             batches_ended: 0,
+            batch_ended_through: 0,
+            refused: std::collections::VecDeque::new(),
             orientation: crate::zoom::Orientation::default(),
             asked: Vec::new(),
             previous: None,
@@ -790,8 +801,9 @@ impl Mirror {
                 let edited = matches!(edit, apertrust_engine::session::library::EditState::Edited);
                 self.folder.edited(&photo, edited, true);
             }
-            Event::Batch(ended @ BatchEvent::Ended { .. }) => {
+            Event::Batch(ended @ BatchEvent::Ended { command, .. }) => {
                 self.batches_ended += 1;
+                self.batch_ended_through = self.batch_ended_through.max(command);
                 reactions.push(Reaction::Batch(ended))
             }
             // The open photo's values, which replace the untouched ones in one apply; a
@@ -970,6 +982,10 @@ impl Mirror {
         if let SessionError::Refused { command, .. } = &error {
             // It changed nothing: what was shown for it, and a save awaited for it, stop.
             let command = *command;
+            if self.refused.len() == REFUSED_KEPT {
+                self.refused.pop_front();
+            }
+            self.refused.push_back(command);
             self.pending.retain(|(number, _)| *number != command);
             self.pickers.refused(command);
             self.saving.refused(command);
