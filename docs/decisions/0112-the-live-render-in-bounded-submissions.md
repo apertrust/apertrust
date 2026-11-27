@@ -10,7 +10,7 @@ darktable stays smooth because its interface never touches the compute device's 
 
 ## Decision
 
-**A, planned: the live render in bounded submissions.** The fitted viewport's render and the detail pipeline's are cut into chunks between passes, each its own submission through `GpuContext::submit`, at most two in flight. The frame is bit-identical to the one submission's.
+**A, built at Fit, planned in the zoomed view: the live render in bounded submissions.** The fitted viewport's render and the detail pipeline's are cut into chunks between passes, each its own submission through `GpuContext::submit`, at most two in flight. The frame is bit-identical to the one submission's.
 
 - **Chunks from the last render's times.** Each chunk takes passes in order while the sum of their GPU times, measured by timestamps in the last render of the same plan, stays within the bound. A pass with no time yet is a chunk of its own: a new plan's first render, a pass not run before, a device without timestamp queries. A pass longer than the bound is a chunk of its own until row strips split it (below). A render within the bound stays one submission, as an exposure change on the RTX 5060 is. The planner is a pure function of the times and the bound.
 - **The bound,** `CHUNK_BOUND`: about 12 ms of GPU time now, one chunk per window frame under today's gate. About 4 ms once the gate shrinks or goes (below).
