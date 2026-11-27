@@ -61,6 +61,7 @@ mod readout_row;
 mod reference_row;
 mod section;
 mod segmented;
+mod setting_rows;
 pub mod settings;
 mod slider;
 mod steps;
@@ -127,6 +128,10 @@ pub use readout_row::ReadoutRow;
 pub use reference_row::{Reference, ReferenceAction, ReferenceRow};
 pub use section::{Section, SectionAction, SectionOutput, section_body, section_list};
 pub use segmented::Segmented;
+pub use setting_rows::{
+    Fix, PathChoice, PathRow, PathRowOutput, Problem, TEXT_FIELD_WIDTH, TextFieldRow,
+    TextRowOutput, WarningButton,
+};
 pub use slider::{Mark, Quad, SliderAction, SliderRow, Track, takes_digits};
 pub use swatches::{Swatch, SwatchFill, Swatches};
 pub use switch::Switch;

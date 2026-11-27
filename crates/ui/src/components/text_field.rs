@@ -20,8 +20,11 @@
 //! - **`TextField`**: one line in a sunken well, a field high, in the small text, filling
 //!   the row or `width` points, as a value field is drawn but left-aligned. Every edit is
 //!   reported with the whole text, so the caller's preview follows each letter. A hint
-//!   shows while it is empty and an error outlines it in `error`. Screen readers hear it
-//!   as a text input named by the control's full name.
+//!   shows while it is empty. A problem is drawn one of two ways, the caller's choice: the
+//!   Export tool's error outlines the field in `error` ([`TextField::error`]); the Import
+//!   tool's draws its text in `error`, no outline round the field, which keeps its fill
+//!   ([`TextField::problem`]). Screen readers hear it as a text input named by the
+//!   control's full name.
 //! - **`PathField`**: a text field that offers the variables a path may hold. While the
 //!   caret stands just after `$(` and the letters of a name, a list under the field shows
 //!   the variables that name begins, each with its description. A click inserts one, with
@@ -50,6 +53,7 @@ pub struct TextField<'a> {
     width: Option<f32>,
     hint: Option<&'a str>,
     error: bool,
+    problem: bool,
     enabled: bool,
     look: Option<FieldLook>,
 }
@@ -74,6 +78,7 @@ impl<'a> TextField<'a> {
             width: None,
             hint: None,
             error: false,
+            problem: false,
             enabled: true,
             look: None,
         }
@@ -91,9 +96,16 @@ impl<'a> TextField<'a> {
         self
     }
 
-    /// Outlines the field in the error colour.
+    /// Outlines the field in the error colour: the Export tool's problem.
     pub fn error(mut self, on: bool) -> Self {
         self.error = on;
+        self
+    }
+
+    /// Draws its text in the error colour, with no outline, the field keeping its fill:
+    /// the Import tool's problem, which a warning button beside the field names.
+    pub fn problem(mut self, on: bool) -> Self {
+        self.problem = on;
         self
     }
 
@@ -136,10 +148,12 @@ impl<'a> TextField<'a> {
             t.shape.radius_small
         };
         let (rect, _) = ui.allocate_exact_size(vec2(width, look.height), Sense::hover());
-        let colour = if self.enabled {
-            look.colour
-        } else {
+        let colour = if !self.enabled {
             t.colors.text_disabled
+        } else if self.problem {
+            t.colors.error
+        } else {
+            look.colour
         };
         if let Some(fill) = look.fill {
             ui.painter().rect_filled(rect, radius, fill);
@@ -293,6 +307,12 @@ impl<'a> PathField<'a> {
 
     pub fn error(mut self, on: bool) -> Self {
         self.field = self.field.error(on);
+        self
+    }
+
+    /// Its text in the error colour, with no outline ([`TextField::problem`]).
+    pub fn problem(mut self, on: bool) -> Self {
+        self.field = self.field.problem(on);
         self
     }
 

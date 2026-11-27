@@ -48,9 +48,10 @@ impl Native {
 
 impl Service for Native {
     /// Both kinds today are plain lists; a kind that holds controls, as the slider popup
-    /// will, stays drawn.
+    /// will, stays drawn, and so does a list whose items have a second line, which
+    /// AppKit's menus have no place for.
     fn takes(&self, request: &Request) -> bool {
-        matches!(request.kind, Kind::PullDown | Kind::Dropdown)
+        matches!(request.kind, Kind::PullDown | Kind::Dropdown) && !request.has_details()
     }
 
     fn open(&self, id: Id, request: Request) {
@@ -285,6 +286,23 @@ mod tests {
             option,
             control,
         }
+    }
+
+    /// A list whose items have a second line, a path row's ⌄ (decision 86), is drawn: AppKit's
+    /// menus have no place for the line.
+    #[test]
+    fn a_list_with_second_lines_stays_drawn() {
+        let anchor = Rect::from_min_size(pos2(100.0, 40.0), vec2(18.0, 18.0));
+        let plain = vec![Item::new("by-day", "By day").radio(true).into()];
+        let native = Native::default();
+        assert!(native.takes(&Request::pull_down(anchor, "Subfolders", plain)));
+        let detailed = vec![
+            Item::new("by-day", "By day")
+                .radio(true)
+                .detail("$(YEAR)$(MONTH)$(DAY)")
+                .into(),
+        ];
+        assert!(!native.takes(&Request::pull_down(anchor, "Subfolders", detailed)));
     }
 
     #[test]
