@@ -15,11 +15,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! Colour equalizer (`docs/tools/colour-equalizer.md`): darktable's color equalizer as
-//! the user edits with it, in the first pass (decision 2): darktable's page with its
-//! sliders shown, its controls in `gui_init`'s order under its labels.
+//! the user edits with it, in the first pass (decision 2): darktable's page in its
+//! default layout, each curve's nodes on its graph, its controls in `gui_init`'s order
+//! under its labels.
 //!
-//! - **Hue, Saturation and Brightness:** each tab the eight nodes of its curve, red to
-//!   magenta; Node placement under them on every tab.
+//! - **Hue, Saturation and Brightness:** each tab darktable's graph of its curve's eight
+//!   nodes, red to magenta (`Widget::HueCurve`); Node placement under it on every tab.
 //! - **Options,** collapsible, under every tab: White level, Hue curve, Use guided filter,
 //!   and the guided filter's Hue analysis radius, Saturation threshold, Contrast and
 //!   Effect radius, shown only while it is in use.
@@ -31,20 +32,28 @@
 //! an identity: off, it renders nothing; any write of a control turns it on, with
 //! darktable's defaults for the others, until its reset turns it off.
 //!
-//! White level's picker is in the definition, as darktable's page has it; the renderer
-//! draws its quad once what it runs is built. Left out until the renderer can draw them:
-//! darktable's curve graph, a second view of the nodes, with Node placement's picker,
-//! which only marks a hue on the graph; the nodes' painted tracks; and the show-mask quads
-//! of Saturation threshold and Effect radius, the display's (`docs/tools/README.md`, rule 12).
+//! The graph is the nodes' only row (decision 31): its curve the operation's, from
+//! `apertrust-color`, its colours darktable's. White level's picker is in the definition,
+//! as darktable's page has it; the renderer draws its quad once what it runs is built.
+//! Left out until the renderer can draw them: Node placement's picker, which only marks a
+//! hue on the graph, and the show-mask quads of Saturation threshold and Effect radius,
+//! the display's (`docs/tools/README.md`, rule 12).
 
+use std::f32::consts::PI;
+use std::sync::OnceLock;
+
+use apertrust_color::colour_equalizer::{
+    Gradients, NODES, SLIDER_BRIGHTNESS, lookup_gamut, periodic_rbf, ucs_hue,
+};
 use apertrust_plugin::{ImageContext, Value};
 
 use crate::about::{Fact, Facts, Purpose};
 use crate::definition::{
     Control, ControlKind, End, Group, GroupKind, Picker, PickerKind, ProcessingDefinition, Reset,
-    Row, Slider, Space, Tab, ToolDefinition, Unit,
+    Row, Slider, Space, Tab, ToolDefinition, Unit, Widget,
 };
-use crate::{Base, Owned, ProcessingTool, Setting, ToolValues};
+use crate::values::{ControlValue, Controls};
+use crate::{Base, CurvePaint, Owned, ProcessingTool, Setting, ToolValues};
 
 pub struct ColourEqualizer;
 
@@ -140,6 +149,71 @@ pub static PARAMETERS: [Parameter; 31] = [
     plain("param_size"),
 ];
 
+/// Each curve's nodes, red to magenta, as its graph shows them.
+const HUES: [&str; NODES] = [
+    "hue_red",
+    "hue_orange",
+    "hue_yellow",
+    "hue_green",
+    "hue_cyan",
+    "hue_blue",
+    "hue_lavender",
+    "hue_magenta",
+];
+const SATURATIONS: [&str; NODES] = [
+    "sat_red",
+    "sat_orange",
+    "sat_yellow",
+    "sat_green",
+    "sat_cyan",
+    "sat_blue",
+    "sat_lavender",
+    "sat_magenta",
+];
+const BRIGHTNESSES: [&str; NODES] = [
+    "bright_red",
+    "bright_orange",
+    "bright_yellow",
+    "bright_green",
+    "bright_cyan",
+    "bright_blue",
+    "bright_lavender",
+    "bright_magenta",
+];
+
+/// One of the three curves, darktable's channels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Channel {
+    Hue,
+    Saturation,
+    Brightness,
+}
+
+impl Channel {
+    /// The curve whose first node is `control`.
+    fn of(control: &str) -> Option<Self> {
+        match control {
+            "hue_red" => Some(Channel::Hue),
+            "sat_red" => Some(Channel::Saturation),
+            "bright_red" => Some(Channel::Brightness),
+            _ => None,
+        }
+    }
+
+    fn nodes(self) -> &'static [&'static str; NODES] {
+        match self {
+            Channel::Hue => &HUES,
+            Channel::Saturation => &SATURATIONS,
+            Channel::Brightness => &BRIGHTNESSES,
+        }
+    }
+}
+
+/// How many colours the graph's strip and each row of its background hold across, and its
+/// background's rows.
+const PAINT_COLUMNS: usize = 73;
+const PAINT_ROWS: usize = 17;
+
 /// A number control. `step` is darktable's: what its slider steps by over its soft
 /// range, `dt_bauhaus_slider_get_step`, which a key steps by here.
 const fn number(
@@ -220,20 +294,13 @@ const fn slider(control: &'static str) -> Row {
     Row::Slider(Slider::new(control))
 }
 
-/// A tab's eight node sliders, `<prefix>_red` to `<prefix>_magenta` in darktable's order.
-macro_rules! nodes {
-    ($prefix:literal) => {
-        &[
-            slider(concat!($prefix, "_red")),
-            slider(concat!($prefix, "_orange")),
-            slider(concat!($prefix, "_yellow")),
-            slider(concat!($prefix, "_green")),
-            slider(concat!($prefix, "_cyan")),
-            slider(concat!($prefix, "_blue")),
-            slider(concat!($prefix, "_lavender")),
-            slider(concat!($prefix, "_magenta")),
-        ]
-    };
+/// darktable's graph of a curve's nodes, `controls`, red to magenta (decision 31): the
+/// nodes' only row, as darktable's default layout shows them.
+const fn graph(controls: &'static [&'static str]) -> Row {
+    Row::Custom {
+        widget: Widget::HueCurve,
+        controls,
+    }
 }
 
 /// A slider row showing `decimals` decimals.
@@ -262,18 +329,17 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         tabs: &[
             Tab {
                 id: Some("hue"),
-                rows: nodes!("hue"),
+                rows: &[graph(&HUES)],
             },
             Tab {
                 id: Some("saturation"),
-                rows: nodes!("sat"),
+                rows: &[graph(&SATURATIONS)],
             },
             Tab {
                 id: Some("brightness"),
-                rows: nodes!("bright"),
+                rows: &[graph(&BRIGHTNESSES)],
             },
         ],
-        // darktable's curve graph goes over the tabs, once a widget draws it.
         before: &[],
         after: &[
             decimals("hue_shift", 0),
@@ -373,6 +439,102 @@ impl ProcessingTool for ColourEqualizer {
             settings.push(Setting::new(COLOR_EQUAL, USE_FILTER, Value::Bool(on)));
         }
         settings
+    }
+
+    /// The curve darktable's graph draws through a tab's nodes (`_iop_colorequalizer_draw`):
+    /// its periodic RBF, with Hue curve's smoothing on the Hue tab and clipped at a gain of
+    /// 0 on the others, as the operation renders it, at a hue in degrees from the red
+    /// node, in the nodes' units.
+    fn curve(&self, control: &str, values: &Controls) -> Option<Box<dyn Fn(f32) -> f32>> {
+        let channel = Channel::of(control)?;
+        let parameter = |control: &str| {
+            let p = PARAMETERS.iter().find(|p| p.control == control)?;
+            Some(p.param(value_of(values, control)))
+        };
+        let mut nodes = [0.0; NODES];
+        for (node, &control) in nodes.iter_mut().zip(channel.nodes()) {
+            *node = parameter(control)?;
+        }
+        let (table, shown): (Vec<f32>, fn(f32) -> f32) = match channel {
+            Channel::Hue => (
+                periodic_rbf(
+                    &nodes.map(apertrust_color::deg_to_rad),
+                    PI / parameter("smoothing_hue")?,
+                    0.0,
+                    false,
+                ),
+                f32::to_degrees,
+            ),
+            Channel::Saturation | Channel::Brightness => {
+                (periodic_rbf(&nodes, PI, 0.0, true), |gain| {
+                    gain * 100.0 - 100.0
+                })
+            }
+        };
+        Some(Box::new(move |degrees| {
+            shown(lookup_gamut(&table, ucs_hue(degrees)))
+        }))
+    }
+
+    /// Node placement, which moves the nodes along the hue, over 360°.
+    fn curve_offset(&self, control: &str, values: &Controls) -> Option<f32> {
+        Channel::of(control).map(|_| value_of(values, "hue_shift") / 360.0)
+    }
+
+    /// darktable's colours for a tab's graph (`_init_graph_backgrounds`, and the gradient
+    /// under it): the strip each hue at the graph's saturation; on Hue each hue turned by
+    /// the height, as a node there turns it, on Saturation from grey to full, on Brightness
+    /// from black to 1.25 times the sliders' brightness. Each column is the strip's hue,
+    /// where darktable's runs backwards in a buffer it fills in the wrong channel order.
+    fn curve_paint(&self, control: &str, _values: &Controls) -> Option<CurvePaint> {
+        static PAINT: OnceLock<[CurvePaint; 3]> = OnceLock::new();
+        let channel = Channel::of(control)?;
+        let paint = PAINT.get_or_init(|| {
+            let gradients = Gradients::srgb();
+            [Channel::Hue, Channel::Saturation, Channel::Brightness]
+                .map(|channel| paint(&gradients, channel))
+        });
+        Some(paint[channel as usize].clone())
+    }
+}
+
+/// A number control's value in `values`: the control's default where they hold none.
+fn value_of(values: &Controls, control: &str) -> f32 {
+    match values.get(control) {
+        Some(ControlValue::Number(value)) => *value,
+        _ => match CONTROLS.iter().find(|c| c.id == control).map(|c| c.kind) {
+            Some(ControlKind::Number { default, .. }) => default,
+            _ => 0.0,
+        },
+    }
+}
+
+/// The strip and background of `channel`'s graph.
+fn paint(gradients: &Gradients, channel: Channel) -> CurvePaint {
+    let s = gradients.max_saturation;
+    let across = |column: usize| 360.0 * column as f32 / (PAINT_COLUMNS - 1) as f32;
+    let strip = (0..PAINT_COLUMNS)
+        .map(|column| gradients.colour([ucs_hue(across(column)), s, SLIDER_BRIGHTNESS]))
+        .collect();
+    let background = (0..PAINT_ROWS)
+        .flat_map(|row| {
+            // The height, 1 at the top, 0 at the foot.
+            let y = 1.0 - row as f32 / (PAINT_ROWS - 1) as f32;
+            (0..PAINT_COLUMNS).map(move |column| {
+                let hue = ucs_hue(across(column));
+                let hsb = match channel {
+                    Channel::Hue => [hue + (y - 0.5) * 2.0 * PI, s, SLIDER_BRIGHTNESS],
+                    Channel::Saturation => [hue, s * y, SLIDER_BRIGHTNESS],
+                    Channel::Brightness => [hue, s, 1.25 * SLIDER_BRIGHTNESS * y],
+                };
+                gradients.colour(hsb)
+            })
+        })
+        .collect();
+    CurvePaint {
+        strip,
+        background,
+        columns: PAINT_COLUMNS,
     }
 }
 
@@ -509,12 +671,27 @@ mod tests {
 
     #[test]
     fn its_sliders_are_darktable_s() {
-        let differences = crate::testing::slider_differences(
-            &ColourEqualizer,
-            &DEFINITION.defaults(),
-            &DARKTABLE,
-        );
+        // The nodes have no slider: the graph draws each over its control's range, steps
+        // it by its control's step and rounds it to a slider's default decimals.
+        let (nodes, sliders) = DARKTABLE.split_at(3 * NODES);
+        let differences =
+            crate::testing::slider_differences(&ColourEqualizer, &DEFINITION.defaults(), sliders);
         assert!(differences.is_empty(), "{differences:#?}");
+        for theirs in nodes {
+            let Some(ControlKind::Number { min, max, step, .. }) =
+                DEFINITION.control(theirs.id).map(|c| c.kind)
+            else {
+                panic!("{}: not a number control", theirs.id);
+            };
+            assert_eq!((min, max), theirs.range(), "{}", theirs.id);
+            assert!((step - theirs.step()).abs() <= 1e-6, "{}", theirs.id);
+            assert_eq!(
+                Slider::new(theirs.id).decimals,
+                theirs.digits,
+                "{}",
+                theirs.id
+            );
+        }
         // The factor and offset each shows are the ones its binding goes back by.
         for p in &PARAMETERS {
             let darktable = DARKTABLE.iter().find(|s| s.id == p.control).unwrap();
@@ -581,5 +758,102 @@ mod tests {
         assert_eq!(value("white_level"), Some(Value::Float(-1.5)));
         assert_eq!(value(USE_FILTER), Some(Value::Bool(false)));
         assert_eq!(settings.len(), 6);
+    }
+
+    /// The tool's values with `set`, the rest at their defaults.
+    fn values(set: &[(&'static str, f32)]) -> Controls {
+        let mut values = Controls::new();
+        for (control, value) in set {
+            values.set(control, ControlValue::Number(*value));
+        }
+        values
+    }
+
+    #[test]
+    fn each_tab_s_curve_is_the_one_the_operation_renders() {
+        use apertrust_operations::colorequal::{Curves, LUT_SIZE, Settings};
+        let shown = values(&[
+            ("hue_green", 30.0),
+            ("hue_blue", -45.0),
+            ("smoothing_hue", 0.5),
+            ("sat_red", 40.0),
+            ("sat_cyan", -100.0),
+            ("bright_orange", 25.0),
+            ("hue_shift", 10.0),
+        ]);
+        let mut settings = Settings::default();
+        settings.hue[3] = 30.0;
+        settings.hue[5] = -45.0;
+        settings.smoothing_hue = 0.5;
+        settings.saturation[0] = 1.4;
+        settings.saturation[4] = 0.0;
+        settings.brightness[1] = 1.25;
+        settings.hue_shift = 10.0;
+        let tables = Curves::new(&settings);
+        // The operation's table at the UCS hue a conventional hue `degrees` from red has,
+        // Node placement turning the nodes from where the graph's curve counts.
+        let rendered = |table: &[f32], degrees: f32| {
+            lookup_gamut(table, ucs_hue(degrees + settings.hue_shift))
+        };
+        assert_eq!(tables.hue.len(), LUT_SIZE);
+        for degrees in (0..72).map(|k| k as f32 * 5.0) {
+            let hue = ColourEqualizer.curve("hue_red", &shown).unwrap()(degrees);
+            let expected = rendered(&tables.hue, degrees).to_degrees();
+            assert!(
+                (hue - expected).abs() < 0.1,
+                "hue at {degrees}°: {hue} {expected}"
+            );
+            let saturation = ColourEqualizer.curve("sat_red", &shown).unwrap()(degrees);
+            let expected = rendered(&tables.saturation, degrees) * 100.0 - 100.0;
+            assert!(
+                (saturation - expected).abs() < 0.1,
+                "{degrees}°: {saturation} {expected}"
+            );
+            let brightness = ColourEqualizer.curve("bright_red", &shown).unwrap()(degrees);
+            let expected = rendered(&tables.brightness, degrees) * 100.0 - 100.0;
+            assert!(
+                (brightness - expected).abs() < 0.1,
+                "{degrees}°: {brightness} {expected}"
+            );
+        }
+        // Through the nodes, at their hues, and clipped at no saturation.
+        let hue = ColourEqualizer.curve("hue_red", &shown).unwrap();
+        assert!((hue(135.0) - 30.0).abs() < 0.5, "{}", hue(135.0));
+        let saturation = ColourEqualizer.curve("sat_red", &shown).unwrap();
+        assert!((saturation(0.0) - 40.0).abs() < 1.0, "{}", saturation(0.0));
+        assert!(saturation(180.0) >= -100.0);
+        // Only a curve's first node names its graph.
+        assert!(ColourEqualizer.curve("hue_green", &shown).is_none());
+        assert_eq!(
+            ColourEqualizer.curve_offset("sat_red", &shown),
+            Some(10.0 / 360.0)
+        );
+        assert_eq!(ColourEqualizer.curve_offset("hue_shift", &shown), None);
+    }
+
+    #[test]
+    fn each_tab_paints_its_strip_and_a_background_of_its_own() {
+        let none = Controls::new();
+        let hue = ColourEqualizer.curve_paint("hue_red", &none).unwrap();
+        let saturation = ColourEqualizer.curve_paint("sat_red", &none).unwrap();
+        let brightness = ColourEqualizer.curve_paint("bright_red", &none).unwrap();
+        for paint in [&hue, &saturation, &brightness] {
+            assert_eq!(paint.strip.len(), PAINT_COLUMNS);
+            assert_eq!(paint.columns, PAINT_COLUMNS);
+            assert_eq!(paint.background.len(), PAINT_COLUMNS * PAINT_ROWS);
+        }
+        // The same strip on every tab; at the middle of the Hue tab's background its
+        // colours, no hue turned.
+        assert_eq!(hue.strip, saturation.strip);
+        let middle = PAINT_ROWS / 2 * PAINT_COLUMNS;
+        assert_eq!(
+            hue.background[middle..middle + PAINT_COLUMNS],
+            hue.strip[..]
+        );
+        // Grey at the foot of the Saturation tab's, black at the Brightness tab's.
+        let foot = (PAINT_ROWS - 1) * PAINT_COLUMNS;
+        let [r, g, b] = saturation.background[foot + 10];
+        assert!((r - g).abs() < 2e-3 && (g - b).abs() < 2e-3, "{r} {g} {b}");
+        assert!(brightness.background[foot + 10].iter().all(|&c| c < 1e-3));
     }
 }

@@ -1530,7 +1530,7 @@ The session runs processing tools alone, the tools that edit the photo; utilitie
 
 **Where a control appears.** Each control appears in one row; or in one row per mode, where darktable labels it by mode or shows it under conditions one `Row::When` cannot join (highlight reconstruction's Noise level under guided laplacians, and under segmentation based with a rebuild mode, one shown at a time); or only in the rows of its lossless views (decision 29).
 
-A number control may also appear in one band graph's row, `Row::Custom` with `Widget::Equalizer`, the tone equalizer's graph of its bands, or `Widget::HueCurve`, the colour equalizer's graph of a curve's nodes. Each is the identity view of controls that have slider rows of their own: it names the controls themselves, has no coordinates and stores nothing, and a drag sends `SetControl` on them. They are the widgets `ProcessingDefinition::check` allows as such a second row (decision 31).
+A number control may also appear in one band graph's row, `Row::Custom` with `Widget::Equalizer`, the tone equalizer's graph of its bands, or `Widget::HueCurve`, the colour equalizer's graph of a curve's nodes. Each is the identity view of its controls: it names the controls themselves, has no coordinates and stores nothing, and a drag sends `SetControl` on them. The tone equalizer's bands have slider rows of their own as well, the colour equalizer's nodes none, the graph their only row. They are the widgets `ProcessingDefinition::check` allows as such a second row (decision 31).
 
 **Ranges.** In the first pass a number control's range is darktable's hard range in the units its slider shows, and its slider row carries darktable's soft range, digits and step. Each tool's table is audited against darktable's `gui_init` and held to it by `testing::slider_differences` (decision 30). Where darktable's range follows other controls, as AgX's pivot spans black to white relative exposure, the definition's range is the widest any values give, its soft range and step those at the tool's defaults, and `ProcessingTool::range` gives them for the values (below).
 
@@ -1700,7 +1700,7 @@ pub enum Row {
 - control, coordinate and preset ids are unique together;
 - a view covers only number controls, none twice;
 - a preset's controls exist;
-- each control appears in one row, or in none and only in the rows of the views covering it (decision 2's widened rule). Besides that, a number control may appear in one band graph's row at most: the tone equalizer's graph of its bands (`Row::Custom` with `Widget::Equalizer`) or the colour equalizer's of a curve's nodes (`Widget::HueCurve`), each a second view of them, the widgets allowed beside the controls' own rows;
+- each control appears in one row, or in none and only in the rows of the views covering it (decision 2's widened rule). Besides that, a number control may appear in one band graph's row at most: the tone equalizer's graph of its bands (`Row::Custom` with `Widget::Equalizer`) or the colour equalizer's of a curve's nodes (`Widget::HueCurve`), the widgets allowed beside the controls' own rows, or as their only row;
 - each coordinate and each preset row is in one row at most.
 
 **Words.** A coordinate's words are a control's (`tool-<tool>-control-<coordinate>-label`, `-full`, `-promise`). A preset row's are `tool-<tool>-preset-<preset>-label`, `-full` and `-promise`, its options `tool-<tool>-preset-<preset>-option-<option>`, and Custom the shared `preset-custom`.

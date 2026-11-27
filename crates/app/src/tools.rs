@@ -3794,6 +3794,7 @@ mod tests {
     use apertrust_tools::agx::Agx;
     use apertrust_tools::colour_balance_rgb::ColourBalanceRgb;
     use apertrust_tools::colour_calibration::ColourCalibration;
+    use apertrust_tools::colour_equalizer::ColourEqualizer;
     use apertrust_tools::demosaic::Demosaic;
     use apertrust_tools::exposure::Exposure;
     use apertrust_tools::highlight_reconstruction::HighlightReconstruction;
@@ -10241,5 +10242,279 @@ mod tests {
             .click();
         harness.run();
         harness.snapshot("exposure-reference-menu-dark");
+    }
+
+    const CURVE: &str = "Colour equalizer, curve";
+
+    /// The Colour equalizer's section open on `tab`, its controls as `set` says, and its
+    /// graph's frame.
+    fn colour_equalizer(
+        tool: &'static dyn ProcessingTool,
+        tab: &str,
+        set_to: &[(&str, f32)],
+    ) -> (Harness<'static, Panel>, egui::Rect) {
+        let mut state = untouched(tool);
+        for &(control, value) in set_to {
+            set(
+                &mut state,
+                control,
+                ControlValue::Number(value),
+                Some(Mark::Kept),
+            );
+            // A control set turns the switched tool on, as the session reports it.
+            (state.enabled, state.edited) = (true, true);
+        }
+        let mut harness = panel(tool, state);
+        harness.run();
+        if tab != "Hue" {
+            harness.get_by_role_and_label(Role::Tab, tab).click();
+            harness.run();
+        }
+        harness.run();
+        // Half a second on, so no earlier click makes a double-click.
+        for _ in 0..30 {
+            harness.step();
+        }
+        harness.state_mut().changes.clear();
+        let graph = harness.get_by_role_and_label(Role::Group, CURVE).rect();
+        (harness, graph)
+    }
+
+    /// Where node `k` lies on `graph` at `value` of its range, `low` to `high`, with Node
+    /// placement `shift` in degrees.
+    fn on_graph(
+        graph: egui::Rect,
+        k: usize,
+        shift: f32,
+        value: f32,
+        [low, high]: [f32; 2],
+    ) -> egui::Pos2 {
+        pos2(
+            graph.left() + (k as f32 / 8.0 + shift / 360.0) * graph.width(),
+            graph.top() + (high - value) / (high - low) * graph.height(),
+        )
+    }
+
+    /// A press at `from` and a drag to `to`.
+    fn drag_from(harness: &mut Harness<'static, Panel>, from: egui::Pos2, to: egui::Pos2) {
+        harness.hover_at(from);
+        harness.step();
+        harness.drag_at(from);
+        harness.step();
+        harness.hover_at(to);
+        harness.step();
+        harness.drop_at(to);
+        harness.step();
+    }
+
+    /// Two clicks at `at`, a double-click.
+    fn double_click_at(harness: &mut Harness<'static, Panel>, at: egui::Pos2) {
+        harness.hover_at(at);
+        harness.step();
+        for _ in 0..2 {
+            harness.drag_at(at);
+            harness.step();
+            harness.drop_at(at);
+            harness.step();
+        }
+        harness.step();
+    }
+
+    /// The values the changes set, by control, and whether each set ended its gesture.
+    fn nodes_set(changes: &[Change]) -> Vec<(&'static str, f32, bool)> {
+        changes
+            .iter()
+            .map(|change| match change {
+                Change::Set {
+                    tool: "colorequal",
+                    control,
+                    value: ControlValue::Number(value),
+                    done,
+                } => (*control, *value, *done),
+                other => panic!("not a node's value: {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_colour_equalizer_draws_its_graph_on_each_tab() {
+        let set = [
+            ("hue_green", 40.0),
+            ("hue_blue", -30.0),
+            ("sat_orange", 50.0),
+            ("sat_cyan", -60.0),
+            ("bright_yellow", 30.0),
+            ("bright_magenta", -40.0),
+        ];
+        let mut results = egui_kittest::SnapshotResults::new();
+        for (tab, snapshot) in [
+            ("Hue", "colour-equalizer-hue"),
+            ("Saturation", "colour-equalizer-saturation"),
+            ("Brightness", "colour-equalizer-brightness"),
+        ] {
+            let (mut harness, _) = colour_equalizer(&ColourEqualizer, tab, &set);
+            // Each node a slider named by its node's full name, in the graph, its only row.
+            let name = format!("{tab}: red");
+            let red = harness
+                .get_all_by_role_and_label(Role::Slider, &name)
+                .count();
+            assert_eq!(red, 1, "{name}");
+            harness.snapshot(snapshot);
+            results.extend_harness(&mut harness);
+        }
+    }
+
+    #[test]
+    fn dragging_a_node_of_the_colour_equalizer_s_graph_sets_it() {
+        let (mut harness, graph) = colour_equalizer(&ColourEqualizer, "Hue", &[]);
+        // Green from its ground up a quarter of the graph: 90° of the 360° it spans.
+        let from = on_graph(graph, 3, 0.0, 0.0, [-180.0, 180.0]);
+        let to = on_graph(graph, 3, 0.0, 90.0, [-180.0, 180.0]);
+        drag_from(&mut harness, from, to);
+        let set = nodes_set(&harness.state().changes);
+        assert!(
+            set.iter().all(|&(control, ..)| control == "hue_green"),
+            "{set:?}"
+        );
+        let &(_, value, done) = set.last().unwrap();
+        assert!(done && (value - 90.0).abs() < 1.0, "{set:?}");
+        assert!(set[..set.len() - 1].iter().all(|&(.., done)| !done));
+        let shown = control(&harness.state().state, "hue_green").unwrap();
+        assert_eq!(shown.value, ControlValue::Number(value));
+    }
+
+    #[test]
+    fn a_press_off_every_node_of_the_colour_equalizer_s_graph_moves_nothing() {
+        let (mut harness, graph) = colour_equalizer(&ColourEqualizer, "Saturation", &[]);
+        // Over green, a quarter of the graph above it.
+        let from = on_graph(graph, 3, 0.0, 50.0, [-100.0, 100.0]);
+        let to = on_graph(graph, 3, 0.0, 80.0, [-100.0, 100.0]);
+        drag_from(&mut harness, from, to);
+        assert!(
+            harness.state().changes.is_empty(),
+            "{:?}",
+            harness.state().changes
+        );
+    }
+
+    #[test]
+    fn a_double_click_on_the_colour_equalizer_s_graph_resets_a_node_or_all() {
+        let set = [("bright_red", 20.0), ("bright_blue", -40.0)];
+        let (mut harness, graph) = colour_equalizer(&ColourEqualizer, "Brightness", &set);
+        let range = [-100.0, 100.0];
+        double_click_at(&mut harness, on_graph(graph, 5, 0.0, -40.0, range));
+        assert_eq!(
+            harness.state().changes,
+            [Change::Reset {
+                tool: "colorequal",
+                control: "bright_blue"
+            }]
+        );
+        for _ in 0..30 {
+            harness.step();
+        }
+        harness.state_mut().changes.clear();
+        // Off every node, every node of the tab, as one step.
+        double_click_at(&mut harness, on_graph(graph, 2, 0.0, 80.0, range));
+        let resets = BRIGHTNESSES.iter().map(|&control| Change::Reset {
+            tool: "colorequal",
+            control,
+        });
+        assert_eq!(harness.state().changes, [Change::Step(resets.collect())]);
+    }
+
+    const BRIGHTNESSES: [&str; 8] = [
+        "bright_red",
+        "bright_orange",
+        "bright_yellow",
+        "bright_green",
+        "bright_cyan",
+        "bright_blue",
+        "bright_lavender",
+        "bright_magenta",
+    ];
+
+    #[test]
+    fn the_colour_equalizer_s_graph_moves_and_resets_a_node_from_the_keys() {
+        let (mut harness, _) = colour_equalizer(&ColourEqualizer, "Hue", &[]);
+        harness.get_by_role_and_label(Role::Group, CURVE).focus();
+        harness.run();
+        // End chooses magenta; a step up is its slider's, 1°, ten with Shift.
+        harness.key_press(Key::End);
+        harness.run();
+        harness.key_press(Key::ArrowUp);
+        harness.run();
+        harness.key_press_modifiers(Modifiers::SHIFT, Key::ArrowUp);
+        harness.run();
+        assert_eq!(
+            nodes_set(&harness.state().changes),
+            [("hue_magenta", 1.0, true), ("hue_magenta", 11.0, true)]
+        );
+        harness.state_mut().changes.clear();
+        harness.key_press(Key::Delete);
+        harness.run();
+        assert_eq!(
+            harness.state().changes,
+            [Change::Reset {
+                tool: "colorequal",
+                control: "hue_magenta"
+            }]
+        );
+    }
+
+    #[test]
+    fn node_placement_moves_the_colour_equalizer_s_nodes_along_the_hue() {
+        let (mut harness, graph) =
+            colour_equalizer(&ColourEqualizer, "Hue", &[("hue_shift", 22.5)]);
+        // Red a sixteenth of the graph in, where it would be off the graph's start.
+        let range = [-180.0, 180.0];
+        let from = on_graph(graph, 0, 22.5, 0.0, range);
+        let to = on_graph(graph, 0, 22.5, -45.0, range);
+        drag_from(&mut harness, from, to);
+        let set = nodes_set(&harness.state().changes);
+        let &(control, value, done) = set.last().unwrap();
+        assert!(
+            control == "hue_red" && done && (value + 45.0).abs() < 1.0,
+            "{set:?}"
+        );
+    }
+
+    /// The Colour equalizer, its curve panicking, as a tool's code may.
+    struct ShakyColour;
+
+    impl ProcessingTool for ShakyColour {
+        fn definition(&self) -> &'static ProcessingDefinition {
+            ColourEqualizer.definition()
+        }
+
+        fn owns(&self) -> &'static [apertrust_tools::Owned] {
+            ColourEqualizer.owns()
+        }
+
+        fn bind(
+            &self,
+            values: &apertrust_tools::ToolValues,
+            image: &ImageContext,
+            base: &apertrust_tools::Base,
+        ) -> Vec<apertrust_tools::Setting> {
+            ColourEqualizer.bind(values, image, base)
+        }
+
+        fn curve(&self, _: &str, _: &Controls) -> Option<Box<dyn Fn(f32) -> f32>> {
+            panic!("the curve panics")
+        }
+    }
+
+    #[test]
+    fn a_hue_curve_whose_tool_panics_draws_no_curve_and_moves_nothing() {
+        let (mut harness, graph) = colour_equalizer(&ShakyColour, "Hue", &[("hue_red", 10.0)]);
+        let range = [-180.0, 180.0];
+        let from = on_graph(graph, 3, 0.0, 0.0, range);
+        drag_from(&mut harness, from, on_graph(graph, 3, 0.0, 90.0, range));
+        assert!(
+            harness.state().changes.is_empty(),
+            "{:?}",
+            harness.state().changes
+        );
     }
 }
