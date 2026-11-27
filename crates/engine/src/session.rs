@@ -117,6 +117,7 @@ mod batch;
 mod cache;
 mod fields;
 mod history;
+mod import;
 pub(crate) mod open;
 mod outbox;
 mod pickers;
@@ -2963,10 +2964,9 @@ struct Engine {
     /// The job reading the edit states of the photos opened alone, which the next open or
     /// close cancels.
     alone: Option<JobId>,
-    /// The latest listing of Import's source, by its `ListSource`'s number, and its job,
-    /// which the next `ListSource` or a `CancelListing` naming it cancels; opens and closes
-    /// leave it.
-    source: Option<(u64, JobId)>,
+    /// The latest listing of Import's source, its jobs and its checks, which the next
+    /// `ListSource` or a `CancelListing` naming it cancels; opens and closes leave it.
+    source: Option<import::SourceListing>,
     /// The selection, of the folder open's photos, and the active photo (decision 37).
     selection: selection::State,
     /// When a frame is published, for a test of the history's merging; else when it is.
@@ -5912,14 +5912,36 @@ impl Engine {
             LibraryCommand::ListSource {
                 source,
                 include_subfolders,
+                base_folder,
+                default_folder,
+                places,
             } => {
-                self.list_source(source, include_subfolders);
+                let trees = library::Trees {
+                    base_folder,
+                    default_folder,
+                    places,
+                };
+                self.list_source(source, include_subfolders, trees);
                 return;
             }
             LibraryCommand::CancelListing { listing } => {
-                if self.source.is_some_and(|(latest, _)| latest == listing) {
+                if (self.source.as_ref()).is_some_and(|source| source.listing == listing) {
                     self.drop_listing();
                 }
+                return;
+            }
+            LibraryCommand::CheckSource {
+                listing,
+                base_folder,
+                default_folder,
+                places,
+            } => {
+                let trees = library::Trees {
+                    base_folder,
+                    default_folder,
+                    places,
+                };
+                self.check_source(listing, trees);
                 return;
             }
             // The live photo's thumbnail is chosen again under it.
@@ -6101,16 +6123,21 @@ impl Engine {
     /// 85): Import's source listed by a job of kind `import-source` on darktable's
     /// `UserBackground` queue, beside a folder's reading, cancellable, with no progress, so
     /// it shows in the Import sheet alone, never in the spinner or the jobs window; its
-    /// events go out as [`Event::Library`] in this command's number. Whatever folder is
-    /// open, or none; it cancels the listing before it.
-    fn list_source(&mut self, source: PathBuf, include_subfolders: bool) {
+    /// events go out as [`Event::Library`] in this command's number. As it ends it checks
+    /// the listing against `trees`, or those of a [`LibraryCommand::CheckSource`] that came
+    /// meanwhile ([`import::Checks`]), its fingerprints through the session's memo.
+    /// Whatever folder is open, or none; it cancels the listing before it.
+    fn list_source(&mut self, source: PathBuf, include_subfolders: bool, trees: library::Trees) {
         self.drop_listing();
         let listing = self.applied;
+        let checks = Arc::new(import::Checks::new(trees));
         let outbox = self.jobs.outbox.clone();
+        let fingerprints = Arc::clone(&self.fingerprints);
         let description = format!("listing the import source {}", source.display());
         // A test holds it with the folder's hold, which no reading has taken.
         #[cfg(test)]
         let hold = self.folder_hold.take();
+        let shared = Arc::clone(&checks);
         let job = self.jobs.add(listing, Queue::UserBackground, |_| {
             jobs::Job::new("import-source", description, move |context| {
                 #[cfg(test)]
@@ -6123,17 +6150,86 @@ impl Engine {
                 // that hangs holds that thread alone, never this worker.
                 let tell = |event| outbox.send(Event::Library(event));
                 let cancel = || context.cancelled();
-                library::list_source(listing, &source, include_subfolders, &tell, &cancel);
+                let listed =
+                    library::list_source(listing, &source, include_subfolders, &tell, &cancel);
+                let Some(listed) = listed.map(Arc::new) else {
+                    return Ok(());
+                };
+                let (check, trees) = shared.listed(Arc::clone(&listed));
+                let cancel = || context.cancelled() || !shared.latest(check);
+                library::check_source(
+                    listing,
+                    check,
+                    &listed,
+                    &trees,
+                    &fingerprints,
+                    &tell,
+                    &cancel,
+                );
                 Ok(())
             })
         });
-        self.source = Some((listing, job));
+        self.source = Some(import::SourceListing {
+            listing,
+            job,
+            check: None,
+            checks,
+        });
     }
 
-    /// Cancels the latest listing of Import's source, which then sends nothing more.
+    /// [`LibraryCommand::CheckSource`], for the latest listing of Import's source alone: its
+    /// next check against `trees`, the check before it cancelled. Once the listing is done,
+    /// a job of kind `import-source` on darktable's `UserBackground` queue with no progress,
+    /// as the listing's, its events in the listing's number; while it is listed, the check
+    /// its job runs as it ends.
+    fn check_source(&mut self, listing: u64, trees: library::Trees) {
+        let Some(source) = self
+            .source
+            .as_mut()
+            .filter(|source| source.listing == listing)
+        else {
+            return;
+        };
+        if let Some(older) = source.check.take() {
+            self.jobs.control.cancel(older);
+        }
+        let (check, listed) = source.checks.ask(trees.clone());
+        let Some(listed) = listed else {
+            return;
+        };
+        let checks = Arc::clone(&source.checks);
+        let outbox = self.jobs.outbox.clone();
+        let fingerprints = Arc::clone(&self.fingerprints);
+        let description = format!("checking the import source {}", listed.folder.display());
+        let job = self.jobs.add(self.applied, Queue::UserBackground, |_| {
+            jobs::Job::new("import-source", description, move |context| {
+                let tell = |event| outbox.send(Event::Library(event));
+                let cancel = || context.cancelled() || !checks.latest(check);
+                library::check_source(
+                    listing,
+                    check,
+                    &listed,
+                    &trees,
+                    &fingerprints,
+                    &tell,
+                    &cancel,
+                );
+                Ok(())
+            })
+        });
+        if let Some(source) = self.source.as_mut() {
+            source.check = Some(job);
+        }
+    }
+
+    /// Cancels the latest listing of Import's source and its check, which then send nothing
+    /// more.
     fn drop_listing(&mut self) {
-        if let Some((_, job)) = self.source.take() {
-            self.jobs.control.cancel(job);
+        if let Some(source) = self.source.take() {
+            self.jobs.control.cancel(source.job);
+            if let Some(check) = source.check {
+                self.jobs.control.cancel(check);
+            }
         }
     }
 
@@ -14338,7 +14434,8 @@ mod tests {
                 | LibraryEvent::Walked { .. }
                 | LibraryEvent::SourceListed { .. }
                 | LibraryEvent::SourceTaken { .. }
-                | LibraryEvent::SourceFailed { .. } => Topic::Notice,
+                | LibraryEvent::SourceFailed { .. }
+                | LibraryEvent::SourceChecked { .. } => Topic::Notice,
             },
             Event::Cache(event) => match event {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),

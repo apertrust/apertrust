@@ -30,18 +30,6 @@ use apertrust_library::sidecar::Edits;
 use apertrust_raw::RawImage;
 use chrono::{Datelike, Timelike};
 
-/// The namespace of `xmpMM:PreservedFileName`, which an import that renames a photo keeps
-/// its camera name in (decision 85).
-const MEDIA_MANAGEMENT: &str = "http://ns.adobe.com/xap/1.0/mm/";
-
-/// The sidecar's `xmpMM:PreservedFileName`, where `file` holds one.
-pub(crate) fn preserved_file_name(file: &Edits) -> Option<String> {
-    (file.other.iter())
-        .find(|property| property.name.is(MEDIA_MANAGEMENT, "PreservedFileName"))
-        .and_then(|property| property.node.as_str())
-        .map(str::to_owned)
-}
-
 /// What the variables read of the copy an export writes, the photo's first (decision
 /// 110): its Metadata fields, its name and how many copies the photo has, and the
 /// photo's preserved file name.
@@ -56,7 +44,7 @@ impl CopyFields {
     pub fn of(file: &Edits) -> Self {
         Self {
             fields: Fields::of(&file.copies),
-            preserved_file_name: preserved_file_name(file),
+            preserved_file_name: file.preserved_file_name(),
         }
     }
 

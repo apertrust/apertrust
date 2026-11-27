@@ -274,7 +274,7 @@ impl Open {
             .filter(|entry| !library_fields::is_rating(&entry.field))
             .map(|entry| (entry.field.clone(), entry.value.clone()))
             .collect();
-        let preserved = crate::names::preserved_file_name(&self.file);
+        let preserved = self.file.preserved_file_name();
         // Values with no clock are darktable's, not yet written.
         let darktable = copy.is_some_and(|copy| {
             let name = !copy.name.is_empty() && copy.name_clock.is_none();

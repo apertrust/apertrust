@@ -16,20 +16,53 @@
 
 //! What the Import sheet and `apertrust-cli import` read before a photo is copied
 //! (decision 85; `docs/library.md`, Import in folder mode): the source listed, a card's
-//! `DCIM` whole or a folder, raws only, with their capture times. Nothing is written on
-//! the source.
+//! `DCIM` whole or a folder, raws only, with their capture times; and each of its photos
+//! told new or imported before, by the destination alone. Nothing is written on the
+//! source, nor anywhere else.
 //!
-//! The session runs [`list_source`] as the body of a job of kind `import-source`, handing
-//! it an observer and the job's cancel, as it runs [`super::open`].
+//! The session runs [`list_source`] and [`check_source`] as the bodies of jobs of kind
+//! `import-source`, handing each an observer and the job's cancel, as it runs
+//! [`super::open`].
 
+use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use apertrust_base::variables::Places;
 use serde::{Deserialize, Serialize};
 
-use super::{CHUNK, DateTime, LibraryEvent};
+use super::{CHUNK, DateTime, Ended, Fingerprints, LibraryEvent, raw_state};
+use crate::imported::{self, Candidate, Sought, Walked};
 use crate::index::READERS;
 use crate::source::{self, Listed};
+
+/// Whether a photo of the source was imported before, as the destination tells it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum SourceState {
+    /// No copy of it is in the trees checked.
+    New,
+    /// A file in the trees, `copy`, has its size, its name or the camera name its `.apxmp`
+    /// keeps, and its fingerprint: a probable match, which leaves the photo unchecked and
+    /// shown, never skipped by the copy on it alone.
+    ImportedBefore { copy: PathBuf },
+    /// Its candidate, a file of its size and name, is a cloud file not on the disk, never
+    /// fingerprinted (decision 53), or the photo itself is: probably imported, until that
+    /// file is on the disk.
+    ProbablyImported { candidate: PathBuf },
+}
+
+/// The trees a check of the source walks, as the client sends them: the patterns of
+/// `import.base_folder` and `import.default_folder` as the settings hold them, and the
+/// person's folders and name they expand from, since the engine reads no platform folder
+/// (decision 43).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Trees {
+    pub base_folder: String,
+    pub default_folder: String,
+    pub places: Places,
+}
 
 /// When a raw of the source was taken and by which camera, as its EXIF says, for the
 /// Import sheet's grid and its tooltips.
@@ -180,6 +213,158 @@ fn shots(listed: &Listed, cancel: &(dyn Fn() -> bool + Sync)) -> Option<Vec<Sour
         shots[local[at]] = shot;
     }
     Some(shots)
+}
+
+/// Checks the source `listed` against `trees` for the listing numbered `listing`, as its
+/// check numbered `check`, telling `observer` each photo's [`SourceState`] in
+/// [`LibraryEvent::SourceChecked`] chunks of at most [`CHUNK`], in the listing's order,
+/// each saying how many are checked of how many and naming the trees walked, the last
+/// saying `done`. The trees ([`imported::trees`]) are walked first for candidates, by name
+/// and size ([`imported::candidates`]); then each photo with any is confirmed by its
+/// fingerprint and theirs, through the session's memo, [`READERS`] at a time. A photo with
+/// none is new and read not at all; a cloud file not on the disk is never fingerprinted.
+/// A walk that fails, a panic, is warned of and tells every photo new, never silence.
+/// A blocking call, made by a job's body; once `cancel` answers true it returns and nothing
+/// more is sent.
+pub fn check_source(
+    listing: u64,
+    check: u64,
+    listed: &Listed,
+    trees: &Trees,
+    fingerprints: &Arc<Fingerprints>,
+    observer: &(dyn Fn(LibraryEvent) + Send + Sync),
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Ended {
+    check_in_chunks(
+        (listing, check),
+        listed,
+        trees,
+        (fingerprints, CHUNK),
+        observer,
+        cancel,
+    )
+}
+
+/// [`check_source`] with chunks of at most `chunk` photos.
+fn check_in_chunks(
+    (listing, check): (u64, u64),
+    listed: &Listed,
+    trees: &Trees,
+    (fingerprints, chunk): (&Arc<Fingerprints>, usize),
+    observer: &(dyn Fn(LibraryEvent) + Send + Sync),
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Ended {
+    if cancel() {
+        return Ended::Cancelled;
+    }
+    let folders = imported::trees(&trees.base_folder, &trees.default_folder, &trees.places);
+    let name = |path: &Path| {
+        (path.file_name()).map_or_else(String::new, |name| name.to_string_lossy().into_owned())
+    };
+    let names: Vec<String> = listed.files.iter().map(|file| name(&file.path)).collect();
+    let sought = Sought::new(
+        (names.iter().zip(&listed.files)).map(|(name, file)| (name.as_str(), file.size)),
+    );
+    let of = listed.files.len();
+    let found =
+        match imported::candidates(&folders, &listed.folder, &listed.folders, sought, cancel) {
+            Walked::Found(found) => found,
+            Walked::Cancelled => return Ended::Cancelled,
+            // Never silence, which would leave the sheet waiting: every photo new, as a tree
+            // that is not there tells it.
+            Walked::Failed => {
+                let walked: Vec<_> = folders.iter().map(|folder| folder.display()).collect();
+                tracing::warn!("the check against {walked:?} failed: every photo told new");
+                vec![Vec::new(); of]
+            }
+        };
+    let chunk = chunk.max(1);
+    let chunks = of.div_ceil(chunk).max(1);
+    for sent in 1..=chunks {
+        let photos = (sent - 1) * chunk..(sent * chunk).min(of);
+        let Some(states) = confirm(listed, &found, photos.clone(), fingerprints, cancel) else {
+            return Ended::Cancelled;
+        };
+        if cancel() {
+            return Ended::Cancelled;
+        }
+        observer(LibraryEvent::SourceChecked {
+            open: listing,
+            check,
+            folders: folders.clone(),
+            states,
+            checked: photos.end,
+            of,
+            done: sent == chunks,
+        });
+    }
+    Ended::Listed
+}
+
+/// The states of the listing's `photos`, each with its candidates in `found`: those with
+/// any confirmed by their fingerprints, [`READERS`] at a time, through `fingerprints`;
+/// `None` once `cancel` answers true.
+fn confirm(
+    listed: &Listed,
+    found: &[Vec<Candidate>],
+    photos: std::ops::Range<usize>,
+    fingerprints: &Arc<Fingerprints>,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Option<Vec<SourceState>> {
+    let mut states = vec![SourceState::New; photos.len()];
+    let sought: HashMap<PathBuf, (usize, Vec<Candidate>)> = (photos.clone())
+        .filter(|&at| !found[at].is_empty())
+        .map(|at| {
+            let path = listed.folder.join(&listed.files[at].path);
+            (path, (at - photos.start, found[at].clone()))
+        })
+        .collect();
+    let paths: Vec<PathBuf> = sought.keys().cloned().collect();
+    let sought = Arc::new(sought);
+    let reader = {
+        let (sought, fingerprints) = (Arc::clone(&sought), Arc::clone(fingerprints));
+        move |path: &Path| {
+            let (at, candidates) = &sought[path];
+            (*at, state(path, candidates, &fingerprints))
+        }
+    };
+    let (read, stopped) = crate::reads::read(paths, READERS, reader, cancel);
+    if stopped {
+        return None;
+    }
+    for (_, (at, state)) in read {
+        states[at] = state;
+    }
+    Some(states)
+}
+
+/// The state of the source photo at `path`, which has `candidates`: imported before where
+/// a candidate on the disk has its fingerprint, the first that has it; else probably
+/// imported where a candidate, or the photo, is a cloud file not on the disk; else new. A
+/// cloud file is never fingerprinted, nor the photo where no candidate can be.
+fn state(path: &Path, candidates: &[Candidate], fingerprints: &Fingerprints) -> SourceState {
+    let probably = |candidate: &Candidate| SourceState::ProbablyImported {
+        candidate: candidate.path.clone(),
+    };
+    let cloud = candidates.iter().find(|candidate| !candidate.local);
+    let source = raw_state(path);
+    if source.is_some_and(|source| !source.local) {
+        return probably(&candidates[0]);
+    }
+    let fingerprint = (source.filter(|_| candidates.iter().any(|candidate| candidate.local)))
+        .and_then(|source| fingerprints.get(path, &source));
+    if let Some(fingerprint) = fingerprint {
+        for candidate in candidates.iter().filter(|candidate| candidate.local) {
+            let theirs = raw_state(&candidate.path)
+                .and_then(|state| fingerprints.get(&candidate.path, &state));
+            if theirs.as_ref() == Some(&fingerprint) {
+                return SourceState::ImportedBefore {
+                    copy: candidate.path.clone(),
+                };
+            }
+        }
+    }
+    cloud.map_or(SourceState::New, probably)
 }
 
 #[cfg(test)]

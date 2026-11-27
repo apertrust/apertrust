@@ -17,9 +17,10 @@ testing = []
 # The decoder's extensions, which say what a raw is, and a raw's embedded picture for its
 # thumbnail; no GPU or engine (decision 54).
 apertrust-raw.workspace = true
-# Its `fs` part alone: removes the temporaries of writes that never ended from a folder it
-# lists (decision 53).
-apertrust-base = { workspace = true, features = ["fs"] }
+# Its `fs` part: removes the temporaries of writes that never ended from a folder it lists
+# (decision 53); and its `variables`, darktable's variables and `Places`, which Import's
+# folder patterns expand (decision 85).
+apertrust-base = { workspace = true, features = ["fs", "variables"] }
 # The hash of a sidecar's bytes and of the machine id, and later the photo's fingerprint
 # (decisions 47 and 53).
 blake3.workspace = true

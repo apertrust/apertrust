@@ -25,7 +25,8 @@
 //! subfolders ([`walk`]), listing a subfolder's own subfolders for Collections' tree
 //! ([`subfolders`]), and its photos' thumbnails, or those of photos opened alone
 //! ([`thumbnail`]), the camera's embedded pictures until Apertrust renders its own; and
-//! for Import, its source listed, a card's `DCIM` or a folder ([`list_source`]). The
+//! for Import, its source listed, a card's `DCIM` or a folder ([`list_source`]), and
+//! checked against the destination ([`check_source`]). The
 //! session runs [`open`] and [`thumbnail`] as jobs' bodies and hands each an observer,
 //! which turns each [`LibraryEvent`] into its own event, and a cancel closure, the job's;
 //! the library knows nothing of the engine or its events (`docs/events.md`, Lower crates
@@ -42,6 +43,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub use apertrust_base::variables::Places;
 pub use apertrust_raw::DateTime;
 use apertrust_raw::{Exif, RawFile, RawImage};
 use serde::{Deserialize, Serialize};
@@ -53,7 +55,7 @@ pub use crate::listing::browser_order;
 use crate::sidecar::Newer;
 pub use crate::source::{LeftOut, SourceFile, Unreadable};
 pub use crate::walk::WalkedFolder;
-pub use import::{SourceShot, list_source};
+pub use import::{SourceShot, SourceState, Trees, check_source, list_source};
 
 mod import;
 
@@ -106,16 +108,35 @@ pub enum LibraryCommand {
     /// every folder under it where `include_subfolders`, off until the Import tool's toggle
     /// comes. Raws only; nothing is written on the source. Answered in this command's number
     /// by [`LibraryEvent::SourceListed`] chunks, then [`LibraryEvent::SourceTaken`], or by
-    /// [`LibraryEvent::SourceFailed`]. The next `ListSource` or a
-    /// [`CancelListing`](LibraryCommand::CancelListing) drops it.
+    /// [`LibraryEvent::SourceFailed`]; then checked against the trees of `base_folder` and
+    /// `default_folder`, the patterns of `import.base_folder` and `import.default_folder` as
+    /// the settings hold them, expanded from `places`, the client's, since the engine reads
+    /// no platform folder: [`LibraryEvent::SourceChecked`], the listing's own check, its
+    /// first. The next `ListSource` or a [`CancelListing`](LibraryCommand::CancelListing)
+    /// drops it.
     ListSource {
         source: PathBuf,
         include_subfolders: bool,
+        base_folder: String,
+        default_folder: String,
+        places: Places,
     },
     /// Drops the source's listing numbered `listing`, the `ListSource`'s number, as the
     /// Import sheet closes: it sends nothing more. A listing that is not the latest is
     /// dropped already.
     CancelListing { listing: u64 },
+    /// Checks the source's listing numbered `listing` again, against the trees of
+    /// `base_folder` and `default_folder` expanded from `places`, as Folder changes: its
+    /// next check, numbered one past the last, answered by [`LibraryEvent::SourceChecked`]
+    /// in the listing's number. It cancels the check still running, which sends nothing
+    /// more; one asked while the listing runs is the check the listing ends with. A listing
+    /// that is not the latest is not checked.
+    CheckSource {
+        listing: u64,
+        base_folder: String,
+        default_folder: String,
+        places: Places,
+    },
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -214,6 +235,20 @@ pub enum LibraryEvent {
     /// Import's source could not be listed, in plain words: not there, no folder,
     /// unreadable, or gone while it was read, a card pulled out. It ends the listing.
     SourceFailed { open: u64, reason: String },
+    /// Whether each photo of the source was imported before, as the check numbered
+    /// `check` within the listing numbered `open` tells it from the trees it walked,
+    /// `folders`: `states`, one for each photo, in the listing's order, at most [`CHUNK`]
+    /// a chunk; `checked` photos of `of` so far; the last says `done`. A client keeps only
+    /// the latest check's.
+    SourceChecked {
+        open: u64,
+        check: u64,
+        folders: Vec<PathBuf>,
+        states: Vec<SourceState>,
+        checked: usize,
+        of: usize,
+        done: bool,
+    },
 }
 
 impl LibraryEvent {
@@ -233,7 +268,8 @@ impl LibraryEvent {
             | LibraryEvent::Walked { open, .. }
             | LibraryEvent::SourceListed { open, .. }
             | LibraryEvent::SourceTaken { open, .. }
-            | LibraryEvent::SourceFailed { open, .. } => open,
+            | LibraryEvent::SourceFailed { open, .. }
+            | LibraryEvent::SourceChecked { open, .. } => open,
         }
     }
 }

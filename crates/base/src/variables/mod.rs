@@ -202,6 +202,30 @@ impl Pattern {
         collect(&self.parts, &mut found);
         found
     }
+
+    /// The pattern expanded from `values` as far as its first variable that is not the
+    /// person's own, their home, Pictures and desktop folders or login name, and whether
+    /// it went to the end: the part of a folder's pattern that stays the same from photo to
+    /// photo and import to import, which Import looks under for photos imported before
+    /// (decision 85).
+    pub fn expand_fixed(&self, values: &Values) -> (String, bool) {
+        let mut text = String::new();
+        for part in &self.parts {
+            match part {
+                Part::Text(fixed) => text.push_str(fixed),
+                Part::Variable(variable)
+                    if matches!(
+                        variable.key,
+                        Key::Home | Key::Pictures | Key::Desktop | Key::Username
+                    ) =>
+                {
+                    text.push_str(&expand::parts(std::slice::from_ref(part), values));
+                }
+                Part::Variable(_) => return (text, false),
+            }
+        }
+        (text, true)
+    }
 }
 
 fn collect(parts: &[Part], found: &mut Vec<Unavailable>) {

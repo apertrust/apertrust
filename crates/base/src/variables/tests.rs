@@ -467,3 +467,36 @@ fn a_list_is_joined_and_an_alternative_gives_its_default_item() {
     );
     assert_eq!(items(&[]).text(), "");
 }
+
+/// A pattern's fixed part: the person's folders and name expanded, under any of their
+/// names, up to the first other variable, which ends it.
+#[test]
+fn a_pattern_s_fixed_part_ends_at_its_first_other_variable() {
+    let values = Values {
+        home: "/home/ana".to_owned(),
+        pictures: "/home/ana/Pictures".to_owned(),
+        desktop: Some("/home/ana/Desktop".to_owned()),
+        user_name: "ana".to_owned(),
+        ..Values::default()
+    };
+    let fixed = |text: &str| Pattern::parse(text).unwrap().expand_fixed(&values);
+    let whole = |text: &str| (text.to_owned(), true);
+    let cut = |text: &str| (text.to_owned(), false);
+    assert_eq!(
+        fixed("$(PICTURES_FOLDER)/Apertrust"),
+        whole("/home/ana/Pictures/Apertrust")
+    );
+    assert_eq!(fixed("$(FOLDER.PICTURES)/x"), whole("/home/ana/Pictures/x"));
+    assert_eq!(
+        fixed("$(HOME)/$(USERNAME)/Photos"),
+        whole("/home/ana/ana/Photos")
+    );
+    assert_eq!(fixed("$(DESKTOP)/in"), whole("/home/ana/Desktop/in"));
+    assert_eq!(fixed("/Volumes/NAS/Photos"), whole("/Volumes/NAS/Photos"));
+    assert_eq!(
+        fixed("$(HOME)/Photos/$(YEAR)/$(MONTH)"),
+        cut("/home/ana/Photos/")
+    );
+    assert_eq!(fixed("$(HOME)/Shoot_$(JOBCODE)"), cut("/home/ana/Shoot_"));
+    assert_eq!(fixed("$(EXIF.YEAR)"), cut(""));
+}
