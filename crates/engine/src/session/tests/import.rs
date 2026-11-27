@@ -237,3 +237,248 @@ fn each_check_of_a_listing_is_numbered_and_names_its_trees() {
     drop(session);
     remove(&path);
 }
+
+/// A source of two raws of their own bytes, `x.ARW` and `y.ARW`, a raw outside it, and a
+/// disk cache holding x's embedded picture by its fingerprint, as a thumbnail job keeps
+/// it: the source, the cache and the scratch path.
+fn source_with_cache(name: &str) -> (PathBuf, CacheOptions, PathBuf) {
+    let path = scratch(name);
+    let root = path.parent().unwrap().to_owned();
+    let source = root.join("card");
+    std::fs::create_dir(&source).unwrap();
+    for raw in ["x.ARW", "y.ARW"] {
+        std::fs::write(source.join(raw), format!("no raw: {raw}")).unwrap();
+    }
+    std::fs::write(root.join("outside.ARW"), b"no raw outside").unwrap();
+    let cache = Arc::new(apertrust_base::cache::Cache::create(root.join("cache")).unwrap());
+    let x = source.join("x.ARW");
+    let state = library::raw_state(&x).expect("x's state");
+    let fingerprints = library::Fingerprints::default();
+    let identity = library::Identity::read(&x, state, &fingerprints).expect("x's identity");
+    let key = library::thumbnail_key(&identity, 256);
+    let picture = library::Thumbnail {
+        width: 4,
+        height: 3,
+        pixels: vec![200; 48].into(),
+    };
+    let jpeg = thumbnail::encode(&picture).expect("a JPEG");
+    (cache.write(
+        apertrust_base::cache::THUMBNAILS,
+        &key.slot,
+        &key.version,
+        &jpeg,
+    ))
+    .unwrap();
+    let options = CacheOptions {
+        cache,
+        limit: apertrust_base::cache::Limit::Unlimited,
+    };
+    (source, options, path)
+}
+
+/// The thumbnails among `events` in the number `open`, by photo, with their pictures'
+/// sizes.
+fn thumbnails_of(events: &[Event], open: u64) -> Vec<(String, Option<(u32, u32)>)> {
+    (library_of(events, open).into_iter())
+        .filter_map(|event| match event {
+            LibraryEvent::Thumbnail { photo, image, .. } => Some((
+                photo.clone(),
+                image.as_ref().map(|image| (image.width, image.height)),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A listing's photos' thumbnails come in its number, each named by the path asked, from
+/// the cache by fingerprint or read from its file, with no folder open; a path outside the
+/// source is refused and reads nothing. Once the photo's copy lands in a folder opened,
+/// the folder's thumbnail of it comes from the same entry, its embedded picture not read.
+#[test]
+fn a_source_s_thumbnails_come_by_its_paths_and_are_kept_for_the_copies() {
+    let gpu = gpu();
+    let (source, cache, path) = source_with_cache("import-source-thumbnails");
+    let root = source.parent().unwrap().to_owned();
+    let on_source = || {
+        let mut files: Vec<(PathBuf, Vec<u8>)> = (std::fs::read_dir(&source).unwrap())
+            .map(|entry| entry.unwrap().path())
+            .map(|path| (path.clone(), std::fs::read(&path).unwrap()))
+            .collect();
+        files.sort();
+        files
+    };
+    let unchanged = on_source();
+    let (session, wakes) = spawned(&gpu, &[], Some(cache), loading(synthetic));
+    let listing = session.send(list_source(&source));
+    until(&session, &wakes, taken(listing));
+    let x = source.join("x.ARW");
+    let read_before = apertrust_library::testing::reads(&x);
+    let asked = ["x.ARW", "y.ARW", "../outside.ARW"].map(PathBuf::from);
+    let mut photos = asked.to_vec();
+    photos.push(root.join("outside.ARW"));
+    session.send(Command::Library(LibraryCommand::SourceThumbnails {
+        listing,
+        photos,
+        size: 256,
+    }));
+    let two = |e: &Event| matches!(e, Event::Library(LibraryEvent::Thumbnail { photo, .. }) if photo == "y.ARW");
+    let mut events = until(&session, &wakes, two);
+    if thumbnails_of(&events, listing).len() < 2 {
+        let x = |e: &Event| matches!(e, Event::Library(LibraryEvent::Thumbnail { photo, .. }) if photo == "x.ARW");
+        events.extend(until(&session, &wakes, x));
+    }
+    let mut told = thumbnails_of(&events, listing);
+    told.sort();
+    assert_eq!(
+        told,
+        [
+            ("x.ARW".to_owned(), Some((4, 3))),
+            ("y.ARW".to_owned(), None)
+        ]
+    );
+    assert_eq!(
+        apertrust_library::testing::reads(&x) - read_before,
+        1,
+        "its fingerprint alone"
+    );
+    assert_eq!(
+        apertrust_library::testing::reads(&root.join("outside.ARW")),
+        0
+    );
+    assert_eq!(on_source(), unchanged, "nothing written on the source");
+
+    // Copied with its modified time, as the checked copy copies it, into a folder opened.
+    let landed = root.join("landed");
+    std::fs::create_dir(&landed).unwrap();
+    let copy = landed.join("x.ARW");
+    std::fs::copy(&x, &copy).unwrap();
+    let modified = std::fs::metadata(&x).unwrap().modified().unwrap();
+    (std::fs::File::options().write(true).open(&copy).unwrap())
+        .set_modified(modified)
+        .unwrap();
+    let open = session.send(open_folder(&landed));
+    until(&session, &wakes, taken_folder(open));
+    session.send(Command::Library(LibraryCommand::Thumbnails {
+        photos: vec!["x.ARW".to_owned()],
+        size: 256,
+    }));
+    let told = |e: &Event| matches!(e, Event::Library(LibraryEvent::Thumbnail { open: n, .. }) if *n == open);
+    let events = until(&session, &wakes, told);
+    assert_eq!(
+        thumbnails_of(&events, open),
+        [("x.ARW".to_owned(), Some((4, 3)))]
+    );
+    // Its capture time and its fingerprint; no embedded picture.
+    assert_eq!(apertrust_library::testing::reads(&copy), 2);
+    drop(session);
+    remove(&path);
+}
+
+/// Whether `event` is the capture times of the folder's open numbered `open`.
+fn taken_folder(open: u64) -> impl Fn(&Event) -> bool {
+    move |e| matches!(e, Event::Library(LibraryEvent::Taken { open: n, .. }) if *n == open)
+}
+
+/// A source photo whose fingerprint an edited photo shares gets the camera's embedded
+/// picture alone, never the edit's render the cache holds in that slot, which stays.
+#[test]
+fn a_source_s_thumbnail_is_never_an_edited_copy_s_render() {
+    let gpu = gpu();
+    let (source, options, path) = source_with_cache("import-source-no-render");
+    let cache = Arc::clone(&options.cache);
+    let x = source.join("x.ARW");
+    let state = library::raw_state(&x).expect("x's state");
+    let fingerprints = library::Fingerprints::default();
+    let identity = library::Identity::read(&x, state, &fingerprints).expect("x's identity");
+    let slot = library::thumbnail_key(&identity, 256).slot;
+    let render = library::rendered_version(&[7; 32]);
+    let picture = library::Thumbnail {
+        width: 8,
+        height: 6,
+        pixels: vec![90; 192].into(),
+    };
+    let jpeg = thumbnail::encode(&picture).expect("a JPEG");
+    let thumbnails = apertrust_base::cache::THUMBNAILS;
+    cache.write(thumbnails, &slot, &render, &jpeg).unwrap();
+
+    let (session, wakes) = spawned(&gpu, &[], Some(options), loading(synthetic));
+    let listing = session.send(list_source(&source));
+    until(&session, &wakes, taken(listing));
+    session.send(Command::Library(LibraryCommand::SourceThumbnails {
+        listing,
+        photos: vec![PathBuf::from("x.ARW")],
+        size: 256,
+    }));
+    let x_told = |e: &Event| matches!(e, Event::Library(LibraryEvent::Thumbnail { photo, .. }) if photo == "x.ARW");
+    let events = until(&session, &wakes, x_told);
+    // Its own file holds no picture: none, not the render.
+    assert_eq!(
+        thumbnails_of(&events, listing),
+        [("x.ARW".to_owned(), None)]
+    );
+    assert_eq!(cache.version(thumbnails, &slot).unwrap(), Some(render));
+    drop(session);
+    remove(&path);
+}
+
+/// A new listing cancels the thumbnails the one before asked for, not yet sent; a photo
+/// asked for again while its thumbnail is read is read once.
+#[test]
+fn a_new_listing_cancels_its_thumbnails_and_one_asked_twice_is_read_once() {
+    let gpu = gpu();
+    let (source, cache, path) = source_with_cache("import-source-thumbnails-cancel");
+    let (session, wakes) = spawned(&gpu, &[], Some(cache), loading(synthetic));
+    let ask = |listing: u64, photo: &str| {
+        session.send(Command::Library(LibraryCommand::SourceThumbnails {
+            listing,
+            photos: vec![PathBuf::from(photo)],
+            size: 256,
+        }))
+    };
+
+    // Asked twice while the first is held: one thumbnail.
+    let listing = session.send(list_source(&source));
+    until(&session, &wakes, taken(listing));
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    session.send(Command::HoldThumbnails(hold));
+    ask(listing, "y.ARW");
+    begun
+        .recv_timeout(TEST_WAIT)
+        .expect("the thumbnail is read");
+    ask(listing, "y.ARW");
+    // A close, answered on the engine thread, which leaves a source's thumbnails running,
+    // comes once the second ask is applied: only then is the first let go.
+    let close = session.send(Command::Library(LibraryCommand::Close));
+    let closed =
+        |e: &Event| matches!(e, Event::Library(LibraryEvent::Closed { open }) if *open == close);
+    let mut events = until(&session, &wakes, closed);
+    drop(permit);
+    let y = |e: &Event| matches!(e, Event::Library(LibraryEvent::Thumbnail { photo, .. }) if photo == "y.ARW");
+    events.extend(until(&session, &wakes, y));
+    let quiet = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < quiet {
+        let _ = wakes.recv_timeout(Duration::from_millis(20));
+        events.extend(session.events());
+    }
+    assert_eq!(thumbnails_of(&events, listing).len(), 1, "{events:?}");
+
+    // Held, then a new listing: nothing of the first's.
+    let (hold, begun, permit) = export_job::testing::Hold::new();
+    session.send(Command::HoldThumbnails(hold));
+    ask(listing, "x.ARW");
+    begun
+        .recv_timeout(TEST_WAIT)
+        .expect("the thumbnail is read");
+    let next = session.send(list_source(&source));
+    let events = until(&session, &wakes, taken(next));
+    drop(permit);
+    let mut events = events;
+    let quiet = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < quiet {
+        let _ = wakes.recv_timeout(Duration::from_millis(20));
+        events.extend(session.events());
+    }
+    assert!(thumbnails_of(&events, listing).is_empty(), "{events:?}");
+    drop(session);
+    remove(&path);
+}

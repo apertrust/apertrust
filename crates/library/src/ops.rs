@@ -55,7 +55,7 @@ pub use crate::listing::browser_order;
 use crate::sidecar::Newer;
 pub use crate::source::{LeftOut, SourceFile, Unreadable};
 pub use crate::walk::WalkedFolder;
-pub use import::{SourceShot, SourceState, Trees, check_source, list_source};
+pub use import::{SourceShot, SourceState, Trees, check_source, list_source, relative_inside};
 
 mod import;
 
@@ -137,6 +137,20 @@ pub enum LibraryCommand {
         default_folder: String,
         places: Places,
     },
+    /// Asks for thumbnails of Import's source's `photos`, files of the latest listing,
+    /// numbered `listing`, by their paths relative to the folder listed, the first the
+    /// most wanted, at most `size` pixels on their longer side: the camera's embedded
+    /// pictures, read whatever folder is open and kept in the disk cache by fingerprint, so
+    /// the copies' are there once they land. Answered by a [`LibraryEvent::Thumbnail`] for
+    /// each in the listing's number, its `photo` the path asked as text, lossy where it is
+    /// not valid Unicode. A path that is absolute or holds a `..` is refused, nothing read;
+    /// the next listing or a [`CancelListing`](LibraryCommand::CancelListing) drops those
+    /// not yet sent.
+    SourceThumbnails {
+        listing: u64,
+        photos: Vec<PathBuf>,
+        size: u32,
+    },
 }
 
 /// What the library tells a client. `open` is the number of the command it answers.
@@ -190,7 +204,10 @@ pub enum LibraryEvent {
     Closed { open: u64 },
     /// A photo's thumbnail at `size`, as [`LibraryCommand::Thumbnails`] asked, naming the
     /// open of its folder: the camera's embedded picture, upright, or `None` where the raw
-    /// holds none that can be read.
+    /// holds none that can be read. A photo of Import's source, as
+    /// [`LibraryCommand::SourceThumbnails`] asked, names its listing, `photo` its path
+    /// asked as text, lossy where the path is not valid Unicode, which the listing never
+    /// lists.
     Thumbnail {
         open: u64,
         photo: String,

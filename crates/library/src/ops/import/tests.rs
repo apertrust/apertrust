@@ -540,3 +540,21 @@ fn a_check_writes_nothing() {
     checked(&at.card, &trees, CHUNK, &|| false);
     assert_eq!(snapshot(&root), before);
 }
+
+/// A source's photo is asked for by a path inside the folder listed: relative, each part
+/// a name.
+#[test]
+fn a_source_s_photo_is_a_path_inside_it() {
+    for inside in ["IMG_0001.CR2", "100CANON/IMG_0001.CR2"] {
+        assert!(relative_inside(Path::new(inside)), "{inside}");
+    }
+    for outside in [
+        "",
+        "/IMG_0001.CR2",
+        "../IMG_0001.CR2",
+        "100CANON/../../x.CR2",
+        "./x.CR2",
+    ] {
+        assert!(!relative_inside(Path::new(outside)), "{outside}");
+    }
+}

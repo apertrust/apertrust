@@ -245,6 +245,14 @@ pub fn check_source(
     )
 }
 
+/// Whether `path` names a file inside the folder it is relative to: not empty, and each of
+/// its parts a name, none a root, a drive, `.` or `..`, so that joined to the folder it
+/// never leads out of it. A source's thumbnails are asked for by such paths.
+pub fn relative_inside(path: &Path) -> bool {
+    path.components().next().is_some()
+        && (path.components()).all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
 /// [`check_source`] with chunks of at most `chunk` photos.
 fn check_in_chunks(
     (listing, check): (u64, u64),

@@ -45,7 +45,9 @@
 //! over.
 //!
 //! A photo opened alone's thumbnail ([`LibraryCommand::PhotoThumbnails`]) is served the
-//! same way, as the file of its own folder, its event then naming its path ([`named`]).
+//! same way, as the file of its own folder, its event then naming its path ([`named`]);
+//! so is a photo of Import's source ([`LibraryCommand::SourceThumbnails`]), its event
+//! naming its path in the source, kept by its fingerprint so its copy finds it once landed.
 //!
 //! Under `-d perf`, one line for each [`LibraryCommand::Thumbnails`] or
 //! [`LibraryCommand::PhotoThumbnails`] once its last job has ended: how many came from the
@@ -54,6 +56,7 @@
 //!
 //! [`LibraryCommand::Thumbnails`]: super::LibraryCommand::Thumbnails
 //! [`LibraryCommand::PhotoThumbnails`]: super::LibraryCommand::PhotoThumbnails
+//! [`LibraryCommand::SourceThumbnails`]: super::LibraryCommand::SourceThumbnails
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -106,35 +109,61 @@ const OPTIONS: Options = Options {
 };
 
 /// What a thumbnail job asks for: `photo` of `folder` at `size`, for the open numbered
-/// `open`, under the setting `raw`.
+/// `open`, under the setting `raw`; with `embedded_only`, the camera's embedded picture
+/// alone, never a render the cache holds of a photo of the same fingerprint, as for a photo
+/// of Import's source, whose file is no edited photo's.
 pub(crate) struct Asked<'a> {
     pub open: u64,
     pub folder: &'a Path,
     pub photo: &'a str,
     pub size: u32,
     pub raw: RawThumbnails,
+    pub embedded_only: bool,
 }
 
-/// A thumbnail a client asked for: `photo` of `folder`, and, for a photo opened alone,
-/// its path as asked, which its event names in place of the file name.
+/// A thumbnail a client asked for: `photo` of `folder`, and how its event names it.
 pub(crate) struct Wanted {
     pub folder: PathBuf,
     pub photo: String,
-    pub alone: Option<PathBuf>,
+    pub named: Named,
 }
 
-/// `event` as the client asked for its thumbnail: a photo alone's, at `alone`, as
-/// [`LibraryEvent::PhotoThumbnail`]; a folder's as it is.
-pub(crate) fn named(event: LibraryEvent, alone: Option<&PathBuf>) -> LibraryEvent {
-    match (event, alone) {
+/// How a thumbnail's event names its photo, as the client asked for it.
+#[derive(Clone)]
+pub(crate) enum Named {
+    /// The open folder's photo, by its file name.
+    Folder,
+    /// A photo opened alone, by its path as asked.
+    Alone(PathBuf),
+    /// A photo of Import's source, by its path relative to the folder listed, as asked.
+    Source(PathBuf),
+}
+
+/// `event` as the client asked for its thumbnail: a photo alone's as
+/// [`LibraryEvent::PhotoThumbnail`] by its path; a source's photo's by its path in the
+/// source; a folder's as it is.
+pub(crate) fn named(event: LibraryEvent, named: &Named) -> LibraryEvent {
+    match (event, named) {
         (
             LibraryEvent::Thumbnail {
                 open, size, image, ..
             },
-            Some(path),
+            Named::Alone(path),
         ) => LibraryEvent::PhotoThumbnail {
             open,
             path: path.clone(),
+            size,
+            image,
+        },
+        (
+            LibraryEvent::Thumbnail {
+                open, size, image, ..
+            },
+            Named::Source(path),
+        ) => LibraryEvent::Thumbnail {
+            open,
+            // As text, lossy where it is not valid Unicode, which the listing never lists.
+            photo: path.to_string_lossy().into_owned(),
             size,
             image,
         },
@@ -160,6 +189,7 @@ pub(crate) fn serve(
         photo,
         size,
         raw,
+        embedded_only,
     } = *asked;
     let send = |image| {
         observer(LibraryEvent::Thumbnail {
@@ -195,9 +225,11 @@ pub(crate) fn serve(
     let identity = state.and_then(|state| Identity::read(&path, state, fingerprints));
     let key = (identity.as_ref()).map(|photo| library::thumbnail_key(photo, size));
     // A read first, the slot's render, current or stale, else its embedded picture,
-    // decoded outside the replacement lock.
+    // decoded outside the replacement lock; the embedded picture alone where asked for.
     let found = key.as_ref().and_then(|key| {
-        rendered_hit(upkeep, &key.slot)
+        (!embedded_only)
+            .then(|| rendered_hit(upkeep, &key.slot))
+            .flatten()
             .or_else(|| hit(upkeep, key).map(|image| (key.version.clone(), image)))
     });
     // A render of a photo with no edit made from the live photo stands at every size while
@@ -227,7 +259,16 @@ pub(crate) fn serve(
         found => (found, None),
     };
     if let (Some(key), Some((version, image))) = (&key, found) {
-        if !send_current(upkeep, &key.slot, Some(version), Some(image), cancel, &send) {
+        // The embedded picture alone is sent as it is, whatever render takes the slot.
+        let sent = if embedded_only {
+            !cancel() && {
+                send(Some(image));
+                true
+            }
+        } else {
+            send_current(upkeep, &key.slot, Some(version), Some(image), cancel, &send)
+        };
+        if !sent {
             return;
         }
         let took = started.elapsed();
@@ -249,10 +290,10 @@ pub(crate) fn serve(
         match &key {
             // The slow read may end after a render has updated the grid: it never
             // replaces that render, but the one of a photo with no edit it stands for.
-            Some(key) => {
+            Some(key) if !embedded_only => {
                 send_current(upkeep, &key.slot, unaltered.clone(), image, cancel, &send);
             }
-            None => send(image),
+            _ => send(image),
         }
     };
     read(open, folder, photo, size, &keep, cancel);
