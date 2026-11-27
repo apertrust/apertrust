@@ -929,6 +929,16 @@ type = "apertrust_export::settings::Profile"
 default = "image_settings"
 applies = "at-once"
 
+# Whether an exported file carries the photo's Notes, which are private (decision 110):
+# off, so they are left out unless the person includes them, a row of the Metadata group,
+# drawn disabled with it. Apertrust's own, as darktable keeps a field's privacy in its
+# library. Nothing is written into exported files until metadata in exports is built.
+[export.metadata.notes]
+owner = "export"
+kind = "boolean"
+default = false
+applies = "at-once"
+
 # Ask before exporting in overwrite mode, darktable's
 # plugins/lighttable/export/ask_before_export_overwrite: the alert "Export in overwrite
 # mode?", asked as darktable's disk storage asks (ask_user_confirmation): for On conflict

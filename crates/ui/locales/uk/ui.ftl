@@ -1743,6 +1743,8 @@ export-style = Стиль
 export-style-none = Немає
 export-style-later = Стилі з'являться в одній із наступних версій.
 export-metadata = Метадані
+export-notes = Нотатки
+export-notes-tip = Нотатки приватні; додавати їх до експортованих файлів.
 export-multi-preset = Експорт за кількома шаблонами
 
 ## Сповіщення (docs/gui.md, Dialogs and alerts): їх показує сама система. $stoppable --

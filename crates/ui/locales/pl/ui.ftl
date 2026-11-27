@@ -1744,6 +1744,8 @@ export-style = Styl
 export-style-none = Brak
 export-style-later = Style pojawią się w jednej z kolejnych wersji.
 export-metadata = Metadane
+export-notes = Notatki
+export-notes-tip = Notatki są prywatne; dołączaj je do eksportowanych plików.
 export-multi-preset = Eksport według kilku presetów
 
 ## Alerty (docs/gui.md, Dialogs and alerts): pyta o nie sam system. $stoppable to liczba

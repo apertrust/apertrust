@@ -2318,7 +2318,7 @@ The engine reads neither (decision 43): the app and the CLI read them and send p
 
   Each key comes with the work that uses it: the formats' other keys with their formats, the storages' with theirs, the metadata's with the metadata. `export.ask_before_overwrite` is the overwrite alert's "Don't ask again", built: the app keeps it apart from the tool's settings (`Settings::ask_before_overwrite`). No Settings page shows it yet, as darktable's preferences show theirs; it is changed with `--conf` or the file.
 
-  **What is built** (`apertrust_export::settings`): fifteen of them, the table's rows from `export.disk.path` to `export.size.high_quality` and `export.profile`, and `export.ask_before_overwrite`, true. `export.storage`, `export.masks`, `export.intent` and the style's two come with the work that uses them.
+  **What is built** (`apertrust_export::settings`): sixteen of them, the table's rows from `export.disk.path` to `export.size.high_quality` and `export.profile`, `export.ask_before_overwrite`, true, and Apertrust's own `export.metadata.notes`, false, whether an exported file carries the photo's Notes, which nothing reads until metadata in exports is built. `export.storage`, `export.masks`, `export.intent` and the style's two come with the work that uses them.
 
   - darktable's numbers are numbers here, kept whole, and its options choices by ids of their own, in darktable's order.
   - For On conflict, JPEG's subsampling and the size's mode the number darktable keeps for one is its place: On conflict `create_unique_filename`, `overwrite`, `overwrite_if_changed` and `skip`; JPEG's subsampling `auto`, `444`, `440`, `422` and `420`; the size's mode `pixels`, `cm`, `inch` and `scale`.

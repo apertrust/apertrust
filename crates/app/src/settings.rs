@@ -1568,6 +1568,7 @@ mod tests {
                 upscale: true,
                 high_quality: true,
                 profile: apertrust_export::settings::Profile::Srgb,
+                notes: true,
             },
             metadata: crate::metadata::View {
                 shown: vec!["software".to_owned()],
@@ -1874,6 +1875,9 @@ path = \"$(HOME)/proofs/$(FILE_NAME)\"
 [export.jpeg]
 quality = 80
 subsample = \"420\"
+
+[export.metadata]
+notes = true
 
 [export.png]
 bit_depth = \"16\"

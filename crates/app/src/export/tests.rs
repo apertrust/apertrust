@@ -2209,6 +2209,11 @@ fn metadata_and_multi_preset_export_are_closed_and_disabled_groups() {
         assert!(disabled(&harness, Role::Button, group), "{group}");
         assert!(!expanded(&harness, group), "{group}");
     }
+    // Metadata holds its Notes row, off by default, hidden with the group.
+    let notes = row_of("export.metadata.notes").expect("the Notes row");
+    assert_eq!(notes.kind, ControlKind::Bool { default: false });
+    assert!(!Values::default().notes);
+    assert!(harness.query_by_label("Notes").is_none());
 }
 
 #[test]
@@ -3833,7 +3838,7 @@ fn every_setting_row_is_an_export_setting_of_its_kind_bound_both_ways() {
             }
         }
     }
-    assert_eq!(keyed, 12);
+    assert_eq!(keyed, 13);
 }
 
 /// The options the page names apart from the settings' ids are held under the ids the

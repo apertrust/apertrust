@@ -1314,6 +1314,12 @@ pub trait Rows {
     /// The item `chosen` in the menu of its group `id`'s warning button.
     fn group_warned(&self, _id: &str, _chosen: &str) {}
 
+    /// Why its collapsible group `id`, rows and all, is drawn disabled and closed, where
+    /// what it holds is not built yet, as Export's Metadata group.
+    fn group_later(&self, _id: &str) -> Option<String> {
+        None
+    }
+
     /// The title of its group `id` of the kind `kind`: the one its id and kind imply,
     /// unless a utility declares its own (decision 93).
     fn title(&self, id: &str, kind: GroupKind) -> String {
@@ -2782,10 +2788,12 @@ fn group_row(
             .show(ui, |ui| draw_rows(ui, page, rows, changes));
         return;
     }
-    // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none.
+    // A group with no rows has nothing behind it yet: drawn disabled, as a tab with none;
+    // so is one whose rows the page says are not built yet.
     let tip = page.group_tip(id);
-    if rows.is_empty() {
-        let later = page.words().text("section-tab-later");
+    let later = page.group_later(id);
+    if rows.is_empty() || later.is_some() {
+        let later = later.unwrap_or_else(|| page.words().text("section-tab-later"));
         let mut group = CollapsibleGroup::new(&title, false)
             .first(first)
             .disabled(&later);
@@ -4821,6 +4829,7 @@ mod tests {
                 ("colorequal", "options"),
                 ("demosaic", "capture_sharpen_controls"),
                 ("export", "global"),
+                ("export", "metadata"),
                 ("metadata", "basic"),
                 ("metadata", "camera"),
                 ("metadata", "content"),
