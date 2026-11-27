@@ -393,7 +393,7 @@ jobs-live-started = Почато: { $message }
 
 ## Повідомлення самих завдань
 
-job-import = Імпортування { $done } / { $total }
+job-import = Імпортування: { photo-count }
 job-delete = Видалення { $done } / { $total }
 job-thumbnails = Створення мініатюр
 job-folder = Читання { $folder }
@@ -543,6 +543,28 @@ job-export-cancelled =
        *[other] Експорт скасовано. Експортовано { $written } із { $total }
     }
 
+# Завдання імпорту (рішення 85).
+job-import-now = зараз { $photo }
+job-import-finished =
+    { $skipped ->
+        [0]
+            { $copied ->
+                [1] Знімок імпортовано
+               *[other] Імпортовано знімків: { $copied }
+            }
+       *[other] Імпортовано { $copied } із { $total }, уже були на місці: { $skipped }
+    }
+job-import-failed-outcome =
+    { $total ->
+        [1] Не вдалося імпортувати знімок
+       *[other] Імпорт не вдався. Імпортовано { $copied } із { $total }
+    }
+job-import-cancelled =
+    { $total ->
+        [1] Імпорт скасовано
+       *[other] Імпорт скасовано. Імпортовано { $copied } із { $total }
+    }
+
 job-cause-unreadable = не вдалося прочитати файл raw
 job-cause-edit = не вдалося прочитати його редагування
 job-cause-binding = змінений інструмент не вдалося застосувати до фото
@@ -559,6 +581,9 @@ job-cause-write = не вдалося записати файл
 job-cause-engine = рушій несподівано зупинився
 job-cause-cache-remove = деякі файли кешу не вдалося видалити
 job-cause-cache-read = не вдалося прочитати теку кешу
+job-cause-exists = у місці призначення з'явився файл із такою назвою
+job-cause-folder-pattern = шаблон однієї з папок недійсний
+job-cause-on-source = місце призначення на джерелі
 
 ## Рядок завдання у вікні завдань: рядки і кнопки
 

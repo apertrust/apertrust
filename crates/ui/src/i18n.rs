@@ -1465,6 +1465,8 @@ mod tests {
                 args.set("example", "04/07/2026");
                 // How many different values several photos hold of a field.
                 args.set("values", 3);
+                // An import's photos copied (decision 85).
+                args.set("copied", 120);
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());

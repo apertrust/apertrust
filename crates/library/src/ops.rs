@@ -59,9 +59,10 @@ pub use crate::source::{LeftOut, SourceFile, Unreadable};
 pub use crate::volumes::{FreeSpace, Volume, free_space};
 pub use crate::walk::WalkedFolder;
 pub use import::{
-    FateCounts, Fix, FolderPreview, ImportFate, ImportPhotos, ImportPreview, ImportProblem,
-    OnSource, PhotoPreview, Problem, SourceShot, SourceState, Trees, Unwritable, check_source,
-    list_source, preview_import, relative_inside, volumes,
+    FateCounts, Fix, FolderPreview, ImportCause, ImportEnd, ImportFailure, ImportFate,
+    ImportPhotos, ImportPreview, ImportProblem, ImportResult, ImportStep, ImportedPhoto, OnSource,
+    PhotoPreview, Problem, SourceShot, SourceState, Trees, Unwritable, check_source, list_source,
+    preview_import, relative_inside, run_import, volumes,
 };
 
 mod import;
@@ -172,6 +173,15 @@ pub enum LibraryCommand {
     /// answered by [`LibraryEvent::ImportPreview`] in this command's number. The next
     /// `PreviewImport` cancels it, which then sends nothing. Nothing is written or made.
     PreviewImport {
+        photos: ImportPhotos,
+        settings: ImportSettings,
+    },
+    /// Copies `photos`, the source's checked photos, into their destination with `settings`
+    /// (decision 85): a cancellable job of kind `import`, one photo at a time in the order of
+    /// their paths, each whole or not at all, never overwriting a file nor writing on the
+    /// source, telling each photo in [`LibraryEvent::Imported`] chunks in this command's
+    /// number, its progress and end as the job's.
+    Import {
         photos: ImportPhotos,
         settings: ImportSettings,
     },
@@ -302,6 +312,13 @@ pub enum LibraryEvent {
         open: u64,
         preview: Box<ImportPreview>,
     },
+    /// More photos of the [`LibraryCommand::Import`] numbered `open` as each ended, in the
+    /// order the copy took them: each source photo and its copy, or why it was skipped or
+    /// failed.
+    Imported {
+        open: u64,
+        photos: Vec<ImportedPhoto>,
+    },
 }
 
 impl LibraryEvent {
@@ -323,7 +340,8 @@ impl LibraryEvent {
             | LibraryEvent::SourceTaken { open, .. }
             | LibraryEvent::SourceFailed { open, .. }
             | LibraryEvent::SourceChecked { open, .. }
-            | LibraryEvent::ImportPreview { open, .. } => open,
+            | LibraryEvent::ImportPreview { open, .. }
+            | LibraryEvent::Imported { open, .. } => open,
             LibraryEvent::Volumes { .. } => 0,
         }
     }

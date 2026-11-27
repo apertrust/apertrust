@@ -393,7 +393,7 @@ jobs-live-started = Rozpoczęto: { $message }
 
 ## Komunikaty samych zadań
 
-job-import = Importowanie { $done } / { $total }
+job-import = Importowanie: { photo-count }
 job-delete = Usuwanie { $done } / { $total }
 job-thumbnails = Tworzenie miniatur
 job-folder = Odczytywanie { $folder }
@@ -545,6 +545,30 @@ job-export-cancelled =
        *[other] Eksport anulowany. Wyeksportowano { $written } z { $total } zdjęć
     }
 
+# Zadanie importu (decyzja 85).
+job-import-now = teraz { $photo }
+job-import-finished =
+    { $skipped ->
+        [0]
+            { $copied ->
+                [1] Zaimportowano 1 zdjęcie
+                [few] Zaimportowano { $copied } zdjęcia
+                [many] Zaimportowano { $copied } zdjęć
+               *[other] Zaimportowano { $copied } zdjęcia
+            }
+       *[other] Zaimportowano { $copied } z { $total } zdjęć, już na miejscu: { $skipped }
+    }
+job-import-failed-outcome =
+    { $total ->
+        [1] Nie udało się zaimportować zdjęcia
+       *[other] Import nieudany. Zaimportowano { $copied } z { $total } zdjęć
+    }
+job-import-cancelled =
+    { $total ->
+        [1] Import anulowany
+       *[other] Import anulowany. Zaimportowano { $copied } z { $total } zdjęć
+    }
+
 job-cause-unreadable = nie można odczytać pliku raw
 job-cause-edit = nie można odczytać jego edycji
 job-cause-binding = zmienionego narzędzia nie można zastosować do zdjęcia
@@ -561,6 +585,9 @@ job-cause-write = nie udało się zapisać pliku
 job-cause-engine = silnik nieoczekiwanie się zatrzymał
 job-cause-cache-remove = nie udało się usunąć niektórych plików pamięci podręcznej
 job-cause-cache-read = nie można odczytać folderu pamięci podręcznej
+job-cause-exists = w miejscu docelowym pojawił się plik o tej nazwie
+job-cause-folder-pattern = jeden ze wzorców folderów jest nieprawidłowy
+job-cause-on-source = miejsce docelowe jest na źródle
 
 ## Wiersz zadania w oknie zadań: wiersze i przyciski
 

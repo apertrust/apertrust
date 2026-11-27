@@ -36,6 +36,11 @@ job-export-cancelled =
         [1] Export canceled
        *[other] Export canceled: { $written } of { $total } photos exported
     }
+job-import-cancelled =
+    { $total ->
+        [1] Import canceled
+       *[other] Import canceled: { $copied } of { $total } photos imported
+    }
 job-cache-clear-cancelled = Clearing canceled: { job-cache-entries } removed, { job-cache-size }
 
 ## The viewer bar
