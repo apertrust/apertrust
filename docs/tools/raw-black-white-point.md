@@ -129,7 +129,7 @@ darktable's levels, where they differ from Apertrust's:
 ## In the panel
 
 - **No tabs and no group labels:** darktable's four black levels, its white point and flat field correction, one under another, in its order.
-- **Values** show as whole numbers, darktable's digits, in the language's number format, the fill from the photo's own level.
+- **Values** show as whole numbers, darktable's digits, in the language's number format, the fill from 0, the track's start, as darktable's.
 - **Tracks** are plain, over darktable's soft range, 0 to 16384, widening to show a value beyond it, a 16-bit white point among them, as darktable's does.
 - **Keyboard:** every level is a `SliderRow`, stepping by 1, Shift by 10; a value is rounded to a whole number before it is sent.
 - **Flat field correction** is a `Choice` drawn disabled at Disabled on every photo. A disabled box does not open, so Embedded GainMap is not seen; once the control is available its list opens, an unported option there drawn disabled.

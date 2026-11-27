@@ -3661,7 +3661,7 @@ struct Slider {
 type Setter = fn(&mut Values, u8);
 
 #[test]
-fn every_slider_paints_its_fill_between_the_handle_and_the_settings_default() {
+fn every_slider_paints_its_fill_from_the_track_s_start_to_the_handle() {
     let theme = Theme::builtin(Builtin::Dark);
     let (track, fill) = (theme.colors.slider_track, theme.colors.slider_fill);
     // The row's painted fill at `value`: the one rectangle in the fill's colour, and the
@@ -3702,42 +3702,36 @@ fn every_slider_paints_its_fill_between_the_handle_and_the_settings_default() {
         below,
     } in sliders
     {
-        let (line, at_default) = painted_fill(format, set, default);
+        let (line, at_low) = painted_fill(format, set, low);
         let (_, at_below) = painted_fill(format, set, below);
+        let (_, at_default) = painted_fill(format, set, default);
         let (_, at_high) = painted_fill(format, set, high);
-        // At the default there is nothing to fill, and the fill sits at the default's place.
-        assert_eq!(at_default.width(), 0.0, "{format:?}: empty at its default");
-        let x_default = at_default.left();
-        // Below it the fill runs from the handle up to the default's place, over it from
-        // the default's place to the handle; never from the track's start.
+        // Both ranges are all positive, so the fill starts where the shown 0 is held, the
+        // track's start, as darktable's; at the start there is nothing to fill.
+        assert_eq!(at_low.width(), 0.0, "{format:?}: empty at its start");
+        let start = at_low.left();
         assert!(
-            (at_below.right() - x_default).abs() < 0.01,
-            "{format:?}: {at_below:?}"
+            start - line.left() < 0.06 * line.width(),
+            "{format:?}: {start} on {line:?}"
         );
-        assert!(
-            (at_high.left() - x_default).abs() < 0.01,
-            "{format:?}: {at_high:?}"
-        );
-        assert!(
-            at_below.left() > line.left() + 1.0,
-            "{format:?}: from the track's start"
-        );
+        // Below the default, at it and over it, from the same start: the default places no
+        // fill.
+        for fill in [at_below, at_default, at_high] {
+            assert!(
+                (fill.left() - start).abs() < 0.01,
+                "{format:?}: {fill:?} from {start}"
+            );
+        }
         // The handle's place is linear in the value: the high end gives the slope.
-        let slope = (at_high.right() - x_default) / f32::from(high - default);
-        let handle = x_default + slope * (f32::from(below) - f32::from(default));
-        assert!(
-            (at_below.left() - handle).abs() < 0.5,
-            "{format:?}: the fill ends at {}, the handle at {handle}",
-            at_below.left()
-        );
-        // And the default sits where its fraction of the range says, within the handle's
-        // stop at each end.
-        let fraction = f32::from(default - low) / f32::from(high - low);
-        let along = (x_default - line.left()) / line.width();
-        assert!(
-            (along - fraction).abs() < 0.06,
-            "{format:?}: {along} against {fraction}"
-        );
+        let slope = (at_high.right() - start) / f32::from(high - low);
+        for (value, fill) in [(below, at_below), (default, at_default)] {
+            let handle = start + slope * f32::from(value - low);
+            assert!(
+                (fill.right() - handle).abs() < 0.5,
+                "{format:?}: the fill ends at {}, the handle at {handle}",
+                fill.right()
+            );
+        }
     }
 }
 

@@ -1151,7 +1151,7 @@ pub struct Slider {
     /// darktable sets none: the track spans the whole range.
     pub soft: Option<(f32, f32)>,
     pub track: Track,
-    /// Whether the track fills from the default to the value.
+    /// Whether the track fills from 0, held to its ends, to the value, as darktable's.
     pub fill: bool,
     /// The item at the row's end, if any, darktable's quad (decision 107): one, as
     /// darktable's is, and a picker until the other kinds are drawn there

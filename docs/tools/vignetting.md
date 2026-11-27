@@ -125,9 +125,8 @@ What darktable's page has or does that the panel does not yet:
 
 1. **The vignette on the image.** darktable draws the vignette's outline over the image, with handles for its inner and outer radii and its centre that a drag moves, and Ctrl keeps the ratio (`gui_post_expose`, `mouse_moved`, `mouse_actions`). Apertrust's on-photo controls come later, their points mapped by the engine (decision 16).
 2. **Presets:** darktable's lomo waits for the header's presets menu.
-3. **The fill,** across the renderer: darktable fills each track from 0, the fall-off start's from its left end to 80 %; Apertrust's rows fill from the control's default, so the radii and the shape show no fill at rest.
-4. **Dithering's noises,** not ported, and with them the raised-cosine fall-off darktable's CPU path uses only with dithering (`docs/ports/vignette.md`, Dithering and Deliberate differences).
-5. **The tool's tooltip,** darktable's "simulate a lens fall-off close to edges": a definition implies no message for the tool's own tooltip.
+3. **Dithering's noises,** not ported, and with them the raised-cosine fall-off darktable's CPU path uses only with dithering (`docs/ports/vignette.md`, Dithering and Deliberate differences).
+4. **The tool's tooltip,** darktable's "simulate a lens fall-off close to edges": a definition implies no message for the tool's own tooltip.
 
 ## Design choices
 

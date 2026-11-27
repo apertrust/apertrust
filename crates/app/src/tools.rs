@@ -2416,7 +2416,6 @@ fn setting_row(
         ) => {
             let mut row = SliderRow::new(&label, widen(value), widen(min)..=widen(max))
                 .name(&full)
-                .default_value(widen(default))
                 .step(widen(step))
                 .decimals(usize::from(setting.decimals))
                 .wheel(page.wheel())
@@ -2850,7 +2849,6 @@ struct Shown {
     soft: Option<(f32, f32)>,
     unit: Option<Unit>,
     value: f32,
-    default: f32,
     mark: Option<Mark>,
     available: bool,
 }
@@ -2862,11 +2860,8 @@ impl Shown {
     fn of(definition: &ProcessingDefinition, state: &ToolState, id: &str) -> Option<Self> {
         if let Some(found) = definition.control(id) {
             let shown = control(state, id)?;
-            let (
-                ControlKind::Number { min, max, step, .. },
-                ControlValue::Number(value),
-                ControlValue::Number(default),
-            ) = (found.kind, &shown.value, &shown.default)
+            let (ControlKind::Number { min, max, step, .. }, ControlValue::Number(value)) =
+                (found.kind, &shown.value)
             else {
                 return None;
             };
@@ -2885,7 +2880,6 @@ impl Shown {
                 soft,
                 unit: found.unit,
                 value: *value,
-                default: *default,
                 mark: shown.mark,
                 available: shown.available,
             });
@@ -2900,7 +2894,6 @@ impl Shown {
             soft: None,
             unit: found.unit,
             value: shown.value,
-            default: shown.default,
             mark: shown.mark,
             // The session's answer for the coordinate itself, while a control it moves is
             // shown available, as a pending change may make one.
@@ -2929,7 +2922,6 @@ fn slider_row(ui: &mut egui::Ui, page: &Page, slider: &Slider, changes: &mut Vec
     let mut row = SliderRow::new(&label, widen(shown.value), widen(min)..=widen(max))
         .name(&full)
         .promise(&promise)
-        .default_value(widen(shown.default))
         .step(widen(shown.step))
         .decimals(usize::from(slider.decimals))
         .mark(mark(shown.mark))

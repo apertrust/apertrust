@@ -489,7 +489,7 @@ The control holds what a value may be; the slider row holds how it is shown:
 - **The step** is the control's `step`, what a key moves. `slider_step(min, max, factor)` computes darktable's default step, where darktable sets none.
 - **Decimals:** `Slider::new` shows two; `.decimals(n)` sets darktable's digits.
 - **The unit,** `Control::unit`, from the closed `Unit` list: `Ev`, `Percent`, `Degrees`, `Kelvin`, `Pixels`, `Iso`. A fixed change of unit is allowed (a factor shown as a percentage, radians as degrees), and the binding converts back.
-- **The track:** `Track::Plain` by default; `.track(Track::Luminance)` and the others paint darktable's colour ramps, as Colour balance RGB's luminance rows do. `.no_fill()` drops the fill from the default to the value.
+- **The track:** `Track::Plain` by default; `.track(Track::Luminance)` and the others paint darktable's colour ramps, as Colour balance RGB's luminance rows do. `.no_fill()` drops the fill from 0 to the value.
 - **The quad:** `.end(End::Picker(id))` puts a picker's button at the row's end, as on Exposure's slider, darktable's quad its one end item (decision 107). A choice, a toggle and a setting take `end: &[]` until theirs are drawn.
 - **A range that moves with other controls,** as AgX's pivot does, comes from `ProcessingTool::range`.
 
