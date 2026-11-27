@@ -118,7 +118,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] File › Open… for one or more raws, opened alone together, the first active (decision 46); a folder or raws dropped onto the window; View › Collections (L) choosing the first tab holding Collections (decisions 37 and 73).
 - [x] Dialogs as native windows on the Mac, and its system alerts.
 - [x] Wayland modal dialogs and drawn alerts on Linux; X11's native hints come later.
-- [ ] Native dialogs and alerts on Windows: their frame is built; the owner disabled while one is open and the task dialog are left.
+- [ ] Native dialogs and alerts on Windows: their frame and the owner disabled while one is open are built; the task dialog is left.
 - [x] An edit written by a newer Apertrust opens for viewing only and is never overwritten.
 
 **The single-instance hand-off** (decision 89; [gui.md](gui.md#instances-and-windows)), one step, one pull request:

@@ -1081,6 +1081,10 @@ struct Open {
     state: egui_winit::State,
     ctx: egui::Context,
     window: Arc<Window>,
+    /// The window it was made over, its owner, disabled while a modal one is open on
+    /// Windows ([`platform::owner_enabled`]); weak, as the host's own, so an open dialog
+    /// never keeps the main window.
+    parent: Weak<Window>,
     info: egui::ViewportInfo,
     /// The main window's context, whose interface scale the dialog follows.
     main: egui::Context,
@@ -1752,6 +1756,7 @@ impl Inner {
             state,
             ctx,
             window,
+            parent: Arc::downgrade(&parent),
             info: egui::ViewportInfo::default(),
             main: from,
             opener,
@@ -1837,6 +1842,7 @@ impl Inner {
             painter,
             state,
             window,
+            parent: owner,
             main,
             opener,
             ctx,
@@ -1860,6 +1866,11 @@ impl Inner {
         }
         drop(painter);
         drop(state);
+        // Enabled before the window goes, so Windows gives the activation back to it, not
+        // to another app's window.
+        if let Some(owner) = owner.upgrade() {
+            platform::owner_enabled(&owner, form, true);
+        }
         drop(window);
         let opener = given_back(form, opener, main.memory(|m| m.focused()));
         // A modal window's parent takes the focus back where the system may not give it:
@@ -2073,6 +2084,9 @@ impl Open {
             self.window
                 .set_outer_position(PhysicalPosition::new(x.round(), y.round()));
         }
+        // Its owner disabled once it is drawn and about to show, so a window that fails to
+        // be made never leaves the owner disabled; `Inner::gone` enables it again.
+        platform::owner_enabled(main, self.form, false);
         // A window the person did not ask for is put in front without being made the key
         // window, which winit's `set_visible` does on macOS; elsewhere it shows as usual.
         let quietly = !focus

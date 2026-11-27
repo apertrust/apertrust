@@ -1293,7 +1293,9 @@ Every dialog is a proper system modal window, and every confirmation the system'
 - The sheet on the Mac, started from the run loop: Save as Preset… and Rename… of [a tool's presets](#a-tools-presets) use it.
 - The jobs window, modeless ([The jobs window](#the-jobs-window)).
 - The alerts on the Mac, `NSAlert` as a sheet, and on Linux, Apertrust's drawn alert in a dialog window, with Export's overwrite question and the quit alert as their first confirmations ([The alerts](#the-alerts)).
-- Wayland's parent relationship, with modality kept by the app. Windows' owner disabling and X11's native modality are [still to build](#still-to-build).
+- Wayland's parent relationship, with modality kept by the app.
+- Windows' owner disabled while a modal window of the host is open (`platform::owner_enabled`).
+- X11's native modality is [still to build](#still-to-build).
 
 ### The dialog windows
 
@@ -1345,7 +1347,7 @@ Where winit cannot:
 - **On the Mac, `show_without_focus`,** which shows the jobs window in front without making it the key window.
 - **On X11** (planned), `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL` before the window maps, through x11rb.
 - **On Wayland,** `set_parent` sets `xdg_toplevel.set_parent` through wayland-client over winit's display and toplevels. It does not set xdg-dialog-v1's modal hint: Mutter's attached modal presentation moves the parent with the dialog and can resize a full-screen parent. The app keeps the parent's input instead, and both windows move independently.
-- **Windows** needs nothing more than winit's own `with_owner_window` and `set_enable`. The owner is enabled again before the dialog is destroyed, so activation goes back to it.
+- **Windows** needs nothing more than winit's own `with_owner_window` and `set_enable` (`platform::owner_enabled`). The owner is disabled once a modal window's first frame is drawn, as it is about to show, so a window that fails to be made never leaves it disabled, and enabled again before the window is destroyed, so activation goes back to it. Windows then does the rest: a click on the owner or its taskbar button brings the dialog forward, and the owner cannot be moved, resized or closed meanwhile. Modeless windows, the jobs and log windows, never disable it.
 
 #### Content, buttons, focus and keys
 
@@ -1406,7 +1408,7 @@ The host draws any dialog the same way (`dialog_host::draw`, which the tests run
 
 - **Under a sheet or a modal window** the app keeps the main window's input from it on every platform (`raw_input_hook`, `under_modal`), and `State::modal` rests every action that opens a dialog. On Wayland every hosted window, modal or modeless, has a hairline border and a drop shadow in the `scrim` colour around a transparent outer margin (`platform::shadowed`, decided once from the main window, since X11 or Wayland is known only at run time), which the window's least and kept sizes leave out (`chrome`); a window the person resizes resizes from its edge to just inside its card (`resize_band`). The main window itself is not dimmed. X11 has none, since the transparent margin can show black without a compositing manager. Windows' dialogs, undecorated, keep the system's undecorated shadow and Windows 11's rounded corners (`platform::attributes`), as the main window does. A press on the main window, or its taking the focus, brings a modal window forward (`Dialogs::raise`), as a system's modal window does: Linux's drawn alert when one asks, never the dialog under the Mac's `NSAlert`, which would lose the front to it. On Wayland, where winit's `focus_window` does nothing, the window asks the compositor to activate it (`request_user_attention`, an xdg-activation request), which a compositor may only mark as wanting attention; the same brings a modeless window forward when the user asks for it again. The focus goes back to the control that opened it.
 - **Under Linux's drawn alert** the window it rose from, Export's when Export asked, takes no input, as the main window under a modal one: the host still draws, sizes and scales it, but hands it no pointer, keyboard or screen reader input (`under_alert`), ignores its close, and a press on it or its taking the focus brings the alert forward. An alert over the main window leaves it to `raw_input_hook`. Quit and Close Window do nothing while it asks (`AppDialogs::quit`), as under the Mac's `NSAlert`. Its window's node is the alert dialog, named by the title once (`Dialog::role`, `AlertBody::in_alert_window`). An alert whose window cannot be made answers `Answer::Failed`, which the app treats as an alert that could not be shown: a Quit it asked for leaves.
-- **Not built yet** ([below](#still-to-build)): Windows' owner disabled while a dialog is open (`set_enable`), and X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL` (winit 0.30's parent window is a child confined to the parent, not a transient), for `apertrust-display`. Export shows as that modal window on Windows and Linux, as Settings does; Wayland's parent relationship is built, with modality kept by the app.
+- **Not built yet** ([below](#still-to-build)): X11's `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL` (winit 0.30's parent window is a child confined to the parent, not a transient), for `apertrust-display`. Export shows as that modal window on Windows and Linux, as Settings does; Wayland's parent relationship is built, with modality kept by the app.
 - **The app's keys in a dialog's own window.** A dialog's window has no keymap, so `dialog_host::draw` hands up the presses it left alone (`Output::Keys`, never Escape, Cmd+W or Cmd+. where its keys take them). `take_dialogs` reads them with the app's keymap (`actions::read_from_dialog`), the dialog's focused widget keeping its own keys and `State` with the dialog open deciding what rests; what is left runs as from the main window. Ctrl+Q in Settings' window on Windows and Linux closes it, then quits.
 - **Focus after a modal window.** A modal window that goes gives its parent the focus back (`focus_window`) where the system may not: the main window, or the dialog a Linux alert rose from. Windows gives it to the owner.
 - **Adding a dialog:** a type implementing `Dialog` beside its content's tool, its outputs a variant of `dialog_host::Output`, handled in `take_dialogs`; opened with `AppDialogs::open` from an action in `run_action`; tested through `dialog_host::draw` and, for the app, the `FakeHost` of `main.rs`'s tests. Never an `egui::Modal`.
@@ -1497,11 +1499,10 @@ flowchart LR
 
 ### Still to build
 
-Spike D1 tried one native modal test dialog through the host, on every platform. The host, the Mac's sheets and alerts, Wayland's modality and Linux's drawn alerts are built on its result. What is left, in order:
+Spike D1 tried one native modal test dialog through the host, on every platform. The host, the Mac's sheets and alerts, Windows' and Wayland's modality and Linux's drawn alerts are built on its result. What is left, in order:
 
-1. **Windows' modality.** Settings is in the host, a modal window owned by the main window (`with_owner_window`), the app taking the main window's input; left: the owner disabled while it is open (winit's `set_enable`), enabled again before it goes.
-2. **Customise tabs,** the visual editor for workspaces, in the host, in Phase 3 (decision 96).
-3. **The alerts on Windows:** the task dialog with its manifest. Until then the host shows no alert there (`platform::shows_alerts`): Export lists On conflict's Overwrite disabled, saying why, and rests while it is chosen; Discard History… is disabled wherever it would ask, saying why (`alerts::discard_runs`).
+1. **Customise tabs,** the visual editor for workspaces, in the host, in Phase 3 (decision 96).
+2. **The alerts on Windows:** the task dialog with its manifest. Until then the host shows no alert there (`platform::shows_alerts`): Export lists On conflict's Overwrite disabled, saying why, and rests while it is chosen; Discard History… is disabled wherever it would ask, saying why (`alerts::discard_runs`).
 
 X11 keeps the dialog window type and the app's input blocking. Its `WM_TRANSIENT_FOR` and `_NET_WM_STATE_MODAL` are later work, when a concrete compatibility problem calls for them.
 
