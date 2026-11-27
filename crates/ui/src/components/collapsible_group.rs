@@ -41,14 +41,20 @@
 //! - A tooltip on its title, as the Metadata tool's name the standard each group follows
 //!   ([`CollapsibleGroup::tip`], decision 110), which screen readers hear as the description
 //!   of its rows' group.
+//! - A warning button before the chevron, for a problem that covers the whole group, as the
+//!   Metadata tool's view-only photos among those selected (decision 110, a small extension
+//!   of decision 100): in `warning`, its name its tooltip, its menu the caller's
+//!   ([`CollapsibleGroup::end_warning`], [`CollapsibleGroup::show_with`]). It is a focus stop
+//!   of its own after the row's, and a click on it opens its menu, never the group.
 //!
 //! [`PlainGroup`]: super::PlainGroup
 
 use egui::{Rect, Role, Sense, Stroke, Ui, WidgetInfo, pos2, vec2};
 
-use super::focus_ring;
 use super::group::{described_group, group_label_text};
+use super::{focus_ring, pull_down};
 use crate::i18n::Args;
+use crate::popup::Entry;
 use crate::{Icon, theme, translator};
 
 /// The dot after the title of a closed group with controls set.
@@ -63,6 +69,17 @@ pub struct CollapsibleGroup<'a> {
     first: bool,
     /// Its title's tooltip, where it has one.
     tip: Option<&'a str>,
+    /// The warning button before the chevron: its name and its menu.
+    warning: Option<(&'a str, Vec<Entry>)>,
+}
+
+/// What a frame of the group did.
+#[derive(Debug, Default)]
+pub struct GroupOutput {
+    /// The user opened or closed it.
+    pub toggled: bool,
+    /// The item chosen this frame in its warning button's menu.
+    pub chosen: Option<String>,
 }
 
 impl<'a> CollapsibleGroup<'a> {
@@ -75,7 +92,17 @@ impl<'a> CollapsibleGroup<'a> {
             disabled: None,
             first: false,
             tip: None,
+            warning: None,
         }
+    }
+
+    /// A warning button before the chevron, named `name`, translated, its tooltip and what
+    /// screen readers call it, opening `menu`, whose item chosen comes back as
+    /// [`GroupOutput::chosen`]: a problem that covers the whole group, as the Metadata
+    /// tool's "3 of 12 photos are view-only and keep their fields".
+    pub fn end_warning(mut self, name: &'a str, menu: Vec<Entry>) -> Self {
+        self.warning = Some((name, menu));
+        self
     }
 
     /// Its title's tooltip, `tip`, translated, as the Metadata tool's name the standard each
@@ -113,7 +140,13 @@ impl<'a> CollapsibleGroup<'a> {
     /// and with their usual spacing. Returns true when the user opened or closed it this
     /// frame; the caller keeps the new state.
     pub fn show(self, ui: &mut Ui, rows: impl FnOnce(&mut Ui)) -> bool {
+        self.show_with(ui, rows).toggled
+    }
+
+    /// [`Self::show`], with the item chosen in its warning button's menu.
+    pub fn show_with(mut self, ui: &mut Ui, rows: impl FnOnce(&mut Ui)) -> GroupOutput {
         let t = theme(ui.ctx());
+        let warning = self.warning.take();
         let id = ui.make_persistent_id(("collapsible group", self.title));
         let enabled = self.disabled.is_none();
         let open = self.open && enabled;
@@ -162,10 +195,15 @@ impl<'a> CollapsibleGroup<'a> {
             let side = Icon::ChevronEnd.size();
             let chevron =
                 Rect::from_center_size(pos2(row.right() - side / 2.0, middle), vec2(side, side));
+            // The hairline ends before the warning button, where it has one.
+            let end = match warning {
+                Some(_) => chevron.left() - gap - t.sizes.field,
+                None => chevron.left(),
+            };
             let dot = !open && self.set > 0;
             let dot_room = if dot { 2.0 * DOT_RADIUS + gap } else { 0.0 };
             // The title takes what the shortest hairline, the dot and the gaps leave.
-            let room = chevron.left() - gap - t.spacing.l - gap - dot_room - row.left();
+            let room = end - gap - t.spacing.l - gap - dot_room - row.left();
             let galley = painter.layout_job(group_label_text(&t, title, room.max(0.0), colour));
             let mut x = row.left() + galley.size().x + gap;
             painter.galley(
@@ -178,7 +216,7 @@ impl<'a> CollapsibleGroup<'a> {
                 x += 2.0 * DOT_RADIUS + gap;
             }
             painter.hline(
-                x..=chevron.left() - gap,
+                x..=end - gap,
                 painter.round_to_pixel_center(middle),
                 Stroke::new(t.shape.hairline, t.colors.divider),
             );
@@ -202,11 +240,50 @@ impl<'a> CollapsibleGroup<'a> {
             (None, Some(tip)) => drop(response.clone().on_hover_text(tip)),
             (None, None) => {}
         }
+        // Before the chevron, over the row, so a click on it opens its menu alone.
+        let chosen = warning.and_then(|(name, menu)| {
+            let side = Icon::ChevronEnd.size();
+            let one = t.sizes.field;
+            let at = pos2(
+                row.right() - side - t.spacing.s - one,
+                row.center().y - one / 2.0,
+            );
+            warning_button(ui, id, Rect::from_min_size(at, vec2(one, one)), name, menu)
+        });
         if open {
             described_group(ui, ("collapsible group rows", title), title, self.tip, rows);
             // The group's end shows: 4 points after its last row while it is open.
             ui.add_space(t.spacing.xs);
         }
-        enabled && response.clicked()
+        GroupOutput {
+            toggled: enabled && response.clicked(),
+            chosen,
+        }
     }
+}
+
+/// The warning button of the group `id` in `button`, named `name`, opening `menu`; the item
+/// chosen in it.
+fn warning_button(
+    ui: &mut Ui,
+    id: egui::Id,
+    button: Rect,
+    name: &str,
+    menu: Vec<Entry>,
+) -> Option<String> {
+    let t = theme(ui.ctx());
+    let response = ui.interact(button, id.with("warning"), Sense::click());
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(button, t.shape.radius_small, t.colors.hover);
+    }
+    let response = response.on_hover_text(name);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
+    let side = vec2(t.sizes.icon, t.sizes.icon);
+    let at = Rect::from_center_size(button.center(), side);
+    Icon::Warning.paint(ui.painter(), at, t.colors.warning);
+    if response.has_focus() {
+        focus_ring(ui.painter(), button, &t);
+    }
+    pull_down(ui, &response, name, || menu)
 }

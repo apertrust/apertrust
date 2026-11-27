@@ -253,3 +253,108 @@ fn a_forgotten_draft_leaves_nothing_to_undo() {
     let value = harness.get_by_label("Title").accesskit_node().value();
     assert_eq!(value.as_deref(), Some("Harbour"));
 }
+
+/// What a Different field reported: its commits and the values list's item chosen.
+#[derive(Default)]
+struct Several {
+    committed: Vec<String>,
+    chosen: Vec<String>,
+}
+
+/// Title over twelve photos holding two titles: Different, its ⌄ listing them and Clear.
+fn different() -> Harness<'static, Several> {
+    use apertrust_ui::popup::{Entry, Item};
+    Harness::builder()
+        .with_size(egui::vec2(320.0, 240.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, state: &mut Several| {
+                let values = vec![
+                    Entry::Item(Item::new("value-0", "Morning market").shortcut("7")),
+                    Entry::Item(Item::new("value-1", "Alfama").shortcut("5")),
+                    Entry::Separator,
+                    Entry::Item(Item::new("clear", "Clear on 12 Photos")),
+                ];
+                let out = FieldWell::new(egui::Id::unique("title"), "Title", "", 80.0)
+                    .different("Different", "12 photos, 2 different titles")
+                    .values("Titles of the 12 photos", values)
+                    .show(ui);
+                state.committed.extend(out.committed);
+                state.chosen.extend(out.chosen);
+                let _ = ui.button("After");
+            },
+            Several::default(),
+        )
+}
+
+/// Over Different, Return with nothing typed commits nothing, darktable's "leave
+/// unchanged"; what is typed replaces the word and is committed whole.
+#[test]
+fn different_commits_only_what_is_typed() {
+    let mut harness = different();
+    harness.run();
+    let field = harness.get_by_label("Title");
+    assert_eq!(field.accesskit_node().placeholder(), Some("Different"));
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert!(harness.state().committed.is_empty());
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.get_by_label("Title").type_text("Tram 28");
+    harness.run();
+    harness.key_press(Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().committed, ["Tram 28"]);
+}
+
+/// The ⌄ opens the values list, as Alt+↓ does in the field; an item chosen comes back.
+#[test]
+fn the_values_list_opens_from_its_button_and_alt_down() {
+    let mut harness = different();
+    harness.run();
+    harness.get_by_label("Titles of the 12 photos").click();
+    harness.run();
+    harness.get_by_label("Alfama").click();
+    harness.run();
+    assert_eq!(harness.state().chosen, ["value-1"]);
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.key_press_modifiers(Modifiers::ALT, Key::ArrowDown);
+    harness.run();
+    harness.get_by_label("Clear on 12 Photos").click();
+    harness.run();
+    assert_eq!(harness.state().chosen, ["value-1", "clear"]);
+}
+
+/// A pull-down over photos holding it apart reads Different, no option its value, and any
+/// option chosen comes back, Unknown's empty id among them.
+#[test]
+fn a_pull_down_over_different_reads_different_and_reports_any_choice() {
+    const OPTIONS: [(&str, &str); 2] = [("", "Unknown"), ("True", "Copyrighted")];
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 120.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, chosen: &mut Vec<String>| {
+                let out = FieldWell::new(egui::Id::unique("status"), "Copyright status", "", 100.0)
+                    .choice(&OPTIONS)
+                    .different("Different", "12 photos, 2 different values")
+                    .show(ui);
+                chosen.extend(out.chosen);
+            },
+            Vec::new(),
+        );
+    harness.run();
+    let status = harness.get_by_label("Copyright status");
+    assert_eq!(
+        status.accesskit_node().value().as_deref(),
+        Some("Different")
+    );
+    harness.get_by_label("Copyright status").click();
+    harness.run();
+    harness.get_by_label("Unknown").click();
+    harness.run();
+    assert_eq!(harness.state().as_slice(), [String::new()]);
+}

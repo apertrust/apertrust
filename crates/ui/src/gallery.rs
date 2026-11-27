@@ -900,9 +900,24 @@ fn field_wells(ui: &mut Ui, width: f32) {
             FieldWell::new(id("Copyright status"), "Copyright status", "True", column)
                 .choice(&COPYRIGHT)
                 .show(ui);
+            // Twelve photos holding two titles and none: Different, its ⌄ the values.
+            let values = vec![
+                Entry::Item(Item::new("value-0", "Morning market, Alfama").shortcut("7")),
+                Entry::Item(Item::new("value-1", "Alfama, before the crowd").shortcut("4")),
+                Entry::Separator,
+                Entry::Item(Item::new("clear", "Clear on 12 Photos")),
+            ];
+            FieldWell::new(id("Headline"), "Headline", "", column)
+                .different(
+                    "Different",
+                    "12 photos, 2 different headlines. Typing replaces them all.",
+                )
+                .values("Headlines of the 12 photos", values)
+                .tip("Headline of 12 photos")
+                .show(ui);
             FieldWell::new(id("Creator"), "Creator", "Ana Sousa", column)
                 .enabled(false)
-                .tip("Editing several photos comes in a later version")
+                .tip("Every selected photo is view-only")
                 .show(ui);
             FieldWell::new(
                 id("Copyright notice"),
@@ -2753,6 +2768,20 @@ fn groups(ui: &mut Ui, demo: &mut Demo) {
             demo.groups[g] = !demo.groups[g];
             demo.last = format!("{title}: toggled");
         }
+    }
+    // A problem that covers a whole group: a warning button before its chevron.
+    let menu = vec![
+        Entry::Item(
+            Item::new("why", "3 of 12 photos are view-only and keep their fields.").enabled(false),
+        ),
+        Entry::Separator,
+        Entry::Item(Item::new("select", "Select Only Editable Photos")),
+    ];
+    let out = CollapsibleGroup::new("Content", false)
+        .end_warning("3 of 12 photos are view-only and keep their fields", menu)
+        .show_with(ui, |_| {});
+    if let Some(chosen) = out.chosen {
+        demo.last = format!("Content: {chosen}");
     }
     // A group with nothing behind it yet, drawn disabled, as AgX's Show curve is.
     CollapsibleGroup::new("Show curve", false)

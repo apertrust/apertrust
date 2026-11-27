@@ -3911,3 +3911,38 @@ fn a_last_pick_readout_and_a_warning_row_say_what_they_show() {
     harness.run();
     harness.get_by_label("The area picked, before and after, and the exposure it took");
 }
+
+/// A group's warning button, a problem that covers the whole group (decision 110): a button
+/// of its own before the chevron, whose click opens its menu and never the group, the item
+/// chosen reported.
+#[test]
+fn a_group_s_warning_button_opens_its_menu_and_not_the_group() {
+    use apertrust_ui::popup::{Entry, Item};
+    const NAME: &str = "3 of 12 photos are view-only and keep their fields";
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(344.0, 160.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+        .build_ui_state(
+            |ui, state: &mut (usize, Vec<String>)| {
+                let menu = vec![Entry::Item(Item::new(
+                    "select",
+                    "Select Only Editable Photos",
+                ))];
+                let out = CollapsibleGroup::new("Content", true)
+                    .end_warning(NAME, menu)
+                    .show_with(ui, |ui| {
+                        SliderRow::new("Contrast", 0.0, -1.0..=1.0).show(ui);
+                    });
+                state.0 += usize::from(out.toggled);
+                state.1.extend(out.chosen);
+            },
+            (0, Vec::new()),
+        );
+    harness.run();
+    harness.get_by_role_and_label(Role::Button, NAME).click();
+    harness.run();
+    harness.get_by_label("Select Only Editable Photos").click();
+    harness.run();
+    assert_eq!(harness.state().0, 0);
+    assert_eq!(harness.state().1, ["select"]);
+}
