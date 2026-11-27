@@ -22,7 +22,8 @@
 //!
 //! The session runs [`list_source`] and [`check_source`] as the bodies of jobs of kind
 //! `import-source`, handing each an observer and the job's cancel, as it runs
-//! [`super::open`].
+//! [`super::open`]; and [`preview_import`], where each checked photo would go and what
+//! stands in the way ([`preview`]), as a preview's job.
 
 use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
@@ -36,6 +37,14 @@ use super::{CHUNK, DateTime, Ended, Fingerprints, LibraryEvent, raw_state};
 use crate::imported::{self, Candidate, Sought, Walked};
 use crate::index::READERS;
 use crate::source::{self, Listed};
+
+mod plan;
+mod preview;
+
+pub use preview::{
+    FateCounts, Fix, FolderPreview, ImportFate, ImportPhotos, ImportPreview, ImportProblem,
+    OnSource, PhotoPreview, Problem, Unwritable, preview_import,
+};
 
 /// Whether a photo of the source was imported before, as the destination tells it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

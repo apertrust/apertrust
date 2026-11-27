@@ -809,13 +809,14 @@ impl Command {
             Command::Library(command) => match command {
                 LibraryCommand::Open(library::Source::Folder(_) | library::Source::Photos(_))
                 | LibraryCommand::Close => Access::Photos,
-                // Import's reading of a source, any folder as the library's `Open`.
+                // Import's reading of a source and its preview, any folder as the library's `Open`.
                 LibraryCommand::ListSource { .. }
                 | LibraryCommand::CancelListing { .. }
                 | LibraryCommand::CheckSource { .. }
                 | LibraryCommand::SourceThumbnails { .. }
                 | LibraryCommand::ListVolumes
-                | LibraryCommand::SourceSubfolders { .. } => Access::Photos,
+                | LibraryCommand::SourceSubfolders { .. }
+                | LibraryCommand::PreviewImport { .. } => Access::Photos,
                 LibraryCommand::Thumbnails { .. }
                 | LibraryCommand::PhotoThumbnails { .. }
                 | LibraryCommand::Subfolders { .. } => Access::View,
@@ -3105,6 +3106,8 @@ struct Engine {
     source: Option<import::SourceListing>,
     /// The job listing the volumes mounted, which the next `ListVolumes` cancels.
     volumes: Option<JobId>,
+    /// The job previewing an import, which the next `PreviewImport` cancels.
+    import_preview: Option<JobId>,
     /// The jobs listing a place's subfolders for the Import tool's Folders tree, each with
     /// its folder, which a second ask for the folder or a `CancelListing` cancels.
     source_subfolders: Vec<(PathBuf, JobId)>,
@@ -3717,6 +3720,7 @@ impl Engine {
             alone: None,
             source: None,
             volumes: None,
+            import_preview: None,
             source_subfolders: Vec::new(),
             selection: selection::State::default(),
             #[cfg(test)]
@@ -6111,6 +6115,10 @@ impl Engine {
                 self.source_subfolders(folder);
                 return;
             }
+            LibraryCommand::PreviewImport { photos, settings } => {
+                self.preview_import(photos, settings);
+                return;
+            }
             // The live photo's thumbnail is chosen again under it.
             LibraryCommand::RawThumbnails(raw) => {
                 self.raw_thumbnails = raw;
@@ -6457,6 +6465,40 @@ impl Engine {
             })
         });
         self.volumes = Some(job);
+    }
+
+    /// [`LibraryCommand::PreviewImport`], the command numbered [`Self::applied`] (decision
+    /// 85): where each checked photo would go and what stands in the way, worked out by a
+    /// job of kind `import preview` on darktable's `UserForeground` queue with no progress,
+    /// as Export's preview, the one before cancelled, answered by
+    /// [`LibraryEvent::ImportPreview`] in this command's number; the import's time is now,
+    /// and the check for the photos imported before reads its fingerprints through the
+    /// session's memo. Whatever folder is open, or none.
+    fn preview_import(&mut self, photos: library::ImportPhotos, settings: library::ImportSettings) {
+        if let Some(older) = self.import_preview.take() {
+            self.jobs.control.cancel(older);
+        }
+        let preview = self.applied;
+        let outbox = self.jobs.outbox.clone();
+        let fingerprints = Arc::clone(&self.fingerprints);
+        let now = crate::names::now();
+        let description = format!("previewing an import from {}", photos.folder.display());
+        let job = self.jobs.add(preview, Queue::UserForeground, |_| {
+            jobs::Job::new("import preview", description, move |context| {
+                let tell = |event| outbox.send(Event::Library(event));
+                library::preview_import(
+                    preview,
+                    &photos,
+                    &settings,
+                    now,
+                    &fingerprints,
+                    &tell,
+                    &|| context.cancelled(),
+                );
+                Ok(())
+            })
+        });
+        self.import_preview = Some(job);
     }
 
     /// [`LibraryCommand::SourceSubfolders`], the command numbered [`Self::applied`]: a
@@ -14727,7 +14769,8 @@ mod tests {
                 | LibraryEvent::SourceTaken { .. }
                 | LibraryEvent::SourceFailed { .. }
                 | LibraryEvent::SourceChecked { .. }
-                | LibraryEvent::Volumes { .. } => Topic::Notice,
+                | LibraryEvent::Volumes { .. }
+                | LibraryEvent::ImportPreview { .. } => Topic::Notice,
             },
             Event::Cache(event) => match event {
                 CacheEvent::Sizes { .. } | CacheEvent::NoCache => Topic::Fact(Fact::Cache),

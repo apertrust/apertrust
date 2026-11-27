@@ -631,6 +631,46 @@ fn plain_fields(fields: &[Property], names: &[&str], place: &str, problems: &mut
     }
 }
 
+/// The `.apxmp` of a copy Import names `photo`, otherwise than its source's camera name,
+/// `camera` (decision 85): the source's, `xml`, with `xmpMM:PreservedFileName` holding
+/// `camera`, as darktable writes it, where it holds none, its own kept where it does, and
+/// its `apertrust:photo` naming `photo` where it holds one, everything else as the XMP layer
+/// read it from its bytes, UTF-8 or UTF-16, the build that wrote it included; or,
+/// where the source has none, a new one of version [`COPIES_VERSION`] by `build`, naming
+/// `photo`, with no copy, holding the camera name alone. A source's that is no XMP is an
+/// error, and its bytes are the caller's to keep. `None` where its `apertrust:photo` is no
+/// plain text, a field that opens the photo for viewing only, which a copy may neither drop
+/// nor rename.
+pub fn preserving(
+    xml: Option<&[u8]>,
+    camera: &str,
+    photo: &str,
+    build: &str,
+) -> Result<Option<String>, crate::xmp::Error> {
+    let preserved = Property::simple(
+        Name::new("xmpMM", MEDIA_MANAGEMENT, "PreservedFileName"),
+        camera,
+    );
+    let Some(xml) = xml else {
+        let mut edits = Edits::new(build);
+        edits.photo = Some(photo.to_owned());
+        edits.other.push(preserved);
+        return Ok(Some(edits.to_xml()));
+    };
+    let mut xmp = Xmp::parse_bytes(xml)?;
+    if xmp.get(MEDIA_MANAGEMENT, "PreservedFileName").is_none() {
+        xmp.set(preserved);
+    }
+    match xmp.get(NAMESPACE, "photo") {
+        Some(node) if !matches!(node.value, Value::Simple(_)) || !node.qualifiers.is_empty() => {
+            return Ok(None);
+        }
+        Some(_) => xmp.set(own("photo", photo)),
+        None => {}
+    }
+    Ok(Some(xmp.to_xml()))
+}
+
 /// Reads the `.apxmp` at `path` as [`Edits`] ([`Edits::parse`]), with its modified time,
 /// 0 where the system gives none.
 pub fn read_edits(path: &Path) -> Result<Edits, SidecarError> {

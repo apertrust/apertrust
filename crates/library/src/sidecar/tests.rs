@@ -1754,3 +1754,115 @@ fn the_fingerprint_is_the_size_and_a_hash_of_the_start_and_end() {
         assert_ne!(read_fingerprint(&photo).unwrap(), before, "{at}");
     }
 }
+
+/// A copy Import names otherwise keeps its camera name in its `.apxmp`: the source's with
+/// the name added, its edit, its other properties and its build as they were, its photo
+/// renamed where it names one; or a new file holding the name alone. Each reads back with
+/// the name, a version 1 file still of version 1 and without problems.
+#[test]
+fn a_renamed_copy_s_sidecar_keeps_the_camera_name() {
+    let old = version_1(r#"apertrust:tool="look" c:a="0.3""#);
+    let bytes = Some(old.as_bytes());
+    let xml = preserving(bytes, "DSCF1033.RAF", "DSCF1033_01.RAF", "0.9.0")
+        .unwrap()
+        .unwrap();
+    let edits = Edits::parse(&xml, 0).unwrap();
+    assert_eq!(edits.preserved_file_name().as_deref(), Some("DSCF1033.RAF"));
+    assert!(edits.problems.is_empty(), "{:?}", edits.problems);
+    assert_eq!(edits.version, 1);
+    let entries = |edits: &Edits| edits.copies[0].history[0].entries.clone();
+    assert_eq!(entries(&edits), entries(&Edits::parse(&old, 0).unwrap()));
+    // Written twice, the same bytes.
+    assert_eq!(
+        preserving(Some(xml.as_bytes()), "DSCF1033.RAF", "DSCF1033_01.RAF", "x").unwrap(),
+        Some(xml)
+    );
+
+    let mut two = Edits::new("0.8.0");
+    two.photo = Some("DSCF1033.RAF".to_owned());
+    let xml = preserving(
+        Some(two.to_xml().as_bytes()),
+        "DSCF1033.RAF",
+        "DSCF1033_01.RAF",
+        "0.9.0",
+    );
+    let edits = Edits::parse(&xml.unwrap().unwrap(), 0).unwrap();
+    assert_eq!(edits.photo.as_deref(), Some("DSCF1033_01.RAF"));
+    assert_eq!(edits.build.as_deref(), Some("0.8.0"));
+    assert_eq!(edits.preserved_file_name().as_deref(), Some("DSCF1033.RAF"));
+
+    let xml = preserving(None, "DSCF1033.RAF", "DSCF1033_01.RAF", "0.9.0")
+        .unwrap()
+        .unwrap();
+    let edits = Edits::parse(&xml, 0).unwrap();
+    assert_eq!(edits.photo.as_deref(), Some("DSCF1033_01.RAF"));
+    assert_eq!(edits.build.as_deref(), Some("0.9.0"));
+    assert_eq!(edits.preserved_file_name().as_deref(), Some("DSCF1033.RAF"));
+    assert!(edits.copies.is_empty() && edits.problems.is_empty());
+
+    assert!(preserving(Some(b"not xml"), "A.RAF", "A_01.RAF", "0.9.0").is_err());
+    // UTF-16, as XMP allows it, read as the XMP layer reads it.
+    let utf16: Vec<u8> = (std::iter::once('\u{feff}').chain(old.chars()))
+        .flat_map(|c| {
+            let mut units = [0u16; 2];
+            let units: Vec<u16> = c.encode_utf16(&mut units).to_vec();
+            units.into_iter().flat_map(u16::to_le_bytes)
+        })
+        .collect();
+    let xml = preserving(Some(&utf16), "DSCF1033.RAF", "DSCF1033_01.RAF", "0.9.0")
+        .unwrap()
+        .unwrap();
+    let edits = Edits::parse(&xml, 0).unwrap();
+    assert_eq!(edits.preserved_file_name().as_deref(), Some("DSCF1033.RAF"));
+}
+
+/// A copy of a copy keeps the name its source's `.apxmp` keeps, the first camera name, never
+/// the source's own name.
+#[test]
+fn a_renamed_copy_of_a_renamed_copy_keeps_the_first_camera_name() {
+    let first = preserving(None, "DSCF1033.RAF", "DSCF1033_01.RAF", "0.9.0")
+        .unwrap()
+        .unwrap();
+    let again = preserving(
+        Some(first.as_bytes()),
+        "DSCF1033_01.RAF",
+        "DSCF1033_01_01.RAF",
+        "0.9.0",
+    )
+    .unwrap()
+    .unwrap();
+    let edits = Edits::parse(&again, 0).unwrap();
+    assert_eq!(edits.preserved_file_name().as_deref(), Some("DSCF1033.RAF"));
+    assert_eq!(edits.photo.as_deref(), Some("DSCF1033_01_01.RAF"));
+}
+
+/// An `apertrust:photo` that is no plain text, with a qualifier or as a struct, opens the
+/// photo for viewing only, so a renamed copy's `.apxmp` is never written without it.
+#[test]
+fn a_photo_field_that_is_no_plain_text_is_never_rewritten() {
+    use crate::xmp::{Name, Node, Property, Xmp};
+    let mut edits = Edits::new("0.8.0");
+    edits.photo = Some("DSCF1033.RAF".to_owned());
+    let xml = edits.to_xml();
+    let name = Name::new("apertrust", NAMESPACE, "photo");
+    let inner = Property::simple(Name::new("apertrust", NAMESPACE, "name"), "DSCF1033.RAF");
+    for node in [
+        Node::with_lang("DSCF1033.RAF", "en"),
+        Node::structure(vec![inner]),
+    ] {
+        let mut xmp = Xmp::parse(&xml).unwrap();
+        xmp.set(Property::new(name.clone(), node));
+        let other = xmp.to_xml();
+        assert!(
+            !Edits::parse(&other, 0).unwrap().problems.is_empty(),
+            "{other}"
+        );
+        let copy = preserving(
+            Some(other.as_bytes()),
+            "DSCF1033.RAF",
+            "DSCF1033_01.RAF",
+            "x",
+        );
+        assert_eq!(copy, Ok(None), "{other}");
+    }
+}

@@ -38,8 +38,10 @@ use apertrust_export::variables::{NotHere, PatternError, Unavailable};
 use apertrust_export::{Format, jpeg, png};
 use apertrust_library::clock::ClockError;
 use apertrust_library::ops::{
-    EditState, LeftOut, RawThumbnails, Source, SourceFile, SourceShot, SourceState, Thumbnail,
-    Unreadable, Volume,
+    EditState, Fix, FolderPreview, FreeSpace, ImportFate, ImportPhotos, ImportPreview,
+    ImportProblem, ImportSettings, LeftOut, OnSource, PhotoPreview, Problem as ImportProblemKind,
+    RawThumbnails, Row, Source, SourceFile, SourceShot, SourceState, Thumbnail, Unreadable,
+    Unwritable, Uses, Volume,
 };
 use apertrust_library::sidecar::{Newer, Problem, Reason, SidecarError};
 use apertrust_library::summary::{Facts, Summed};
@@ -105,6 +107,25 @@ fn export_settings(format: Format) -> ExportSettings {
         on_conflict: OnConflict::OverwriteIfChanged,
         format,
         size: Request::default(),
+    }
+}
+
+/// The checked photos of a card's `DCIM`, as Import sends them.
+fn import_photos() -> ImportPhotos {
+    ImportPhotos {
+        folder: PathBuf::from("/Volumes/EOS_DIGITAL/DCIM"),
+        files: vec![PathBuf::from("100CANON/IMG_0001.CR3")],
+    }
+}
+
+/// Import's settings as the client keeps them.
+fn import_settings() -> ImportSettings {
+    ImportSettings {
+        base_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+        default_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
+        subfolder: "$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)".to_owned(),
+        job_code: "Wedding".to_owned(),
+        places: places(),
     }
 }
 
@@ -342,6 +363,10 @@ pub(super) fn every_command() -> Vec<Command> {
         Command::Library(LibraryCommand::SourceSubfolders {
             folder: PathBuf::from("/Users/ana/Pictures"),
         }),
+        Command::Library(LibraryCommand::PreviewImport {
+            photos: import_photos(),
+            settings: import_settings(),
+        }),
         Command::Selection(SelectionCommand::Set(vec![photo(), other()])),
         Command::Selection(SelectionCommand::Add(photo())),
         Command::Selection(SelectionCommand::Remove(other())),
@@ -438,7 +463,7 @@ fn picker_variant(command: &PickerCommand) -> usize {
     }
 }
 
-const LIBRARY_COMMAND_VARIANTS: usize = 12;
+const LIBRARY_COMMAND_VARIANTS: usize = 13;
 
 /// Each library command's variant; a new one takes the next index and raises the count.
 fn library_command_variant(command: &LibraryCommand) -> usize {
@@ -455,6 +480,7 @@ fn library_command_variant(command: &LibraryCommand) -> usize {
         LibraryCommand::SourceThumbnails { .. } => 9,
         LibraryCommand::ListVolumes => 10,
         LibraryCommand::SourceSubfolders { .. } => 11,
+        LibraryCommand::PreviewImport { .. } => 12,
     }
 }
 
@@ -1161,6 +1187,10 @@ fn every_event() -> Vec<Event> {
                 total: 63_900_000_000,
             }],
         }),
+        Event::Library(LibraryEvent::ImportPreview {
+            open: 12,
+            preview: Box::new(import_preview()),
+        }),
         Event::Cache(CacheEvent::Sizes {
             sizes: Sizes::default(),
             limited: Usage {
@@ -1455,7 +1485,95 @@ fn event_variant(event: &Event) -> Option<usize> {
     })
 }
 
-const LIBRARY_EVENT_VARIANTS: usize = 15;
+/// A preview with every fate and every problem, each with its row and fix.
+fn import_preview() -> ImportPreview {
+    let shoot = PathBuf::from("/home/me/Pictures/Apertrust/20261115_Wedding");
+    let fates = [
+        ImportFate::Copy {
+            to: shoot.join("IMG_0001.CR3"),
+            renamed: false,
+        },
+        ImportFate::Copy {
+            to: shoot.join("IMG_0002_01.CR3"),
+            renamed: true,
+        },
+        ImportFate::There {
+            at: shoot.join("IMG_0003.CR3"),
+        },
+        ImportFate::Diverged {
+            at: shoot.join("IMG_0004.CR3"),
+            sidecar: shoot.join("IMG_0004.CR3.apxmp"),
+        },
+        ImportFate::Unreadable {
+            reason: "cannot read IMG_0005.CR3".to_owned(),
+        },
+    ];
+    let folder = |problem| ImportProblem {
+        row: Row::Folder,
+        problem,
+        fix: Some(Fix::ChooseFolder),
+    };
+    ImportPreview {
+        photos: fates
+            .into_iter()
+            .enumerate()
+            .map(|(i, fate)| PhotoPreview {
+                source: PathBuf::from(format!("100CANON/IMG_000{}.CR3", i + 1)),
+                fate,
+            })
+            .collect(),
+        folders: vec![FolderPreview {
+            folder: shoot.clone(),
+            photos: 5,
+            there: Some(2),
+        }],
+        folder_uses: Uses::default(),
+        subfolder_uses: Uses {
+            today: true,
+            taken: false,
+            photo: false,
+        },
+        imported_before: 1,
+        size: 6_200_000_000,
+        free: Some(FreeSpace {
+            volume: "Macintosh HD".to_owned(),
+            available: 4_100_000_000,
+            total: 994_000_000_000,
+        }),
+        problems: vec![
+            ImportProblem {
+                row: Row::Subfolder,
+                problem: ImportProblemKind::Pattern(PatternError::Unknown {
+                    name: "MONT".to_owned(),
+                    at: 9..13,
+                    suggestion: Some("MONTH"),
+                }),
+                fix: Some(Fix::Use { variable: "MONTH" }),
+            },
+            folder(ImportProblemKind::Unwritable {
+                at: PathBuf::from("/Volumes/Locked"),
+                why: Unwritable::ReadOnly,
+            }),
+            folder(ImportProblemKind::Unwritable {
+                at: PathBuf::from("/Volumes/Gone"),
+                why: Unwritable::Unreadable(io::ErrorKind::PermissionDenied),
+            }),
+            folder(ImportProblemKind::OnSource {
+                folder: PathBuf::from("/Volumes/EOS_DIGITAL/Backup"),
+                why: OnSource::OnCard {
+                    card: PathBuf::from("/Volumes/EOS_DIGITAL"),
+                },
+            }),
+            folder(ImportProblemKind::Space {
+                needed: 6_200_000_000,
+                available: 4_100_000_000,
+                volume: "Macintosh HD".to_owned(),
+            }),
+        ],
+    }
+}
+
+const LIBRARY_EVENT_VARIANTS: usize = 16;
 
 /// Each library event's variant; a new one takes the next index and raises the count.
 fn library_event_variant(event: &LibraryEvent) -> usize {
@@ -1475,6 +1593,7 @@ fn library_event_variant(event: &LibraryEvent) -> usize {
         LibraryEvent::SourceFailed { .. } => 12,
         LibraryEvent::SourceChecked { .. } => 13,
         LibraryEvent::Volumes { .. } => 14,
+        LibraryEvent::ImportPreview { .. } => 15,
     }
 }
 
@@ -1962,6 +2081,13 @@ fn every_command_states_its_access() {
         (
             Command::Library(LibraryCommand::SourceSubfolders {
                 folder: PathBuf::from("/Users/ana/Pictures"),
+            }),
+            Access::Photos,
+        ),
+        (
+            Command::Library(LibraryCommand::PreviewImport {
+                photos: import_photos(),
+                settings: import_settings(),
             }),
             Access::Photos,
         ),

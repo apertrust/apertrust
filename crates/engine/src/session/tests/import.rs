@@ -606,3 +606,53 @@ fn a_cancel_listing_drops_a_place_s_subfolders() {
     drop(session);
     remove(&path);
 }
+
+/// Import's settings sending the photos straight into `folder`.
+fn into(folder: &Path) -> library::ImportSettings {
+    library::ImportSettings {
+        base_folder: pattern(folder),
+        default_folder: pattern(folder),
+        subfolder: String::new(),
+        job_code: "Test".to_owned(),
+        places: Places::default(),
+    }
+}
+
+/// A preview comes in its command's number by a job with no progress, whatever folder is
+/// open, its photos in the order of their paths, and makes nothing.
+#[test]
+fn an_import_s_preview_comes_in_its_number_and_makes_nothing() {
+    let gpu = gpu();
+    let (folder, path) = photo_folder("import-preview");
+    // Beside the source, never inside it.
+    let mut name = folder.file_name().unwrap().to_owned();
+    name.push(" imported");
+    let destination = folder.with_file_name(name);
+    let (session, wakes) = start_with(&gpu, &[], synthetic);
+    let photos = library::ImportPhotos {
+        folder: folder.clone(),
+        files: vec![PathBuf::from("B.ARW"), PathBuf::from("A.ARW")],
+    };
+    let preview = session.send(Command::Library(LibraryCommand::PreviewImport {
+        photos,
+        settings: into(&destination),
+    }));
+    let previewed = |e: &Event| matches!(e, Event::Library(LibraryEvent::ImportPreview { open, .. }) if *open == preview);
+    let events = until(&session, &wakes, previewed);
+    let [LibraryEvent::ImportPreview { preview: found, .. }] = library_of(&events, preview)[..]
+    else {
+        panic!("{events:?}");
+    };
+    let to: Vec<_> = (found.photos.iter())
+        .map(|photo| match &photo.fate {
+            library::ImportFate::Copy { to, .. } => to.clone(),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(to, [destination.join("A.ARW"), destination.join("B.ARW")]);
+    assert!(found.problems.is_empty(), "{:?}", found.problems);
+    assert!(of_job(&events, preview).is_none(), "{events:?}");
+    assert!(!destination.exists());
+    drop(session);
+    remove(&path);
+}
