@@ -2571,6 +2571,7 @@ sheet-column-width = Tool column width
 ## tooltip and check box say, what screen readers hear as the listing ends, and its primary
 ## button, with why it cannot press. $source is the card's volume name or the folder's.
 
+import-heading-none = Import
 import-heading = Import · { $source }
 import-sheet-name = Import, { $source }
 import-grid-name = { $source }, { photo-count }, { $checked } checked
@@ -2592,7 +2593,68 @@ import-primary = Import { photo-count }
 import-why-no-source = Choose where to import from.
 import-why-listing = Still listing { $source }
 import-why-none-checked = No photos checked
+import-why-previewing = Working out where the photos go…
 import-why-empty-card = No photos on { $source }.
 import-why-empty-folder = No photos in { $source }.
 import-why-removed = { $source } was removed.
 import-why-failed = { $source } can’t be listed: { $reason }
+
+## The Import sheet's bar and footer (docs/gui.md, The Import sheet, The footer): its
+## counts, its Select buttons, what the grid says with nothing to show, the summary's two
+## lines, and a problem in the footer, naming its row. Each problem's words follow its
+## row's name, so they start in lower case.
+
+import-bar-name = Import grid bar
+import-select-new = Select new
+import-select-all = Select all
+import-select-none = Select none
+import-counts = { photo-count }
+import-counts-before = { photo-count }, { $before } imported before
+import-counts-listing = Listing { $source }… { $count } so far
+import-counts-checking = Checking against { $folder }… { $checked } of { $of }
+import-counts-checking-start = Checking… { $checked } of { $of }
+import-grid-no-source = Choose where to import from.
+import-grid-no-source-note = A phone connected by cable doesn’t show here yet: copy its photos to a folder first.
+import-grid-all-on = All { photo-count } on { $source } are already imported.
+import-grid-all-in = All { photo-count } in { $source } are already imported.
+import-summary-lead = { $checked } of { photo-count } · { $size } of { $free } free →{ " " }
+import-summary-lead-unknown = { $checked } of { photo-count } · { $size } →{ " " }
+import-summary-lead-waiting = { $checked } of { photo-count }
+import-summary-new-folder = , a new folder
+import-summary-there = , already there: { photo-count }
+import-summary-new-folders =
+    { $count ->
+        [one] , { $count } new folder
+       *[other] , { $count } new folders
+    }
+import-summary-new-folders-by-day =
+    { $count ->
+        [one] , { $count } new folder by the day taken
+       *[other] , { $count } new folders by the day taken
+    }
+import-summary-folders-there = , into { $count } folders already there
+import-summary-tip = { $size } of { $free } free on { $volume }
+import-note-copies = Copies only; nothing on { $source } is changed.
+import-note-again =
+    { $count ->
+        [one] { $count } of these was imported before; it will be copied again.
+       *[other] { $count } of these were imported before; they will be copied again.
+    }
+import-row-folder = Folder
+import-row-subfolder = Subfolder
+import-problem = { $row }: { $problem }
+import-problem-nameless = a variable’s name is missing after “$(”.
+import-problem-unknown = unknown variable $({ $name }).
+import-problem-unclosed = missing “{ $expected }” after “{ $variable }”.
+import-problem-no-operation = “{ $found }” after { $variable } is no operation.
+import-problem-too-deep = variables are nested more than { $depth } deep.
+import-problem-outside-folder = “{ $subfolder }” leads out of Folder.
+import-problem-not-absolute = not a full path.
+import-problem-not-connected = the disk isn’t connected.
+import-problem-not-a-folder = a file is in the way at “{ $folder }”.
+import-problem-read-only = “{ $folder }” is read-only.
+import-problem-unreadable = can’t write to “{ $folder }”: { $why }.
+import-problem-is-source = it is the source.
+import-problem-inside-source = it is inside the source.
+import-problem-on-card = it is on the card the source is on.
+import-problem-space = needs { $needed }; { $available } is free on { $volume }.

@@ -136,8 +136,8 @@ pub use setting_rows::{
     TextRowOutput, WarningButton,
 };
 pub use sheet::{
-    COLUMN_LEAST, COLUMN_MOST, COLUMN_WIDTH, FOOTER, Returned, SelectButton, Sheet, SheetCell,
-    SheetOutput, Summary,
+    COLUMN_LEAST, COLUMN_MOST, COLUMN_WIDTH, FOOTER, GridMessage, Returned, SelectButton, Sheet,
+    SheetCell, SheetOutput, Summary,
 };
 pub use slider::{Mark, Quad, SliderAction, SliderRow, Track, takes_digits};
 pub use swatches::{Swatch, SwatchFill, Swatches};

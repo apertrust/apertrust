@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 
-use apertrust_engine::session::library::Places;
+use apertrust_engine::session::library::{self, Places};
 use apertrust_ui::{Builtin, Theme};
 use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
@@ -192,6 +192,22 @@ fn the_listing_arrives_in_chunks_then_its_times_then_its_check() {
     assert_eq!(checked_places(&listing), [0, 2]);
     assert_eq!(listing.checks().active(), Some(0));
     assert!(listing.at(1).imported_before());
+}
+
+#[test]
+fn checks_changed_by_hand_while_the_check_runs_are_kept_at_the_opening() {
+    let mut sent = Vec::new();
+    let mut listing = Listing::default();
+    listing.list(&card().folder, &settings(), &mut sender(&mut sent));
+    let files = vec![file("IMG_0001.CR3", 10), file("IMG_0002.CR3", 20)];
+    listing.receive(&listed(LISTING, files, true));
+    listing.receive(&taken(LISTING, &[Some(at(9, 0)), Some(at(9, 1))]));
+    listing.receive(&checked(LISTING, 1, vec![SourceState::New], 1, 2));
+    listing.select(Select::All);
+    listing.apply(CheckGesture::Toggle(1));
+    listing.receive(&checked(LISTING, 1, vec![SourceState::New], 2, 2));
+    assert!(listing.opened());
+    assert_eq!(checked_places(&listing), [0]);
 }
 
 #[test]
@@ -408,6 +424,11 @@ struct Bench {
 
 /// The sheet for `source` in a 1280 × 800 window, in the dark theme and British English.
 fn bench(source: Option<Source>) -> Harness<'static, Bench> {
+    bench_in(source, Builtin::Dark, Locale::EnGb)
+}
+
+/// The sheet for `source` in a 1280 × 800 window, in the theme `which` and `locale`.
+fn bench_in(source: Option<Source>, which: Builtin, locale: Locale) -> Harness<'static, Bench> {
     let bench = Bench {
         sheet: ImportSheet::new(source, settings()),
         sent: Vec::new(),
@@ -415,9 +436,9 @@ fn bench(source: Option<Source>) -> Harness<'static, Bench> {
     };
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
-        .with_context_setup(|ctx| {
-            apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark));
-            apertrust_ui::set_locale(ctx, Locale::EnGb);
+        .with_context_setup(move |ctx| {
+            apertrust_ui::install(ctx, Theme::builtin(which));
+            apertrust_ui::set_locale(ctx, locale);
         })
         .build_ui_state(
             |ui, bench: &mut Bench| {
@@ -526,8 +547,43 @@ fn import_is_disabled_while_listing_and_checking() {
         &mut harness,
         checked(LISTING, 1, vec![SourceState::New], 1, 1),
     );
+    // Then until the preview of the photos checked comes.
+    let button = primary(&harness, "Import 1 photo");
+    assert!(button.accesskit_node().is_disabled());
+    let (asked, _) = last_preview(&harness).expect("asked at opening");
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    answer(&mut harness, asked, preview_into(&[(wedding, None)], 0));
     let button = primary(&harness, "Import 1 photo");
     assert!(!button.accesskit_node().is_disabled());
+}
+
+#[test]
+fn import_waits_for_the_preview_of_the_photos_checked_now() {
+    let mut harness = bench(Some(card()));
+    forty(&mut harness);
+    let previewing = Some("Working out where the photos go…");
+    let button = primary(&harness, "Import 30 photos");
+    assert_eq!(button.accesskit_node().description().as_deref(), previewing);
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    let (first, _) = last_preview(&harness).expect("asked at opening");
+    answer(&mut harness, first, preview_into(&[(wedding, None)], 0));
+    assert!(
+        !primary(&harness, "Import 30 photos")
+            .accesskit_node()
+            .is_disabled()
+    );
+    // A photo checked: the preview held is the old checks', so Import waits again.
+    check_box(&harness, "Import DSCF1001.RAF").click();
+    harness.run();
+    let button = primary(&harness, "Import 31 photos");
+    assert_eq!(button.accesskit_node().description().as_deref(), previewing);
+    let (second, _) = last_preview(&harness).expect("asked again");
+    answer(&mut harness, second, preview_into(&[(wedding, None)], 0));
+    assert!(
+        !primary(&harness, "Import 31 photos")
+            .accesskit_node()
+            .is_disabled()
+    );
 }
 
 #[test]
@@ -538,16 +594,19 @@ fn forty_photos_ten_imported_before_open_with_thirty_checked_and_the_first_new_a
     assert_eq!(listing.checks().checked_count(), 30);
     assert_eq!(listing.checks().active(), Some(10));
     assert_eq!(checked_places(listing), (10..40).collect::<Vec<_>>());
-    assert!(
-        !primary(&harness, "Import 30 photos")
-            .accesskit_node()
-            .is_disabled()
-    );
     // The ten imported before: unchecked, dimmed, with their mark's words.
     for i in 0..10 {
         let photo = listing.at(i);
         assert!(photo.imported_before() && !listing.checks().is_checked(i));
     }
+    let (asked, _) = last_preview(&harness).expect("asked at opening");
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    answer(&mut harness, asked, preview_into(&[(wedding, None)], 0));
+    assert!(
+        !primary(&harness, "Import 30 photos")
+            .accesskit_node()
+            .is_disabled()
+    );
     let cell = harness.get_by_role_and_label(Role::ListItem, "DSCF1001.RAF");
     assert_eq!(
         cell.accesskit_node().description().as_deref(),
@@ -681,14 +740,457 @@ fn as_folder_changes_the_sheet_checks_its_listing_again() {
     };
     let sent = &harness.state().sent;
     assert_eq!(rechecks(sent), 1, "{sent:?}");
-    assert!(matches!(
-        sent.last(),
-        Some(Command::Library(LibraryCommand::CheckSource { listing: LISTING, base_folder, .. }))
+    assert!(sent.iter().any(|command| matches!(
+        command,
+        Command::Library(LibraryCommand::CheckSource { listing: LISTING, base_folder, .. })
             if base_folder == "/Volumes/Photos NAS"
-    ));
+    )));
     // Checking, Import waits; the import name alone changing checks nothing again.
     assert!(harness.state().sheet.listing().busy());
     harness.state_mut().sheet.settings_mut().job_code = "Studio".to_owned();
     harness.run();
     assert_eq!(rechecks(&harness.state().sent), 1);
+}
+
+// The bar and the footer.
+
+#[test]
+fn select_new_all_and_none_act_on_every_cell() {
+    let mut sent = Vec::new();
+    let mut listing = Listing::default();
+    listing.list(&card().folder, &settings(), &mut sender(&mut sent));
+    let files = vec![file("A.CR3", 1), file("B.CR3", 1), file("C.CR3", 1)];
+    listing.receive(&listed(LISTING, files, true));
+    listing.receive(&taken(LISTING, &[None, None, None]));
+    let states = vec![SourceState::New, before("B.CR3"), SourceState::New];
+    listing.receive(&checked(LISTING, 1, states, 3, 3));
+    let at_opening = listing.changed();
+    listing.select(Select::All);
+    assert_eq!(checked_places(&listing), [0, 1, 2]);
+    listing.select(Select::None);
+    assert!(checked_places(&listing).is_empty());
+    listing.apply(CheckGesture::Toggle(1));
+    // Exactly the photos not imported before, the one checked by hand unchecked.
+    listing.select(Select::New);
+    assert_eq!(checked_places(&listing), [0, 2]);
+    assert_eq!(listing.checks().last_touched(), None);
+    assert!(listing.changed() > at_opening);
+    // Nothing changed, nothing to preview again.
+    let now = listing.changed();
+    listing.select(Select::New);
+    assert_eq!(listing.changed(), now);
+}
+
+/// Anna's home.
+fn home() -> Option<&'static Path> {
+    Some(Path::new("/Users/anna"))
+}
+
+/// A preview of `photos` photos into `folders`, each new or with its raws there, 6.2 GB on
+/// Macintosh HD's 412 GB free.
+fn preview_into(folders: &[(&str, Option<usize>)], imported_before: usize) -> ImportPreview {
+    ImportPreview {
+        folders: (folders.iter())
+            .map(|(folder, there)| library::FolderPreview {
+                folder: PathBuf::from(folder),
+                photos: 1,
+                there: *there,
+            })
+            .collect(),
+        imported_before,
+        size: 6_200_000_000,
+        free: Some(library::FreeSpace {
+            volume: "Macintosh HD".to_owned(),
+            available: 412_000_000_000,
+            total: 994_000_000_000,
+        }),
+        ..ImportPreview::default()
+    }
+}
+
+#[test]
+fn the_footer_says_the_count_the_size_the_free_space_and_the_destination() {
+    let words = Translator::new(Locale::EnGb);
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    let preview = preview_into(&[(wedding, None)], 0);
+    let footer = footer(&words, "EOS_DIGITAL", (412, 209), Some(&preview), home());
+    assert_eq!(footer.lead, "209 of 412 photos · 6.2 GB of 412 GB free → ");
+    assert_eq!(footer.path, "~/Pictures/Apertrust/20261115_Wedding");
+    assert_eq!(footer.tail, ", a new folder");
+    assert_eq!(
+        footer.tip.as_deref(),
+        Some("~/Pictures/Apertrust/20261115_Wedding\n6.2 GB of 412 GB free on Macintosh HD")
+    );
+    assert_eq!(
+        footer.note,
+        "Copies only; nothing on EOS_DIGITAL is changed."
+    );
+    assert!(!footer.warning);
+    // Into a folder there already.
+    let lisbon = "/Users/anna/Pictures/Apertrust/2026-10 Lisbon";
+    let preview = preview_into(&[(lisbon, Some(86))], 0);
+    let footer = self::footer(&words, "EOS_DIGITAL", (412, 209), Some(&preview), home());
+    assert_eq!(footer.tail, ", already there: 86 photos");
+    // Two new folders by the day taken, under the folder they share.
+    let mut preview = preview_into(
+        &[
+            ("/Users/anna/Pictures/Apertrust/20261114_Wedding", None),
+            ("/Users/anna/Pictures/Apertrust/20261115_Wedding", None),
+        ],
+        0,
+    );
+    preview.subfolder_uses.taken = true;
+    let footer = self::footer(&words, "EOS_DIGITAL", (412, 209), Some(&preview), home());
+    assert_eq!(footer.path, "~/Pictures/Apertrust");
+    assert_eq!(footer.tail, ", 2 new folders by the day taken");
+}
+
+#[test]
+fn the_footer_warns_of_photos_copied_again_and_says_when_nothing_is_checked() {
+    let words = Translator::new(Locale::EnGb);
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    let preview = preview_into(&[(wedding, None)], 380);
+    let footer = footer(&words, "EOS_DIGITAL", (412, 400), Some(&preview), home());
+    assert_eq!(
+        footer.note,
+        "380 of these were imported before; they will be copied again."
+    );
+    assert!(footer.warning);
+    let none = self::footer(&words, "EOS_DIGITAL", (412, 0), Some(&preview), home());
+    // Import's reason says it on the second line; the first stays empty.
+    assert!(none.lead.is_empty() && none.path.is_empty() && none.tail.is_empty());
+    assert!(!none.warning);
+    // Before the first answer, the count alone; with no free space read, the size alone.
+    let waiting = self::footer(&words, "EOS_DIGITAL", (412, 209), None, home());
+    assert_eq!(waiting.lead, "209 of 412 photos");
+    let mut unknown = preview_into(&[(wedding, None)], 0);
+    unknown.free = None;
+    let footer = self::footer(&words, "EOS_DIGITAL", (412, 209), Some(&unknown), home());
+    assert_eq!(footer.lead, "209 of 412 photos · 6.2 GB → ");
+    let whole = "~/Pictures/Apertrust/20261115_Wedding";
+    assert_eq!(footer.tip.as_deref(), Some(whole));
+}
+
+#[test]
+fn a_problem_in_the_footer_names_its_row() {
+    let words = Translator::new(Locale::EnGb);
+    let unknown = ImportProblem {
+        row: Row::Subfolder,
+        problem: Problem::Pattern(PatternError::Unknown {
+            name: "MONT".to_owned(),
+            at: 9..13,
+            suggestion: None,
+        }),
+        fix: None,
+    };
+    assert_eq!(
+        problem_words(&unknown, &words, home()),
+        "Subfolder: unknown variable $(MONT)."
+    );
+    let space = ImportProblem {
+        row: Row::Folder,
+        problem: Problem::Space {
+            needed: 6_200_000_000,
+            available: 4_100_000_000,
+            volume: "Macintosh HD".to_owned(),
+        },
+        fix: None,
+    };
+    assert_eq!(
+        problem_words(&space, &words, home()),
+        "Folder: needs 6.2 GB; 4.1 GB is free on Macintosh HD."
+    );
+}
+
+/// The number of the last `PreviewImport` the bench sent, and the files it asked about.
+fn last_preview(harness: &Harness<'static, Bench>) -> Option<(u64, usize)> {
+    let sent = &harness.state().sent;
+    (sent.iter().enumerate())
+        .rev()
+        .find_map(|(at, command)| match command {
+            Command::Library(LibraryCommand::PreviewImport { photos, .. }) => {
+                Some((at as u64 + 1, photos.files.len()))
+            }
+            _ => None,
+        })
+}
+
+/// The answer to the preview numbered `open`.
+fn answer(harness: &mut Harness<'static, Bench>, open: u64, preview: ImportPreview) {
+    let preview = Box::new(preview);
+    tell(harness, LibraryEvent::ImportPreview { open, preview });
+}
+
+/// The footer's first line, as screen readers read it.
+fn summary_line(harness: &Harness<'static, Bench>) -> bool {
+    harness
+        .query_by_label(
+            "30 of 40 photos · 6.2 GB of 412 GB free → ~/Pictures/Apertrust/20261115_Wedding, a new folder",
+        )
+        .is_some()
+}
+
+#[test]
+fn the_preview_is_asked_for_as_the_checks_change_its_latest_answer_alone_shown() {
+    let mut harness = bench(Some(card()));
+    forty(&mut harness);
+    let (first, files) = last_preview(&harness).expect("asked at opening");
+    assert_eq!(files, 30);
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    check_box(&harness, "Import DSCF1001.RAF").click();
+    harness.run();
+    let (second, files) = last_preview(&harness).expect("asked again");
+    assert!(second > first);
+    assert_eq!(files, 31);
+    // The first's answer, overtaken, is not shown; nor asked again with nothing changed.
+    answer(&mut harness, first, preview_into(&[(wedding, None)], 0));
+    assert!(harness.state().sheet.preview.is_none());
+    assert_eq!(last_preview(&harness).map(|(n, _)| n), Some(second));
+    // Unchecked again, then the latest answer shown.
+    check_box(&harness, "Import DSCF1001.RAF").click();
+    harness.run();
+    let (third, _) = last_preview(&harness).expect("asked again");
+    answer(&mut harness, third, preview_into(&[(wedding, None)], 0));
+    assert!(summary_line(&harness));
+    // The settings changing ask too.
+    harness.state_mut().sheet.settings_mut().job_code = "Studio".to_owned();
+    harness.run();
+    assert!(last_preview(&harness).is_some_and(|(n, _)| n > third));
+}
+
+#[test]
+fn the_bar_counts_the_listing_the_check_and_what_was_imported_before() {
+    let mut harness = bench(Some(card()));
+    harness.get_by_role_and_label(Role::Toolbar, "Import grid bar");
+    harness.get_by_label("Import · EOS_DIGITAL");
+    tell(&mut harness, listed(LISTING, vec![file("A.CR3", 1)], false));
+    harness.get_by_label("Listing EOS_DIGITAL… 1 so far");
+    tell(&mut harness, listed(LISTING, vec![file("B.CR3", 1)], true));
+    tell(&mut harness, taken(LISTING, &[None, None]));
+    harness.get_by_label("Checking… 0 of 2");
+    tell(
+        &mut harness,
+        checked(LISTING, 1, vec![before("A.CR3")], 1, 2),
+    );
+    harness.get_by_label("Checking against ~/Pictures/Apertrust… 1 of 2");
+    tell(
+        &mut harness,
+        checked(LISTING, 1, vec![SourceState::New], 2, 2),
+    );
+    harness.get_by_label("2 photos, 1 imported before");
+}
+
+#[test]
+fn the_select_buttons_check_new_all_and_none() {
+    let mut harness = bench(Some(card()));
+    forty(&mut harness);
+    let count = |harness: &Harness<'static, Bench>| {
+        harness.state().sheet.listing().checks().checked_count()
+    };
+    harness
+        .get_by_role_and_label(Role::Button, "Select all")
+        .click();
+    harness.run();
+    assert_eq!(count(&harness), 40);
+    harness
+        .get_by_role_and_label(Role::Button, "Select none")
+        .click();
+    harness.run();
+    assert_eq!(count(&harness), 0);
+    harness
+        .get_by_role_and_label(Role::Button, "Select new")
+        .click();
+    harness.run();
+    assert_eq!(count(&harness), 30);
+}
+
+#[test]
+fn with_no_source_the_grid_says_where_to_start() {
+    let harness = bench(None);
+    // In the grid, and as Import's reason.
+    assert_eq!(
+        harness
+            .query_all_by_label("Choose where to import from.")
+            .count(),
+        2
+    );
+    harness.get_by_label(
+        "A phone connected by cable doesn’t show here yet: copy its photos to a folder first.",
+    );
+}
+
+#[test]
+fn an_empty_card_a_folder_and_a_card_removed_say_so_and_cannot_import() {
+    let mut harness = bench(Some(card()));
+    tell(&mut harness, listed(LISTING, Vec::new(), true));
+    tell(&mut harness, taken(LISTING, &[]));
+    tell(&mut harness, checked(LISTING, 1, Vec::new(), 0, 0));
+    assert!(
+        harness
+            .query_all_by_label("No photos on EOS_DIGITAL.")
+            .count()
+            >= 2
+    );
+    let button = primary(&harness, "Import 0 photos");
+    assert!(button.accesskit_node().is_disabled());
+    let wedding = Source {
+        folder: PathBuf::from("/Users/anna/Desktop/Wedding"),
+        name: "Wedding".to_owned(),
+        card: false,
+    };
+    let mut harness = bench(Some(wedding));
+    tell(&mut harness, listed(LISTING, Vec::new(), true));
+    tell(&mut harness, taken(LISTING, &[]));
+    tell(&mut harness, checked(LISTING, 1, Vec::new(), 0, 0));
+    assert!(harness.query_all_by_label("No photos in Wedding.").count() >= 2);
+    let mut harness = bench(Some(card()));
+    tell(&mut harness, listed(LISTING, vec![file("A.CR3", 1)], false));
+    let reason = "/Volumes/EOS_DIGITAL is not there".to_owned();
+    tell(
+        &mut harness,
+        LibraryEvent::SourceFailed {
+            open: LISTING,
+            reason,
+        },
+    );
+    assert!(
+        harness
+            .query_all_by_label("EOS_DIGITAL was removed.")
+            .count()
+            >= 2
+    );
+    assert_eq!(
+        harness.state().sheet.counts(&Translator::new(Locale::EnGb)),
+        ""
+    );
+}
+
+/// Forty photos of the card, every one imported before.
+fn all_imported(harness: &mut Harness<'static, Bench>) {
+    let files: Vec<SourceFile> = (0..40)
+        .map(|i| file(&format!("DSCF{}.RAF", 1001 + i), 30_000_000))
+        .collect();
+    tell(harness, listed(LISTING, files, true));
+    let times: Vec<Option<DateTime>> = (0..40).map(|i| Some(at(10, i as u8))).collect();
+    tell(harness, taken(LISTING, &times));
+    let states = (0..40)
+        .map(|i| before(&format!("DSCF{}.RAF", 1001 + i)))
+        .collect();
+    tell(harness, checked(LISTING, 1, states, 40, 40));
+    harness.run();
+}
+
+#[test]
+fn with_every_photo_imported_before_the_grid_says_so_and_none_is_checked() {
+    let mut harness = bench(Some(card()));
+    all_imported(&mut harness);
+    harness.get_by_label("All 40 photos on EOS_DIGITAL are already imported.");
+    let button = primary(&harness, "Import 0 photos");
+    assert!(button.accesskit_node().is_disabled());
+    assert_eq!(
+        button.accesskit_node().description().as_deref(),
+        Some("No photos checked")
+    );
+    assert_eq!(last_preview(&harness), None);
+}
+
+/// The ready sheet: forty photos, ten imported before, with their pictures and its
+/// preview's answer.
+fn ready(harness: &mut Harness<'static, Bench>) {
+    forty(harness);
+    for i in 0..40u8 {
+        // A small gradient, a little different for each photo.
+        let pixels: Vec<u8> = (0..12u8)
+            .flat_map(|p| [40 + 4 * i, 90 + 8 * (p % 4), 140 - 2 * i, 255])
+            .collect();
+        let image = Thumbnail {
+            width: 4,
+            height: 3,
+            pixels: Arc::from(pixels),
+        };
+        let photo = format!("100CANON/DSCF{}.RAF", 1001 + u32::from(i));
+        let thumbnail = LibraryEvent::Thumbnail {
+            open: LISTING,
+            photo,
+            size: 256,
+            image: Some(image),
+        };
+        harness.state_mut().sheet.receive(&thumbnail);
+    }
+    let (open, _) = last_preview(harness).expect("asked at opening");
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    answer(harness, open, preview_into(&[(wedding, None)], 0));
+}
+
+/// The ready sheet with a problem on Subfolder.
+fn with_a_problem(harness: &mut Harness<'static, Bench>) {
+    forty(harness);
+    let (open, _) = last_preview(harness).expect("asked at opening");
+    let mut preview = preview_into(&[], 0);
+    preview.problems.push(ImportProblem {
+        row: Row::Subfolder,
+        problem: Problem::Pattern(PatternError::Unknown {
+            name: "MONT".to_owned(),
+            at: 9..13,
+            suggestion: None,
+        }),
+        fix: None,
+    });
+    answer(harness, open, preview);
+}
+
+#[test]
+fn a_problem_disables_import_naming_its_row() {
+    let mut harness = bench(Some(card()));
+    with_a_problem(&mut harness);
+    let button = primary(&harness, "Import 30 photos");
+    assert!(button.accesskit_node().is_disabled());
+    assert_eq!(
+        button.accesskit_node().description().as_deref(),
+        Some("Subfolder: unknown variable $(MONT).")
+    );
+}
+
+// How it looks.
+
+/// The sheet in the theme `which` and `locale`, made as `state` makes it, photographed as
+/// `name`.
+fn photographed(
+    which: Builtin,
+    locale: Locale,
+    source: Option<Source>,
+    state: impl FnOnce(&mut Harness<'static, Bench>),
+    name: &str,
+) {
+    let mut harness = bench_in(source, which, locale);
+    state(&mut harness);
+    harness.run();
+    harness.snapshot(name);
+}
+
+/// One snapshot test for each look.
+macro_rules! looks {
+    ($($test:ident: $which:expr, $locale:expr, $source:expr, $state:expr, $file:literal;)*) => {
+        $(
+            #[test]
+            fn $test() {
+                photographed($which, $locale, $source, $state, $file);
+            }
+        )*
+    };
+}
+
+looks! {
+    ready_in_the_dark_theme: Builtin::Dark, Locale::EnGb, Some(card()), ready, "import-sheet-ready-dark";
+    ready_in_the_light_theme: Builtin::Light, Locale::EnGb, Some(card()), ready, "import-sheet-ready-light";
+    ready_in_american_english: Builtin::Dark, Locale::EnUs, Some(card()), ready, "import-sheet-ready-en-us";
+    ready_in_ukrainian: Builtin::Dark, Locale::Uk, Some(card()), ready, "import-sheet-ready-uk";
+    ready_in_polish: Builtin::Dark, Locale::Pl, Some(card()), ready, "import-sheet-ready-pl";
+    ready_in_the_pseudo_locale: Builtin::Dark, Locale::Pseudo, Some(card()), ready, "import-sheet-ready-pseudo";
+    all_imported_in_the_dark_theme: Builtin::Dark, Locale::EnGb, Some(card()), all_imported, "import-sheet-all-imported-dark";
+    all_imported_in_the_light_theme: Builtin::Light, Locale::EnGb, Some(card()), all_imported, "import-sheet-all-imported-light";
+    no_source_in_the_dark_theme: Builtin::Dark, Locale::EnGb, None, |_| {}, "import-sheet-no-source-dark";
+    no_source_in_the_light_theme: Builtin::Light, Locale::EnGb, None, |_| {}, "import-sheet-no-source-light";
+    a_problem_in_the_dark_theme: Builtin::Dark, Locale::EnGb, Some(card()), with_a_problem, "import-sheet-problem-dark";
+    a_problem_in_the_light_theme: Builtin::Light, Locale::EnGb, Some(card()), with_a_problem, "import-sheet-problem-light";
 }

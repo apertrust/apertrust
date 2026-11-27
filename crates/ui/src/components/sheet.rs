@@ -187,6 +187,16 @@ pub struct Sheet<'a, F: Fn(usize) -> SheetCell<'a>> {
     why_not: Option<&'a str>,
     order: ButtonOrder,
     focus_given: bool,
+    message: Option<GridMessage<'a>>,
+}
+
+/// What the grid says where it has nothing to show, or over its cells, translated: "No
+/// photos on EOS_DIGITAL.", "All 412 photos on EOS_DIGITAL are already imported.", with a
+/// smaller note under it where there is one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GridMessage<'a> {
+    pub text: &'a str,
+    pub note: &'a str,
 }
 
 impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
@@ -219,6 +229,7 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
             why_not: None,
             order: ButtonOrder::platform(),
             focus_given: false,
+            message: None,
         }
     }
 
@@ -284,6 +295,12 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
     /// card: the grid's active cell does not take it.
     pub fn focus_given(mut self, given: bool) -> Self {
         self.focus_given = given;
+        self
+    }
+
+    /// What the grid says: in its middle while it has no cells, else on a line over them.
+    pub fn message(mut self, message: Option<GridMessage<'a>>) -> Self {
+        self.message = message;
         self
     }
 
@@ -530,6 +547,11 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
             gesture: None,
             shown: 0..0,
         };
+        let mut rect = rect;
+        if let Some(message) = self.message {
+            let line = message_lines(ui, t, rect, message, self.count == 0, list.id);
+            rect.min.y = line.max(rect.min.y);
+        }
         if self.count == 0 {
             return out;
         }
@@ -759,6 +781,58 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
             drop(response.on_hover_text(note));
         }
     }
+}
+
+/// The grid's message in `rect`, its text in `text_secondary` and its note smaller under
+/// it, each a label to screen readers inside the grid `list`: centred in the grid where
+/// `alone`, else on a band at its top. Returns where that band ends, for the cells under
+/// it.
+fn message_lines(
+    ui: &mut Ui,
+    t: &Theme,
+    rect: Rect,
+    message: GridMessage,
+    alone: bool,
+    list: Id,
+) -> f32 {
+    let painter = ui.painter_at(rect);
+    let width = rect.width() - 2.0 * t.spacing.xl;
+    let colour = t.colors.text_secondary;
+    let job = |text: &str, size: f32| {
+        let job = egui::text::LayoutJob::simple(
+            text.to_owned(),
+            FontId::proportional(size),
+            colour,
+            width,
+        );
+        painter.layout_job(job)
+    };
+    let text = job(message.text, t.text.body);
+    let note = (!message.note.is_empty()).then(|| job(message.note, t.text.small));
+    let gap = t.spacing.xs;
+    let height = text.size().y + note.as_ref().map_or(0.0, |n| gap + n.size().y);
+    let top = if alone {
+        rect.center().y - height / 2.0
+    } else {
+        rect.top() + t.spacing.m
+    };
+    let centre = rect.center().x;
+    let mut at = top;
+    let mut parts = vec![(text, message.text)];
+    if let Some(note) = note {
+        parts.push((note, message.note));
+    }
+    for (i, (galley, words)) in parts.into_iter().enumerate() {
+        let size = galley.size();
+        let place = Rect::from_min_size(pos2(centre - size.x / 2.0, at), size);
+        at = place.bottom() + gap;
+        painter.galley(place.min, galley, colour);
+        let build = UiBuilder::new().max_rect(place).accessibility_parent(list);
+        let child = ui.new_child(build);
+        let response = child.interact(place, list.with(("message", i)), Sense::hover());
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, words));
+    }
+    top + height + t.spacing.m
 }
 
 /// The sheet's id: one sheet is open at a time.

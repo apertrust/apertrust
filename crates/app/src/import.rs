@@ -50,11 +50,14 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use apertrust_engine::session::library::{
-    DateTime, ImportSettings, SourceFile, SourceShot, SourceState, Thumbnail, Trees, browser_order,
+    DateTime, ImportPhotos, ImportPreview, ImportProblem, ImportSettings, OnSource, Problem, Row,
+    SourceFile, SourceShot, SourceState, Thumbnail, Trees, Unwritable, browser_order,
 };
 use apertrust_engine::session::{Command, LibraryCommand, LibraryEvent};
+use apertrust_export::variables::{MAX_DEPTH, PatternError};
 use apertrust_ui::components::{
-    CellMark, CellPicture, CheckGesture, Checks, Sheet, SheetCell, ThumbnailSize,
+    CellMark, CellPicture, CheckGesture, Checks, GridMessage, SelectButton, Sheet, SheetCell,
+    Summary, ThumbnailSize,
 };
 use apertrust_ui::i18n::{Args, Translator};
 use apertrust_ui::{Icon, Locale, translator};
@@ -154,12 +157,46 @@ pub struct Listing {
     checks: Checks,
     /// The opening's checks are set.
     opened: bool,
+    /// The checks were changed by hand before the opening, which then leaves them.
+    touched: bool,
     /// The photos whose thumbnails were asked for since they came into sight.
     asked: HashSet<usize>,
     /// Bumped as a cell's words change: the files listed, their times, their states.
     generation: u64,
     /// Bumped as a thumbnail comes.
     came: u64,
+    /// Bumped as the photos checked change, which the preview follows.
+    changed: u64,
+}
+
+/// A Select button of the sheet bar, acting on the cells shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Select {
+    /// Exactly the photos not imported before, darktable's "select new".
+    New,
+    All,
+    None,
+}
+
+impl Select {
+    pub const ALL: [Select; 3] = [Select::New, Select::All, Select::None];
+
+    /// Its id among the bar's buttons, and its words' message.
+    pub fn id(self) -> &'static str {
+        match self {
+            Select::New => "new",
+            Select::All => "all",
+            Select::None => "none",
+        }
+    }
+
+    fn words(self) -> &'static str {
+        match self {
+            Select::New => "import-select-new",
+            Select::All => "import-select-all",
+            Select::None => "import-select-none",
+        }
+    }
 }
 
 impl Listing {
@@ -183,6 +220,7 @@ impl Listing {
             source: source.to_owned(),
             check: 1,
             generation: self.generation + 1,
+            changed: self.changed + 1,
             ..Listing::default()
         };
     }
@@ -241,6 +279,9 @@ impl Listing {
                     });
                 }
                 self.listed |= *done;
+                if *done {
+                    self.progress = (0, self.photos.len());
+                }
                 self.reorder();
             }
             LibraryEvent::SourceTaken { shots, .. } => {
@@ -302,17 +343,21 @@ impl Listing {
         true
     }
 
-    /// The opening's checks: the photos not imported before checked, the first of them the
-    /// sheet's active photo, else the first photo listed.
+    /// The opening's checks: the photos not imported before checked, unless the checks were
+    /// changed by hand while the check ran; the first checked the sheet's active photo, else
+    /// the first photo listed.
     fn open(&mut self) {
         self.opened = true;
-        for place in 0..self.order.len() {
-            let new = self.at(place).is_new();
-            self.checks.set(place, new);
+        if !self.touched {
+            for place in 0..self.order.len() {
+                let new = self.at(place).is_new();
+                self.checks.set(place, new);
+            }
         }
         let first = self.checks.checked().next();
         self.checks
             .set_active(first.or((!self.order.is_empty()).then_some(0)));
+        self.changed += 1;
     }
 
     /// Puts the photos in the grid's order, carrying the checks and the active photo over
@@ -351,7 +396,74 @@ impl Listing {
 
     /// Applies what the person did to the checks.
     pub fn apply(&mut self, gesture: CheckGesture) {
+        let was = self.checks.clone();
         self.checks.apply(gesture);
+        self.touched |= !self.opened;
+        self.changed_since(&was);
+    }
+
+    /// Applies a Select button to every cell: those not imported before alone for Select
+    /// new, as darktable's "select new", every one or none; Select all and Select none, as
+    /// Ctrl+A and Ctrl+Shift+A, forget the last touched, and so does Select new.
+    pub fn select(&mut self, select: Select) {
+        let was = self.checks.clone();
+        match select {
+            Select::All => self.checks.apply(CheckGesture::All),
+            Select::None => self.checks.apply(CheckGesture::None),
+            Select::New => {
+                self.checks.apply(CheckGesture::None);
+                for place in 0..self.order.len() {
+                    let new = self.at(place).is_new();
+                    self.checks.set(place, new);
+                }
+            }
+        }
+        self.touched |= !self.opened;
+        self.changed_since(&was);
+    }
+
+    /// Bumps the checks' change where the photos checked differ from `was`'s.
+    fn changed_since(&mut self, was: &Checks) {
+        if !was.checked().eq(self.checks.checked()) {
+            self.changed += 1;
+        }
+    }
+
+    /// Bumped as the photos checked change.
+    pub fn changed(&self) -> u64 {
+        self.changed
+    }
+
+    /// The photos to import: the folder listed and the checked files' paths relative to
+    /// it, once the folder is known.
+    pub fn photos(&self) -> Option<ImportPhotos> {
+        let folder = self.folder.clone()?;
+        let files = (self.checks.checked())
+            .map(|place| self.at(place).file.path.clone())
+            .collect();
+        Some(ImportPhotos { folder, files })
+    }
+
+    /// Where the listing stands, for the bar's counts.
+    pub fn stage(&self) -> Stage {
+        if self.number.is_none() || self.failed.is_some() {
+            Stage::Nothing
+        } else if !self.listed || !self.taken {
+            Stage::Listing(self.photos.len())
+        } else if !self.checked {
+            let (checked, of) = self.progress;
+            Stage::Checking {
+                folder: self.folders.first().cloned(),
+                checked,
+                of,
+            }
+        } else {
+            let before = (self.photos.iter()).filter(|p| p.imported_before()).count();
+            Stage::Done {
+                count: self.photos.len(),
+                before,
+            }
+        }
     }
 
     /// `SourceThumbnails` for the photos at the grid's places `shown`, the cells in sight,
@@ -453,6 +565,24 @@ impl Listing {
     }
 }
 
+/// Where the listing stands.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Stage {
+    /// No source listed, or its listing failed.
+    Nothing,
+    /// Listing, this many found so far.
+    Listing(usize),
+    /// Checked against the trees, the first of them `folder` once a chunk has named it,
+    /// `checked` photos of `of` so far.
+    Checking {
+        folder: Option<PathBuf>,
+        checked: usize,
+        of: usize,
+    },
+    /// Listed and checked: `count` photos, `before` of them imported before.
+    Done { count: usize, before: usize },
+}
+
 /// A clock's time, to sort by: the camera's as it showed it, its offset aside, as darktable
 /// sorts by its EXIF date and time.
 fn key(at: DateTime) -> (u16, u8, u8, u8, u8, u8, u16) {
@@ -499,6 +629,13 @@ pub struct ImportSheet {
     textures_of: Option<u64>,
     /// What screen readers heard as the listing ended, said politely.
     said: Option<String>,
+    /// The latest `PreviewImport`'s number, 0 where none was sent for no photos checked,
+    /// with the checks' change and the settings it was asked for.
+    asked: Option<(u64, u64, ImportSettings)>,
+    /// The number of the `PreviewImport` the preview held answers.
+    previewed: Option<u64>,
+    /// Its answer, once it has come; an earlier one's stays until then.
+    preview: Option<ImportPreview>,
 }
 
 impl ImportSheet {
@@ -515,6 +652,9 @@ impl ImportSheet {
             textures: HashMap::new(),
             textures_of: None,
             said: None,
+            asked: None,
+            previewed: None,
+            preview: None,
         }
     }
 
@@ -542,6 +682,33 @@ impl ImportSheet {
             Some(_) => return,
         }
         self.checked_with = Some(self.settings.clone());
+    }
+
+    /// Asks for the preview of the photos checked with the settings, once the listing has
+    /// opened, as either changes: `PreviewImport`, the latest answer alone shown.
+    fn ask_preview(&mut self, send: &mut SendCommand<'_>) {
+        if !self.listing.opened() || self.listing.failed().is_some() {
+            return;
+        }
+        let changed = self.listing.changed();
+        let asked = (self.asked.as_ref())
+            .is_some_and(|(_, at, settings)| *at == changed && *settings == self.settings);
+        if asked {
+            return;
+        }
+        let Some(photos) = self.listing.photos() else {
+            return;
+        };
+        let number = if photos.files.is_empty() {
+            self.preview = None;
+            0
+        } else {
+            send(Command::Library(LibraryCommand::PreviewImport {
+                photos,
+                settings: self.settings.clone(),
+            }))
+        };
+        self.asked = Some((number, changed, self.settings.clone()));
     }
 
     /// Brings the cells' words and textures in line with the listing, in the language now.
@@ -600,8 +767,280 @@ impl ImportSheet {
         if self.listing.checks().checked_count() == 0 {
             return Some(words.text("import-why-none-checked"));
         }
-        None
+        // The checks or the settings changed since the preview held: Import waits for its
+        // answer, so it never starts what the footer has not shown.
+        let previewing = match &self.asked {
+            Some((number, changed, settings)) => {
+                *changed != self.listing.changed()
+                    || *settings != self.settings
+                    || Some(*number) != self.previewed
+            }
+            None => true,
+        };
+        if previewing {
+            return Some(words.text("import-why-previewing"));
+        }
+        let problem = self.preview.as_ref().and_then(|p| p.problems.first());
+        problem.map(|problem| problem_words(problem, words, self.settings.places.home.as_deref()))
     }
+
+    /// The bar's counts, as the listing stands.
+    fn counts(&self, words: &Translator) -> String {
+        let source = self.source.as_ref().map_or("", |s| s.name.as_str());
+        let home = self.settings.places.home.as_deref();
+        let mut args = Args::new();
+        args.set("source", source.to_owned());
+        let id = match self.listing.stage() {
+            Stage::Nothing => return String::new(),
+            Stage::Listing(count) => {
+                args.set("count", count as f64);
+                "import-counts-listing"
+            }
+            Stage::Checking {
+                folder,
+                checked,
+                of,
+            } => {
+                args.set("checked", checked as f64);
+                args.set("of", of as f64);
+                match folder {
+                    Some(folder) => {
+                        args.set("folder", crate::export::shown(&folder, home));
+                        "import-counts-checking"
+                    }
+                    None => "import-counts-checking-start",
+                }
+            }
+            Stage::Done { count, before } => {
+                args.set("count", count as f64);
+                args.set("before", before as f64);
+                if before > 0 {
+                    "import-counts-before"
+                } else {
+                    "import-counts"
+                }
+            }
+        };
+        words.text_with(id, Some(&args))
+    }
+
+    /// What the grid says, as the listing stands: with no source, a source that failed,
+    /// none listed or every photo imported before.
+    fn message(&self, words: &Translator) -> Option<(String, String)> {
+        let Some(source) = &self.source else {
+            let note = words.text("import-grid-no-source-note");
+            return Some((words.text("import-grid-no-source"), note));
+        };
+        if self.listing.failed().is_some() {
+            return self.why_not(words).map(|why| (why, String::new()));
+        }
+        let Stage::Done { count, before } = self.listing.stage() else {
+            return None;
+        };
+        let mut args = Args::new();
+        args.set("source", source.name.clone());
+        args.set("count", count as f64);
+        let id = match (count, source.card) {
+            (0, true) => "import-why-empty-card",
+            (0, false) => "import-why-empty-folder",
+            _ if before < count => return None,
+            (_, true) => "import-grid-all-on",
+            (_, false) => "import-grid-all-in",
+        };
+        Some((words.text_with(id, Some(&args)), String::new()))
+    }
+}
+
+/// The footer's summary in words, owned, for `Summary`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Footer {
+    pub lead: String,
+    pub path: String,
+    pub tail: String,
+    pub tip: Option<String>,
+    pub note: String,
+    pub warning: bool,
+}
+
+/// The footer's summary of `checked` of the `count` photos of `source` with `preview`, the
+/// latest answer, home as `~`: the first line the count, the size and the free space, the
+/// destination and whether its folder is new, several or there already, its tooltip the
+/// destination whole and the disk, empty with nothing checked; the second the photos imported
+/// before that will be copied again, in `warning`, else that nothing on the source changes.
+/// The primary button's reason, where it cannot press, takes the second line's place.
+pub fn footer(
+    words: &Translator,
+    source: &str,
+    (count, checked): (usize, usize),
+    preview: Option<&ImportPreview>,
+    home: Option<&Path>,
+) -> Footer {
+    let mut args = Args::new();
+    args.set("source", source.to_owned());
+    args.set("count", count as f64);
+    args.set("checked", checked as f64);
+    let mut out = Footer {
+        note: words.text_with("import-note-copies", Some(&args)),
+        ..Footer::default()
+    };
+    // With no photos, nothing to sum up; with none checked, Import's reason says so.
+    if checked == 0 {
+        return out;
+    }
+    // Before the first answer, and where a problem leaves no destination, the count alone.
+    let Some(preview) = preview.filter(|preview| !preview.folders.is_empty()) else {
+        out.lead = words.text_with("import-summary-lead-waiting", Some(&args));
+        return out;
+    };
+    let size = crate::metadata::format::size(preview.size, words);
+    args.set("size", size.clone());
+    let id = match &preview.free {
+        Some(free) => {
+            args.set("free", crate::metadata::format::size(free.available, words));
+            "import-summary-lead"
+        }
+        None => "import-summary-lead-unknown",
+    };
+    out.lead = words.text_with(id, Some(&args));
+    let folders = &preview.folders;
+    let destination = match folders.as_slice() {
+        [] => None,
+        [one] => Some(one.folder.clone()),
+        several => common(several.iter().map(|f| f.folder.as_path())),
+    };
+    if let Some(destination) = &destination {
+        out.path = crate::export::shown(destination, home);
+    }
+    let new = folders.iter().filter(|f| f.there.is_none()).count();
+    let taken = preview.folder_uses.taken || preview.subfolder_uses.taken;
+    let mut tail = Args::new();
+    let id = match folders.as_slice() {
+        [] => None,
+        [one] => Some(match one.there {
+            None => "import-summary-new-folder",
+            Some(there) => {
+                tail.set("count", there as f64);
+                "import-summary-there"
+            }
+        }),
+        several => {
+            tail.set("count", (if new > 0 { new } else { several.len() }) as f64);
+            Some(match (new > 0, taken) {
+                (true, true) => "import-summary-new-folders-by-day",
+                (true, false) => "import-summary-new-folders",
+                (false, _) => "import-summary-folders-there",
+            })
+        }
+    };
+    if let Some(id) = id {
+        out.tail = words.text_with(id, Some(&tail));
+    }
+    // The destination whole, then the disk where its free space was read.
+    let disk = preview.free.as_ref().map(|free| {
+        let mut on = Args::new();
+        on.set("size", size.clone());
+        on.set("free", crate::metadata::format::size(free.available, words));
+        on.set("volume", free.volume.clone());
+        words.text_with("import-summary-tip", Some(&on))
+    });
+    let whole = destination.as_ref().map(|d| crate::export::shown(d, home));
+    let tip: Vec<String> = whole.into_iter().chain(disk).collect();
+    out.tip = (!tip.is_empty()).then(|| tip.join("\n"));
+    if preview.imported_before > 0 {
+        let mut again = Args::new();
+        again.set("count", preview.imported_before as f64);
+        out.note = words.text_with("import-note-again", Some(&again));
+        out.warning = true;
+    }
+    out
+}
+
+/// The deepest folder the `folders` share, none where they share none.
+fn common<'a>(mut folders: impl Iterator<Item = &'a Path>) -> Option<PathBuf> {
+    let mut shared = folders.next()?.to_owned();
+    for folder in folders {
+        while !folder.starts_with(&shared) {
+            if !shared.pop() {
+                return None;
+            }
+        }
+    }
+    Some(shared)
+}
+
+/// `problem` in words, naming its row: "Subfolder: unknown variable $(MONT).".
+pub fn problem_words(problem: &ImportProblem, words: &Translator, home: Option<&Path>) -> String {
+    let mut args = Args::new();
+    let id = match &problem.problem {
+        Problem::Pattern(PatternError::Unknown { name, .. }) if name.is_empty() => {
+            "import-problem-nameless"
+        }
+        Problem::Pattern(PatternError::Unknown { name, .. }) => {
+            args.set("name", name.clone());
+            "import-problem-unknown"
+        }
+        Problem::Pattern(PatternError::Unclosed {
+            variable, expected, ..
+        }) => {
+            args.set("variable", variable.clone());
+            args.set("expected", expected.to_string());
+            "import-problem-unclosed"
+        }
+        Problem::Pattern(PatternError::NoOperation {
+            variable, found, ..
+        }) => {
+            args.set("variable", variable.clone());
+            args.set("found", found.to_string());
+            "import-problem-no-operation"
+        }
+        Problem::Pattern(PatternError::TooDeep { .. }) => {
+            args.set("depth", MAX_DEPTH.to_string());
+            "import-problem-too-deep"
+        }
+        Problem::OutsideFolder { subfolder } => {
+            args.set("subfolder", subfolder.clone());
+            "import-problem-outside-folder"
+        }
+        Problem::Unwritable { at, why } => {
+            args.set("folder", crate::export::shown(at, home));
+            match why {
+                Unwritable::NotAbsolute => "import-problem-not-absolute",
+                Unwritable::NotConnected => "import-problem-not-connected",
+                Unwritable::NotAFolder => "import-problem-not-a-folder",
+                Unwritable::ReadOnly => "import-problem-read-only",
+                Unwritable::Unreadable(kind) => {
+                    args.set("why", kind.to_string());
+                    "import-problem-unreadable"
+                }
+            }
+        }
+        Problem::OnSource { why, .. } => match why {
+            OnSource::IsSource => "import-problem-is-source",
+            OnSource::InsideSource => "import-problem-inside-source",
+            OnSource::OnCard { .. } => "import-problem-on-card",
+        },
+        Problem::Space {
+            needed,
+            available,
+            volume,
+        } => {
+            args.set("needed", crate::metadata::format::size(*needed, words));
+            args.set(
+                "available",
+                crate::metadata::format::size(*available, words),
+            );
+            args.set("volume", volume.clone());
+            "import-problem-space"
+        }
+    };
+    let row = match problem.row {
+        Row::Folder => "import-row-folder",
+        Row::Subfolder => "import-row-subfolder",
+    };
+    let mut named = Args::new();
+    named.set("row", words.text(row));
+    named.set("problem", words.text_with(id, Some(&args)));
+    words.text_with("import-problem", Some(&named))
 }
 
 impl sheet::Content for ImportSheet {
@@ -610,13 +1049,10 @@ impl sheet::Content for ImportSheet {
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
         self.refresh(&ctx, &words);
-        let source = self
-            .source
-            .as_ref()
-            .map_or("", |source| source.name.as_str());
+        let source = (self.source.as_ref()).map_or_else(String::new, |s| s.name.clone());
         let with = |id: &str, pairs: &[(&str, f64)]| {
             let mut args = Args::new();
-            args.set("source", source.to_owned());
+            args.set("source", source.clone());
             for (name, value) in pairs {
                 args.set(name.to_string(), *value);
             }
@@ -624,13 +1060,39 @@ impl sheet::Content for ImportSheet {
         };
         let count = self.listing.len();
         let checked = self.listing.checks().checked_count();
-        let heading = with("import-heading", &[]);
-        let name = with("import-sheet-name", &[]);
+        // With no source yet, the sheet's name alone.
+        let (heading, name) = match &self.source {
+            Some(_) => (with("import-heading", &[]), with("import-sheet-name", &[])),
+            None => (
+                words.text("import-heading-none"),
+                words.text("import-heading-none"),
+            ),
+        };
         let counts = [("count", count as f64), ("checked", checked as f64)];
         let grid_name = with("import-grid-name", &counts);
         let checked_said = with("import-grid-checked", &counts);
         let primary = with("import-primary", &[("count", checked as f64)]);
         let why_not = self.why_not(&words);
+        let bar_counts = self.counts(&words);
+        let bar_name = words.text("import-bar-name");
+        let selects: Vec<(Select, String)> = (Select::ALL.into_iter())
+            .map(|select| (select, words.text(select.words())))
+            .collect();
+        let buttons: Vec<SelectButton> = (selects.iter())
+            .map(|(select, text)| SelectButton {
+                id: select.id(),
+                text,
+            })
+            .collect();
+        let message = self.message(&words);
+        let home = self.settings.places.home.as_deref();
+        let summary = footer(
+            &words,
+            &source,
+            (count, checked),
+            self.preview.as_ref(),
+            home,
+        );
         let listing = &self.listing;
         let cells = &self.words;
         let textures = &self.textures;
@@ -657,7 +1119,23 @@ impl sheet::Content for ImportSheet {
                 tip: Some(&said.tip),
             }
         })
+        .counts(&bar_counts)
+        .bar_name(&bar_name)
+        .select(&buttons)
         .grid_name(&grid_name, &checked_said)
+        .message(
+            message
+                .as_ref()
+                .map(|(text, note)| GridMessage { text, note }),
+        )
+        .summary(Summary {
+            lead: &summary.lead,
+            path: &summary.path,
+            tail: &summary.tail,
+            tip: summary.tip.as_deref(),
+            note: &summary.note,
+            warning: summary.warning,
+        })
         .size(ThumbnailSize::Medium)
         .column(place.column, place.at_start)
         .primary(&primary, why_not.as_deref())
@@ -666,6 +1144,11 @@ impl sheet::Content for ImportSheet {
         if let Some(gesture) = out.gesture {
             self.listing.apply(gesture);
         }
+        let select = out.select.as_deref();
+        if let Some(select) = Select::ALL.into_iter().find(|s| Some(s.id()) == select) {
+            self.listing.select(select);
+        }
+        self.ask_preview(send);
         let side = ThumbnailSize::Medium.side();
         let size = crate::thumbnails::size_for(side, ctx.pixels_per_point());
         if let Some(command) = self.listing.thumbnails(out.shown.clone(), size) {
@@ -690,6 +1173,13 @@ impl sheet::Content for ImportSheet {
     }
 
     fn receive(&mut self, event: &LibraryEvent) {
+        if let LibraryEvent::ImportPreview { open, preview } = event {
+            if self.asked.as_ref().is_some_and(|(asked, ..)| asked == open) {
+                self.preview = Some(preview.as_ref().clone());
+                self.previewed = Some(*open);
+            }
+            return;
+        }
         self.listing.receive(event);
     }
 

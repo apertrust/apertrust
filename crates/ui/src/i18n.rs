@@ -1470,6 +1470,22 @@ mod tests {
                 // The Import sheet's: its checks and the photos new among them.
                 args.set("checked", 209);
                 args.set("new", 209);
+                args.set("before", 198);
+                args.set("of", 5000);
+                args.set("folder", "~/Pictures/Apertrust");
+                args.set("size", "6.2 GB");
+                args.set("free", "412 GB");
+                args.set("volume", "Macintosh HD");
+                args.set("needed", "6.2 GB");
+                args.set("available", "4.1 GB");
+                args.set("row", "Subfolder");
+                args.set("problem", "unknown variable $(MONT).");
+                args.set("expected", ")");
+                args.set("variable", "$(YEAR");
+                args.set("found", "x");
+                args.set("depth", "10");
+                args.set("why", "permission denied");
+                args.set("subfolder", "../outside");
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());
