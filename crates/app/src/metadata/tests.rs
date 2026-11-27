@@ -672,8 +672,9 @@ fn copy_coordinates_rests_without_a_location() {
     };
     let mut photo = photo();
     photo.exif.latitude = None;
-    assert_eq!(enabled(&scene(Some(photo))), [true, false]);
-    assert_eq!(enabled(&scene(None)), [false, false]);
+    // Copy Information, Copy Coordinates, the separator and Clear Metadata Fields….
+    assert_eq!(enabled(&scene(Some(photo))), [true, false, false, false]);
+    assert_eq!(enabled(&scene(None)), [false, false, false, false]);
 }
 
 #[test]
@@ -1404,7 +1405,7 @@ fn a_title_typed_and_return_sends_one_set_metadata_and_esc_sends_nothing() {
     assert_eq!(
         harness.state().sent,
         [Command::SetMetadata {
-            photos: Vec::new(),
+            photos: vec![PathBuf::from(format!("{FOLDER}/R0001225.DNG"))],
             values: Vec::new(),
             fields: vec![(
                 "dc:title".to_owned(),
@@ -1426,9 +1427,10 @@ fn a_title_typed_and_return_sends_one_set_metadata_and_esc_sends_nothing() {
     assert_eq!(notes.as_deref(), Some("Try a warmer crop"));
 }
 
-/// A photo open for viewing only, and several photos selected, draw every field disabled.
+/// A photo open for viewing only draws every field disabled; several photos selected draw
+/// them live.
 #[test]
-fn fields_are_disabled_on_a_view_only_photo_and_with_several_selected() {
+fn fields_are_disabled_on_a_view_only_photo_and_live_with_several_selected() {
     use apertrust_engine::sidecar::{Newer, Reason, ViewOnly};
     let mut view_only = photo();
     view_only.view_only = Some(ViewOnly {
@@ -1441,7 +1443,7 @@ fn fields_are_disabled_on_a_view_only_photo_and_with_several_selected() {
     assert!(harness.get_by_label("Title").accesskit_node().is_disabled());
     let mut harness = drawn(Builtin::Dark, 320.0, twelve());
     harness.run();
-    assert!(harness.get_by_label("Title").accesskit_node().is_disabled());
+    assert!(!harness.get_by_label("Title").accesskit_node().is_disabled());
 }
 
 /// Basic's Copy shows only where the photo has several copies.
@@ -1547,8 +1549,8 @@ fn a_commit_that_changes_nothing_leaves_no_save_waiting() {
 }
 
 /// A draft begun on one photo, the active photo then changing with no press to end it, as
-/// Photo › Next Photo from the menu bar does, is forgotten: nothing goes to the next photo,
-/// which shows its own value.
+/// Photo › Next Photo from the menu bar does, is committed to the photo it began on
+/// (decision 110): nothing goes to the next photo, which shows its own value.
 #[test]
 fn a_draft_never_goes_to_another_photo() {
     let mut harness = drawn(Builtin::Dark, 320.0, lisbon_opened());
@@ -1571,7 +1573,746 @@ fn a_draft_never_goes_to_another_photo() {
     harness.key_press(egui::Key::Enter);
     harness.run();
     harness.run();
-    assert_eq!(harness.state().sent, []);
+    let began = PathBuf::from(format!("{FOLDER}/R0001225.DNG"));
+    assert_eq!(
+        harness.state().sent,
+        [Command::SetMetadata {
+            photos: vec![began],
+            values: Vec::new(),
+            fields: vec![(
+                "dc:title".to_owned(),
+                Some("Morning market, Alfama today".to_owned())
+            )],
+        }]
+    );
     let title = harness.get_by_label("Title").accesskit_node().value();
     assert_eq!(title.as_deref(), Some("Harbour"));
+}
+
+/// The twelve photos, each by its path.
+fn twelve_paths() -> Vec<PathBuf> {
+    (0..12)
+        .map(|n| PathBuf::from(format!("{FOLDER}/R00012{n:02}.DNG")))
+        .collect()
+}
+
+/// The twelve photos' summary of their fields: seven titled "Morning market", four
+/// "Alfama", one with none; a creator on all of them; Notes on the first alone.
+fn twelve_titled() -> Arc<Summary> {
+    use apertrust_engine::session::FieldValue;
+    use apertrust_library::fields::Fields;
+    let alt = |text: &str| FieldValue::LangAlt(vec![("x-default".to_owned(), text.to_owned())]);
+    let fields: Vec<Fields> = (0..12)
+        .map(|n| {
+            let mut values = vec![(
+                "dc:creator".to_owned(),
+                FieldValue::List(vec!["Ana Sousa".to_owned()]),
+            )];
+            match n {
+                0..7 => values.push(("dc:title".to_owned(), alt("Morning market"))),
+                7..11 => values.push(("dc:title".to_owned(), alt("Alfama"))),
+                _ => {}
+            }
+            if n == 0 {
+                values.push((
+                    "apertrust:notes".to_owned(),
+                    FieldValue::Text("Warmer".to_owned()),
+                ));
+            }
+            values.sort_by(|a, b| a.0.cmp(&b.0));
+            Fields {
+                values,
+                name: String::new(),
+                copies: 1,
+            }
+        })
+        .collect();
+    let names: Vec<String> = (0..12).map(|n| format!("R00012{n:02}.DNG")).collect();
+    let folder = Path::new(FOLDER);
+    let photos: Vec<Summed<'_>> = (0..12)
+        .map(|n| Summed {
+            name: &names[n],
+            folder,
+            size: 32_000_000,
+            edited: false,
+            facts: Facts::Missing,
+            fields: &fields[n],
+        })
+        .collect();
+    Arc::new(build(&photos))
+}
+
+/// Twelve photos selected, Content open, their fields' summary come.
+fn twelve_drawn() -> Harness<'static, Scene> {
+    let mut state = twelve();
+    state.tool.view.set_open("content", true);
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    let through = harness.state().asked.len() as u64;
+    harness.state_mut().tool.receive(through, twelve_titled());
+    harness.run();
+    harness
+}
+
+/// Over Different, Return with nothing typed sends nothing; what is typed over it is sent
+/// once, naming the twelve photos, and shown at once.
+#[test]
+fn typing_over_different_writes_to_the_twelve_and_nothing_typed_writes_nothing() {
+    let mut harness = twelve_drawn();
+    let title = harness.get_by_label("Title");
+    assert_eq!(title.accesskit_node().placeholder(), Some("Different"));
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().sent, []);
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.get_by_label("Title").type_text("Tram 28");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(
+        harness.state().sent,
+        [Command::SetMetadata {
+            photos: twelve_paths(),
+            values: Vec::new(),
+            fields: vec![("dc:title".to_owned(), Some("Tram 28".to_owned()))],
+        }]
+    );
+    let shown = harness.get_by_label("Title").accesskit_node().value();
+    assert_eq!(shown.as_deref(), Some("Tram 28"));
+}
+
+/// ⌄ lists the values with their counts, most common first; a value chosen is written to
+/// all at once; Alt+↓ in the field opens the list too, and Clear on 12 Photos clears it.
+#[test]
+fn the_values_list_writes_a_value_or_clears_it_on_all() {
+    use apertrust_engine::session::FieldValue;
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Values of Title on 12 photos").click();
+    harness.run();
+    harness.get_by_label("Alfama").click();
+    harness.run();
+    harness.run();
+    let chosen = std::mem::take(&mut harness.state_mut().sent);
+    // The value shows at once, the list gone with Different.
+    let shown = harness.get_by_label("Title").accesskit_node().value();
+    assert_eq!(shown.as_deref(), Some("Alfama"));
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::ALT, egui::Key::ArrowDown);
+    harness.run();
+    harness.get_by_label("Clear on 12 Photos").click();
+    harness.run();
+    harness.run();
+    let set = |typed: Option<&str>| Command::SetMetadata {
+        photos: twelve_paths(),
+        values: Vec::new(),
+        fields: vec![("dc:title".to_owned(), typed.map(str::to_owned))],
+    };
+    // The value as the photos hold it, never typed again.
+    let alfama = FieldValue::LangAlt(vec![("x-default".to_owned(), "Alfama".to_owned())]);
+    let chose = Command::SetMetadata {
+        photos: twelve_paths(),
+        fields: Vec::new(),
+        values: vec![("dc:title".to_owned(), alfama)],
+    };
+    assert_eq!(chosen, [chose]);
+    assert_eq!(harness.state().sent, [set(None)]);
+}
+
+/// A field shared by every photo edits as one photo's: the same value again sends
+/// nothing, another sends one batch.
+#[test]
+fn a_shared_field_edits_as_one_photo_s() {
+    let mut state = twelve();
+    state.tool.view.set_open("creator", true);
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    let through = harness.state().asked.len() as u64;
+    harness.state_mut().tool.receive(through, twelve_titled());
+    harness.run();
+    let creator = harness
+        .get_by_role_and_label(Role::TextInput, "Creator")
+        .accesskit_node()
+        .value();
+    assert_eq!(creator.as_deref(), Some("Ana Sousa"));
+    harness
+        .get_by_role_and_label(Role::TextInput, "Creator")
+        .click();
+    harness.run();
+    harness.key_press(egui::Key::End);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::TextInput, "Creator")
+        .type_text(" ");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(harness.state().sent, [], "the same value sends nothing");
+    harness
+        .get_by_role_and_label(Role::TextInput, "Creator")
+        .click();
+    harness.run();
+    harness.key_press(egui::Key::End);
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::TextInput, "Creator")
+        .type_text("; Rui Costa");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(
+        harness.state().sent,
+        [Command::SetMetadata {
+            photos: twelve_paths(),
+            values: Vec::new(),
+            fields: vec![(
+                "dc:creator".to_owned(),
+                Some("Ana Sousa; Rui Costa".to_owned())
+            )],
+        }]
+    );
+}
+
+/// A field opened on the twelve photos, the selection then changing with no press, is
+/// committed to the twelve, never to the new selection.
+#[test]
+fn a_selection_changed_mid_edit_commits_to_the_photos_it_opened_on() {
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.get_by_label("Title").type_text("Tram 28");
+    harness.run();
+    let three: Vec<PathBuf> = twelve_paths().into_iter().take(3).collect();
+    harness
+        .state_mut()
+        .mirror
+        .apply(Event::Selection(Selection {
+            photos: three,
+            active: Some(twelve_paths()[0].clone()),
+            previous: false,
+            through: 1,
+        }));
+    harness.run();
+    harness.run();
+    assert_eq!(
+        harness.state().sent,
+        [Command::SetMetadata {
+            photos: twelve_paths(),
+            values: Vec::new(),
+            fields: vec![("dc:title".to_owned(), Some("Tram 28".to_owned()))],
+        }]
+    );
+}
+
+/// Twelve photos, three view-only: Content's title row has the warning, whose Select Only
+/// Editable Photos selects the nine others; the fields stay live.
+#[test]
+fn view_only_photos_among_the_selected_warn_and_select_only_the_editable() {
+    use apertrust_engine::session::SelectionCommand;
+    use apertrust_engine::session::library::EditState;
+    let mut harness = twelve_drawn();
+    let view_only = |state: &mut Scene| {
+        if let Folder::Open(listing) = &mut state.mirror.folder.folder {
+            for photo in &mut listing.photos[9..] {
+                photo.edit = EditState::Unreadable("not XMP".to_owned());
+            }
+        }
+    };
+    view_only(harness.state_mut());
+    harness.run();
+    let name = "3 of 12 photos are view-only and keep their fields";
+    harness.get_by_label(name).click();
+    harness.run();
+    harness.get_by_label("Select Only Editable Photos").click();
+    harness.run();
+    harness.run();
+    let nine: Vec<PathBuf> = twelve_paths().into_iter().take(9).collect();
+    assert_eq!(
+        harness.state().sent,
+        [Command::Selection(SelectionCommand::Set(nine))]
+    );
+    assert!(!harness.get_by_label("Title").accesskit_node().is_disabled());
+}
+
+/// Clear Metadata Fields on 12 Photos… asks first, then clears every field of the IPTC
+/// groups some photo holds, Notes kept.
+#[test]
+fn clear_metadata_fields_asks_then_clears_and_keeps_notes() {
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    harness
+        .get_by_label("Clear Metadata Fields on 12 Photos…")
+        .click();
+    harness.run();
+    let Scene { tool, mirror, .. } = harness.state_mut();
+    assert_eq!(tool.ask_clear(mirror), Some(12));
+    assert_eq!(tool.cleared(false), None, "Cancel clears nothing");
+    tool.ask_clear(mirror);
+    let Some(Command::SetMetadata { photos, fields, .. }) = tool.cleared(true) else {
+        panic!("Clear sends one SetMetadata");
+    };
+    assert_eq!(photos, twelve_paths());
+    let mut cleared: Vec<&str> = fields.iter().map(|(field, _)| field.as_str()).collect();
+    cleared.sort();
+    assert_eq!(cleared, ["dc:creator", "dc:title"]);
+    assert!(fields.iter().all(|(_, typed)| typed.is_none()));
+}
+
+/// The notice of a title written to twelve photos, three skipped, and its take-back.
+#[test]
+fn a_field_s_batch_notice_names_the_field() {
+    use apertrust_engine::session::{BatchAction, BatchEvent, BatchId, Batched, Skip};
+    let words = Translator::new(Locale::EnGb);
+    let photos = twelve_paths();
+    let ended = |action, changed: &[PathBuf], skipped: Vec<(PathBuf, Skip)>| BatchEvent::Ended {
+        command: 1,
+        batch: BatchId(9),
+        action,
+        what: Batched::Metadata(vec!["dc:title".to_owned()]),
+        named: 12,
+        changed: changed.to_vec(),
+        skipped,
+        cancelled: false,
+    };
+    let all = ended(BatchAction::Applied, &photos, Vec::new());
+    let (said, undo) = crate::styles::tool::batch_notice(&all, &words).unwrap();
+    assert_eq!(said, "Title written to 12 photos");
+    assert!(undo.is_some());
+    let view_only = Skip::Unreadable("not XMP".to_owned());
+    let some = ended(
+        BatchAction::Applied,
+        &photos[..11],
+        vec![(photos[11].clone(), view_only)],
+    );
+    let (said, _) = crate::styles::tool::batch_notice(&some, &words).unwrap();
+    assert!(
+        said.starts_with("Title written to 11 of 12 photos; "),
+        "{said}"
+    );
+}
+
+/// The board's "Twelve photos selected", Title's values list open.
+#[test]
+fn several_photos_fields_are_photographed() {
+    fn make() -> Scene {
+        let mut state = twelve();
+        state.tool.view.set_open("content", true);
+        state
+    }
+    photograph("metadata-fields-several", 320.0, make, |harness| {
+        let through = harness.state().asked.len() as u64;
+        harness.state_mut().tool.receive(through, twelve_titled());
+        harness.run();
+        harness.get_by_label("Values of Title on 12 photos").click();
+        harness.run();
+    });
+}
+
+/// The board's "Some photos view-only": the warning on Content's title row, its menu open.
+#[test]
+fn several_photos_some_view_only_are_photographed() {
+    fn make() -> Scene {
+        use apertrust_engine::session::library::EditState;
+        let mut state = twelve();
+        state.tool.view.set_open("content", true);
+        if let Folder::Open(listing) = &mut state.mirror.folder.folder {
+            for photo in &mut listing.photos[9..] {
+                photo.edit = EditState::Unreadable("not XMP".to_owned());
+            }
+        }
+        state
+    }
+    photograph("metadata-fields-view-only", 320.0, make, |harness| {
+        let through = harness.state().asked.len() as u64;
+        harness.state_mut().tool.receive(through, twelve_titled());
+        harness.run();
+        harness
+            .get_by_label("3 of 12 photos are view-only and keep their fields")
+            .click();
+        harness.run();
+    });
+}
+
+/// The board's "⋯" with twelve photos: Clear Metadata Fields on 12 Photos….
+#[test]
+fn several_photos_options_are_photographed() {
+    photograph("metadata-options-several", 320.0, twelve, |harness| {
+        let through = harness.state().asked.len() as u64;
+        harness.state_mut().tool.receive(through, twelve_titled());
+        harness.run();
+        harness.get_by_label("Metadata options").click();
+        harness.run();
+    });
+}
+
+/// A Different field focused and left with nothing typed, by a press elsewhere or as the
+/// selection changes, writes nothing: darktable's "leave unchanged" on every path.
+#[test]
+fn an_untouched_different_field_writes_nothing_however_it_is_left() {
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.get_by_label("Description").click();
+    harness.run();
+    harness.get_by_label("Title").click();
+    harness.run();
+    let three: Vec<PathBuf> = twelve_paths().into_iter().take(3).collect();
+    harness
+        .state_mut()
+        .mirror
+        .apply(Event::Selection(Selection {
+            photos: three,
+            active: Some(twelve_paths()[0].clone()),
+            previous: false,
+            through: 1,
+        }));
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().sent, []);
+}
+
+/// A draft taken before a command that leaves its photos, as Next Photo from the menu bar:
+/// sent to the photo it began on, a date as Return makes one.
+#[test]
+fn a_draft_is_taken_before_its_photos_leave_a_date_made_as_return_makes_it() {
+    let mut state = lisbon_opened();
+    state.tool.view.toggle("date_created");
+    // Status alone open, so its field is on the screen.
+    for group in ["basic", "exposure", "content"] {
+        state.tool.view.set_open(group, false);
+    }
+    state.tool.view.set_open("status", true);
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    harness.get_by_label("Date created").click();
+    harness.run();
+    harness.get_by_label("Date created").type_text("04/07/2026");
+    harness.run();
+    let ctx = harness.ctx.clone();
+    let words = Translator::new(Locale::EnGb);
+    let drafts = harness.state_mut().tool.drafts(&ctx, &words);
+    assert_eq!(
+        drafts,
+        [Command::SetMetadata {
+            photos: vec![PathBuf::from(format!("{FOLDER}/R0001225.DNG"))],
+            values: Vec::new(),
+            fields: vec![(
+                "photoshop:DateCreated".to_owned(),
+                Some("2026-07-04".to_owned())
+            )],
+        }]
+    );
+    // Taken once: nothing is left to send as the next photo shows.
+    harness.run();
+    assert_eq!(harness.state().sent, []);
+    assert_eq!(harness.state_mut().tool.drafts(&ctx, &words), []);
+}
+
+/// Copyright status over Different reads Different, and a choice, Unknown's empty one too,
+/// is written to every photo.
+#[test]
+fn copyright_status_over_different_writes_any_choice() {
+    use apertrust_engine::session::FieldValue;
+    use apertrust_library::fields::Fields;
+    let mut state = twelve();
+    state.tool.view.toggle("copyright_status");
+    state.tool.view.set_open("rights", true);
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    let fields: Vec<Fields> = (0..12)
+        .map(|n| Fields {
+            values: (n < 4)
+                .then(|| ("xmpRights:Marked".to_owned(), FieldValue::Marked(true)))
+                .into_iter()
+                .collect(),
+            name: String::new(),
+            copies: 1,
+        })
+        .collect();
+    let names: Vec<String> = (0..12).map(|n| format!("R00012{n:02}.DNG")).collect();
+    let folder = Path::new(FOLDER);
+    let photos: Vec<Summed<'_>> = (0..12)
+        .map(|n| Summed {
+            name: &names[n],
+            folder,
+            size: 1,
+            edited: false,
+            facts: Facts::Missing,
+            fields: &fields[n],
+        })
+        .collect();
+    let through = harness.state().asked.len() as u64;
+    harness
+        .state_mut()
+        .tool
+        .receive(through, Arc::new(build(&photos)));
+    harness.run();
+    let status = harness
+        .get_by_label("Copyright status")
+        .accesskit_node()
+        .value();
+    assert_eq!(status.as_deref(), Some("Different"));
+    harness.get_by_label("Copyright status").click();
+    harness.run();
+    harness.get_by_label("Unknown").click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        harness.state().sent,
+        [Command::SetMetadata {
+            photos: twelve_paths(),
+            values: Vec::new(),
+            fields: vec![("xmpRights:Marked".to_owned(), None)],
+        }]
+    );
+}
+
+/// Spaces typed over Different and left with no press, as Next Photo leaves them, write
+/// nothing, as Return would; a shared title deleted on purpose is cleared.
+#[test]
+fn a_draft_follows_return_s_rule_over_different_and_a_shared_value() {
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.get_by_label("Title").type_text("  ");
+    harness.run();
+    let ctx = harness.ctx.clone();
+    let words = Translator::new(Locale::EnGb);
+    assert_eq!(harness.state_mut().tool.drafts(&ctx, &words), []);
+    // Creator, the same on all twelve, emptied.
+    let mut state = twelve();
+    state.tool.view.set_open("creator", true);
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    let through = harness.state().asked.len() as u64;
+    harness.state_mut().tool.receive(through, twelve_titled());
+    harness.run();
+    // A text input: the Creator group shares its label.
+    harness
+        .get_by_role_and_label(Role::TextInput, "Creator")
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    harness.key_press(egui::Key::Backspace);
+    harness.run();
+    let ctx = harness.ctx.clone();
+    assert_eq!(
+        harness.state_mut().tool.drafts(&ctx, &words),
+        [Command::SetMetadata {
+            photos: twelve_paths(),
+            fields: vec![("dc:creator".to_owned(), None)],
+            values: Vec::new(),
+        }]
+    );
+}
+
+/// A summary with the title shared, come while the field is edited over Different, leaves
+/// Return with nothing typed writing nothing: a commit is compared with what editing began
+/// on.
+#[test]
+fn a_summary_come_mid_edit_leaves_nothing_typed_writing_nothing() {
+    use apertrust_engine::session::FieldValue;
+    use apertrust_library::fields::Fields;
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Title").click();
+    harness.run();
+    let alt = FieldValue::LangAlt(vec![("x-default".to_owned(), "Alfama".to_owned())]);
+    let fields: Vec<Fields> = (0..12)
+        .map(|_| Fields {
+            values: vec![("dc:title".to_owned(), alt.clone())],
+            name: String::new(),
+            copies: 1,
+        })
+        .collect();
+    let names: Vec<String> = (0..12).map(|n| format!("R00012{n:02}.DNG")).collect();
+    let folder = Path::new(FOLDER);
+    let photos: Vec<Summed<'_>> = (0..12)
+        .map(|n| Summed {
+            name: &names[n],
+            folder,
+            size: 1,
+            edited: false,
+            facts: Facts::Missing,
+            fields: &fields[n],
+        })
+        .collect();
+    let through = harness.state().asked.len() as u64;
+    let summary = Arc::new(build(&photos));
+    harness.state_mut().tool.receive(through, summary);
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().sent, []);
+}
+
+/// A list's value chosen from Different is sent as the photos hold it: a creator
+/// "Smith; Jones" held as one item stays one.
+#[test]
+fn a_list_value_chosen_keeps_its_items_whole() {
+    use apertrust_engine::session::FieldValue;
+    use apertrust_library::fields::Fields;
+    let mut state = twelve();
+    state.tool.view.set_open("creator", true);
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    let one = FieldValue::List(vec!["Smith; Jones".to_owned()]);
+    let fields: Vec<Fields> = (0..12)
+        .map(|n| Fields {
+            values: (n < 5)
+                .then(|| ("dc:creator".to_owned(), one.clone()))
+                .into_iter()
+                .collect(),
+            name: String::new(),
+            copies: 1,
+        })
+        .collect();
+    let names: Vec<String> = (0..12).map(|n| format!("R00012{n:02}.DNG")).collect();
+    let folder = Path::new(FOLDER);
+    let photos: Vec<Summed<'_>> = (0..12)
+        .map(|n| Summed {
+            name: &names[n],
+            folder,
+            size: 1,
+            edited: false,
+            facts: Facts::Missing,
+            fields: &fields[n],
+        })
+        .collect();
+    let through = harness.state().asked.len() as u64;
+    harness
+        .state_mut()
+        .tool
+        .receive(through, Arc::new(build(&photos)));
+    harness.run();
+    harness
+        .get_by_label("Values of Creator on 12 photos")
+        .click();
+    harness.run();
+    harness.get_by_label("Smith; Jones").click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        harness.state().sent,
+        [Command::SetMetadata {
+            photos: twelve_paths(),
+            fields: Vec::new(),
+            values: vec![("dc:creator".to_owned(), one)],
+        }]
+    );
+}
+
+/// With several photos selected, the active one view-only and the others not, the fields
+/// stay live: writes skip it.
+#[test]
+fn a_view_only_active_photo_among_several_leaves_the_fields_live() {
+    use apertrust_engine::sidecar::{Newer, Reason, ViewOnly};
+    let mut state = twelve();
+    if let PhotoState::Open(photo) = &mut state.mirror.photo {
+        photo.view_only = Some(ViewOnly {
+            reason: Reason::Newer(Newer::Version(3)),
+            build: Some("0.9.0".to_owned()),
+        });
+    }
+    let mut harness = drawn(Builtin::Dark, 320.0, state);
+    harness.run();
+    assert!(!harness.get_by_label("Title").accesskit_node().is_disabled());
+}
+
+/// A value written on several photos whose command the session refuses stops showing.
+#[test]
+fn a_refused_write_stops_showing_its_value() {
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.get_by_label("Title").type_text("Tram 28");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let sent = harness.state().sent[0].clone();
+    harness.state_mut().tool.command_sent(&sent, 41);
+    let shown = harness.get_by_label("Title").accesskit_node().value();
+    assert_eq!(shown.as_deref(), Some("Tram 28"));
+    harness.state_mut().mirror.apply(Event::Failed(
+        apertrust_engine::session::SessionError::Refused {
+            command: 41,
+            error: Box::new(apertrust_engine::session::SessionError::NotLive),
+        },
+    ));
+    harness.run();
+    harness.run();
+    let title = harness.get_by_label("Title").accesskit_node();
+    assert_eq!(title.placeholder(), Some("Different"));
+}
+
+/// Copy Information copies the fields of several photos as their wells show them: the
+/// creator they share, Different for the titles they differ in.
+#[test]
+fn copy_information_copies_several_photos_fields_as_shown() {
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Metadata options").click();
+    harness.run();
+    harness.get_by_label("Copy Information").click();
+    harness.run();
+    let copied = harness.state().copied.first().cloned().unwrap_or_default();
+    assert!(
+        copied.lines().any(|line| line == "Title: Different"),
+        "{copied}"
+    );
+    assert!(
+        copied.lines().any(|line| line == "Creator: Ana Sousa"),
+        "{copied}"
+    );
+}
+
+/// A value written on several photos stops showing once a summary asked for after its batch
+/// ended comes, though the groups were closed as it ended and the summary was asked for
+/// while they were.
+#[test]
+fn a_summary_asked_for_after_the_batch_ended_drops_its_value() {
+    use apertrust_engine::session::{BatchAction, BatchEvent, BatchId, Batched};
+    let mut harness = twelve_drawn();
+    harness.get_by_label("Title").click();
+    harness.run();
+    harness.get_by_label("Title").type_text("Tram 28");
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let sent = harness.state().sent[0].clone();
+    harness.state_mut().tool.command_sent(&sent, 41);
+    harness.run();
+    let shown = harness.get_by_label("Title").accesskit_node().value();
+    assert_eq!(shown.as_deref(), Some("Tram 28"));
+    // Closed, the batch ends, skipping photos, and the summary asked for again comes.
+    harness.state_mut().tool.view.set_open("content", false);
+    harness.run();
+    harness
+        .state_mut()
+        .mirror
+        .apply(Event::Batch(BatchEvent::Ended {
+            batch: BatchId(1),
+            command: 41,
+            action: BatchAction::Applied,
+            what: Batched::Metadata(vec!["dc:title".to_owned()]),
+            named: 12,
+            changed: Vec::new(),
+            skipped: Vec::new(),
+            cancelled: true,
+        }));
+    harness.run();
+    let through = harness.state().asked.len() as u64;
+    assert_eq!(through, 2);
+    harness.state_mut().tool.receive(through, twelve_titled());
+    harness.state_mut().tool.view.set_open("content", true);
+    harness.run();
+    harness.run();
+    let title = harness.get_by_label("Title").accesskit_node();
+    assert_eq!(title.placeholder(), Some("Different"));
 }

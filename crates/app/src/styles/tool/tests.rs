@@ -1355,8 +1355,9 @@ fn a_rating_s_batch_notice_names_the_rating() {
     let rated = batch_notice(&ended(BatchAction::Applied, &photos), &words);
     let said = "3 stars on 12 photos".to_owned();
     assert_eq!(rated, Some((said, Some(BatchId(9)))));
+    // A photo that had three stars already is reached, changed or not.
     let (said, _) = batch_notice(&ended(BatchAction::Applied, &photos[..11]), &words).unwrap();
-    assert_eq!(said, "3 stars on 11 of 12 photos");
+    assert_eq!(said, "3 stars on 12 photos");
     let back = batch_notice(&ended(BatchAction::TakenBack, &photos), &words);
     assert_eq!(
         back,

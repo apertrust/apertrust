@@ -481,14 +481,14 @@ impl Row {
     }
 
     fn view(&self, words: &Translator, home: Option<&Path>) -> Job {
-        let mut job = Job::new(self.id.get(), self.phase, job_message(&self.title))
+        let mut job = Job::new(self.id.get(), self.phase, job_message(&self.title, words))
             .kind(self.kind)
             .progress(self.progress.done, self.progress.total)
             .cancellable(self.cancellable && self.phase.active())
             .retry(self.offers.iter().any(|o| matches!(o, Offer::Retry { .. })))
             .menu(self.items().is_some())
             .file(matches!(self.destination, Some(Destination::File(_))));
-        job.detail = self.detail.as_ref().map(job_message);
+        job.detail = (self.detail.as_ref()).map(|message| job_message(message, words));
         job.destination = self.destination.as_ref().and_then(|destination| {
             let folder = match destination {
                 Destination::Folder(folder) => folder.as_path(),
@@ -496,7 +496,7 @@ impl Row {
             };
             Some(crate::export::shown(folder, home))
         });
-        job.outcome = self.outcome.as_ref().map(job_message);
+        job.outcome = (self.outcome.as_ref()).map(|message| job_message(message, words));
         job.failure = self
             .failure
             .as_ref()
@@ -506,14 +506,19 @@ impl Row {
     }
 }
 
-/// A job's message as the window's: the same id and arguments, a path as its file name.
-fn job_message(message: &Message) -> JobMessage {
+/// A job's message as the window's: the same id and arguments, a path as its file name,
+/// and a Metadata field, a `set-metadata` job's `field`, by its label in `words`, several
+/// as Metadata (decision 110).
+fn job_message(message: &Message, words: &Translator) -> JobMessage {
     let mut out = JobMessage::new(&message.id);
     for (name, value) in &message.arguments {
         out = match value {
             Argument::Number(n) => out.number(name, *n),
             Argument::Decimals { value, at_least } => {
                 out.decimals(name, *value, usize::from(*at_least))
+            }
+            Argument::Text(t) if name == "field" => {
+                out.text(name, crate::metadata::fields::label(t, words))
             }
             Argument::Text(t) => out.text(name, t),
             Argument::Path(p) => out.text(name, file_name(p)),

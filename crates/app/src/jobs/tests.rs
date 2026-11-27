@@ -878,7 +878,8 @@ fn a_size_with_its_decimal_keeps_it_on_the_row() {
         .number("entries", 3.0)
         .decimals("size", 1.0, 1)
         .text("unit", "mb");
-    assert_eq!(job_message(&outcome), expected);
+    let words = Translator::new(Locale::EnGb);
+    assert_eq!(job_message(&outcome, &words), expected);
 }
 
 /// The cache's Clear words its title, its detail and its outcome in every language, the

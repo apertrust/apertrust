@@ -25,8 +25,11 @@
 //!   `metadata.shown`, `metadata.hidden` and `metadata.open`, kept against the
 //!   declaration; ＋ shows or hides one row, and its presets, the built-in three and the
 //!   person's, hold the view and nothing else.
-//! - **Its ⋯** holds Copy Information and Copy Coordinates, its own items until decision
-//!   98's generated actions.
+//! - **Its ⋯** holds Copy Information, Copy Coordinates and Clear Metadata Fields…, its own
+//!   items until decision 98's generated actions; the last asks first (`alerts.rs`), then
+//!   clears every field of the IPTC groups but Notes on the photos described, one batch.
+//! - **Several photos** selected, some of them view-only: a warning button at the end of the
+//!   first editable group's title row shown, its menu Select Only Editable Photos.
 
 pub mod fields;
 pub mod format;
@@ -56,8 +59,11 @@ use crate::library;
 use crate::mirror::Mirror;
 use crate::presets::{self, Item as PresetItem, Line, Menu, Settings};
 use crate::utility::{Context, UtilityTool};
+use apertrust_engine::session::facts::FieldSummary;
 use apertrust_engine::session::facts::{FactSummary, FactValue, Key, Summary};
-use apertrust_engine::session::{Command, Rating};
+use apertrust_engine::session::library::{EditState, Photo as Listed};
+use apertrust_engine::session::{Command, Rating, SelectionCommand};
+use apertrust_library::fields::COPY_NAME;
 use std::sync::Arc;
 
 /// The tool's id.
@@ -65,6 +71,12 @@ pub const ID: &str = "metadata";
 /// Its own ⋯ items, by their ids.
 pub const COPY_INFORMATION: &str = "metadata-copy-information";
 pub const COPY_COORDINATES: &str = "metadata-copy-coordinates";
+pub const CLEAR_FIELDS: &str = "metadata-clear-fields";
+/// The view-only warning's Select Only Editable Photos.
+const SELECT_EDITABLE: &str = "metadata-select-editable";
+/// The groups of fields Clear Metadata Fields… clears, and the view-only warning sits on the
+/// first of shown.
+const EDITABLE: [&str; 5] = ["content", "creator", "rights", "location", "status"];
 /// A preset's setting that only a preset holds: its rows shown are the only ones shown.
 const SHOWN_ONLY: &str = "metadata.shown_only";
 
@@ -281,6 +293,9 @@ pub struct Metadata {
     /// Its fields' state between frames: values committed and not yet told, and failed
     /// writes.
     fields: fields::Fields,
+    /// What Clear Metadata Fields… clears once its alert says yes: the photos and the
+    /// fields, as it was asked.
+    clearing: Option<Command>,
 }
 
 impl Metadata {
@@ -298,6 +313,7 @@ impl Metadata {
             asking: several::Asking::default(),
             ran: Vec::new(),
             fields: fields::Fields::default(),
+            clearing: None,
         }
     }
 
@@ -383,13 +399,86 @@ impl Metadata {
                 return vec![
                     Entry::Item(information),
                     Entry::Item(coordinates.enabled(false).tip(apart)),
+                    Entry::Separator,
+                    Entry::Item(self.clear_item(words, mirror)),
                 ];
             }
         };
         vec![
             Entry::Item(information.enabled(described)),
             Entry::Item(coordinates.enabled(located)),
+            Entry::Separator,
+            Entry::Item(self.clear_item(words, mirror)),
         ]
+    }
+
+    /// Clear Metadata Fields…, "on 12 Photos" with several, enabled where a photo described
+    /// that can be edited holds a field it clears.
+    fn clear_item(&self, words: &Translator, mirror: &Mirror) -> Item {
+        let count = mirror.selected_count();
+        let text = match count > 1 {
+            true => {
+                let mut args = Args::new();
+                args.set("count", count as f64);
+                words.text_with("metadata-clear-fields-on", Some(&args))
+            }
+            false => words.text(CLEAR_FIELDS),
+        };
+        Item::new(CLEAR_FIELDS, text).enabled(self.clear_command(mirror).is_some())
+    }
+
+    /// What Clear Metadata Fields… sends for the photos described: one `SetMetadata` of
+    /// every field of the IPTC groups some photo holds, Notes but none, each `None`
+    /// (darktable's metadata editor's reset, `src/libs/metadata.c:519-538`); none where no
+    /// photo holds one, or the fields cannot be edited now.
+    fn clear_command(&self, mirror: &Mirror) -> Option<Command> {
+        let photos = fields::described(mirror);
+        let held = self.held(mirror);
+        let editable = photos.len() > view_only(mirror, &photos).len();
+        if !editable || (photos.len() == 1 && fields::state(mirror).is_none()) {
+            return None;
+        }
+        let set = (ROWS.iter())
+            .filter(|listed| EDITABLE.contains(&listed.group))
+            .flat_map(|listed| listed.rows.iter())
+            .filter_map(|row| field_row(row.id))
+            .filter(|row| row.field != "apertrust:notes")
+            .filter(|row| self.fields.holds(row.field, mirror, held))
+            .map(|row| (row.field.to_owned(), None))
+            .collect::<Vec<_>>();
+        (!set.is_empty()).then_some(Command::SetMetadata {
+            photos,
+            fields: set,
+            values: Vec::new(),
+        })
+    }
+
+    /// Clear Metadata Fields… was chosen: what it clears, kept for its alert's yes, and the
+    /// photos it clears, for the alert's words; none where it clears nothing.
+    pub fn ask_clear(&mut self, mirror: &Mirror) -> Option<usize> {
+        self.clearing = self.clear_command(mirror);
+        match &self.clearing {
+            Some(Command::SetMetadata { photos, .. }) => Some(photos.len()),
+            _ => None,
+        }
+    }
+
+    /// Each field's draft ended with no press, sent to the photos it began on, before a
+    /// command that changes the photos described goes out (decision 110).
+    pub fn drafts(&mut self, ctx: &egui::Context, words: &Translator) -> Vec<Command> {
+        let month_first = words.locale() == apertrust_ui::Locale::EnUs;
+        self.fields.drafts(ctx, month_first)
+    }
+
+    /// `command` went out numbered `number`, which a field written on several photos
+    /// follows.
+    pub fn command_sent(&mut self, command: &Command, number: u64) {
+        self.fields.sent(command, number);
+    }
+
+    /// Clear Metadata Fields…' alert answered: the command to send where it said yes.
+    pub fn cleared(&mut self, yes: bool) -> Option<Command> {
+        self.clearing.take().filter(|_| yes)
     }
 
     /// Where the photos the tool describes were taken, as Copy Coordinates copies it.
@@ -467,7 +556,7 @@ impl Metadata {
                 .find(|widget| widget_row(*widget) == Some(row.id));
             let value = match marks {
                 Some(widget) => Rated::of(cx).text(widget, cx.words, &RatingNotes::default()),
-                None if field_row(row.id).is_some() => self.field_text(row.id, cx.mirror),
+                None if field_row(row.id).is_some() => self.field_text(row.id, cx),
                 None => self.worded(row.id, &subject, cx).value,
             };
             let value = value.filter(|value| !value.is_empty());
@@ -830,14 +919,14 @@ impl Rated {
 /// The colour labels' ids in darktable's order, as their words name them.
 const LABELS: [&str; 5] = ["red", "yellow", "green", "blue", "purple"];
 
-/// The ratings the open folder's listing, or the photos alone, hold, by photo: built once,
-/// then read for each selected photo.
+/// The photos the open folder's listing, or the photos alone, hold, by path: built once,
+/// then read for each selected photo, its rating and its edit's state.
 enum Lookup<'a> {
     Folder {
         folder: Option<PathBuf>,
-        names: HashMap<&'a std::ffi::OsStr, Rating>,
+        names: HashMap<&'a std::ffi::OsStr, &'a Listed>,
     },
-    Alone(HashMap<&'a Path, Rating>),
+    Alone(HashMap<&'a Path, &'a Listed>),
 }
 
 impl<'a> Lookup<'a> {
@@ -848,19 +937,19 @@ impl<'a> Lookup<'a> {
             crate::folder::Folder::Open(listing) => Lookup::Folder {
                 folder: std::path::absolute(&listing.path).ok(),
                 names: (photos.iter())
-                    .map(|photo| (std::ffi::OsStr::new(photo.name.as_str()), photo.rating))
+                    .map(|photo| (std::ffi::OsStr::new(photo.name.as_str()), photo))
                     .collect(),
             },
             _ => Lookup::Alone(
                 (folder.alone_paths().iter().zip(photos))
-                    .map(|(path, photo)| (path.as_path(), photo.rating))
+                    .map(|(path, photo)| (path.as_path(), photo))
                     .collect(),
             ),
         }
     }
 
-    /// The rating of the photo at `path`, where the listing holds it.
-    fn rating(&self, path: &Path) -> Option<Rating> {
+    /// The photo at `path`, where the listing holds it.
+    fn photo(&self, path: &Path) -> Option<&'a Listed> {
         match self {
             Lookup::Folder { folder, names } => {
                 let parent = std::path::absolute(path.parent()?).ok();
@@ -871,6 +960,34 @@ impl<'a> Lookup<'a> {
             Lookup::Alone(paths) => paths.get(path).copied(),
         }
     }
+
+    /// The rating of the photo at `path`, where the listing holds it.
+    fn rating(&self, path: &Path) -> Option<Rating> {
+        self.photo(path).map(|photo| photo.rating)
+    }
+}
+
+/// Those of `photos` whose edit opens for viewing only, a newer Apertrust's or one whose
+/// sidecar cannot be read, as the listing holds them, the open photo's as it opened: the
+/// fields of several photos skip them (decision 110).
+pub(crate) fn view_only(mirror: &Mirror, photos: &[PathBuf]) -> Vec<PathBuf> {
+    let lookup = Lookup::of(mirror);
+    let open = match &mirror.photo {
+        crate::mirror::PhotoState::Open(photo) => Some(photo),
+        _ => None,
+    };
+    (photos.iter())
+        .filter(|path| match open.filter(|open| open.path == **path) {
+            Some(open) => open.view_only.is_some(),
+            None => lookup.photo(path).is_some_and(|photo| {
+                matches!(
+                    photo.edit,
+                    EditState::ViewOnly(_) | EditState::Unreadable(_)
+                )
+            }),
+        })
+        .cloned()
+        .collect()
 }
 
 /// Where the photos described were taken, as Copy Coordinates copies it.
@@ -892,12 +1009,15 @@ struct Worded {
 }
 
 impl Metadata {
-    /// The field row `id`'s value as its well shows it, none where it is empty or several
-    /// photos are selected.
-    fn field_text(&self, id: &str, mirror: &Mirror) -> Option<String> {
+    /// The field row `id`'s value as its well shows it, Different where several photos
+    /// differ in it; none where it is empty.
+    fn field_text(&self, id: &str, cx: &Context<'_>) -> Option<String> {
         let row = field_row(id)?;
-        let text = self.fields.text(row.field, mirror);
-        (!text.is_empty() && mirror.selected_count() <= 1).then_some(text)
+        let held = self.held(cx.mirror);
+        match (self.fields).value(row.field, cx.mirror, held) {
+            (_, Some(_)) => Some(cx.words.text("metadata-different")),
+            (text, None) => (!text.is_empty()).then_some(text),
+        }
     }
 
     /// The row `id` of `subject`: one photo's fact, several photos' summary, or none.
@@ -1236,18 +1356,79 @@ impl UtilityTool for Metadata {
         field: &FieldRow,
         cx: &mut Context<'_>,
     ) -> Vec<library::Action> {
+        let several = cx.mirror.selected_count() > 1;
+        let held = self.held(cx.mirror);
+        // Copy where the photo has several copies, or where several photos' copies have a
+        // name.
         let copies = fields::state(cx.mirror).map_or(1, |state| state.copy.count);
-        if field.field == apertrust_library::fields::COPY_NAME && copies < 2 {
+        let named = held.and_then(|summary| summary.field(COPY_NAME));
+        let shown = match several {
+            true => named.is_some_and(|named| *named != FieldSummary::Empty),
+            false => copies > 1,
+        };
+        if field.field == COPY_NAME && !shown {
             return Vec::new();
         }
         let column = self.column(ui, cx.words);
-        (self.fields).draw(ui, field, column, cx.mirror, cx.words, cx.commands);
+        let asked = self.asking.asked();
+        (self.fields).follow_summary(cx.mirror, asked, self.asking.held_number());
+        // The summary held, borrowed apart from the fields it draws.
+        let settled = cx.mirror.selection_settled();
+        let through = cx.mirror.selection.through;
+        let held = (self.asking.held(through)).filter(|_| settled);
+        (self.fields).draw(ui, field, column, cx.mirror, held, cx.words, cx.commands);
         Vec::new()
     }
 
     /// A field holding a value, which a closed group's dot counts.
     fn holds(&self, field: &FieldRow, mirror: &Mirror) -> bool {
-        self.fields.holds(field.field, mirror)
+        self.fields.holds(field.field, mirror, self.held(mirror))
+    }
+
+    /// With several photos selected, some of them view-only: "3 of 12 photos are view-only
+    /// and keep their fields" on the first editable group shown, Content unless hidden, its
+    /// menu saying so and Select Only Editable Photos.
+    fn group_warning(&self, group: &str, cx: &Context<'_>) -> Option<(String, Vec<Entry>)> {
+        let mirror = cx.mirror;
+        let photos = fields::described(mirror);
+        let first = EDITABLE.iter().find(|id| {
+            let listed = ROWS.iter().find(|listed| listed.group == **id);
+            listed.is_some_and(|listed| listed.rows.iter().any(|row| self.view.shows(row.id)))
+        });
+        if photos.len() < 2 || first != Some(&group) {
+            return None;
+        }
+        let view_only = view_only(mirror, &photos).len();
+        if view_only == 0 || view_only == photos.len() {
+            return None;
+        }
+        let mut args = Args::new();
+        args.set("count", view_only as f64);
+        args.set("of", photos.len() as f64);
+        let name = cx.words.text_with("metadata-view-only-some", Some(&args));
+        let why = cx
+            .words
+            .text_with("metadata-view-only-some-why", Some(&args));
+        let menu = vec![
+            Entry::Item(Item::new("metadata-view-only-why", why).enabled(false)),
+            Entry::Separator,
+            Entry::Item(Item::new(SELECT_EDITABLE, cx.words.text(SELECT_EDITABLE))),
+        ];
+        Some((name, menu))
+    }
+
+    /// Select Only Editable Photos: the selected photos that can be edited, in place of the
+    /// selection.
+    fn group_warned(&mut self, _group: &str, chosen: &str, cx: &mut Context<'_>) {
+        if chosen != SELECT_EDITABLE {
+            return;
+        }
+        let photos = fields::described(cx.mirror);
+        let view_only = view_only(cx.mirror, &photos);
+        let editable = (photos.into_iter())
+            .filter(|photo| !view_only.contains(photo))
+            .collect();
+        (cx.commands).push(Command::Selection(SelectionCommand::Set(editable)));
     }
 
     fn open(&self, group: &str) -> Option<bool> {

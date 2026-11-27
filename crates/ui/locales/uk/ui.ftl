@@ -192,6 +192,13 @@ batch-rated =
        *[other] { $style } на { $count } знімка
     }
 batch-rated-some = { $style } на { $changed } із { $count } знімків
+batch-written =
+    { $count ->
+        [one] { $style }: записано на { $count } знімок
+        [few] { $style }: записано на { $count } знімки
+       *[other] { $style }: записано на { $count } знімків
+    }
+batch-written-some = { $style }: записано на { $changed } із { $count } знімків
 batch-taken-back =
     { $count ->
         [one] «{ $style }» скасовано на { $count } знімку
@@ -475,6 +482,30 @@ job-redo-rate-outcome =
         [few] Оцінку повернено на { $changed } із { $count } знімків
         [many] Оцінку повернено на { $changed } із { $count } знімків
        *[other] Оцінку повернено на { $changed } із { $count } знімка
+    }
+job-set-metadata = Запис поля «{ $field }» · { photo-count }
+job-set-metadata-outcome =
+    { $count ->
+        [one] { $field }: записано на { $changed } із { $count } знімка
+        [few] { $field }: записано на { $changed } із { $count } знімків
+        [many] { $field }: записано на { $changed } із { $count } знімків
+       *[other] { $field }: записано на { $changed } із { $count } знімка
+    }
+job-undo-metadata = Скасування поля «{ $field }» · { photo-count }
+job-redo-metadata = Повторення поля «{ $field }» · { photo-count }
+job-undo-metadata-outcome =
+    { $count ->
+        [one] { $field }: скасовано на { $changed } із { $count } знімка
+        [few] { $field }: скасовано на { $changed } із { $count } знімків
+        [many] { $field }: скасовано на { $changed } із { $count } знімків
+       *[other] { $field }: скасовано на { $changed } із { $count } знімка
+    }
+job-redo-metadata-outcome =
+    { $count ->
+        [one] { $field }: повторено на { $changed } із { $count } знімка
+        [few] { $field }: повторено на { $changed } із { $count } знімків
+        [many] { $field }: повторено на { $changed } із { $count } знімків
+       *[other] { $field }: повторено на { $changed } із { $count } знімка
     }
 
 job-export-photo =
@@ -1758,6 +1789,14 @@ alert-preset-delete-message = Його файл буде вилучено.
 alert-preset-delete-button = Видалити
 alert-style-delete-title = Видалити стиль «{ $name }»?
 alert-style-delete-message = Його файл буде видалено. Знімки, до яких його застосовано, збережуть свої редагування.
+alert-clear-metadata-title =
+    { $count ->
+        [1] Очистити поля метаданих цього знімка?
+        [one] Очистити поля метаданих { $count } знімка?
+       *[other] Очистити поля метаданих { $count } знімків?
+    }
+alert-clear-metadata-message = Нотатки й назви копій буде збережено.
+alert-clear-metadata-button = Очистити
 
 ## Інструмент «Відомості».
 
@@ -1890,7 +1929,35 @@ metadata-not-a-date-why = Введіть дату як { $example } або як 
 metadata-not-saved = { $field }: не збережено
 metadata-try-again = Спробувати ще раз
 metadata-copy-of = { $number } з { $count }
-metadata-several-later = Редагування кількох знімків з’явиться в наступній версії
+metadata-field-of = { $field } · { $count ->
+        [one] { $count } знімок
+        [few] { $count } знімки
+       *[other] { $count } знімків
+    }
+metadata-different-description = { $count ->
+        [one] { $count } знімок
+        [few] { $count } знімки
+       *[other] { $count } знімків
+    }, різних значень: { $values }. Введене замінить їх усі.
+metadata-values-of = Значення поля «{ $field }» на { $count ->
+        [one] { $count } знімку
+       *[other] { $count } знімках
+    }
+metadata-clear-on =
+    { $count ->
+        [one] Очистити на { $count } знімку
+       *[other] Очистити на { $count } знімках
+    }
+metadata-rename-one = Щоб перейменувати копію, виберіть один знімок
+metadata-all-view-only = Усі вибрані знімки відкриті лише для перегляду, їхні поля не зміняться
+metadata-view-only-some = { $count } із { $of } знімків відкриті лише для перегляду, їхні поля не зміняться
+metadata-view-only-some-why = { $count } із { $of } знімків відкриті лише для перегляду, їхні поля не зміняться.
+metadata-select-editable = Вибрати лише знімки, які можна змінити
+metadata-clear-fields = Очистити поля метаданих…
+metadata-clear-fields-on = Очистити поля метаданих на { $count ->
+        [one] { $count } знімку
+       *[other] { $count } знімках
+    }…
 metadata-copyright-unknown = Невідомо
 metadata-copyright-copyrighted = Захищено авторським правом
 metadata-copyright-public-domain = Суспільне надбання

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The app's confirmations (`docs/gui.md`, Dialogs and alerts; decision 41): the system's
-//! alerts, asked through the dialog host and answered on a later frame. Eight so far:
+//! alerts, asked through the dialog host and answered on a later frame. Nine so far:
 //!
 //! - **Export's overwrite question** ([`Purpose::Overwrite`]): Export asks before it
 //!   replaces files, as darktable does, from the Export tool or Export Again.
@@ -37,6 +37,8 @@
 //! - **Update and Delete a tool's preset** ([`Purpose::UpdatePreset`],
 //!   [`Purpose::DeletePreset`]): darktable's "update preset?" and "delete preset?"
 //!   (decision 106; `presets.rs`).
+//! - **Clear Metadata Fields** ([`Purpose::ClearMetadata`]): the Metadata tool's ⋯ asks
+//!   before it clears the fields of the photos described, with their count (decision 110).
 //!
 //! One alert is up at a time ([`Alerts`]); the words are Fluent messages handed over as
 //! text.
@@ -75,6 +77,8 @@ pub enum Purpose {
     UpdatePreset,
     /// A tool's preset is to be deleted: yes removes its file.
     DeletePreset,
+    /// The Metadata tool's fields are to be cleared: yes clears them.
+    ClearMetadata,
 }
 
 /// The open photo's edit as Quit finds it.
@@ -322,6 +326,18 @@ pub fn delete_request(ctx: &egui::Context, name: &str, kind: &str) -> Request {
         .default_button(1)
 }
 
+/// "Clear the metadata fields of 12 photos?", or of the photo with one, with Clear, which
+/// destroys and has no key, and Cancel, the default (decision 110).
+pub fn clear_metadata_request(ctx: &egui::Context, count: usize) -> Request {
+    let mut args = Args::new();
+    args.set("count", count as f64);
+    let title = translator(ctx).text_with("alert-clear-metadata-title", Some(&args));
+    Request::new(title, tr(ctx, "alert-clear-metadata-message"))
+        .button(tr(ctx, "alert-clear-metadata-button"), Role::Destructive)
+        .button(tr(ctx, "alert-cancel"), Role::Cancel)
+        .default_button(1)
+}
+
 /// "Quit while a job is running?": its message says what a yes does to the `running` jobs.
 /// Where the edit's last write failed, "Quit without your last changes?", saying why, then
 /// what a yes does to any jobs running, with Quit Anyway and Cancel, the default.
@@ -476,6 +492,8 @@ pub enum Then {
     UpdatePreset,
     /// Remove the preset asked about.
     DeletePreset,
+    /// Clear the Metadata tool's fields asked about.
+    ClearMetadata,
     /// Nothing: the alert only said something, so no question waits on its answer.
     Told,
 }
@@ -506,7 +524,11 @@ pub fn then(purpose: Purpose, answer: Answer, guard: &mut Guard, jobs: &Mirror) 
         Purpose::Discard if confirmed => Then::Discard,
         Purpose::UpdatePreset if confirmed => Then::UpdatePreset,
         Purpose::DeletePreset if confirmed => Then::DeletePreset,
-        Purpose::Discard | Purpose::UpdatePreset | Purpose::DeletePreset => Then::Nothing,
+        Purpose::ClearMetadata if confirmed => Then::ClearMetadata,
+        Purpose::Discard
+        | Purpose::UpdatePreset
+        | Purpose::DeletePreset
+        | Purpose::ClearMetadata => Then::Nothing,
         Purpose::Refused | Purpose::Running => Then::Told,
     }
 }

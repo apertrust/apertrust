@@ -1463,6 +1463,8 @@ mod tests {
                 // A field's label, and a date as the language writes one.
                 args.set("field", "Title");
                 args.set("example", "04/07/2026");
+                // How many different values several photos hold of a field.
+                args.set("values", 3);
                 let mut errors = Vec::new();
                 bundle.format_pattern(pattern, Some(&args), &mut errors);
                 assert!(errors.is_empty(), "{} {id}: {errors:?}", locale.id());
