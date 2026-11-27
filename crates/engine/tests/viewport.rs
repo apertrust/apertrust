@@ -25,7 +25,9 @@
 //! pipeline's image bit for bit (decision 28). An operation's whole-image passes run
 //! only when their own key changes, not when only its later passes' parameters do, and
 //! their result is kept across a rebuild (decision 15); haze removal's estimate at full
-//! resolution across a new viewport size too (decision 15).
+//! resolution across a new viewport size too (decision 15). A render in chunks, each a
+//! submission of its own, gives the one submission's image bit for bit, untiled and in
+//! tiles (decision 112).
 
 mod common;
 
@@ -33,7 +35,9 @@ use common::X_TRANS;
 
 use apertrust_engine::compute::{GpuImage, Timings};
 use apertrust_engine::gpu::{GpuContext, GpuOptions};
-use apertrust_engine::pipeline::{self, Instance, Limits, Pipe, Pipeline, Plan, PlannedOperation};
+use apertrust_engine::pipeline::{
+    self, Chunking, Instance, Limits, Pipe, Pipeline, Plan, PlannedOperation,
+};
 use apertrust_plugin::{Format, ImageContext, ImageDesc, Pattern, Resource};
 
 const VIEWPORT: Pipe = Pipe::Viewport {
@@ -931,4 +935,116 @@ fn a_tiled_viewport_restarts_where_the_change_does() {
             .zip(&full)
             .all(|(a, b)| a.map(f32::to_bits) == b.map(f32::to_bits))
     );
+}
+
+/// Renders `edits` in turn, as a drag sends them, on `gpu` at `pipe`, in one submission
+/// and in chunks with the bound at nothing, every pass a chunk of its own (decision
+/// 112), and checks each render in chunks equal to the one submission's bit for bit, in
+/// several chunks, its passes timed as the one submission's are.
+fn chunks_equal_one_submission(
+    gpu: &GpuContext,
+    scene: &Scene,
+    pipe: Pipe,
+    edits: &[&[(&str, &str, f32)]],
+    tiled: bool,
+) {
+    let fresh = |chunking| {
+        let plan = scene.plan(gpu, edits[0], pipe);
+        assert_eq!(plan.tiled.is_some(), tiled);
+        let built = Pipeline::new(gpu, plan, scene.upload(gpu));
+        let mut pipeline = pollster::block_on(built).unwrap();
+        pipeline.set_chunking(chunking);
+        pipeline
+    };
+    let mut whole = fresh(Chunking::Whole);
+    let mut chunked = fresh(Chunking::Bounded(0.0));
+    for (n, settings) in edits.iter().enumerate() {
+        if n > 0 {
+            let update = |pipeline: Pipeline| {
+                let plan = scene.plan(gpu, settings, pipe);
+                pollster::block_on(pipeline.update(gpu, plan)).unwrap()
+            };
+            (whole, chunked) = (update(whole), update(chunked));
+        }
+        let one = whole.render(gpu).unwrap();
+        assert_eq!(whole.chunks(), 1);
+        let cut = chunked.render(gpu).unwrap();
+        assert!(
+            chunked.chunks() > 1,
+            "{settings:?}: {} chunk",
+            chunked.chunks()
+        );
+        let names = |timings: &Timings| -> Vec<(&str, bool)> {
+            (timings.passes.iter())
+                .map(|&(name, ms)| (name, ms.is_finite()))
+                .collect()
+        };
+        assert_eq!(names(&cut), names(&one), "{settings:?}");
+        let expected = whole.output().download(gpu).unwrap();
+        let actual = chunked.output().download(gpu).unwrap();
+        assert_eq!(actual.len(), expected.len());
+        if let Some(i) = actual
+            .iter()
+            .zip(&expected)
+            .position(|(a, b)| a.map(f32::to_bits) != b.map(f32::to_bits))
+        {
+            panic!(
+                "{settings:?}: pixel {i} is {:?} in chunks, {:?} in one submission",
+                actual[i], expected[i]
+            );
+        }
+    }
+}
+
+/// A drag's edits with the tone equalizer and the colour equalizer, its guided filter on,
+/// planned: the first render, exposure before both twice, the edit cache capturing then
+/// restoring its input, then each equalizer's own control.
+fn equalized_drag(scene: &Scene, gpu: &GpuContext, pipe: Pipe, tiled: bool) {
+    let tone = |ev| ("toneequal", "shadows", ev);
+    let colour = |saturation| ("colorequal", "sat_red", saturation);
+    let exposure = |ev| ("exposure", "exposure", ev);
+    let edits: [&[(&str, &str, f32)]; 5] = [
+        &[tone(0.5), colour(1.3)],
+        &[tone(0.5), colour(1.3), exposure(0.4)],
+        &[tone(0.5), colour(1.3), exposure(0.6)],
+        &[tone(0.9), colour(1.3), exposure(0.6)],
+        &[tone(0.9), colour(1.6), exposure(0.6)],
+    ];
+    chunks_equal_one_submission(gpu, scene, pipe, &edits, tiled);
+}
+
+fn bayer() -> Pattern<u32> {
+    Pattern {
+        width: 2,
+        height: 2,
+        values: vec![0, 1, 1, 2],
+    }
+}
+
+fn x_trans() -> Pattern<u32> {
+    Pattern {
+        width: 6,
+        height: 6,
+        values: X_TRANS.to_vec(),
+    }
+}
+
+#[test]
+fn a_bayer_render_at_fit_in_chunks_equals_one_submission() {
+    let gpu = default_gpu();
+    equalized_drag(&Scene::small(), &gpu, VIEWPORT, false);
+    equalized_drag(&Scene::large(bayer()), &gpu, SMALL_VIEWPORT, false);
+}
+
+#[test]
+fn an_x_trans_render_at_fit_in_chunks_equals_one_submission() {
+    let gpu = default_gpu();
+    equalized_drag(&Scene::large(x_trans()), &gpu, SMALL_VIEWPORT, false);
+}
+
+#[test]
+fn a_tiled_viewport_in_chunks_equals_one_submission() {
+    let gpu = small_gpu();
+    equalized_drag(&Scene::large(bayer()), &gpu, SMALL_VIEWPORT, true);
+    equalized_drag(&Scene::large(x_trans()), &gpu, SMALL_VIEWPORT, true);
 }

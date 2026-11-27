@@ -390,6 +390,7 @@ fn command_variant(command: &Command) -> Option<usize> {
         | Command::HoldWalk(_)
         | Command::HoldThumbnails(_)
         | Command::HoldDecode(_)
+        | Command::HoldChunks(_)
         | Command::HoldClear(_) => return None,
     })
 }

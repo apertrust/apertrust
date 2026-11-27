@@ -646,6 +646,11 @@ pub enum Command {
     #[cfg(test)]
     #[serde(skip)]
     HoldDecode(export_job::testing::Hold),
+    /// Cuts the next live frame at Fit before each pass and holds it once its first chunk
+    /// is submitted, before the next, for a test (decision 112).
+    #[cfg(test)]
+    #[serde(skip)]
+    HoldChunks(export_job::testing::Hold),
     /// Holds the next [`CacheCommand::Clear`] at each progress it tells, before each
     /// removal, for a test.
     #[cfg(test)]
@@ -705,6 +710,7 @@ fn on_edit(command: &Command) -> bool {
         | Command::HoldWalk(_)
         | Command::HoldThumbnails(_)
         | Command::HoldDecode(_)
+        | Command::HoldChunks(_)
         | Command::HoldClear(_) => false,
         _ => true,
     }
@@ -2982,6 +2988,9 @@ struct Engine {
     /// Holds the next open's decode, for a test.
     #[cfg(test)]
     decode_hold: Option<export_job::testing::Hold>,
+    /// Holds the next live frame at Fit after its first chunk, for a test.
+    #[cfg(test)]
+    chunks_hold: Option<export_job::testing::Hold>,
     /// The opens whose decode began, and those whose mosaic was uploaded, in order, for a
     /// test.
     #[cfg(test)]
@@ -3578,6 +3587,8 @@ impl Engine {
             thumbnails_hold: None,
             #[cfg(test)]
             decode_hold: None,
+            #[cfg(test)]
+            chunks_hold: None,
             #[cfg(test)]
             decoding: Vec::new(),
             #[cfg(test)]
@@ -4288,6 +4299,11 @@ impl Engine {
                     Ok(())
                 }
                 #[cfg(test)]
+                Command::HoldChunks(hold) => {
+                    self.chunks_hold = Some(hold);
+                    Ok(())
+                }
+                #[cfg(test)]
                 Command::HoldClear(hold) => {
                     self.clear_hold = Some(hold);
                     Ok(())
@@ -4892,6 +4908,7 @@ impl Engine {
             | Command::HoldWalk(_)
             | Command::HoldThumbnails(_)
             | Command::HoldDecode(_)
+            | Command::HoldChunks(_)
             | Command::HoldClear(_) => {
                 return Ok(Effect::default());
             }
@@ -6577,7 +6594,7 @@ impl Engine {
         let bytes = desc.buffer_size();
 
         // Into the display buffer the client was not sent last, copied in the render's
-        // submission, which is the frame's one turn at the submit gate.
+        // submission, at Fit its last chunk's (decision 112).
         let size = (desc.width, desc.height);
         let (display, fresh) = Display::for_frames(&self.gpu, self.display.take(), size, bytes);
         let display = self.display.insert(display);
@@ -6913,6 +6930,12 @@ impl Engine {
             probing.as_ref(),
             &mut recorded,
         );
+        #[cfg(test)]
+        if let Some(hold) = self.chunks_hold.take() {
+            pipeline.hold_chunks(move || hold.wait());
+        }
+        // In chunks of bounded GPU time, each a turn at the submit gate, the copy into the
+        // display buffer in the last (decision 112); no command is taken between them.
         let rendered = pipeline.render_probing(&self.gpu, probe, |encoder| {
             encoder.copy_buffer_to_buffer(output.buffer(), 0, &display.buffers[next], 0, bytes);
         });
@@ -7533,6 +7556,7 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(600);
 #[cfg(test)]
 mod tests {
     mod batch;
+    mod chunks;
     mod fields;
     mod history;
     mod metadata;
@@ -7987,9 +8011,11 @@ mod tests {
     }
 
     /// While a window resizes, its toolkit holds the submit gate in callback after
-    /// callback with no pause between them. A frame takes one turn at the gate, so it
-    /// waits for the callback under way and comes before the next one ends. The test's
-    /// thread is the toolkit, holding the gate from one change to the next.
+    /// callback with no pause between them. Each of a frame's turns at the gate, one a
+    /// chunk (decision 112), waits for the callback under way and gets in before the next,
+    /// so the frame comes, in as many holds as it has turns. A frame whose passes the
+    /// last frame timed within the bound is one turn. The test's thread is the toolkit,
+    /// holding the gate from one change to the next (order, not time).
     #[test]
     fn a_frame_waits_for_one_hold_of_the_submit_gate_at_most_while_it_is_held_again_and_again() {
         let gpu = gpu();
@@ -8002,23 +8028,55 @@ mod tests {
         // The first frame opens the photo and compiles the kernels, the gate free.
         open_live(&session, &wakes, &path);
         let frame = |sent: u64| move |e: &Event| matches!(e, Event::Frame(f) if f.through >= sent);
+        let the_frame = |events: &[Event], sent: u64| {
+            (events.iter()).find_map(|event| match event {
+                Event::Frame(f) if f.through >= sent => Some(f.timings.clone()),
+                _ => None,
+            })
+        };
         let sent = session.send(set("brightness", ControlValue::Number(0.5), false));
-        until(&session, &wakes, frame(sent));
+        let mut last = the_frame(&until(&session, &wakes, frame(sent)), sent).expect("a frame");
+        let timestamps = (gpu.device.features()).contains(wgpu::Features::TIMESTAMP_QUERY);
         let mut held = gpu.gate.hold();
         for value in [-0.5, 1.0, -1.0, 0.25, -0.25, 0.75, -0.75] {
             let sent = session.send(set("brightness", ControlValue::Number(value), false));
-            // The callback under way, and the frame's turn: the engine waits at the gate.
-            gpu.gate.until_asked(2);
+            let mut events = Vec::new();
+            let mut turns = 0;
+            let timings = loop {
+                // The callback under way, and the frame's next turn waiting at the gate;
+                // or, its last turn taken, the frame.
+                let deadline = Instant::now() + TEST_WAIT;
+                events.extend(session.events());
+                while gpu.gate.asked() < 2 && the_frame(&events, sent).is_none() {
+                    assert!(Instant::now() < deadline, "neither a turn nor the frame");
+                    std::thread::sleep(Duration::from_micros(100));
+                    events.extend(session.events());
+                }
+                // A turn asked after the frame went out, a job's, finds it here.
+                events.extend(session.events());
+                if let Some(timings) = the_frame(&events, sent) {
+                    break timings;
+                }
+                assert_eq!(gpu.gate.asked(), 2, "turns asked at the gate");
+                // The next callback asks at once, after the frame's turn: a gate that let
+                // the toolkit in first would hold the frame back for ever.
+                drop(held);
+                held = gpu.gate.hold();
+                turns += 1;
+            };
+            // A turn a chunk, each chunk a pass at least; one where the last frame timed
+            // every pass and they fit the bound.
+            let within = (last.passes.iter()).all(|(_, ms)| ms.is_finite())
+                && last.passes.iter().map(|(_, ms)| ms).sum::<f64>() <= pipeline::CHUNK_BOUND;
+            let case = format!("timestamp queries: {timestamps}, last frame: {last:?}");
             assert!(
-                !session.events().iter().any(frame(sent)),
-                "a frame came while the gate was held"
+                (1..=timings.passes.len()).contains(&turns),
+                "{turns} turns, {case}"
             );
-            // The next callback asks at once, after the frame, and holds the gate until
-            // the frame comes: a frame of two turns, or a gate that let the toolkit in
-            // first, would never come.
-            drop(held);
-            held = gpu.gate.hold();
-            until(&session, &wakes, frame(sent));
+            if within {
+                assert_eq!(turns, 1, "{case}");
+            }
+            last = timings;
         }
         drop(held);
         drop(session);

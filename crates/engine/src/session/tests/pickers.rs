@@ -100,7 +100,7 @@ fn readings(events: &[Event]) -> Vec<&Option<PickerReading>> {
 impl Driven {
     /// The pickers' readings still on their way, picked up as the thread picks them up,
     /// looking at the GPU between commands.
-    fn picked(&mut self) -> Vec<Event> {
+    pub(super) fn picked(&mut self) -> Vec<Event> {
         let start = Instant::now();
         let mut events = Vec::new();
         loop {

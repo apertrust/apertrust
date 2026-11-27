@@ -894,6 +894,13 @@ mod tests {
     }
 
     impl SubmitGate {
+        /// How many turns at the gate are asked for and not over, the holder's included,
+        /// for a test that waits for them or for something else.
+        pub(crate) fn asked(&self) -> u64 {
+            let holder = self.0.lock();
+            holder.next - holder.serving
+        }
+
         /// Returns once `turns` turns at the gate are asked for and not over, the holder's
         /// included: how a test knows that a thread it set going waits at the gate,
         /// without timing it. Fails after a minute rather than hang. For the gate's tests
@@ -903,10 +910,7 @@ mod tests {
 
             let deadline = Instant::now() + Duration::from_secs(60);
             loop {
-                let asked = {
-                    let holder = self.0.lock();
-                    holder.next - holder.serving
-                };
+                let asked = self.asked();
                 if asked >= turns {
                     assert_eq!(asked, turns, "turns asked at the gate");
                     return;

@@ -744,20 +744,35 @@ impl GpuTimer {
 /// (decision 17).
 pub(crate) const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_micros(250);
 
+/// Tells once the GPU work submitted before it was made has finished, whatever other
+/// threads submit meanwhile ([`GpuContext::done`]).
+pub(crate) struct Done(std::sync::mpsc::Receiver<()>);
+
 impl GpuContext {
     /// Blocks until all GPU work submitted so far has finished, never keeping another
     /// thread from presenting for more than a moment.
     pub fn wait(&self) -> Result<(), ComputeError> {
-        // Fires once everything submitted before it has finished, whatever other threads
-        // submit meanwhile.
+        self.wait_for(&self.done())
+    }
+
+    /// What tells once all GPU work submitted so far has finished, for
+    /// [`Self::wait_for`]: the live render's chunk i + 2 waits for chunk i's (decision
+    /// 112).
+    pub(crate) fn done(&self) -> Done {
         let (done, finished) = std::sync::mpsc::channel();
         self.queue.on_submitted_work_done(move || {
-            // The receiver outlives the loop below, so a failed send cannot happen.
+            // A receiver gone, a render that failed before it waited, wants no answer.
             let _ = done.send(());
         });
+        Done(finished)
+    }
+
+    /// Blocks until `done` tells, never keeping another thread from presenting for more
+    /// than a moment: polls without waiting every [`POLL_INTERVAL`].
+    pub(crate) fn wait_for(&self, done: &Done) -> Result<(), ComputeError> {
         loop {
             self.device.poll(wgpu::PollType::Poll)?;
-            if finished.try_recv().is_ok() {
+            if done.0.try_recv().is_ok() {
                 return Ok(());
             }
             std::thread::sleep(POLL_INTERVAL);

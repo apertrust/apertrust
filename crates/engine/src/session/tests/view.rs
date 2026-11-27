@@ -1902,7 +1902,10 @@ fn an_upstream_drag_renders_the_fitted_frame_until_the_gesture_ends() {
                     detail = Some(with_overview(driven, &events).0);
                     continue;
                 }
-                assert_eq!(driven.gpu.gate.turns() - turns, 1, "{case}: no round");
+                // The fitted frame's chunks alone (decision 112), no round's tiles.
+                let open = driven.engine.open.as_ref().unwrap();
+                let chunks = open.pipeline.as_ref().unwrap().chunks() as u64;
+                assert_eq!(driven.gpu.gate.turns() - turns, chunks, "{case}: no round");
                 assert_eq!(frame.place, fitted, "{case}");
                 assert!(frame.overview.is_none(), "{case}");
                 assert!(frame_bytes(&driven.gpu, frame) == expected[n], "{case}");
