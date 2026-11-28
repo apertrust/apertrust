@@ -2179,6 +2179,9 @@ struct Shell {
     /// How the Toolbar's menu button is drawn where the menus are drawn, on Windows and
     /// Linux: the app's icon or ☰, as `toolbar.menu_button` says.
     menu_button: MenuButtonStyle,
+    /// Whether the window has the system's title bar on Windows and Linux, as
+    /// `window.system_title_bar` says (decision 39).
+    system_title_bar: bool,
     /// Whether the Toolbar's actions show their words under their icons, as
     /// `toolbar.labels` says (decision 92).
     toolbar_labels: bool,
@@ -2334,6 +2337,7 @@ impl Shell {
             theme: settings.theme,
             marker: settings.marker,
             menu_button: settings.menu_button,
+            system_title_bar: settings.system_title_bar,
             toolbar_labels: settings.toolbar_labels,
             locale,
             kept_locale: settings.locale,
@@ -2889,6 +2893,7 @@ impl Shell {
             scale: ctx.zoom_factor(),
             marker: self.marker,
             menu_button: self.menu_button,
+            system_title_bar: self.system_title_bar,
             toolbar_labels: self.toolbar_labels,
             window: self.window,
             settings_window: self.settings_window,
@@ -4997,6 +5002,7 @@ impl Shell {
         self.marker = settings.marker;
         apertrust_ui::components::set_marker(ctx, self.marker);
         self.menu_button = settings.menu_button;
+        self.system_title_bar = settings.system_title_bar;
         self.toolbar_labels = settings.toolbar_labels;
         self.tab_names = settings.tab_names;
         self.wheel_scrolls_panel = settings.wheel_scrolls_panel;
