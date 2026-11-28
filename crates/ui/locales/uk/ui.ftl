@@ -2234,3 +2234,46 @@ import-open-when-starts = Коли імпорт починається
 import-open-when-ends = Коли він закінчується
 import-open-no = Ні
 import-verify = Перевіряти копії
+# The Import tool's header, and its Destination and Naming rows (decision 85).
+import-presets-later = Шаблони з’являться в одній із наступних версій
+import-row-name = Назва імпорту
+import-name-tip = Заповнює $(IMPORT_NAME), де його вжито в теці чи назві файлу
+import-name-unused = Жодна тека чи назва файлу не вживає назви імпорту
+import-folder-choices = Варіанти теки
+import-subfolder-choices = Варіанти підтеки
+import-choose-folder = Вибрати теку
+import-choose-folder-title = Виберіть теку, до якої імпортувати
+import-subfolder-hint = Без підтеки: просто в теку
+import-subfolder-each-import = Одна на кожен імпорт · типово
+import-subfolder-each-day = Одна на кожен день зйомки
+import-subfolder-named = За назвою імпорту
+import-subfolder-none = Без підтеки: просто в теку
+import-subfolder-today = Одна тека на цей імпорт із сьогоднішньою датою, { $date }
+import-subfolder-by-day = Одна тека на кожен день зйомки
+import-folder-sample = { $photo } → { $path }
+import-folder-new = Нова тека в { $parent }
+import-folder-new-several =
+    { $count ->
+        [one] { $count } нова тека в { $parent }
+        [few] { $count } нові теки в { $parent }
+       *[other] { $count } нових тек у { $parent }
+    }
+import-folder-there-several = До { $count } наявних тек у { $parent }
+import-folder-into = До { $folder }, там уже { photo-count }
+import-folder-never-replaces = Ніколи не замінює файл: до зайнятої назви додається _01; знімок, що вже там є, пропускається
+import-folder-diverged =
+    { $count ->
+        [one] { $count } знімок уже там із власним редагуванням; його редагування на { $source } лишається там
+        [few] { $count } знімки вже там із власним редагуванням; їхні редагування на { $source } лишаються там
+       *[other] { $count } знімків уже там із власним редагуванням; їхні редагування на { $source } лишаються там
+    }
+import-did-you-mean = Може, $({ $variable })?
+import-fix-use = Вжити $({ $variable })
+import-fix-choose-folder = Вибрати теку…
+import-file-name = Назва файлу
+import-file-name-kept = Знімки зберігають назви з камери, поки ввімкнено «Лишати назву файлу»
+import-keep-original-tip = Знімки зберігають назви з камери; вибір інших назв з’явиться в одній із наступних версій
+import-include-subfolders-card = DCIM картки завжди показується цілим
+import-open-destination-tip = Призначення відкривається, коли імпорт закінчується; інші варіанти з’являться в одній із наступних версій
+import-group-no-rating = Без оцінки
+import-group-show-imported = Показувати імпортовані

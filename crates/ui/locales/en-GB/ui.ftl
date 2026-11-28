@@ -2679,3 +2679,44 @@ import-open-when-starts = When the import starts
 import-open-when-ends = When it ends
 import-open-no = No
 import-verify = Verify the copies
+# The Import tool's header, and its Destination and Naming rows (decision 85).
+import-presets-later = Presets come in a later version
+import-row-name = Import name
+import-name-tip = Fills $(IMPORT_NAME) where the folder or file name uses it
+import-name-unused = No folder or file name uses the import name
+import-folder-choices = Folder’s choices
+import-subfolder-choices = Subfolder’s choices
+import-choose-folder = Choose a folder
+import-choose-folder-title = Choose the Folder to Import Into
+import-subfolder-hint = None: straight into the folder
+import-subfolder-each-import = One for each import · default
+import-subfolder-each-day = One for each day taken
+import-subfolder-named = Named after the import
+import-subfolder-none = None: straight into the folder
+import-subfolder-today = One folder for this import, dated today, { $date }
+import-subfolder-by-day = One folder for each day taken
+import-folder-sample = { $photo } → { $path }
+import-folder-new = A new folder in { $parent }
+import-folder-new-several =
+    { $count ->
+        [one] { $count } new folder in { $parent }
+       *[other] { $count } new folders in { $parent }
+    }
+import-folder-there-several = Into { $count } folders already there in { $parent }
+import-folder-into = Into { $folder }, already there: { photo-count }
+import-folder-never-replaces = Never replaces a file: a name taken gets _01; a photo already there is skipped
+import-folder-diverged =
+    { $count ->
+        [one] { $count } is already there with an edit of its own; its edit on { $source } stays there
+       *[other] { $count } are already there with an edit of their own; their edits on { $source } stay there
+    }
+import-did-you-mean = Did you mean $({ $variable })?
+import-fix-use = Use $({ $variable })
+import-fix-choose-folder = Choose a folder…
+import-file-name = File name
+import-file-name-kept = The photos keep their camera names while Keep original file name is on
+import-keep-original-tip = The photos keep their camera names; choosing other names comes in a later version
+import-include-subfolders-card = A card’s DCIM is always listed whole
+import-open-destination-tip = The destination opens when the import ends; the other choices come in a later version
+import-group-no-rating = No rating
+import-group-show-imported = Show imported

@@ -107,6 +107,8 @@ pub struct Section<'a> {
     utility_reset: Option<&'a str>,
     /// A utility's presets button, by its name, where it has one.
     utility_presets: Option<&'a str>,
+    /// Why a utility's presets button is drawn disabled, its tooltip.
+    presets_later: Option<&'a str>,
     /// A utility's ＋, Rows Shown, by its name, where it has one.
     rows_shown: Option<&'a str>,
     /// What ＋ opens: the groups, each a submenu of its rows checked where shown.
@@ -156,6 +158,7 @@ impl<'a> Section<'a> {
             reset: true,
             utility_reset: None,
             utility_presets: None,
+            presets_later: None,
             rows_shown: None,
             rows_menu: None,
             presets: true,
@@ -221,6 +224,13 @@ impl<'a> Section<'a> {
     /// [`Self::presets`] says and opening [`Self::presets_menu`] where it is given.
     pub fn utility_presets(mut self, name: &'a str) -> Self {
         self.utility_presets = Some(name);
+        self
+    }
+
+    /// Why a utility's presets button is drawn disabled, translated, its tooltip: the
+    /// Import tool's "Presets come in a later version".
+    pub fn presets_later(mut self, why: &'a str) -> Self {
+        self.presets_later = Some(why);
         self
     }
 
@@ -419,10 +429,13 @@ impl<'a> Section<'a> {
                             None => {}
                         }
                         if let Some(name) = self.utility_presets {
-                            let presets = IconButton::new(Icon::Presets, name)
+                            let mut presets = IconButton::new(Icon::Presets, name)
                                 .width(narrow)
-                                .enabled(self.presets)
-                                .show(ui);
+                                .enabled(self.presets);
+                            if let Some(why) = self.presets_later.filter(|_| !self.presets) {
+                                presets = presets.tip(why);
+                            }
+                            let presets = presets.show(ui);
                             match presets_menu {
                                 Some(entries) => {
                                     presets_id = Some(presets.id);

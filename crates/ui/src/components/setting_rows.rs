@@ -210,7 +210,10 @@ pub struct PathRow<'a> {
     variables: &'a [Variable<'a>],
     problem: Option<Problem<'a>>,
     choices: Option<(&'a str, &'a [PathChoice<'a>])>,
+    /// Why its ⌄ is drawn disabled, where it is.
+    choices_later: Option<&'a str>,
     folder: Option<&'a str>,
+    hint: Option<&'a str>,
     tip: Option<&'a str>,
     disabled: Option<&'a str>,
 }
@@ -226,7 +229,9 @@ impl<'a> PathRow<'a> {
             variables,
             problem: None,
             choices: None,
+            choices_later: None,
             folder: None,
+            hint: None,
             tip: None,
             disabled: None,
         }
@@ -242,6 +247,20 @@ impl<'a> PathRow<'a> {
     /// Its ⌄ of choices, named `name` (translated), opening a menu of `choices`.
     pub fn choices(mut self, name: &'a str, choices: &'a [PathChoice<'a>]) -> Self {
         self.choices = Some((name, choices));
+        self
+    }
+
+    /// Its ⌄, named `name`, drawn disabled with nothing behind it yet, `why` its tooltip,
+    /// translated, as the Import tool's Folder's until its choices come.
+    pub fn choices_later(mut self, name: &'a str, why: &'a str) -> Self {
+        self.choices = Some((name, &[]));
+        self.choices_later = Some(why);
+        self
+    }
+
+    /// What the field shows while it is empty, translated.
+    pub fn hint(mut self, hint: &'a str) -> Self {
+        self.hint = Some(hint);
         self
     }
 
@@ -275,6 +294,7 @@ impl<'a> PathRow<'a> {
         let open_choices = enabled
             && focused
             && self.choices.is_some()
+            && self.choices_later.is_none()
             && ui.input_mut(|i| i.consume_key(Modifiers::ALT, Key::ArrowDown));
         let problem = self.problem.filter(|_| enabled);
         let buttons = usize::from(problem.is_some())
@@ -284,13 +304,19 @@ impl<'a> PathRow<'a> {
         let mut choice = None;
         let mut folder = false;
         let id = self.id;
+        let later = self.choices_later;
+        let hint = self.hint;
         let output = ui
             .scope(|ui| {
                 ui.spacing_mut().item_spacing.x = t.spacing.xs;
                 let side = t.sizes.field;
                 let room = buttons as f32 * (side + t.spacing.xs);
                 let width = (ui.available_width() - room).max(t.sizes.value_column);
-                PathField::new(id, self.label, self.text, self.variables)
+                let mut field = PathField::new(id, self.label, self.text, self.variables);
+                if let Some(hint) = hint {
+                    field = field.hint(hint);
+                }
+                field
                     .width(width)
                     .problem(problem.is_some_and(|p| p.stops))
                     .enabled(enabled)
@@ -298,8 +324,19 @@ impl<'a> PathRow<'a> {
                         if let Some(problem) = problem {
                             fix = WarningButton::new(id.with("warning"), problem).show(ui);
                         }
-                        if let Some((name, choices)) = self.choices {
-                            choice = choices_button(ui, &t, name, choices, enabled, open_choices);
+                        match (self.choices, later) {
+                            (Some((name, _)), Some(why)) => {
+                                IconButton::new(Icon::ChevronDown, name)
+                                    .size(side)
+                                    .tip(why)
+                                    .enabled(false)
+                                    .show(ui);
+                            }
+                            (Some((name, choices)), None) => {
+                                choice =
+                                    choices_button(ui, &t, name, choices, enabled, open_choices);
+                            }
+                            (None, _) => {}
                         }
                         if let Some(name) = self.folder {
                             folder = IconButton::new(Icon::ChooseFolder, name)

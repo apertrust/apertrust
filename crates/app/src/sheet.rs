@@ -27,11 +27,15 @@
 //! the Toolbar's drawn close close the sheet first; Quit asks only where a job runs, as
 //! always. The sheet's own keys are the frame's (`apertrust_ui::components::Sheet`).
 
+use std::path::{Path, PathBuf};
+
 use apertrust_engine::session::{Command, LibraryEvent};
 use apertrust_ui::components::PanelEdgeAction;
 use eframe::egui;
 
 use crate::SendCommand;
+use crate::mirror::Mirror;
+use crate::settings::Settings;
 
 /// Where the sheet's tool column is: its kept width, and whether it is at the window's
 /// start, as the Tools panel is.
@@ -41,19 +45,42 @@ pub struct Place {
     pub at_start: bool,
 }
 
-/// What a frame of the sheet came to, for the shell: whether it closed, and what was done
-/// to its column's edge.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// What a frame of the sheet came to, for the shell: whether it closed, what was done to
+/// its column's edge, the settings its tool changed, written at once with no history step,
+/// its tool's groups opened or closed, and whether it asks for the folder chooser.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Shown {
     pub closed: bool,
     pub column: Option<PanelEdgeAction>,
+    /// Each a text setting by its key in full, as the store keeps it.
+    pub settings: Vec<(&'static str, String)>,
+    /// Each of its tool's collapsible groups by id, opened or closed, kept in `edit.groups`
+    /// under the tool's id.
+    pub groups: Vec<(&'static str, bool)>,
+    /// The system's folder chooser, whose answer comes back as [`Content::folder_chosen`],
+    /// starting at `folder_start` where it is given and there, else its nearest folder.
+    pub choose_folder: bool,
+    pub folder_start: Option<PathBuf>,
+}
+
+/// What the shell gives a sheet's content each frame: what the session reported and the
+/// settings, which its tool's page is drawn with.
+pub struct Given<'a> {
+    pub mirror: &'a Mirror,
+    pub settings: &'a Settings,
 }
 
 /// A sheet's content: draws the design system's `Sheet` into the room it is given, acting
 /// on what it reports and sending the session what it asks through `send`; takes in the
 /// library's events the mirror hands it, and says what it sends as it closes.
 pub trait Content {
-    fn show(&mut self, ui: &mut egui::Ui, place: Place, send: &mut SendCommand<'_>) -> Shown;
+    fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        place: Place,
+        given: &Given<'_>,
+        send: &mut SendCommand<'_>,
+    ) -> Shown;
 
     /// Takes in one of the library's events, Import's or a thumbnail of no folder open
     /// (`Reaction::Import`): the content keeps those of its own commands' numbers.
@@ -63,6 +90,9 @@ pub trait Content {
     fn closing(&mut self) -> Vec<Command> {
         Vec::new()
     }
+
+    /// The folder the system's folder chooser answered with, which it asked for.
+    fn folder_chosen(&mut self, _folder: &Path) {}
 }
 
 /// Draws `content` over the window below the Toolbar, `toolbar`, at `place`.
@@ -71,6 +101,7 @@ pub fn show(
     toolbar: egui::Rect,
     content: &mut dyn Content,
     place: Place,
+    given: &Given<'_>,
     send: &mut SendCommand<'_>,
 ) -> Shown {
     let window = ctx.content_rect();
@@ -85,7 +116,7 @@ pub fn show(
             ui.allocate_rect(below, egui::Sense::hover());
             let mut room = ui.new_child(egui::UiBuilder::new().max_rect(below));
             room.set_clip_rect(below);
-            content.show(&mut room, place, send)
+            content.show(&mut room, place, given, send)
         })
         .inner
 }

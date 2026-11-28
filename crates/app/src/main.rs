@@ -1530,6 +1530,8 @@ struct App {
     /// The Export tool's folder button, while whether its path is a folder is asked of the
     /// disk before the folder dialog opens.
     export_folder: export::folder::Looking,
+    /// Where the Import tool's folder chooser starts, as the disk says ([`Shell::show_sheet`]).
+    import_folder: export::folder::Looking,
     /// The photo Discard History was asked for, until its question is answered.
     discarding: Option<alerts::Discarding>,
     /// The tool and preset Update or Delete asked about, until its alert is answered.
@@ -2006,6 +2008,8 @@ struct Shell {
     sheet: Option<Box<dyn sheet::Content>>,
     /// Its tool column's width, `import.column_width`.
     sheet_column: f32,
+    /// The Import tool's settings, `import.*`, kept as the sheet leaves them (decision 85).
+    import: settings::Import,
     /// What a sheet closed since the last frame sends as it goes, sent with the next.
     sheet_left: Vec<Command>,
     /// Where the customise menu open adds an item, by its place in the draft.
@@ -2124,6 +2128,10 @@ struct Shell {
     tree: BTreeMap<PathBuf, bool>,
     /// The missing recent Locate… asked about, for the folder dialog after the frame.
     locate: Option<PathBuf>,
+    /// Where the Import tool asked for the system's folder chooser since the last frame,
+    /// for its Folder: Folder with its variables filled in, empty where its pattern does not
+    /// read.
+    import_folder: Option<String>,
     /// The recent folders that could not be opened when tried this run, and why.
     missing: BTreeMap<PathBuf, String>,
     /// Whether the photos references were measured on are still there (decision 88).
@@ -2277,6 +2285,7 @@ impl Shell {
             customising: None,
             sheet: None,
             sheet_column: settings.sheet_column,
+            import: settings.import.clone(),
             sheet_left: Vec::new(),
             adding_at: 0,
             focus_tab: None,
@@ -2323,6 +2332,7 @@ impl Shell {
             collections_shown: false,
             tree: BTreeMap::new(),
             locate: None,
+            import_folder: None,
             missing: BTreeMap::new(),
             references: pickers::ReferencePhotos::new(),
             export_again: false,
@@ -2936,6 +2946,7 @@ impl Shell {
             style_mode: self.style_mode,
             rating_notes: self.rating_notes.clone(),
             sheet_column: self.sheet_column,
+            import: self.import.clone(),
         }
     }
 
@@ -4310,18 +4321,46 @@ impl Shell {
     }
 
     /// Draws the sheet open, if one is, over the window below the Toolbar, `toolbar`, its
-    /// column on the Tools panel's side, keeping its column's width and closing it as it
+    /// column on the Tools panel's side, its tool's page drawn with the settings kept and
+    /// `mirror`, keeping its column's width, the settings its tool writes and its groups'
+    /// open state, and where it asks for the system's folder chooser, and closing it as it
     /// asks; what it, or a sheet closed since the last frame, asks of the session goes
     /// through `send`.
-    fn show_sheet(&mut self, ctx: &egui::Context, toolbar: egui::Rect, send: &mut SendCommand<'_>) {
+    fn show_sheet(
+        &mut self,
+        ctx: &egui::Context,
+        toolbar: egui::Rect,
+        mirror: &Mirror,
+        send: &mut SendCommand<'_>,
+    ) {
         let place = sheet::Place {
             column: self.sheet_column,
             at_start: self.panel_position.at_start(),
         };
-        if let Some(content) = self.sheet.as_deref_mut() {
-            let shown = sheet::show(ctx, toolbar, content, place, send);
+        if self.sheet.is_some() {
+            let settings = self.to_settings(ctx);
+            let given = sheet::Given {
+                mirror,
+                settings: &settings,
+            };
+            let content = self.sheet.as_deref_mut().expect("a sheet is open");
+            let shown = sheet::show(ctx, toolbar, content, place, &given, send);
             if let Some(action) = shown.column {
                 self.sheet_column = sheet::resized(action);
+            }
+            for (key, value) in &shown.settings {
+                self.import.set(key, value);
+            }
+            for (group, open) in shown.groups {
+                let groups = self
+                    .groups
+                    .entry(apertrust_tools::utility::import::ID.to_owned())
+                    .or_default();
+                groups.insert(group.to_owned(), open);
+            }
+            if shown.choose_folder {
+                let start = shown.folder_start.as_deref().map(Path::display);
+                self.import_folder = Some(start.map(|s| s.to_string()).unwrap_or_default());
             }
             if shown.closed {
                 self.close_sheet();
@@ -5428,6 +5467,7 @@ impl App {
             export_previews: export::Previews::default(),
             metadata,
             export_folder: export::folder::Looking::default(),
+            import_folder: export::folder::Looking::default(),
             discarding: None,
             preset_asked: None,
             quit_held: false,
@@ -8495,11 +8535,16 @@ impl App {
         let destination = (open.is_none() && !state.modal)
             .then(|| self.export_folder.looked())
             .flatten();
+        // The Import tool's, over its sheet, at Folder where it is there.
+        let import_folder = (open.is_none() && destination.is_none())
+            .then(|| self.import_folder.looked())
+            .flatten();
         let asked = open
             .or_else(|| {
                 (destination.as_ref()).map(|look| dialogs::Pick::Destination(look.file.clone()))
             })
-            .or_else(|| self.shell.locate.take().map(dialogs::Pick::Locate));
+            .or_else(|| self.shell.locate.take().map(dialogs::Pick::Locate))
+            .or_else(|| import_folder.as_ref().map(|_| dialogs::Pick::ImportFolder));
         let (photo, pictures) = (&self.mirror.photo, self.pictures.as_deref());
         let shown = self.mirror.folder.shown();
         let mut dialog = dialogs::Native {
@@ -8509,6 +8554,7 @@ impl App {
         };
         let start = match &asked {
             Some(dialogs::Pick::Destination(_)) => destination.map(|look| look.start),
+            Some(dialogs::Pick::ImportFolder) => import_folder.map(|look| look.start),
             asked => dialogs::locate_start(asked.as_ref()),
         };
         let chosen = dialogs::open(&mut dialog, asked, || match start {
@@ -8516,6 +8562,17 @@ impl App {
             None => dialogs::folder(shown, photo.path(), pictures),
         });
         let chosen = chosen.and_then(|chosen| self.export_destination(chosen));
+        // The Import tool's Folder, handed to its sheet, which opens nothing.
+        let chosen = chosen.and_then(|chosen| match chosen.pick {
+            dialogs::Pick::ImportFolder => {
+                let folder = chosen.paths.first();
+                if let (Some(folder), Some(sheet)) = (folder, self.shell.sheet.as_deref_mut()) {
+                    sheet.folder_chosen(folder);
+                }
+                None
+            }
+            _ => Some(chosen),
+        });
         // Quit, held while the dialog asked, runs once it has answered, opening nothing.
         let overwrite = self.alerts.pending() == Some(alerts::Purpose::Overwrite);
         if self.quit_held && self.asking.is_none() && !overwrite {
@@ -9585,10 +9642,15 @@ impl eframe::App for App {
         // While customising, the window below the Toolbar dims and takes no input; a sheet
         // covers it.
         self.shell.scrim(&ctx, toolbar.response.rect);
-        let session = &self.session;
-        (self.shell).show_sheet(&ctx, toolbar.response.rect, &mut |command| {
+        let (session, mirror) = (&self.session, &self.mirror);
+        (self.shell).show_sheet(&ctx, toolbar.response.rect, mirror, &mut |command| {
             session.send(command)
         });
+        // The chooser opens a later frame, once the disk has said what of Folder is there.
+        if let Some(start) = self.shell.import_folder.take() {
+            self.import_folder
+                .start(start, self.places.home.clone(), &ctx);
+        }
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
 
@@ -10358,7 +10420,7 @@ fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Option<Opening> {
     let dialogs::Chosen { pick, paths } = chosen;
     match pick {
         // The Export tool's, which opens nothing ([`App::export_destination`]).
-        dialogs::Pick::Destination(_) => None,
+        dialogs::Pick::Destination(_) | dialogs::Pick::ImportFolder => None,
         dialogs::Pick::Files => dropped::chosen(&paths).map(dropped_opens),
         dialogs::Pick::Folder => paths.into_iter().next().map(|p| Ok(Opens::Folder(p))),
         dialogs::Pick::Locate(from) => {
@@ -24562,9 +24624,10 @@ mod tests {
                     run.extend(bench.shell.customise(&ctx, edited, &state));
                     bench.shell.scrim(&ctx, top.response.rect);
                     let commands = &mut bench.commands;
+                    let mirror = crate::mirror::tests::mirror();
                     bench
                         .shell
-                        .show_sheet(&ctx, top.response.rect, &mut |command| {
+                        .show_sheet(&ctx, top.response.rect, &mirror, &mut |command| {
                             commands.push(command);
                             commands.len() as u64
                         });
@@ -31818,6 +31881,7 @@ mod tests {
             &mut self,
             ui: &mut egui::Ui,
             place: sheet::Place,
+            _given: &sheet::Given<'_>,
             _send: &mut SendCommand<'_>,
         ) -> sheet::Shown {
             use apertrust_ui::components::{Sheet, SheetCell, TextFieldRow};
@@ -31859,6 +31923,7 @@ mod tests {
             sheet::Shown {
                 closed: out.close,
                 column: out.column,
+                ..sheet::Shown::default()
             }
         }
     }

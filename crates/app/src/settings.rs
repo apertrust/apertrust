@@ -278,6 +278,74 @@ pub struct Settings {
     pub rating_notes: RatingNotes,
     /// A sheet's tool column's width, `import.column_width` (decision 86).
     pub sheet_column: f32,
+    /// The Import tool's settings, `import.*` as the library declares them (decision 85).
+    pub import: Import,
+}
+
+/// The Import tool's settings as the store keeps them, those the library declares
+/// (`apertrust_library::settings::registry`): Folder, the default folder, Subfolder and
+/// Import name, written at once as they change, with no history step (decision 85).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Import {
+    pub base_folder: String,
+    pub default_folder: String,
+    pub subfolder: String,
+    pub job_code: String,
+}
+
+impl Default for Import {
+    /// The schema's defaults, darktable's.
+    fn default() -> Self {
+        use apertrust_library::settings::registry::*;
+        Import {
+            base_folder: IMPORT_BASE_FOLDER.default().to_owned(),
+            default_folder: IMPORT_DEFAULT_FOLDER.default().to_owned(),
+            subfolder: IMPORT_SUBFOLDER.default().to_owned(),
+            job_code: IMPORT_JOB_CODE.default().to_owned(),
+        }
+    }
+}
+
+impl Import {
+    /// What `store` holds.
+    fn read(store: &Store) -> Self {
+        use apertrust_library::settings::registry::*;
+        Import {
+            base_folder: store.get(&IMPORT_BASE_FOLDER),
+            default_folder: store.get(&IMPORT_DEFAULT_FOLDER),
+            subfolder: store.get(&IMPORT_SUBFOLDER),
+            job_code: store.get(&IMPORT_JOB_CODE),
+        }
+    }
+
+    /// Writes into `store` what differs from `was`.
+    fn write(&self, store: &mut Store, was: &Import) {
+        use apertrust_library::settings::registry::*;
+        if self.base_folder != was.base_folder {
+            store.set(&IMPORT_BASE_FOLDER, self.base_folder.clone());
+        }
+        if self.default_folder != was.default_folder {
+            store.set(&IMPORT_DEFAULT_FOLDER, self.default_folder.clone());
+        }
+        if self.subfolder != was.subfolder {
+            store.set(&IMPORT_SUBFOLDER, self.subfolder.clone());
+        }
+        if self.job_code != was.job_code {
+            store.set(&IMPORT_JOB_CODE, self.job_code.clone());
+        }
+    }
+
+    /// The setting `key`, named in full, set to `value`; another key is none of these.
+    pub fn set(&mut self, key: &str, value: &str) {
+        let kept = match key {
+            "import.base_folder" => &mut self.base_folder,
+            "import.default_folder" => &mut self.default_folder,
+            "import.subfolder" => &mut self.subfolder,
+            "import.job_code" => &mut self.job_code,
+            _ => return,
+        };
+        value.clone_into(kept);
+    }
 }
 
 impl Default for Settings {
@@ -329,6 +397,7 @@ impl Default for Settings {
             style_mode: STYLES_MODE.default(),
             rating_notes: RatingNotes::default(),
             sheet_column: IMPORT_COLUMN_WIDTH.default(),
+            import: Import::default(),
         }
     }
 }
@@ -433,6 +502,7 @@ impl Settings {
                 labels: LABELS_NOTES.map(|setting| store.get(setting)),
             },
             sheet_column: store.get(&IMPORT_COLUMN_WIDTH),
+            import: Import::read(store),
         }
     }
 
@@ -527,6 +597,9 @@ impl Settings {
         }
         if s.sheet_column != was.sheet_column {
             store.set(&IMPORT_COLUMN_WIDTH, s.sheet_column);
+        }
+        if s.import != was.import {
+            s.import.write(store, &was.import);
         }
         if s.viewer.margin != was.viewer.margin {
             store.set(&VIEWER_MARGIN, s.viewer.margin);
@@ -1192,16 +1265,18 @@ pub struct ViewState {
 
 /// The settings the app's store reads: its own, then the engine's, which the app hands
 /// the engine as options (decision 43), then the export settings the Export tool edits
-/// (decision 56).
+/// (decision 56), the tools' and the import settings the Import tool edits (decision 85).
 fn registries() -> Vec<&'static dyn Declared> {
     let engine = engine::registry::ALL.iter();
     let export = apertrust_export::settings::registry::ALL.iter();
     let tools = apertrust_tools::settings::registry::ALL.iter();
+    let import = apertrust_library::settings::registry::ALL.iter();
     registry::ALL
         .iter()
         .chain(engine)
         .chain(export)
         .chain(tools)
+        .chain(import)
         .copied()
         .collect()
 }
@@ -1617,6 +1692,12 @@ mod tests {
                 labels: ["Urgent", "Waiting", "Done", "Sky", "Sent to client"].map(str::to_owned),
             },
             sheet_column: 512.0,
+            import: Import {
+                base_folder: "/Volumes/Photos NAS".to_owned(),
+                default_folder: "$(PICTURES_FOLDER)/Studio".to_owned(),
+                subfolder: "$(IMPORT_NAME)".to_owned(),
+                job_code: "Wedding".to_owned(),
+            },
         }
     }
 
@@ -1779,6 +1860,7 @@ mod tests {
                 // No notes until the person gives them.
                 rating_notes: RatingNotes::default(),
                 sheet_column: 440.0,
+                import: Import::default(),
             }
         );
         // What the app takes where nothing is kept.
@@ -1806,12 +1888,14 @@ mod tests {
     fn declared() -> impl Iterator<Item = &'static str> {
         let export = apertrust_export::settings::registry::ALL.iter();
         let tools = apertrust_tools::settings::registry::ALL.iter();
+        let import = apertrust_library::settings::registry::ALL.iter();
         let (page, old) = (SETTINGS_WINDOW_PAGE.id, LIBRARY_RECENT_FOLDERS.id);
         let (reopen, old_tab) = (LIBRARY_REOPEN_LAST.id, EDIT_TAB.id);
         registry::ALL
             .iter()
             .chain(export)
             .chain(tools)
+            .chain(import)
             .map(|s| s.id())
             .filter(move |id| ![page, old, reopen, old_tab].contains(id))
     }
@@ -1919,7 +2003,11 @@ type = \"golden-spiral\"
 ask_before_discard = false
 
 [import]
+base_folder = \"/Volumes/Photos NAS\"
 column_width = 512
+default_folder = \"$(PICTURES_FOLDER)/Studio\"
+job_code = \"Wedding\"
+subfolder = \"$(IMPORT_NAME)\"
 
 [jobs_window]
 position = [1200, 160]

@@ -55,6 +55,8 @@ pub enum Pick {
     /// The folder the Export tool's files go to, for its folder button, with the file part
     /// the path keeps after it (`export::folder`).
     Destination(String),
+    /// The Import tool's Folder, for its folder button and the fix Choose a folder….
+    ImportFolder,
 }
 
 /// What the person chose: one path or more for [`Pick::Files`], in the dialog's order, and
@@ -160,7 +162,7 @@ impl OpenDialog for Native<'_> {
                 }
                 Box::pin(dialog.pick_files())
             }
-            Pick::Folder | Pick::Locate(_) | Pick::Destination(_) => {
+            Pick::Folder | Pick::Locate(_) | Pick::Destination(_) | Pick::ImportFolder => {
                 let title = match pick {
                     Pick::Locate(_) => "collections-locate-title",
                     // rfd names no accept button, so `export-choose-folder-accept`, darktable's
@@ -168,6 +170,10 @@ impl OpenDialog for Native<'_> {
                     Pick::Destination(_) => {
                         dialog = dialog.set_can_create_directories(true);
                         "export-choose-folder-title"
+                    }
+                    Pick::ImportFolder => {
+                        dialog = dialog.set_can_create_directories(true);
+                        "import-choose-folder-title"
                     }
                     _ => "open-folder-title",
                 };
