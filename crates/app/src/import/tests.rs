@@ -1194,3 +1194,26 @@ looks! {
     a_problem_in_the_dark_theme: Builtin::Dark, Locale::EnGb, Some(card()), with_a_problem, "import-sheet-problem-dark";
     a_problem_in_the_light_theme: Builtin::Light, Locale::EnGb, Some(card()), with_a_problem, "import-sheet-problem-light";
 }
+
+/// Decision 93: every key the Import tool's declaration names is an import setting of the
+/// settings schema, a text, as its row shows it; a setting row with no key is a later
+/// slice's.
+#[test]
+fn every_key_the_import_tool_names_is_a_text_setting_of_the_schema() {
+    use apertrust_base::settings::Kind;
+    use apertrust_library::settings::registry::ALL;
+    use apertrust_tools::utility::import;
+    for (widget, key) in import::KEYS {
+        let declared = ALL.iter().find(|declared| declared.id() == *key);
+        let declared = declared.unwrap_or_else(|| panic!("{key} is no import setting"));
+        assert_eq!(*declared.kind(), Kind::Text, "{key}");
+        assert_eq!(import::key(*widget), Some(*key));
+    }
+    fn keyed(rows: &'static [apertrust_tools::Row]) -> Vec<&'static str> {
+        let settings = rows.iter().flat_map(|row| row.setting_rows());
+        let mut keys: Vec<&str> = settings.filter_map(|setting| setting.key).collect();
+        keys.extend(rows.iter().flat_map(|row| keyed(row.rows())));
+        keys
+    }
+    assert!(keyed(import::IMPORT.tool.tabs[0].rows).is_empty());
+}

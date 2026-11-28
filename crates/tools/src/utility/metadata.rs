@@ -249,6 +249,7 @@ pub const METADATA: UtilityDefinition = UtilityDefinition {
         menus: &[],
         toolbar: &[],
         cursors: &[],
+        lives: crate::Lives::ToolsPanel,
     },
     measures: None,
     titles: &[],

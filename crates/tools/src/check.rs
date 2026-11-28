@@ -681,6 +681,7 @@ mod tests {
                     menus: &[],
                     toolbar: &[],
                     cursors: &[],
+                    lives: crate::Lives::ToolsPanel,
                 },
                 version: 1,
                 layers: true,

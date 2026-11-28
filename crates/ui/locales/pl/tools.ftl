@@ -1252,6 +1252,7 @@ tool-history-description = Wypisuje wszystkie zmiany w edycji zdjęcia, od najno
 tool-metadata-description = Co aparat zapisał o wybranych zdjęciach oraz tytuł, opis, twórca, prawa i miejsce, które o nich piszesz.
 tool-info-description = Nazwa, data, aparat i ekspozycja aktywnego zdjęcia w jednym spojrzeniu.
 tool-styles-description = Pokazuje style zastosowane do zdjęcia, a potem wszystkie twoje style. Sięgnij po nie, by nadać zdjęciu wygląd jednym kliknięciem.
+tool-import-description = Kopiuje zdjęcia z karty lub folderu do twojego folderu, zostawiając źródło bez zmian.
 
 tool-kind-corrective = Naprawia problem
 tool-kind-creative = Tworzy wygląd

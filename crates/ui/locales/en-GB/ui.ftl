@@ -1002,6 +1002,8 @@ section-info = Info
 collections-folders = Folders
 section-export = Export
     .search = export
+section-import = Import
+    .search = import
 # The top line's box: what screen readers call it, and its words for none, which the
 # Viewer says too with nothing open; a folder's are its open kind's.
 collections-open-name = What is open
@@ -2062,6 +2064,8 @@ pick-warning-short-tip = { $control } reached its end of { $value }
 export-button = Export { photo-count }
 export-reset = Reset export settings
 export-presets = Export presets
+import-reset = Reset import settings
+import-presets = Import presets
 metadata-presets = Metadata presets
 export-preset-default = Default settings
 export-metadata-note = This version writes no EXIF, location or copyright into exported files.
@@ -2660,3 +2664,18 @@ import-problem-is-source = it is the source.
 import-problem-inside-source = it is inside the source.
 import-problem-on-card = it is on the card the source is on.
 import-problem-space = needs { $needed }; { $available } is free on { $volume }.
+# The Import tool's groups and its rows with no setting yet (decision 85).
+import-group-source = Source
+import-group-destination = Destination
+import-group-naming = Naming
+import-group-metadata = Metadata
+import-group-filters = Filters
+import-group-after-import = After import
+import-include-subfolders = Include subfolders
+import-select-new-photos = Select only new photos
+import-keep-original-name = Keep original file name
+import-open-destination = Open the destination
+import-open-when-starts = When the import starts
+import-open-when-ends = When it ends
+import-open-no = No
+import-verify = Verify the copies

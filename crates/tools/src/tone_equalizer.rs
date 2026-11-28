@@ -294,6 +294,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         menus: &[],
         toolbar: &[],
         cursors: &[],
+        lives: crate::Lives::ToolsPanel,
     },
     version: 2,
     layers: true,

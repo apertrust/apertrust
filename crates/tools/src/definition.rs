@@ -89,6 +89,20 @@ pub struct ToolDefinition {
     /// to one of its pickers, which the app's well offers in Pick; none for a tool with none,
     /// and for every utility until the Colour readout's design.
     pub cursors: &'static [ToolCursor],
+    /// Where it lives (decisions 86 and 90): the Tools panel, every processing tool's and
+    /// utility's but Import's, or the Import sheet, whose one tool Import is.
+    pub lives: Lives,
+}
+
+/// Where a tool lives (decisions 86 and 90; `docs/gui.md`, The column), declared with it:
+/// each list of tools holds only its place's, so no workspace, drag or move puts a tool of
+/// one in the other. Not [`Place`], which names the context menus' places.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lives {
+    /// The Tools panel's tabs, the Hidden tab and Find Tool…'s list.
+    ToolsPanel,
+    /// The Import sheet's column, its one tool, Import.
+    ImportSheet,
 }
 
 impl ToolDefinition {
@@ -110,6 +124,7 @@ impl ToolDefinition {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: Lives::ToolsPanel,
         }
     }
 
@@ -1531,6 +1546,20 @@ pub enum Widget {
     /// The Info tool's card: the active photo's name, date, camera, lens, size and its five
     /// exposure values.
     Info,
+    /// The Import tool's Places (decision 85): the cards and drives mounted as the sheet
+    /// opened, then Pictures and Home.
+    ImportPlaces,
+    /// Its Folders: Collections' tree of the place chosen.
+    ImportFolders,
+    /// Its Import name, `import.job_code`: the text field row.
+    ImportName,
+    /// Its Folder, `import.base_folder`: the path row, its label above the field, its ⌄
+    /// and the folder button.
+    ImportFolder,
+    /// Its Subfolder, `import.subfolder`: the path row, its label above the field, its ⌄.
+    ImportSubfolder,
+    /// Its File name, a path row drawn disabled while the original name is kept.
+    ImportFileName,
 }
 
 impl Widget {
@@ -1552,7 +1581,13 @@ impl Widget {
             | Widget::MetadataRating
             | Widget::MetadataLabels
             | Widget::MetadataMap
-            | Widget::Info => true,
+            | Widget::Info
+            | Widget::ImportPlaces
+            | Widget::ImportFolders
+            | Widget::ImportName
+            | Widget::ImportFolder
+            | Widget::ImportSubfolder
+            | Widget::ImportFileName => true,
             Widget::Curve
             | Widget::ColourWheels
             | Widget::Equalizer
@@ -3137,6 +3172,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: Lives::ToolsPanel,
         },
         version: 1,
         layers: true,
@@ -3282,6 +3318,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: Lives::ToolsPanel,
         },
         version: 1,
         layers: true,
@@ -5644,6 +5681,7 @@ mod tests {
                 menus: &[],
                 toolbar: &[],
                 cursors: &[],
+                lives: Lives::ToolsPanel,
             },
             version: 1,
             layers: true,
@@ -5725,6 +5763,7 @@ mod tests {
                 menus: &[],
                 toolbar: &[],
                 cursors: &[],
+                lives: Lives::ToolsPanel,
             },
             version: 1,
             layers: true,

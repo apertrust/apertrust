@@ -24,6 +24,7 @@
 //! one's page through its `UtilityTool`, its widgets the page's custom rows (decision 93).
 
 pub mod export;
+pub mod import;
 pub mod metadata;
 
 use std::collections::BTreeSet;
@@ -294,13 +295,15 @@ const fn option(section: Section, order: u32, action: &'static str) -> MenuItem 
 /// the destructive one; Collections, the Photos tab's first; Styles, whose ⋯ holds Create
 /// a Style… (decision 106); Metadata between Collections and Styles
 /// ([`metadata::METADATA`]); Info, the active photo at a glance, in no built-in workspace's
-/// tabs; and Export, its last ([`export::EXPORT`]). The pages of Scopes, History,
-/// Collections, Info and Styles are their own widgets as custom rows, which keep what each
-/// drew before (decision 93): Scopes' the graph with its buttons, History's its steps,
-/// Collections' its recents line and its Folders, Info's its card, Styles' its lists;
-/// Metadata's are facts in groups; Export's are setting rows in groups, with custom rows of
-/// its own. Scopes, History, Collections and Info are open at first, Metadata, Styles and
-/// Export closed, as every processing tool is ([`ToolDefinition::open_at_first`]).
+/// tabs; and Export, its last ([`export::EXPORT`]). Then Import, which lives in the Import
+/// sheet alone ([`import::IMPORT`], [`crate::Lives::ImportSheet`]), never in the Tools
+/// panel, open at first. The pages of Scopes, History, Collections, Info and Styles are
+/// their own widgets as custom rows, which keep what each drew before (decision 93):
+/// Scopes' the graph with its buttons, History's its steps, Collections' its recents line
+/// and its Folders, Info's its card, Styles' its lists; Metadata's are facts in groups;
+/// Export's are setting rows in groups, with custom rows of its own. Scopes, History,
+/// Collections, Info and Import are open at first, Metadata, Styles and Export closed, as
+/// every processing tool is ([`ToolDefinition::open_at_first`]).
 pub const UTILITIES: &[UtilityDefinition] = &[
     UtilityDefinition {
         tool: ToolDefinition {
@@ -320,6 +323,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: crate::Lives::ToolsPanel,
         },
         measures: Some(WorksOn::Display),
         titles: &[],
@@ -372,6 +376,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
                 item("copy-apply-parts", "copy"),
             ],
             cursors: &[],
+            lives: crate::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],
@@ -404,6 +409,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             // View › Collections, its tab chosen (decision 92).
             toolbar: &[item("show-collections", "library")],
             cursors: &[],
+            lives: crate::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],
@@ -431,6 +437,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: crate::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],
@@ -458,6 +465,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
             menus: &[option(Section::HISTORY, 100, "create-style")],
             toolbar: &[],
             cursors: &[],
+            lives: crate::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],
@@ -466,6 +474,7 @@ pub const UTILITIES: &[UtilityDefinition] = &[
         tips: &[],
     },
     export::EXPORT,
+    import::IMPORT,
 ];
 
 /// The utility `id`, if it is one.
@@ -523,6 +532,7 @@ mod tests {
                 menus: &[],
                 toolbar: &[],
                 cursors: &[],
+                lives: crate::Lives::ToolsPanel,
             },
             measures: None,
             titles: &[],
@@ -591,6 +601,7 @@ mod tests {
             ("info", true),
             ("styles", false),
             ("export", false),
+            ("import", true),
         ];
         assert_eq!(open, expected);
     }

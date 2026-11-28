@@ -470,6 +470,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         menus: &[],
         toolbar: &[],
         cursors: &CURSORS,
+        lives: crate::Lives::ToolsPanel,
     },
     version: 2,
     layers: true,

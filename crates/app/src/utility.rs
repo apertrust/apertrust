@@ -593,6 +593,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],
@@ -738,6 +739,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[
@@ -1010,6 +1012,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],

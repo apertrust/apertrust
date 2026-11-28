@@ -194,6 +194,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         menus: &[],
         toolbar: &[],
         cursors: &[CURSOR],
+        lives: crate::Lives::ToolsPanel,
     },
     version: 1,
     // Background only, as the raw stage.

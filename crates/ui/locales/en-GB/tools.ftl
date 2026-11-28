@@ -1324,6 +1324,7 @@ tool-history-description = Lists every change to the photo’s edit, newest firs
 tool-metadata-description = What the camera recorded about the selected photos, and the title, description, creator, rights and place you write about them.
 tool-info-description = The active photo’s name, date, camera and exposure at a glance.
 tool-styles-description = Lists the styles applied to the photo, then every style you have made. Reach for it to give a photo a look in one click.
+tool-import-description = Copies photos from a card or a folder into a folder of yours, leaving the source as it is.
 
 tool-kind-corrective = Fixes a problem
 tool-kind-creative = Creates a look
