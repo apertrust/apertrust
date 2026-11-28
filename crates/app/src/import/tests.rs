@@ -44,10 +44,15 @@ fn settings() -> ImportSettings {
     }
 }
 
-/// The card EOS_DIGITAL.
+/// The import's day in these tests, 15 November 2026.
+fn today() -> chrono::NaiveDate {
+    chrono::NaiveDate::from_ymd_opt(2026, 11, 15).expect("a date")
+}
+
+/// The card EOS_DIGITAL, its DCIM as Source chooses it.
 fn card() -> Source {
     Source {
-        folder: PathBuf::from("/Volumes/EOS_DIGITAL"),
+        folder: PathBuf::from("/Volumes/EOS_DIGITAL/DCIM"),
         name: "EOS_DIGITAL".to_owned(),
         card: true,
     }
@@ -155,7 +160,7 @@ fn the_listing_arrives_in_chunks_then_its_times_then_its_check() {
     assert_eq!(
         sent,
         [Command::Library(LibraryCommand::ListSource {
-            source: PathBuf::from("/Volumes/EOS_DIGITAL"),
+            source: PathBuf::from("/Volumes/EOS_DIGITAL/DCIM"),
             include_subfolders: false,
             base_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
             default_folder: "$(PICTURES_FOLDER)/Apertrust".to_owned(),
@@ -420,6 +425,51 @@ struct Bench {
     sheet: ImportSheet,
     sent: Vec<Command>,
     closed: bool,
+    /// The settings the shell keeps, its tool's groups among them, as the sheet writes them.
+    settings: crate::settings::Settings,
+    /// What the sheet wrote and asked for, in order.
+    written: Vec<(&'static str, String)>,
+    choose_folder: bool,
+    folder_start: Option<PathBuf>,
+    /// The column's width.
+    column: f32,
+}
+
+/// The Import tool over Anna's settings, on 15 November 2026.
+fn anna_s_tool() -> tool::Tool {
+    tool::Tool::new(settings()).today(today())
+}
+
+/// Anna's tool with the card EOS_DIGITAL her place last used, its DCIM the folder.
+fn on_the_card() -> tool::Tool {
+    let card = "/Volumes/EOS_DIGITAL";
+    anna_s_tool().source(card, &format!("{card}/DCIM"))
+}
+
+/// The volumes mounted: the drive Backup, then the card EOS_DIGITAL, as the system lists
+/// them.
+fn volumes() -> LibraryEvent {
+    let volume = |name: &str, card: bool| library::Volume {
+        name: name.to_owned(),
+        mount_point: PathBuf::from("/Volumes").join(name),
+        card,
+        removable: true,
+        available: 40_000_000_000,
+        total: 64_000_000_000,
+    };
+    LibraryEvent::Volumes {
+        volumes: vec![volume("Backup", false), volume("EOS_DIGITAL", true)],
+    }
+}
+
+/// The subfolders of `folder`, the answer to the `SourceSubfolders` asking for them.
+fn subfolders(folder: &str, names: &[&str]) -> LibraryEvent {
+    LibraryEvent::SubfoldersOf {
+        open: 0,
+        folder: PathBuf::from(folder),
+        names: names.iter().map(|name| (*name).to_owned()).collect(),
+        unreadable: None,
+    }
 }
 
 /// The sheet for `source` in a 1280 × 800 window, in the dark theme and British English.
@@ -429,10 +479,30 @@ fn bench(source: Option<Source>) -> Harness<'static, Bench> {
 
 /// The sheet for `source` in a 1280 × 800 window, in the theme `which` and `locale`.
 fn bench_in(source: Option<Source>, which: Builtin, locale: Locale) -> Harness<'static, Bench> {
+    let tool = match &source {
+        Some(_) => on_the_card(),
+        None => anna_s_tool(),
+    };
+    bench_of(source, tool, which, locale)
+}
+
+/// The sheet for `source` with the tool `tool` in a 1280 × 800 window, in the theme
+/// `which` and `locale`.
+fn bench_of(
+    source: Option<Source>,
+    tool: tool::Tool,
+    which: Builtin,
+    locale: Locale,
+) -> Harness<'static, Bench> {
     let bench = Bench {
-        sheet: ImportSheet::new(source, settings()),
+        sheet: ImportSheet::with(source, tool),
         sent: Vec::new(),
         closed: false,
+        settings: crate::settings::Settings::default(),
+        written: Vec::new(),
+        choose_folder: false,
+        folder_start: None,
+        column: apertrust_ui::components::COLUMN_WIDTH,
     };
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
@@ -443,12 +513,29 @@ fn bench_in(source: Option<Source>, which: Builtin, locale: Locale) -> Harness<'
         .build_ui_state(
             |ui, bench: &mut Bench| {
                 let place = Place {
-                    column: apertrust_ui::components::COLUMN_WIDTH,
+                    column: bench.column,
                     at_start: false,
                 };
                 let sent = &mut bench.sent;
-                let shown = bench.sheet.show(ui, place, &mut sender(sent));
+                let mirror = crate::mirror::tests::mirror();
+                let given = sheet::Given {
+                    mirror: &mirror,
+                    settings: &bench.settings,
+                };
+                let shown = bench.sheet.show(ui, place, &given, &mut sender(sent));
                 bench.closed |= shown.closed;
+                bench.written.extend(shown.settings);
+                bench.choose_folder |= shown.choose_folder;
+                bench.folder_start = shown.folder_start.or(bench.folder_start.take());
+                let groups = bench
+                    .settings
+                    .edit
+                    .groups
+                    .entry("import".to_owned())
+                    .or_default();
+                for (group, open) in shown.groups {
+                    groups.insert(group.to_owned(), open);
+                }
             },
             bench,
         );
@@ -502,10 +589,14 @@ fn the_sheet_lists_its_source_as_it_opens_and_cancels_the_listing_as_it_closes()
         matches!(
             sent.first(),
             Some(Command::Library(LibraryCommand::ListSource { source, .. }))
-                if source == Path::new("/Volumes/EOS_DIGITAL")
+                if source == Path::new("/Volumes/EOS_DIGITAL/DCIM")
         ),
         "{sent:?}"
     );
+    // The first Esc leaves Import name, which a card's sheet opens in; the second closes.
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert!(!harness.state().closed);
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert!(harness.state().closed);
@@ -521,7 +612,8 @@ fn the_sheet_lists_its_source_as_it_opens_and_cancels_the_listing_as_it_closes()
 #[test]
 fn a_sheet_with_no_source_lists_nothing_and_cannot_import() {
     let harness = bench(None);
-    assert!(harness.state().sent.is_empty());
+    let listing = |c: &&Command| matches!(c, Command::Library(LibraryCommand::ListSource { .. }));
+    assert!(!harness.state().sent.iter().any(|c| listing(&c)));
     let button = primary(&harness, "Import 0 photos");
     assert!(button.accesskit_node().is_disabled());
     assert_eq!(
@@ -555,6 +647,32 @@ fn import_is_disabled_while_listing_and_checking() {
     answer(&mut harness, asked, preview_into(&[(wedding, None)], 0));
     let button = primary(&harness, "Import 1 photo");
     assert!(!button.accesskit_node().is_disabled());
+}
+
+/// While a newer preview is on its way, the settings changed since the one shown, Import
+/// waits for it, so Return right after typing never starts what the footer has not shown.
+#[test]
+fn import_waits_for_the_preview_of_settings_just_changed() {
+    let mut harness = bench(Some(card()));
+    ready(&mut harness);
+    let button = primary(&harness, "Import 30 photos");
+    assert!(!button.accesskit_node().is_disabled());
+    harness.state_mut().sheet.settings_mut().job_code = "Studio".to_owned();
+    harness.run();
+    let button = primary(&harness, "Import 30 photos");
+    assert!(button.accesskit_node().is_disabled());
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
+    harness.run();
+    let import = |c: &Command| matches!(c, Command::Library(LibraryCommand::Import { .. }));
+    assert!(!harness.state().sent.iter().any(import));
+    let (open, _) = last_preview(&harness).expect("asked again");
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Studio";
+    answer(&mut harness, open, preview_into(&[(wedding, None)], 0));
+    assert!(
+        !primary(&harness, "Import 30 photos")
+            .accesskit_node()
+            .is_disabled()
+    );
 }
 
 #[test]
@@ -651,7 +769,13 @@ fn a_check_box_click_space_and_ctrl_a_change_the_checks() {
 
 #[test]
 fn the_keys_reach_the_active_cell_once_the_listing_opens_with_no_click() {
-    let mut harness = bench(Some(card()));
+    // A folder's sheet: a card's opens in Import name.
+    let trips = Source {
+        folder: PathBuf::from("/Users/anna/Trips"),
+        name: "Trips".to_owned(),
+        card: false,
+    };
+    let mut harness = bench_of(Some(trips), anna_s_tool(), Builtin::Dark, Locale::EnGb);
     forty(&mut harness);
     harness.run();
     // DSCF1011, the first new photo, is active and checked: Space unchecks it.
@@ -698,12 +822,13 @@ fn only_the_cells_in_sight_ask_for_their_thumbnails() {
         .flatten()
         .cloned()
         .collect();
+    // The grid's cells, not Source's places.
     let shown = harness
         .query_all_by_role(Role::ListItem)
         .filter(|node| {
-            node.accesskit_node()
-                .bounding_box()
-                .is_some_and(|b| b.y1 > 0.0 && b.y0 < 800.0)
+            let node = node.accesskit_node();
+            node.label().is_some_and(|label| label.contains(".RAF"))
+                && (node.bounding_box()).is_some_and(|b| b.y1 > 0.0 && b.y0 < 800.0)
         })
         .count();
     assert!(!asked.is_empty() && asked.len() < 40, "{}", asked.len());
@@ -1097,6 +1222,11 @@ fn with_every_photo_imported_before_the_grid_says_so_and_none_is_checked() {
 /// The ready sheet: forty photos, ten imported before, with their pictures and its
 /// preview's answer.
 fn ready(harness: &mut Harness<'static, Bench>) {
+    tell(harness, volumes());
+    tell(
+        harness,
+        subfolders("/Volumes/EOS_DIGITAL", &["DCIM", "MISC"]),
+    );
     forty(harness);
     for i in 0..40u8 {
         // A small gradient, a little different for each photo.
@@ -1193,4 +1323,634 @@ looks! {
     no_source_in_the_light_theme: Builtin::Light, Locale::EnGb, None, |_| {}, "import-sheet-no-source-light";
     a_problem_in_the_dark_theme: Builtin::Dark, Locale::EnGb, Some(card()), with_a_problem, "import-sheet-problem-dark";
     a_problem_in_the_light_theme: Builtin::Light, Locale::EnGb, Some(card()), with_a_problem, "import-sheet-problem-light";
+}
+
+/// Decision 93: every key the Import tool's declaration names is an import setting of the
+/// settings schema, a text, as its row shows it; a setting row with no key is a later
+/// slice's.
+#[test]
+fn every_key_the_import_tool_names_is_a_text_setting_of_the_schema() {
+    use apertrust_base::settings::Kind;
+    use apertrust_library::settings::registry::ALL;
+    use apertrust_tools::utility::import;
+    for (widget, key) in import::KEYS {
+        let declared = ALL.iter().find(|declared| declared.id() == *key);
+        let declared = declared.unwrap_or_else(|| panic!("{key} is no import setting"));
+        assert_eq!(*declared.kind(), Kind::Text, "{key}");
+        assert_eq!(import::key(*widget), Some(*key));
+    }
+    fn keyed(rows: &'static [apertrust_tools::Row]) -> Vec<&'static str> {
+        let settings = rows.iter().flat_map(|row| row.setting_rows());
+        let mut keys: Vec<&str> = settings.filter_map(|setting| setting.key).collect();
+        keys.extend(rows.iter().flat_map(|row| keyed(row.rows())));
+        keys
+    }
+    assert!(keyed(import::IMPORT.tool.tabs[0].rows).is_empty());
+}
+
+// The Import tool.
+
+/// The field named `name` in the bench's column.
+fn field<'h>(harness: &'h Harness<'static, Bench>, name: &'h str) -> egui_kittest::Node<'h> {
+    harness.get_by_role_and_label(Role::TextInput, name)
+}
+
+/// The settings the bench's tool holds now.
+fn held(harness: &mut Harness<'static, Bench>) -> ImportSettings {
+    harness.state_mut().sheet.settings_mut().clone()
+}
+
+/// 20a1's rows, from the declaration: the text rows live, Folder's ⌄ and File name
+/// disabled, and every setting row of a later slice disabled at the value 20a1 gives it,
+/// saying why.
+#[test]
+fn the_rows_of_20a1_are_live_or_disabled_saying_why() {
+    let harness = bench(Some(card()));
+    for name in ["Import name", "Folder", "Subfolder"] {
+        assert!(
+            !field(&harness, name).accesskit_node().is_disabled(),
+            "{name}"
+        );
+    }
+    let file_name = field(&harness, "File name");
+    assert!(file_name.accesskit_node().is_disabled());
+    let later = harness.get_by_role_and_label(Role::Button, "Folder’s choices");
+    assert!(later.accesskit_node().is_disabled());
+    let keep = harness.get_by_role_and_label(Role::Switch, "Keep original file name");
+    assert!(keep.accesskit_node().is_disabled());
+    assert_eq!(
+        keep.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    let verify = harness.get_by_role_and_label(Role::Switch, "Verify the copies");
+    assert!(verify.accesskit_node().is_disabled());
+    assert_eq!(
+        verify.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False)
+    );
+    for group in ["Metadata", "Filters"] {
+        let row = harness.get_by_role_and_label(Role::Button, group);
+        assert!(row.accesskit_node().is_disabled(), "{group}");
+    }
+    let presets = harness.get_by_role_and_label(Role::Button, "Import presets");
+    assert!(presets.accesskit_node().is_disabled());
+}
+
+/// Subfolder's ⌄ sets Subfolder alone to each of its four patterns, each written at once.
+#[test]
+fn subfolder_s_choices_set_each_pattern() {
+    let mut harness = bench(Some(card()));
+    let words = Translator::new(Locale::EnGb);
+    let mut order = tool::SUBFOLDERS.to_vec();
+    order.rotate_left(1);
+    for (_, name, pattern) in order {
+        harness
+            .get_by_role_and_label(Role::Button, "Subfolder’s choices")
+            .click();
+        harness.run();
+        let name = words.text(name);
+        harness
+            .get_by_role_and_label(Role::MenuItemRadio, &name)
+            .click();
+        harness.run();
+        assert_eq!(held(&mut harness).subfolder, pattern, "{name}");
+        let last = harness.state().written.last().cloned();
+        assert_eq!(last, Some(("import.subfolder", pattern.to_owned())));
+    }
+    assert_eq!(held(&mut harness).base_folder, settings().base_folder);
+}
+
+/// ↺ puts back darktable's defaults, Folder the default folder, written at once, then
+/// rests.
+#[test]
+fn reset_puts_back_the_defaults_and_folder_the_default_folder() {
+    let mut settings = settings();
+    settings.base_folder = "/Volumes/Photos NAS".to_owned();
+    settings.default_folder = "$(PICTURES_FOLDER)/Studio".to_owned();
+    settings.subfolder = "$(IMPORT_NAME)".to_owned();
+    let tool = tool::Tool::new(settings).today(today());
+    let mut harness = bench_of(Some(card()), tool, Builtin::Dark, Locale::EnGb);
+    harness
+        .get_by_role_and_label(Role::Button, "Reset import settings")
+        .click();
+    harness.run();
+    let held = held(&mut harness);
+    assert_eq!(held.base_folder, "$(PICTURES_FOLDER)/Studio");
+    assert_eq!(held.subfolder, "$(YEAR)$(MONTH)$(DAY)_$(IMPORT_NAME)");
+    assert_eq!(held.job_code, "no_name");
+    let written: Vec<&str> = harness.state().written.iter().map(|(k, _)| *k).collect();
+    assert_eq!(
+        written,
+        ["import.base_folder", "import.subfolder", "import.job_code"]
+    );
+    harness.run();
+    let reset = harness.get_by_role_and_label(Role::Button, "Reset import settings");
+    assert!(reset.accesskit_node().is_disabled());
+}
+
+/// Import name is disabled where neither Folder nor Subfolder, not empty, uses the import
+/// name, `$(IMPORT_NAME)` or darktable's `$(JOBCODE)`, saying so.
+#[test]
+fn import_name_is_disabled_where_no_folder_uses_it() {
+    let mut harness = bench(Some(card()));
+    harness.state_mut().sheet.settings_mut().subfolder = String::new();
+    harness.run();
+    let name = field(&harness, "Import name");
+    assert!(name.accesskit_node().is_disabled());
+    assert_eq!(
+        name.accesskit_node().description().as_deref(),
+        Some("No folder or file name uses the import name")
+    );
+    harness.state_mut().sheet.settings_mut().base_folder = "/Volumes/Photos/$(JOBCODE)".to_owned();
+    harness.run();
+    let name = field(&harness, "Import name");
+    assert!(!name.accesskit_node().is_disabled());
+    assert_eq!(
+        name.accesskit_node().description().as_deref(),
+        Some("Fills $(IMPORT_NAME) where the folder or file name uses it")
+    );
+}
+
+/// The rows' tooltips come from the latest preview: Folder's the sample path for the active
+/// photo, a new folder, that nothing is replaced and the clashes; Subfolder's the date.
+#[test]
+fn folder_and_subfolder_say_where_the_photos_go_from_the_preview() {
+    let mut harness = bench(Some(card()));
+    forty(&mut harness);
+    let (open, _) = last_preview(&harness).expect("asked at opening");
+    let wedding = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+    let mut preview = preview_into(&[(wedding, None)], 0);
+    preview.subfolder_uses.today = true;
+    // A photo of the same name in another folder of the card, first: the active photo is
+    // matched by its path, not its name.
+    preview.photos = vec![
+        library::PhotoPreview {
+            source: PathBuf::from("101CANON/DSCF1011.RAF"),
+            fate: library::ImportFate::Copy {
+                to: PathBuf::from(wedding).join("DSCF1011_01.RAF"),
+                renamed: true,
+            },
+        },
+        library::PhotoPreview {
+            source: PathBuf::from("100CANON/DSCF1011.RAF"),
+            fate: library::ImportFate::Copy {
+                to: PathBuf::from(wedding).join("DSCF1011.RAF"),
+                renamed: false,
+            },
+        },
+        library::PhotoPreview {
+            source: PathBuf::from("100CANON/DSCF1012.RAF"),
+            fate: library::ImportFate::Diverged {
+                at: PathBuf::from(wedding).join("DSCF1012.RAF"),
+                sidecar: PathBuf::from(wedding).join("DSCF1012.RAF.apxmp"),
+            },
+        },
+    ];
+    answer(&mut harness, open, preview);
+    let folder = field(&harness, "Folder");
+    assert_eq!(
+        folder.accesskit_node().description().as_deref(),
+        Some(
+            "DSCF1011.RAF → ~/Pictures/Apertrust/20261115_Wedding/DSCF1011.RAF\n\
+             A new folder in Apertrust\n\
+             Never replaces a file: a name taken gets _01; a photo already there is skipped\n\
+             1 is already there with an edit of its own; its edit on EOS_DIGITAL stays there"
+        )
+    );
+    let subfolder = field(&harness, "Subfolder");
+    assert_eq!(
+        subfolder.accesskit_node().description().as_deref(),
+        Some("One folder for this import, dated today, 15 Nov")
+    );
+}
+
+/// A problem in the latest preview is its row's warning button, its menu the fix: Use
+/// $(MONTH) puts the variable in place of the name typed.
+#[test]
+fn a_problem_shows_its_warning_button_and_its_fix_applies() {
+    let mut harness = bench(Some(card()));
+    harness.state_mut().sheet.settings_mut().subfolder = "$(YEAR)$(MONT)$(DAY)".to_owned();
+    forty(&mut harness);
+    let (open, _) = last_preview(&harness).expect("asked at opening");
+    let mut preview = preview_into(&[], 0);
+    preview.problems.push(ImportProblem {
+        row: Row::Subfolder,
+        problem: Problem::Pattern(PatternError::Unknown {
+            name: "MONT".to_owned(),
+            at: 9..13,
+            suggestion: Some("MONTH"),
+        }),
+        fix: Some(library::Fix::Use { variable: "MONTH" }),
+    });
+    answer(&mut harness, open, preview);
+    let problem = "Subfolder: unknown variable $(MONT). Did you mean $(MONTH)?";
+    harness.get_by_role_and_label(Role::Button, problem).click();
+    harness.run();
+    harness
+        .get_by_role_and_label(Role::MenuItem, "Use $(MONTH)")
+        .click();
+    harness.run();
+    assert_eq!(held(&mut harness).subfolder, "$(YEAR)$(MONTH)$(DAY)");
+}
+
+/// A closed group with a problem opens once, as the problem appears, and is kept open as a
+/// tool's groups are; closed again, the same problem leaves it closed.
+#[test]
+fn a_closed_group_opens_once_for_a_problem() {
+    let closed = [("destination".to_owned(), false)].into_iter().collect();
+    let tool = anna_s_tool().groups(closed);
+    let mut harness = bench_of(Some(card()), tool, Builtin::Dark, Locale::EnGb);
+    assert!(
+        harness
+            .query_by_role_and_label(Role::TextInput, "Subfolder")
+            .is_none()
+    );
+    with_a_problem(&mut harness);
+    harness.run();
+    field(&harness, "Subfolder");
+    assert_eq!(
+        harness.state().settings.edit.groups["import"].get("destination"),
+        Some(&true)
+    );
+    harness
+        .get_by_role_and_label(Role::Button, "Destination")
+        .click();
+    harness.run();
+    let (open, _) = last_preview(&harness).expect("asked");
+    let preview = harness.state().sheet.preview.clone().expect("answered");
+    answer(&mut harness, open, preview);
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::TextInput, "Subfolder")
+            .is_none()
+    );
+}
+
+/// A key `--conf` gives for the run is drawn disabled at its value, saying so.
+#[test]
+fn a_conf_key_is_drawn_disabled_saying_so() {
+    let tool = anna_s_tool().given(["import.subfolder".to_owned()]);
+    let harness = bench_of(Some(card()), tool, Builtin::Dark, Locale::EnGb);
+    let subfolder = field(&harness, "Subfolder");
+    assert!(subfolder.accesskit_node().is_disabled());
+    let said = subfolder.accesskit_node().description().unwrap_or_default();
+    assert!(said.contains("--conf"), "{said}");
+    assert!(!field(&harness, "Folder").accesskit_node().is_disabled());
+}
+
+/// The folder button asks the shell for the system's folder chooser, whose answer is
+/// Folder, written at once.
+#[test]
+fn the_folder_button_asks_for_a_folder_which_becomes_folder() {
+    let mut harness = bench(Some(card()));
+    harness
+        .get_by_role_and_label(Role::Button, "Choose a folder")
+        .click();
+    harness.run();
+    assert!(harness.state().choose_folder);
+    // It starts at Folder, its variables filled in.
+    let start = harness.state().folder_start.clone();
+    assert_eq!(start, Some(PathBuf::from("/Users/anna/Pictures/Apertrust")));
+    let sheet = &mut harness.state_mut().sheet;
+    sheet::Content::folder_chosen(sheet, Path::new("/Volumes/Photos NAS/2026"));
+    harness.run();
+    assert_eq!(held(&mut harness).base_folder, "/Volumes/Photos NAS/2026");
+    let last = harness.state().written.last().cloned();
+    assert_eq!(
+        last,
+        Some(("import.base_folder", "/Volumes/Photos NAS/2026".to_owned()))
+    );
+}
+
+/// The ready sheet with its column at its narrowest, 296 points.
+fn ready_at_296(harness: &mut Harness<'static, Bench>) {
+    harness.state_mut().column = apertrust_ui::components::COLUMN_LEAST;
+    ready(harness);
+}
+
+looks! {
+    ready_at_296_in_the_dark_theme: Builtin::Dark, Locale::EnGb, Some(card()), ready_at_296, "import-sheet-ready-296-dark";
+    ready_at_296_in_the_light_theme: Builtin::Light, Locale::EnGb, Some(card()), ready_at_296, "import-sheet-ready-296-light";
+}
+
+// The Source group.
+
+/// The sources the bench's commands listed, in order.
+fn listed_sources(harness: &Harness<'static, Bench>) -> Vec<PathBuf> {
+    (harness.state().sent.iter())
+        .filter_map(|command| match command {
+            Command::Library(LibraryCommand::ListSource { source, .. }) => Some(source.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Places lists the volumes as the sheet opened, cards first, then the drives, Pictures
+/// and Home; with no place last used, the card is chosen at opening and listed, its DCIM
+/// the folder, kept as the place and folder last used.
+#[test]
+fn places_list_the_card_first_and_the_card_is_chosen_at_opening() {
+    let mut harness = bench_of(None, anna_s_tool(), Builtin::Dark, Locale::EnGb);
+    let sent = &harness.state().sent;
+    assert!(sent.contains(&Command::Library(LibraryCommand::ListVolumes)));
+    assert!(listed_sources(&harness).is_empty());
+    tell(&mut harness, volumes());
+    harness.run();
+    let tops: Vec<f32> = ["EOS_DIGITAL", "Backup", "Pictures", "Home"]
+        .iter()
+        .map(|name| {
+            harness
+                .get_by_role_and_label(Role::ListItem, name)
+                .rect()
+                .top()
+        })
+        .collect();
+    assert!(tops.windows(2).all(|pair| pair[0] < pair[1]), "{tops:?}");
+    assert_eq!(
+        listed_sources(&harness),
+        [PathBuf::from("/Volumes/EOS_DIGITAL/DCIM")]
+    );
+    let written = &harness.state().written;
+    assert!(written.contains(&("import.place", "/Volumes/EOS_DIGITAL".to_owned())));
+    assert!(written.contains(&("import.folder", "/Volumes/EOS_DIGITAL/DCIM".to_owned())));
+    harness.get_by_label("Import · EOS_DIGITAL");
+    // A card is listed whole: Include subfolders on and disabled, saying why.
+    let include = harness.get_by_role_and_label(Role::Switch, "Include subfolders");
+    assert_eq!(
+        include.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    assert_eq!(
+        include.accesskit_node().description().as_deref(),
+        Some("A card’s DCIM is always listed whole")
+    );
+}
+
+/// Choosing Home, then a folder of its tree, lists each in turn, the later listing's
+/// events alone kept, so the first is dropped; Home's folders are on this computer.
+#[test]
+fn choosing_home_then_a_folder_lists_that_folder_in_place_of_the_first() {
+    let mut harness = bench_of(None, anna_s_tool(), Builtin::Dark, Locale::EnGb);
+    let mut no_card = volumes();
+    if let LibraryEvent::Volumes { volumes } = &mut no_card {
+        volumes.retain(|volume| !volume.card);
+    }
+    tell(&mut harness, no_card);
+    harness
+        .get_by_role_and_label(Role::ListItem, "Home")
+        .click();
+    harness.run();
+    harness.run();
+    let asked = Command::Library(LibraryCommand::SourceSubfolders {
+        folder: PathBuf::from("/Users/anna"),
+    });
+    assert!(harness.state().sent.contains(&asked));
+    tell(&mut harness, subfolders("/Users/anna", &["Trips", "Work"]));
+    let first = harness.state().sent.len();
+    let trips = harness.get_by_role_and_label(Role::TreeItem, "Trips");
+    assert_eq!(
+        trips.accesskit_node().description().as_deref(),
+        Some("These photos are already on this computer")
+    );
+    trips.click();
+    harness.run();
+    harness.run();
+    assert_eq!(
+        listed_sources(&harness),
+        [
+            PathBuf::from("/Users/anna"),
+            PathBuf::from("/Users/anna/Trips")
+        ]
+    );
+    assert!(harness.state().sent.len() > first);
+    harness.get_by_label("Import · Trips");
+    let include = harness.get_by_role_and_label(Role::Switch, "Include subfolders");
+    assert_eq!(
+        include.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::False)
+    );
+    // The first listing's events are dropped: its number is not the sheet's any more.
+    let home = (harness.state().sent.iter())
+        .position(|c| matches!(c, Command::Library(LibraryCommand::ListSource { .. })))
+        .expect("Home listed") as u64
+        + 1;
+    tell(&mut harness, listed(home, vec![file("A.CR3", 1)], true));
+    assert_eq!(harness.state().sheet.listing().len(), 0);
+}
+
+/// The place and folder last used come back as the source, with no card in.
+#[test]
+fn the_place_and_folder_last_used_are_the_source_with_no_card_in() {
+    let tool = anna_s_tool().source("/Users/anna", "/Users/anna/Trips");
+    let harness = bench_of(None, tool, Builtin::Dark, Locale::EnGb);
+    assert_eq!(
+        listed_sources(&harness),
+        [PathBuf::from("/Users/anna/Trips")]
+    );
+}
+
+/// A folder last used deep in its place opens the tree down to it: each folder from the
+/// place to its parent asked for its subfolders and open, the folder's row in sight, and
+/// the folder itself left closed.
+#[test]
+fn the_folder_last_used_opens_the_tree_down_to_it() {
+    let tool = anna_s_tool().source("/Users/anna", "/Users/anna/Trips/Lisbon");
+    let mut harness = bench_of(None, tool, Builtin::Dark, Locale::EnGb);
+    let mut no_card = volumes();
+    if let LibraryEvent::Volumes { volumes } = &mut no_card {
+        volumes.retain(|volume| !volume.card);
+    }
+    tell(&mut harness, no_card);
+    let asked = |harness: &Harness<'static, Bench>, folder: &str| {
+        let ask = Command::Library(LibraryCommand::SourceSubfolders {
+            folder: PathBuf::from(folder),
+        });
+        harness.state().sent.contains(&ask)
+    };
+    assert!(asked(&harness, "/Users/anna"));
+    assert!(asked(&harness, "/Users/anna/Trips"));
+    assert!(!asked(&harness, "/Users/anna/Trips/Lisbon"));
+    tell(&mut harness, subfolders("/Users/anna", &["Trips", "Work"]));
+    tell(
+        &mut harness,
+        subfolders("/Users/anna/Trips", &["Lisbon", "Porto"]),
+    );
+    harness.get_by_role_and_label(Role::TreeItem, "Lisbon");
+}
+
+/// Closed, Source says what it imports from after its title, to screen readers too.
+#[test]
+fn closed_source_says_the_card() {
+    let mut harness = bench(Some(card()));
+    tell(&mut harness, volumes());
+    harness
+        .get_by_role_and_label(Role::Button, "Source")
+        .click();
+    harness.run();
+    let group = harness.get_by_role_and_label(Role::Button, "Source");
+    assert_eq!(
+        group.accesskit_node().description().as_deref(),
+        Some("Card: EOS_DIGITAL")
+    );
+}
+
+/// The ready sheet with Source closed.
+fn ready_source_closed(harness: &mut Harness<'static, Bench>) {
+    ready(harness);
+    harness
+        .get_by_role_and_label(Role::Button, "Source")
+        .click();
+    harness.run();
+}
+
+looks! {
+    source_closed_in_the_dark_theme: Builtin::Dark, Locale::EnGb, Some(card()), ready_source_closed, "import-sheet-source-closed-dark";
+    source_closed_in_the_light_theme: Builtin::Light, Locale::EnGb, Some(card()), ready_source_closed, "import-sheet-source-closed-light";
+}
+
+/// The card last used, opened again with no source given, is told for a card once the
+/// volumes come: its name, Include subfolders on, Import name focused, and its listing,
+/// of the same DCIM, kept.
+#[test]
+fn the_card_last_used_is_a_card_once_the_volumes_come() {
+    let mut harness = bench_of(None, on_the_card(), Builtin::Dark, Locale::EnGb);
+    assert_eq!(
+        listed_sources(&harness),
+        [PathBuf::from("/Volumes/EOS_DIGITAL/DCIM")]
+    );
+    tell(&mut harness, volumes());
+    harness.run();
+    harness.get_by_label("Import · EOS_DIGITAL");
+    let include = harness.get_by_role_and_label(Role::Switch, "Include subfolders");
+    assert_eq!(
+        include.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    assert!(field(&harness, "Import name").is_focused());
+    assert_eq!(listed_sources(&harness).len(), 1, "listed once");
+}
+
+/// Places is a list and Folders a tree to screen readers, each named by its label; → on a
+/// focused folder opens it, asking for its subfolders, and ← closes it, as Collections'
+/// tree's keys do.
+#[test]
+fn places_is_a_list_folders_a_tree_whose_arrows_open_and_close() {
+    let tool = anna_s_tool().source("/Users/anna", "/Users/anna");
+    let mut harness = bench_of(None, tool, Builtin::Dark, Locale::EnGb);
+    // No card in, so Home stays chosen.
+    let mut no_card = volumes();
+    if let LibraryEvent::Volumes { volumes } = &mut no_card {
+        volumes.retain(|volume| !volume.card);
+    }
+    tell(&mut harness, no_card);
+    harness.get_by_role_and_label(Role::List, "Places");
+    tell(&mut harness, subfolders("/Users/anna", &["Trips", "Work"]));
+    harness.get_by_role_and_label(Role::Tree, "Folders");
+    let trips = Path::new("/Users/anna/Trips");
+    let asked = |harness: &Harness<'static, Bench>| {
+        let ask = Command::Library(LibraryCommand::SourceSubfolders {
+            folder: trips.to_owned(),
+        });
+        harness.state().sent.contains(&ask)
+    };
+    assert!(!asked(&harness));
+    harness
+        .get_by_role_and_label(Role::TreeItem, "Trips")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::ArrowRight);
+    harness.run();
+    harness.run();
+    assert!(asked(&harness));
+    tell(&mut harness, subfolders("/Users/anna/Trips", &["Lisbon"]));
+    harness.get_by_role_and_label(Role::TreeItem, "Lisbon");
+    harness
+        .get_by_role_and_label(Role::TreeItem, "Trips")
+        .focus();
+    harness.run();
+    harness.key_press(egui::Key::ArrowLeft);
+    harness.run();
+    harness.run();
+    assert!(
+        harness
+            .query_by_role_and_label(Role::TreeItem, "Lisbon")
+            .is_none()
+    );
+}
+
+/// With a card as the source the sheet opens with the focus in Import name, a card's
+/// import being the name typed and Return; not for a folder, nor where Import name is
+/// disabled.
+#[test]
+fn a_card_opens_with_the_focus_in_import_name_unless_it_is_disabled() {
+    let harness = bench(Some(card()));
+    assert!(field(&harness, "Import name").is_focused());
+    let trips = Source {
+        folder: PathBuf::from("/Users/anna/Trips"),
+        name: "Trips".to_owned(),
+        card: false,
+    };
+    let harness = bench_of(Some(trips), anna_s_tool(), Builtin::Dark, Locale::EnGb);
+    assert!(!field(&harness, "Import name").is_focused());
+    let mut unused = settings();
+    unused.subfolder = String::new();
+    let tool = tool::Tool::new(unused).today(today());
+    let harness = bench_of(Some(card()), tool, Builtin::Dark, Locale::EnGb);
+    assert!(!field(&harness, "Import name").is_focused());
+}
+
+// Starting the import.
+
+/// The `Import` commands the bench sent.
+fn imports(harness: &Harness<'static, Bench>) -> Vec<(ImportPhotos, ImportSettings)> {
+    (harness.state().sent.iter())
+        .filter_map(|command| match command {
+            Command::Library(LibraryCommand::Import { photos, settings }) => {
+                Some((photos.clone(), settings.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Import pressed sends `Import` with the photos checked and the settings, once, and
+/// closes the sheet.
+#[test]
+fn import_sends_the_checked_photos_with_the_settings_and_closes() {
+    let mut harness = bench(Some(card()));
+    ready(&mut harness);
+    primary(&harness, "Import 30 photos").click();
+    harness.run();
+    let sent = imports(&harness);
+    assert_eq!(sent.len(), 1);
+    let (photos, sent_settings) = &sent[0];
+    assert_eq!(photos.files.len(), 30);
+    assert_eq!(photos.folder, PathBuf::from("/Volumes/EOS_DIGITAL/DCIM"));
+    assert_eq!(sent_settings, &settings());
+    assert!(harness.state().closed);
+    // A second press as it closes is ignored.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
+    harness.run();
+    assert_eq!(imports(&harness).len(), 1);
+}
+
+/// Return in Import name commits it and presses Import, a card's import being the name
+/// typed and Return; Return in Subfolder commits the field and presses nothing.
+#[test]
+fn return_in_import_name_presses_import_and_in_subfolder_it_does_not() {
+    let mut harness = bench(Some(card()));
+    ready(&mut harness);
+    field(&harness, "Subfolder").click();
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert!(imports(&harness).is_empty());
+    assert!(!harness.state().closed);
+    field(&harness, "Import name").click();
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(imports(&harness).len(), 1);
+    assert!(harness.state().closed);
 }

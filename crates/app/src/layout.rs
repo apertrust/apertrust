@@ -53,6 +53,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
+use apertrust_tools::Lives;
 use apertrust_ui::Icon;
 use toml::{Table, Value};
 
@@ -349,13 +350,24 @@ pub struct Shown {
 }
 
 /// The tools of the Tools panel this build has, processing tools then utilities: every
-/// tool a workspace may place. No import tool is one (decision 86), so a file naming one
-/// skips it, as any id this build does not know.
+/// tool a workspace may place, and every one the Hidden tab and Find Tool… list. The
+/// Import tool lives in the Import sheet ([`Lives::ImportSheet`], decision 86), so it is
+/// none of them, and a file naming it skips it, as any id this build does not know.
 pub fn known() -> Vec<&'static str> {
     let tools = apertrust_tools::TOOLS.iter();
-    let processing = tools.map(|tool| tool.definition().tool.id);
-    let utilities = apertrust_tools::utility::UTILITIES.iter();
-    processing.chain(utilities.map(|u| u.tool.id)).collect()
+    let processing = tools.map(|tool| tool.definition().tool);
+    let utilities = apertrust_tools::utility::UTILITIES.iter().map(|u| u.tool);
+    (processing.chain(utilities))
+        .filter(|tool| tool.lives == Lives::ToolsPanel)
+        .map(|tool| tool.id)
+        .collect()
+}
+
+/// Whether `tool` lives in the Import sheet ([`Lives::ImportSheet`]), never in the Tools
+/// panel.
+pub fn in_the_sheet(tool: &str) -> bool {
+    let utility = apertrust_tools::utility::utility(tool);
+    utility.is_some_and(|utility| utility.tool.lives == Lives::ImportSheet)
 }
 
 /// Whether `tool` is a processing tool, which edits the photo.
@@ -801,6 +813,10 @@ impl Layout {
             .map(str::to_owned)
             .collect();
         let shown = |tab: &str| shown_ids.iter().any(|id| id == tab);
+        // Only a tool of the Tools panel moves, never the Import sheet's (decision 86).
+        if change.tool().is_some_and(in_the_sheet) {
+            return false;
+        }
         match change {
             Move::Up { tab, .. }
             | Move::Down { tab, .. }

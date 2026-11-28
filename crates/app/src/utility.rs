@@ -203,6 +203,18 @@ pub trait UtilityTool {
         None
     }
 
+    /// What its collapsible group `group` says after its title while closed, in `words`
+    /// ([`tools::Rows::group_summary`]).
+    fn group_summary(&self, _group: &str, _words: &Translator) -> Option<String> {
+        None
+    }
+
+    /// Why its presets button is drawn disabled, in `words`, where its declaration has
+    /// presets that are not built yet, as the Import tool's.
+    fn presets_later(&self, _words: &Translator) -> Option<String> {
+        None
+    }
+
     /// What its header's ＋ opens, where its declaration has one (`rows_shown`), in
     /// `words`: its groups, each a submenu of its rows, checked where shown.
     fn rows_menu(&self, _words: &Translator) -> Vec<MenuEntry> {
@@ -245,7 +257,11 @@ pub fn section<T: UtilityTool>(
     let (photo, layout) = (head.photo, head.layout);
     let (mut changes, mut actions) = (Vec::new(), Vec::new());
     let presets = (head.presets.as_ref()).and_then(|menu| tool.presets(menu));
+    let later = tool.presets_later(cx.words);
     let mut section = tools::header(definition, &title, &reset, &name, resettable, about, head);
+    if let Some(later) = &later {
+        section = section.presets_later(later);
+    }
     if let Some(build) = presets {
         let words = translator(ui.ctx());
         section = section.presets(true).presets_menu(move || build(&words));
@@ -341,7 +357,9 @@ impl<T: UtilityTool> Page<'_, '_, T> {
                 }
                 // A setting row's, or each field's of a line of fields.
                 Row::Setting(_) | Row::Fields(_) => {
-                    for setting in row.setting_rows() {
+                    // A setting with no key yet is the utility's to give, never the
+                    // person's to set.
+                    for setting in row.setting_rows().filter(|setting| setting.key.is_some()) {
                         let shown = self.setting(setting).map(|(value, _)| value);
                         set += usize::from(shown.is_some_and(|value| value != setting.default()));
                     }
@@ -431,6 +449,10 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
         self.drawn.borrow().0.group_later(id, self.words)
     }
 
+    fn group_summary(&self, id: &str) -> Option<String> {
+        self.drawn.borrow().0.group_summary(id, self.words)
+    }
+
     /// A run of facts, by the utility's [`UtilityTool::facts`].
     fn facts(&self, ui: &mut egui::Ui, facts: &[&Fact], _changes: &mut Vec<Change>) {
         let (tool, cx, actions) = &mut *self.drawn.borrow_mut();
@@ -440,10 +462,16 @@ impl<T: UtilityTool> Rows for Page<'_, '_, T> {
     /// A setting naming its key in full as the utility keeps it, live but where `--conf`
     /// gives it for the run, drawn disabled at that value as the Settings dialog draws such
     /// a row (decision 43), a change of it refused as the app routes it too (`main.rs`'s
-    /// `utility_setting`); any other as a tool's.
+    /// `utility_setting`); one with no key yet drawn disabled at the value the utility
+    /// gives it, as the Import tool's Keep original file name, on; any other as a tool's.
     fn setting(&self, row: &SettingRow) -> Option<(ControlValue, bool)> {
         match row.key {
-            None => tools::tool_setting(&self.settings.tool_settings, self.utility.tool.id, row),
+            None => match self.drawn.borrow().0.setting(row) {
+                Some(value) => Some((value, false)),
+                None => {
+                    tools::tool_setting(&self.settings.tool_settings, self.utility.tool.id, row)
+                }
+            },
             Some(key) => {
                 let tool = &self.drawn.borrow().0;
                 Some((tool.setting(row)?, !tool.given(key)))
@@ -593,6 +621,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],
@@ -738,6 +767,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[
@@ -1010,6 +1040,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         measures: None,
         titles: &[],

@@ -12,6 +12,8 @@ app-name = Apertrust
 # message (tools.ftl).
 action-import = Import…
     .toolbar = Import
+# Why Import… cannot run: a dialog or a sheet is up (decision 86).
+action-import-modal = Close the open dialog or sheet first
 action-export = Export…
     .toolbar = Export
 # File › Export Again: the export with the settings as last kept, with no dialog.
@@ -1002,6 +1004,8 @@ section-info = Info
 collections-folders = Folders
 section-export = Export
     .search = export
+section-import = Import
+    .search = import
 # The top line's box: what screen readers call it, and its words for none, which the
 # Viewer says too with nothing open; a folder's are its open kind's.
 collections-open-name = What is open
@@ -2062,6 +2066,8 @@ pick-warning-short-tip = { $control } reached its end of { $value }
 export-button = Export { photo-count }
 export-reset = Reset export settings
 export-presets = Export presets
+import-reset = Reset import settings
+import-presets = Import presets
 metadata-presets = Metadata presets
 export-preset-default = Default settings
 export-metadata-note = This version writes no EXIF, location or copyright into exported files.
@@ -2660,3 +2666,69 @@ import-problem-is-source = it is the source.
 import-problem-inside-source = it is inside the source.
 import-problem-on-card = it is on the card the source is on.
 import-problem-space = needs { $needed }; { $available } is free on { $volume }.
+# The Import tool's groups and its rows with no setting yet (decision 85).
+import-group-source = Source
+import-group-destination = Destination
+import-group-naming = Naming
+import-group-metadata = Metadata
+import-group-filters = Filters
+import-group-after-import = After import
+import-include-subfolders = Include subfolders
+import-select-new-photos = Select only new photos
+import-keep-original-name = Keep original file name
+import-open-destination = Open the destination
+import-open-when-starts = When the import starts
+import-open-when-ends = When it ends
+import-open-no = No
+import-verify = Verify the copies
+# The Import tool's header, and its Destination and Naming rows (decision 85).
+import-presets-later = Presets come in a later version
+import-row-name = Import name
+import-name-tip = Fills $(IMPORT_NAME) where the folder or file name uses it
+import-name-unused = No folder or file name uses the import name
+import-folder-choices = Folder’s choices
+import-subfolder-choices = Subfolder’s choices
+import-choose-folder = Choose a folder
+import-choose-folder-title = Choose the Folder to Import Into
+import-subfolder-hint = None: straight into the folder
+import-subfolder-each-import = One for each import · default
+import-subfolder-each-day = One for each day taken
+import-subfolder-named = Named after the import
+import-subfolder-none = None: straight into the folder
+import-subfolder-today = One folder for this import, dated today, { $date }
+import-subfolder-by-day = One folder for each day taken
+import-folder-sample = { $photo } → { $path }
+import-folder-new = A new folder in { $parent }
+import-folder-new-several =
+    { $count ->
+        [one] { $count } new folder in { $parent }
+       *[other] { $count } new folders in { $parent }
+    }
+import-folder-there-several = Into { $count } folders already there in { $parent }
+import-folder-into = Into { $folder }, already there: { photo-count }
+import-folder-never-replaces = Never replaces a file: a name taken gets _01; a photo already there is skipped
+import-folder-diverged =
+    { $count ->
+        [one] { $count } is already there with an edit of its own; its edit on { $source } stays there
+       *[other] { $count } are already there with an edit of their own; their edits on { $source } stay there
+    }
+import-did-you-mean = Did you mean $({ $variable })?
+import-fix-use = Use $({ $variable })
+import-fix-choose-folder = Choose a folder…
+import-file-name = File name
+import-file-name-kept = The photos keep their camera names while Keep original file name is on
+import-keep-original-tip = The photos keep their camera names; choosing other names comes in a later version
+import-include-subfolders-card = A card’s DCIM is always listed whole
+import-open-destination-tip = The destination opens when the import ends; the other choices come in a later version
+import-group-no-rating = No rating
+import-group-show-imported = Show imported
+# The Import tool's Source group (decision 85).
+import-places = Places
+import-places-add = Add a place
+import-places-remove = Remove the place
+import-places-reset = Reset the places
+import-place-pictures = Pictures
+import-place-home = Home
+import-folders = Folders
+import-folders-local = These photos are already on this computer
+import-source-card = Card: { $name }

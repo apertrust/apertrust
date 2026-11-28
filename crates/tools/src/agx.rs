@@ -700,6 +700,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
         menus: &[],
         toolbar: &[],
         cursors: &[],
+        lives: crate::Lives::ToolsPanel,
     },
     version: 1,
     // Background only: the tone mapper's parameters are global (decision 33).

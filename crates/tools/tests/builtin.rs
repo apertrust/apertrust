@@ -774,6 +774,7 @@ static LISTING: ProcessingDefinition = ProcessingDefinition {
         menus: &[],
         toolbar: &[],
         cursors: &[],
+        lives: apertrust_tools::Lives::ToolsPanel,
     },
     version: 1,
     layers: false,

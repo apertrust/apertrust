@@ -15,8 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //! The Import sheet (decisions 85 and 86; `docs/gui.md`, The Import sheet): its content on
-//! the design system's sheet frame, in Import's first slice, 20a1. The Import tool in its
-//! column and the ways in are the next slice's (#754); a test opens the sheet here.
+//! the design system's sheet frame, in Import's first slice, 20a1, with the Import tool in
+//! its column ([`tool`]).
 //!
 //! **The listing's mirror** ([`Listing`]), plain data a test feeds events and reads back:
 //! the sheet sends `ListSource` for its source with Folder's and the default folder's
@@ -66,9 +66,13 @@ use eframe::egui;
 use crate::SendCommand;
 use crate::metadata::format::{naive, size};
 use crate::sheet::{self, Place, Shown};
+use crate::tools::Head;
+use crate::utility;
 
+pub mod source;
 #[cfg(test)]
 mod tests;
+pub mod tool;
 
 /// Where the sheet imports from, as Source chose it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -616,7 +620,8 @@ struct CellWords {
 /// The Import sheet's content.
 pub struct ImportSheet {
     source: Option<Source>,
-    settings: ImportSettings,
+    /// The Import tool, with the settings it lists, checks, previews and imports with.
+    tool: tool::Tool,
     listing: Listing,
     /// The settings whose trees the listing was last checked against.
     checked_with: Option<ImportSettings>,
@@ -632,19 +637,32 @@ pub struct ImportSheet {
     /// The latest `PreviewImport`'s number, 0 where none was sent for no photos checked,
     /// with the checks' change and the settings it was asked for.
     asked: Option<(u64, u64, ImportSettings)>,
-    /// The number of the `PreviewImport` the preview held answers.
-    previewed: Option<u64>,
     /// Its answer, once it has come; an earlier one's stays until then.
     preview: Option<ImportPreview>,
+    /// The number of the `PreviewImport` the preview held answers.
+    previewed: Option<u64>,
+    /// The `Import` it sent, by its number: a second press is ignored as it closes.
+    started: Option<u64>,
 }
 
 impl ImportSheet {
     /// The sheet for `source`, or none yet, with the import settings `settings`: it lists
     /// the source as it is first drawn.
+    #[cfg(test)]
     pub fn new(source: Option<Source>, settings: ImportSettings) -> Self {
+        ImportSheet::with(source, tool::Tool::new(settings))
+    }
+
+    /// The sheet for `source`, or none yet, with its Import tool `tool`.
+    /// Where it is given none, Source's place and folder last used are the source.
+    pub fn with(source: Option<Source>, mut tool: tool::Tool) -> Self {
+        let source = source.or_else(|| tool.places.source());
+        if source.as_ref().is_some_and(|source| source.card) {
+            tool.focus_name();
+        }
         ImportSheet {
             source,
-            settings,
+            tool,
             listing: Listing::default(),
             checked_with: None,
             words: Vec::new(),
@@ -655,12 +673,30 @@ impl ImportSheet {
             asked: None,
             previewed: None,
             preview: None,
+            started: None,
         }
     }
 
+    /// Sends `Import` with the photos checked and the settings, once: the sheet then
+    /// closes. Returns its number, where it sent it now.
+    fn start(&mut self, send: &mut SendCommand<'_>) -> Option<u64> {
+        if self.started.is_some() {
+            return None;
+        }
+        let photos = self.listing.photos().filter(|p| !p.files.is_empty())?;
+        let settings = self.tool.settings.clone();
+        let number = send(Command::Library(LibraryCommand::Import {
+            photos,
+            settings,
+        }));
+        self.started = Some(number);
+        Some(number)
+    }
+
     /// The settings the sheet lists and checks with, which the Import tool changes.
+    #[cfg(test)]
     pub fn settings_mut(&mut self) -> &mut ImportSettings {
-        &mut self.settings
+        &mut self.tool.settings
     }
 
     /// The listing as the sheet mirrors it.
@@ -669,19 +705,49 @@ impl ImportSheet {
         &self.listing
     }
 
+    /// Makes `source` the sheet's, as Source chose it: what the sheet showed of the one
+    /// before goes, its listing, pictures, words and preview, and the next frame lists it
+    /// with a new `ListSource`, which drops the listing before. The same folder told anew,
+    /// a card's name and kind once the volumes have come, keeps its listing.
+    fn set_source(&mut self, source: Source) {
+        let was = self.source.as_ref();
+        if was == Some(&source) {
+            return;
+        }
+        if source.card && !was.is_some_and(|was| was.card) {
+            self.tool.focus_name();
+        }
+        // The same folder, now known for a card or by another name: its listing stays.
+        if was.is_some_and(|was| was.folder == source.folder) {
+            self.source = Some(source);
+            return;
+        }
+        self.source = Some(source);
+        self.listing = Listing::default();
+        self.checked_with = None;
+        self.words = Vec::new();
+        self.words_of = None;
+        self.textures = HashMap::new();
+        self.textures_of = None;
+        self.said = None;
+        self.asked = None;
+        self.preview = None;
+        self.previewed = None;
+    }
+
     /// Lists the source where it has not been, and checks it again where Folder or the
     /// default folder has changed since.
     fn sync(&mut self, send: &mut SendCommand<'_>) {
         let Some(source) = &self.source else {
             return;
         };
-        let wanted = trees(&self.settings);
+        let wanted = trees(&self.tool.settings);
         match &self.checked_with {
-            None => self.listing.list(&source.folder, &self.settings, send),
-            Some(with) if trees(with) != wanted => self.listing.recheck(&self.settings, send),
+            None => self.listing.list(&source.folder, &self.tool.settings, send),
+            Some(with) if trees(with) != wanted => self.listing.recheck(&self.tool.settings, send),
             Some(_) => return,
         }
-        self.checked_with = Some(self.settings.clone());
+        self.checked_with = Some(self.tool.settings.clone());
     }
 
     /// Asks for the preview of the photos checked with the settings, once the listing has
@@ -692,7 +758,7 @@ impl ImportSheet {
         }
         let changed = self.listing.changed();
         let asked = (self.asked.as_ref())
-            .is_some_and(|(_, at, settings)| *at == changed && *settings == self.settings);
+            .is_some_and(|(_, at, settings)| *at == changed && *settings == self.tool.settings);
         if asked {
             return;
         }
@@ -705,10 +771,10 @@ impl ImportSheet {
         } else {
             send(Command::Library(LibraryCommand::PreviewImport {
                 photos,
-                settings: self.settings.clone(),
+                settings: self.tool.settings.clone(),
             }))
         };
-        self.asked = Some((number, changed, self.settings.clone()));
+        self.asked = Some((number, changed, self.tool.settings.clone()));
     }
 
     /// Brings the cells' words and textures in line with the listing, in the language now.
@@ -717,7 +783,7 @@ impl ImportSheet {
         let now = (generation, words.locale());
         if self.words_of != Some(now) {
             self.words_of = Some(now);
-            let home = self.settings.places.home.as_deref();
+            let home = self.tool.settings.places.home.as_deref();
             let folders = self.listing.folders();
             self.words = (self.listing.photos.iter())
                 .map(|photo| cell_words(photo, words, folders, home))
@@ -772,7 +838,7 @@ impl ImportSheet {
         let previewing = match &self.asked {
             Some((number, changed, settings)) => {
                 *changed != self.listing.changed()
-                    || *settings != self.settings
+                    || *settings != self.tool.settings
                     || Some(*number) != self.previewed
             }
             None => true,
@@ -781,13 +847,14 @@ impl ImportSheet {
             return Some(words.text("import-why-previewing"));
         }
         let problem = self.preview.as_ref().and_then(|p| p.problems.first());
-        problem.map(|problem| problem_words(problem, words, self.settings.places.home.as_deref()))
+        problem
+            .map(|problem| problem_words(problem, words, self.tool.settings.places.home.as_deref()))
     }
 
     /// The bar's counts, as the listing stands.
     fn counts(&self, words: &Translator) -> String {
         let source = self.source.as_ref().map_or("", |s| s.name.as_str());
-        let home = self.settings.places.home.as_deref();
+        let home = self.tool.settings.places.home.as_deref();
         let mut args = Args::new();
         args.set("source", source.to_owned());
         let id = match self.listing.stage() {
@@ -956,7 +1023,7 @@ pub fn footer(
 }
 
 /// The deepest folder the `folders` share, none where they share none.
-fn common<'a>(mut folders: impl Iterator<Item = &'a Path>) -> Option<PathBuf> {
+pub fn common<'a>(mut folders: impl Iterator<Item = &'a Path>) -> Option<PathBuf> {
     let mut shared = folders.next()?.to_owned();
     for folder in folders {
         while !folder.starts_with(&shared) {
@@ -1044,8 +1111,15 @@ pub fn problem_words(problem: &ImportProblem, words: &Translator, home: Option<&
 }
 
 impl sheet::Content for ImportSheet {
-    fn show(&mut self, ui: &mut egui::Ui, place: Place, send: &mut SendCommand<'_>) -> Shown {
+    fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        place: Place,
+        given: &sheet::Given<'_>,
+        send: &mut SendCommand<'_>,
+    ) -> Shown {
         self.sync(send);
+        self.tool.problems(self.preview.as_ref());
         let ctx = ui.ctx().clone();
         let words = translator(&ctx);
         self.refresh(&ctx, &words);
@@ -1085,7 +1159,7 @@ impl sheet::Content for ImportSheet {
             })
             .collect();
         let message = self.message(&words);
-        let home = self.settings.places.home.as_deref();
+        let home = self.tool.settings.places.home.as_deref();
         let summary = footer(
             &words,
             &source,
@@ -1093,9 +1167,17 @@ impl sheet::Content for ImportSheet {
             self.preview.as_ref(),
             home,
         );
+        let name_first = self.source.as_ref().is_some_and(|s| s.card) && self.tool.name_enabled();
         let listing = &self.listing;
         let cells = &self.words;
         let textures = &self.textures;
+        let active = (listing.checks().active()).map(|place| listing.at(place).file.path.as_path());
+        let mut drawn = tool::Drawn {
+            tool: &mut self.tool,
+            preview: self.preview.as_ref(),
+            active,
+            source: self.source.as_ref(),
+        };
         let out = Sheet::new(&heading, &name, count, listing.checks().active(), |place| {
             let photo = listing.at(place);
             let at = listing.index(place);
@@ -1139,7 +1221,40 @@ impl sheet::Content for ImportSheet {
         .size(ThumbnailSize::Medium)
         .column(place.column, place.at_start)
         .primary(&primary, why_not.as_deref())
-        .show(ui, |_, _| {});
+        // A card's import is the name typed and Return: Import name has the focus.
+        .focus_given(name_first)
+        .show(ui, |ui, returned| {
+            let mut commands = Vec::new();
+            let mut cx = utility::Context {
+                mirror: given.mirror,
+                settings: given.settings,
+                words: &words,
+                commands: &mut commands,
+            };
+            let resettable = !drawn.tool.at_defaults();
+            // Always open, the sheet's one tool, with nothing in ⋯ yet and no peek.
+            let head = Head {
+                open: true,
+                enabled: true,
+                ..Head::default()
+            };
+            let asked = utility::section(ui, &mut drawn, &mut cx, head, resettable).actions;
+            returned.0 |= asked.contains(&tool::Asked::Returned);
+            (asked, commands)
+        });
+        let (asked, commands) = out.inner;
+        for command in commands {
+            send(command);
+        }
+        let choose_folder = asked.contains(&tool::Asked::ChooseFolder);
+        for asked in asked {
+            if let tool::Asked::Source(source) = asked {
+                self.set_source(source);
+            }
+        }
+        // Import pressed: the copy starts as a job and the sheet closes (Keep open is
+        // 20a2's).
+        let started = if out.primary { self.start(send) } else { None };
         let opened = self.listing.opened();
         if let Some(gesture) = out.gesture {
             self.listing.apply(gesture);
@@ -1167,8 +1282,13 @@ impl sheet::Content for ImportSheet {
             announce(ui, said);
         }
         Shown {
-            closed: out.close,
+            closed: out.close || started.is_some(),
+            started,
             column: out.column,
+            settings: self.tool.take_written(),
+            groups: self.tool.take_toggled(),
+            choose_folder,
+            folder_start: choose_folder.then(|| self.tool.folder_start()).flatten(),
         }
     }
 
@@ -1180,11 +1300,25 @@ impl sheet::Content for ImportSheet {
             }
             return;
         }
+        if matches!(
+            event,
+            LibraryEvent::Volumes { .. } | LibraryEvent::SubfoldersOf { .. }
+        ) {
+            if let Some(source) = self.tool.receive(event) {
+                self.set_source(source);
+            }
+            return;
+        }
         self.listing.receive(event);
     }
 
     fn closing(&mut self) -> Vec<Command> {
         self.listing.cancel().into_iter().collect()
+    }
+
+    /// Folder's, from its folder button or a problem's fix.
+    fn folder_chosen(&mut self, folder: &Path) {
+        self.tool.folder_chosen(folder);
     }
 }
 

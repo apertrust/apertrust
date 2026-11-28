@@ -1688,3 +1688,176 @@ fn the_last_exports_failure_is_what_the_export_tool_reads() {
     mirror.act(ActivityAction::Dismiss(ids[2].get()));
     assert_eq!(mirror.failed_export(), None);
 }
+
+/// Where an import of the card copies its photos.
+const WEDDING: &str = "/Users/anna/Pictures/Apertrust/20261115_Wedding";
+
+/// An import of `total` photos as the session adds it, by this app's command `command`,
+/// or a retry of `retries`.
+pub(crate) fn import_added(
+    job: JobId,
+    total: usize,
+    command: u64,
+    retries: Option<JobId>,
+) -> Event {
+    Event::Job {
+        event: JobEvent::Added {
+            job,
+            kind: "import",
+            queue: Some(Queue::UserForeground),
+            title: Message::new("job-import").with("count", total),
+            cancellable: true,
+            destination: Some(Destination::Folder(PathBuf::from(WEDDING))),
+            detail: None,
+            progress: Progress {
+                done: 0,
+                total: Some(total as u64),
+            },
+            retries,
+            quiet: false,
+        },
+        command: Some(command),
+    }
+}
+
+/// The import `job` ending in `state` with `outcome`, `failure` and `offers`.
+fn import_ended(
+    job_id: JobId,
+    state: State,
+    outcome: Message,
+    failure: Option<Failure>,
+    offers: Vec<Offer>,
+) -> Event {
+    job(JobEvent::Ended {
+        job: job_id,
+        state,
+        outcome: Some(outcome),
+        failure,
+        at: at(60),
+        offers,
+    })
+}
+
+/// What an import ended with, as the engine words it (`job-import-*`).
+fn import_outcome(id: &str, copied: usize, skipped: usize, failed: usize, total: usize) -> Message {
+    Message::new(id)
+        .with("copied", copied)
+        .with("skipped", skipped)
+        .with("failed", failed)
+        .with("total", total)
+}
+
+/// Decision 85: an import's events fold into its row as an export's do: its title, its
+/// destination, the photos done of all and the photo under way while it runs, its outcome
+/// as it ends; the window opens for it; and its end is handed to the app once, for its
+/// destination.
+#[test]
+fn an_import_s_events_fold_into_its_row_and_its_end_is_taken_once() {
+    let id = ids(1)[0];
+    let mut mirror = Mirror::new(Some(PathBuf::from(HOME)));
+    mirror.starting(7);
+    assert_eq!(mirror.apply(&import_added(id, 214, 7, None)), Show::Open);
+    mirror.apply(&state(id, State::Running));
+    let now = Message::new("job-import-now").with("photo", "DSCF1120.RAF");
+    fold(
+        &mut mirror,
+        [
+            job(JobEvent::Progress {
+                job: id,
+                done: 120,
+                total: Some(214),
+            }),
+            job(JobEvent::Detail {
+                job: id,
+                detail: Some(now),
+            }),
+        ],
+    );
+    let row = only(&mirror);
+    assert_eq!(
+        row.title,
+        JobMessage::new("job-import").number("count", 214.0)
+    );
+    assert_eq!((row.done, row.total), (120, Some(214)));
+    assert_eq!(
+        row.detail,
+        Some(JobMessage::new("job-import-now").text("photo", "DSCF1120.RAF"))
+    );
+    assert_eq!(
+        row.destination.as_deref(),
+        Some("~/Pictures/Apertrust/20261115_Wedding")
+    );
+    assert!(row.cancellable);
+    assert!(mirror.imports_ended().is_empty());
+    let whole = import_outcome("job-import-finished", 214, 0, 0, 214);
+    mirror.apply(&import_ended(id, State::Finished, whole, None, Vec::new()));
+    let row = only(&mirror);
+    assert_eq!(row.phase, JobPhase::Finished);
+    assert_eq!(
+        row.outcome,
+        Some(
+            JobMessage::new("job-import-finished")
+                .number("copied", 214.0)
+                .number("skipped", 0.0)
+                .number("failed", 0.0)
+                .number("total", 214.0)
+        )
+    );
+    assert_eq!(mirror.imports_ended(), [7]);
+    assert!(mirror.imports_ended().is_empty(), "taken once");
+}
+
+/// An import stopped by its source going offers Try again, whose job takes its row's
+/// place and whose end is handed to the app by its own command; a cancel ends cancelled,
+/// its end handed over too; another client's import is none of this app's.
+#[test]
+fn a_stopped_import_offers_try_again_and_a_cancelled_one_ends_cancelled() {
+    let ids = ids(3);
+    let mut mirror = Mirror::new(Some(PathBuf::from(HOME)));
+    mirror.apply(&import_added(ids[0], 214, 7, None));
+    let stopped = import_outcome("job-import-failed-outcome", 120, 2, 1, 214);
+    let gone = Failure::new("gone", "EOS_DIGITAL was removed");
+    let offers = vec![Offer::Retry { items: 94 }];
+    mirror.apply(&import_ended(
+        ids[0],
+        State::Finished,
+        stopped,
+        Some(gone),
+        offers,
+    ));
+    let row = only(&mirror);
+    assert_eq!(row.phase, JobPhase::Failed);
+    assert!(row.retry);
+    assert_eq!(mirror.imports_ended(), [7]);
+    assert_eq!(
+        mirror.act(ActivityAction::TryAgain(ids[0].get())),
+        Do::Start(Command::RetryJob { job: ids[0] })
+    );
+    mirror.apply(&import_added(ids[1], 94, 9, Some(ids[0])));
+    assert_eq!(only(&mirror).id, ids[1].get());
+    let cancelled = import_outcome("job-import-cancelled", 1, 0, 0, 94);
+    mirror.apply(&import_ended(
+        ids[1],
+        State::Cancelled,
+        cancelled,
+        None,
+        Vec::new(),
+    ));
+    assert_eq!(only(&mirror).phase, JobPhase::Cancelled);
+    assert_eq!(mirror.imports_ended(), [9]);
+    // Another client's import opens nothing here.
+    let mut other = import_added(ids[2], 3, 0, None);
+    if let Event::Job { command, .. } = &mut other {
+        *command = None;
+    }
+    mirror.apply(&other);
+    let done = import_outcome("job-import-finished", 3, 0, 0, 3);
+    mirror.apply(&import_ended(
+        ids[2],
+        State::Finished,
+        done,
+        None,
+        Vec::new(),
+    ));
+    assert!(mirror.imports_ended().is_empty());
+}

@@ -69,6 +69,12 @@ struct Words {
 }
 
 impl Index {
+    /// The tools it finds among, as Find Tool… lists them.
+    #[cfg(test)]
+    pub fn ids(&self) -> impl Iterator<Item = &'static str> + '_ {
+        self.tools.iter().map(|words| words.id)
+    }
+
     /// The words of every tool, its name and `.search` in `words`' language.
     pub fn new(words: &Translator) -> Index {
         let english = Translator::new(Locale::EnGb);

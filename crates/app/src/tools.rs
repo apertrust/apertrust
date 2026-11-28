@@ -1320,6 +1320,12 @@ pub trait Rows {
         None
     }
 
+    /// What its collapsible group `id` says after its title while closed, where it says
+    /// something, as the Import tool's Source says "Card: EOS_DIGITAL".
+    fn group_summary(&self, _id: &str) -> Option<String> {
+        None
+    }
+
     /// The title of its group `id` of the kind `kind`: the one its id and kind imply,
     /// unless a utility declares its own (decision 93).
     fn title(&self, id: &str, kind: GroupKind) -> String {
@@ -2792,10 +2798,12 @@ fn group_row(
     // so is one whose rows the page says are not built yet.
     let tip = page.group_tip(id);
     let later = page.group_later(id);
+    let summary = page.group_summary(id);
     if rows.is_empty() || later.is_some() {
         let later = later.unwrap_or_else(|| page.words().text("section-tab-later"));
         let mut group = CollapsibleGroup::new(&title, false)
             .first(first)
+            .summary(summary.as_deref())
             .disabled(&later);
         if let Some(tip) = &tip {
             group = group.tip(tip);
@@ -2808,7 +2816,10 @@ fn group_row(
     // A scope, whose response is the group's row while it is closed, carries the tooltip.
     let warning = page.group_warning(id);
     let group = ui.scope(|ui| {
-        let mut group = CollapsibleGroup::new(&title, open).first(first).set(set);
+        let mut group = CollapsibleGroup::new(&title, open)
+            .first(first)
+            .set(set)
+            .summary(summary.as_deref());
         if let Some(tip) = &tip {
             group = group.tip(tip);
         }
@@ -4830,6 +4841,12 @@ mod tests {
                 ("demosaic", "capture_sharpen_controls"),
                 ("export", "global"),
                 ("export", "metadata"),
+                ("import", "after_import"),
+                ("import", "destination"),
+                ("import", "filters"),
+                ("import", "metadata"),
+                ("import", "naming"),
+                ("import", "source"),
                 ("metadata", "basic"),
                 ("metadata", "camera"),
                 ("metadata", "content"),
@@ -5990,6 +6007,7 @@ mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         version: 1,
         layers: true,

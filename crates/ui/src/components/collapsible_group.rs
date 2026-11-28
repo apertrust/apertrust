@@ -46,6 +46,10 @@
 //!   of decision 100): in `warning`, its name its tooltip, its menu the caller's
 //!   ([`CollapsibleGroup::end_warning`], [`CollapsibleGroup::show_with`]). It is a focus stop
 //!   of its own after the row's, and a click on it opens its menu, never the group.
+//! - A summary after the title while closed, in the small text and `text_secondary`, as
+//!   the Import tool's Source says "Card: EOS_DIGITAL" ([`CollapsibleGroup::summary`]): cut
+//!   at its end before the hairline's shortest, and to screen readers part of its
+//!   description.
 //!
 //! [`PlainGroup`]: super::PlainGroup
 
@@ -71,6 +75,8 @@ pub struct CollapsibleGroup<'a> {
     tip: Option<&'a str>,
     /// The warning button before the chevron: its name and its menu.
     warning: Option<(&'a str, Vec<Entry>)>,
+    /// What it says after its title while closed.
+    summary: Option<&'a str>,
 }
 
 /// What a frame of the group did.
@@ -93,7 +99,15 @@ impl<'a> CollapsibleGroup<'a> {
             first: false,
             tip: None,
             warning: None,
+            summary: None,
         }
+    }
+
+    /// What it says after its title while closed, translated, as the Import tool's Source
+    /// says "Card: EOS_DIGITAL"; none for nothing.
+    pub fn summary(mut self, summary: Option<&'a str>) -> Self {
+        self.summary = summary.filter(|summary| !summary.is_empty());
+        self
     }
 
     /// A warning button before the chevron, named `name`, translated, its tooltip and what
@@ -171,10 +185,12 @@ impl<'a> CollapsibleGroup<'a> {
             args.set("count", self.set);
             translator(ui.ctx()).text_with("collapsible-group-set", Some(&args))
         });
+        let summary = self.summary.filter(|_| !open);
+        let described: Vec<&str> = [summary, set.as_deref()].into_iter().flatten().collect();
         ui.ctx().accesskit_node_builder(id, |node| {
             node.set_expanded(open);
-            if let Some(set) = set {
-                node.set_description(set);
+            if !described.is_empty() {
+                node.set_description(described.join(", "));
             }
         });
 
@@ -214,6 +230,21 @@ impl<'a> CollapsibleGroup<'a> {
             if dot {
                 painter.circle_filled(pos2(x + DOT_RADIUS, middle), DOT_RADIUS, t.colors.text);
                 x += 2.0 * DOT_RADIUS + gap;
+            }
+            // The summary, cut before the hairline's shortest.
+            if let Some(summary) = summary {
+                let room = end - gap - t.spacing.l - x;
+                let font = egui::FontId::proportional(t.text.small);
+                let shade = if enabled {
+                    t.colors.text_secondary
+                } else {
+                    colour
+                };
+                let job = super::truncated(summary, font, room.max(0.0), shade);
+                let galley = painter.layout_job(job);
+                let width = galley.size().x;
+                painter.galley(pos2(x, middle - galley.size().y / 2.0), galley, shade);
+                x += width + gap;
             }
             painter.hline(
                 x..=end - gap,

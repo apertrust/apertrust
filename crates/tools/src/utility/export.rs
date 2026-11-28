@@ -418,6 +418,7 @@ pub const EXPORT: UtilityDefinition = UtilityDefinition {
         // Export… and Export Again for the Toolbar (decision 92).
         toolbar: &[item("export", "export"), item("export-again", "export")],
         cursors: &[],
+        lives: crate::Lives::ToolsPanel,
     },
     measures: None,
     titles: &[

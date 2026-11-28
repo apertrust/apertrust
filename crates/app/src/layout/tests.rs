@@ -2220,3 +2220,89 @@ fn restoring_the_defaults_brings_the_default_toolbar_back() {
         assert_ne!(kind, Some("list"), "toolbar.{key}");
     }
 }
+
+/// Decisions 86 and 90: each tool lives in one place. Every built-in workspace, its Hidden
+/// tab and Find Tool…'s list hold only the Tools panel's tools, and the Import sheet's
+/// column only Import; every move given the Import tool, a drag's, Move Tool to Tab's or a
+/// drop on a tab's icon, leaves the Tools panel as it was; and a workspace's file naming
+/// it skips it.
+#[test]
+fn each_tool_lives_in_one_place_and_import_never_in_the_tools_panel() {
+    use apertrust_tools::Lives;
+    use apertrust_tools::utility::{UTILITIES, import};
+    let lives = |id: &str| {
+        let tools = apertrust_tools::TOOLS.iter().map(|t| t.definition().tool);
+        let mut every = tools.chain(UTILITIES.iter().map(|u| u.tool));
+        every.find(|tool| tool.id == id).map(|tool| tool.lives)
+    };
+    let in_sheet: Vec<&str> = (UTILITIES.iter())
+        .filter(|u| u.tool.lives == Lives::ImportSheet)
+        .map(|u| u.tool.id)
+        .collect();
+    assert_eq!(in_sheet, [import::ID]);
+    let panel = known();
+    assert!(!panel.contains(&import::ID));
+    assert!(panel.iter().all(|id| lives(id) == Some(Lives::ToolsPanel)));
+    let found = crate::find::Index::new(&Translator::new(Locale::EnGb));
+    assert!(!found.ids().any(|id| id == import::ID));
+    for id in [DEFAULT, ESSENTIALS] {
+        let mut workspace = Workspaces::builtin().open(id).0;
+        let tabs = workspace.shown.tabs.clone();
+        let every = tabs
+            .iter()
+            .flat_map(Tab::tools)
+            .chain(workspace.hidden_tab().tools());
+        assert!(
+            every
+                .into_iter()
+                .all(|t| lives(t) == Some(Lives::ToolsPanel)),
+            "{id}"
+        );
+        let before = workspace.shown.clone();
+        for tab in tabs.iter().map(|tab| tab.id.clone()) {
+            let tool = import::ID;
+            for change in [
+                Move::Up {
+                    tool,
+                    tab: tab.clone(),
+                },
+                Move::Down {
+                    tool,
+                    tab: tab.clone(),
+                },
+                Move::Pin {
+                    tool,
+                    tab: tab.clone(),
+                },
+                Move::Unpin {
+                    tool,
+                    tab: tab.clone(),
+                },
+                Move::ToTab {
+                    tool,
+                    from: None,
+                    to: tab.clone(),
+                },
+                Move::ToTab {
+                    tool,
+                    from: Some(tab.clone()),
+                    to: tab.clone(),
+                },
+                Move::Hide { tool },
+            ] {
+                assert!(!workspace.apply(&change), "{id}: {change:?}");
+                assert_eq!(workspace.shown, before, "{id}: {change:?}");
+            }
+        }
+    }
+    let (shown, _) = layout_of(
+        "version = 1\n[[tabs]]\nid = \"photos\"\n[order]\nphotos = [\"import\", \"export\"]\n",
+    );
+    assert!(
+        !shown
+            .tabs
+            .iter()
+            .any(|tab| tab.tools().any(|t| t == import::ID))
+    );
+    assert!(!shown.hidden.contains(&import::ID));
+}

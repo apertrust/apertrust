@@ -65,6 +65,8 @@ pub enum Action {
     OpenFolder,
     /// File › Open…'s dialog.
     OpenFiles,
+    /// Import…, after ＋ or ＋'s first item: the Import sheet (decision 90).
+    Import,
     /// A recent folder, or a photo alone's folder by Open This Folder, opened at once: a way
     /// in, which makes it the tree's root.
     Open(PathBuf),
@@ -120,6 +122,7 @@ pub enum Missing<'a> {
 pub struct Keys {
     pub folder: Option<String>,
     pub files: Option<String>,
+    pub import: Option<String>,
 }
 
 /// What the Viewer says while no photo is open.
@@ -215,6 +218,8 @@ pub struct Collections<'a> {
     pub keys: &'a Keys,
     /// The person's home folder, which tooltips write as `~`.
     pub home: Option<&'a Path>,
+    /// Whether Import… can run now: no dialog or sheet is up.
+    pub import: bool,
 }
 
 use crate::tree_row::{LEVEL_INDENT, ROW_ICON};
@@ -427,7 +432,20 @@ fn top_line(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<
         let plus_name = words.text("collections-plus");
         let plus = IconButton::new(Icon::Plus, &plus_name);
         let plus_side = plus.side(ui);
-        let width = (ui.available_width() - plus_side - t.spacing.xs).max(0.0);
+        // Import… after ＋, a default text button, unless it would leave the box under
+        // IMPORT_FOLDS_UNDER: then it is ＋'s first item.
+        let import_words = words.text("action-import");
+        let why_not = words.text("action-import-modal");
+        let mut import = Button::new(&import_words)
+            .height(t.sizes.control)
+            .enabled(collections.import);
+        if !collections.import {
+            import = import.tip(&why_not);
+        }
+        let import_width = import.natural_width(ui) + t.spacing.xs;
+        let room = ui.available_width() - plus_side - t.spacing.xs;
+        let import_shown = room - import_width >= IMPORT_FOLDS_UNDER;
+        let width = (room - if import_shown { import_width } else { 0.0 }).max(0.0);
         let ctx = ui.ctx().clone();
         let (_, whole) = open_line(
             &ctx,
@@ -467,40 +485,65 @@ fn top_line(ui: &mut egui::Ui, collections: &Collections<'_>, actions: &mut Vec<
             actions.extend(recent_action(&chosen, &listed));
         }
         let plus = plus.show(ui);
-        let chosen = pull_down(ui, &plus, &plus_name, || plus_menu(&ctx, collections.keys));
+        let folded = (!import_shown).then_some(collections.import);
+        let chosen = pull_down(ui, &plus, &plus_name, || {
+            plus_menu(&ctx, collections.keys, folded)
+        });
         match chosen.as_deref() {
             Some("open-folder") => actions.push(Action::OpenFolder),
             Some("open") => actions.push(Action::OpenFiles),
+            Some("import") => actions.push(Action::Import),
             _ => {}
+        }
+        if import_shown && import.show(ui).clicked() && collections.import {
+            actions.push(Action::Import);
         }
     });
 }
 
-/// ＋'s menu, in the wireframe's order: New Library…, which comes later, drawn disabled,
-/// then the ways to open, with their keys.
-fn plus_menu(ctx: &egui::Context, keys: &Keys) -> Vec<Entry> {
+/// The least the top line's box keeps before Import… goes into ＋'s menu, in points: at the
+/// Tools panel's narrowest, 240, it does.
+pub const IMPORT_FOLDS_UNDER: f32 = 140.0;
+
+/// ＋'s menu, in the wireframe's order: Import… first where it is folded into it, `folded`
+/// saying whether it can run; New Library…, which comes later, drawn disabled, then the
+/// ways to open, with their keys.
+fn plus_menu(ctx: &egui::Context, keys: &Keys, folded: Option<bool>) -> Vec<Entry> {
     let words = translator(ctx);
     let later = words.text("section-tab-later");
     let with_keys = |item: Item, keys: &Option<String>| match keys {
         Some(keys) => item.shortcut(keys.clone()),
         None => item,
     };
-    vec![
-        Entry::Item(
-            Item::new("new-library", words.text("action-new-library"))
-                .enabled(false)
-                .tip(later),
-        ),
-        Entry::Separator,
-        Entry::Item(with_keys(
-            Item::new("open-folder", words.text("action-open-folder")),
-            &keys.folder,
-        )),
-        Entry::Item(with_keys(
-            Item::new("open", words.text("action-open")),
-            &keys.files,
-        )),
-    ]
+    let import = folded.map(|enabled| {
+        let item = Item::new("import", words.text("action-import")).enabled(enabled);
+        let item = if enabled {
+            item
+        } else {
+            item.tip(words.text("action-import-modal"))
+        };
+        [Entry::Item(with_keys(item, &keys.import)), Entry::Separator]
+    });
+    import
+        .into_iter()
+        .flatten()
+        .chain([
+            Entry::Item(
+                Item::new("new-library", words.text("action-new-library"))
+                    .enabled(false)
+                    .tip(later),
+            ),
+            Entry::Separator,
+            Entry::Item(with_keys(
+                Item::new("open-folder", words.text("action-open-folder")),
+                &keys.folder,
+            )),
+            Entry::Item(with_keys(
+                Item::new("open", words.text("action-open")),
+                &keys.files,
+            )),
+        ])
+        .collect()
 }
 
 /// The recents' list under the top line's box, with the paths its items stand for: each
@@ -1141,6 +1184,7 @@ mod tests {
         Keys {
             folder: Some("Ctrl+Shift+O".to_owned()),
             files: Some("Ctrl+O".to_owned()),
+            import: Some("Ctrl+I".to_owned()),
         }
     }
 
@@ -1170,6 +1214,7 @@ mod tests {
                 inside: &HashMap::new(),
                 keys: &keys,
                 home: None,
+                import: true,
             };
             PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
         })
@@ -1240,6 +1285,7 @@ mod tests {
                 inside: &HashMap::new(),
                 keys: &keys,
                 home: None,
+                import: true,
             };
             PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
         });
@@ -1291,6 +1337,7 @@ mod tests {
                 inside: &inside,
                 keys: &keys,
                 home: None,
+                import: true,
             };
             PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
         });
@@ -1349,6 +1396,7 @@ mod tests {
                     inside: &inside,
                     keys: &keys,
                     home: None,
+                    import: true,
                 };
                 PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
             });
@@ -1382,6 +1430,7 @@ mod tests {
                 inside: &inside,
                 keys: &keys,
                 home: None,
+                import: true,
             };
             PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
         });
@@ -1453,6 +1502,7 @@ mod tests {
                     inside: &HashMap::new(),
                     keys: &keys,
                     home: None,
+                    import: true,
                 };
                 PanelBody::new().show(ui, |ui| {
                     actions.extend(drawn(ui, &mut collections));
@@ -1563,6 +1613,7 @@ mod tests {
                 inside: &inside,
                 keys: &keys,
                 home: None,
+                import: true,
             };
             PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
         });
@@ -1697,6 +1748,7 @@ mod tests {
                 inside: &HashMap::new(),
                 keys: &keys,
                 home: None,
+                import: true,
             };
             PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
         });
@@ -1912,6 +1964,7 @@ mod tests {
             inside: &HashMap::new(),
             keys: &keys,
             home: None,
+            import: true,
         };
         let (entries, _) = recents_menu(&ctx, &collections);
         assert!(matches!(
@@ -1967,6 +2020,46 @@ mod tests {
         harness.run();
         assert_eq!(keys.as_deref(), Some("Ctrl+O"));
         assert_eq!(*harness.state(), [Action::OpenFolder, Action::OpenFiles]);
+    }
+
+    /// Decision 90: Import… after ＋, in the focus order too, at the Tools panel's 320
+    /// points; at 240, where the box would drop below 140 points, ＋'s first item instead,
+    /// with its key. Either runs the Import action.
+    #[test]
+    fn import_follows_plus_and_goes_into_it_where_the_box_would_be_too_narrow() {
+        let mut harness = wedding_collections();
+        harness.run();
+        let plus = harness
+            .get_by_role_and_label(Role::Button, "New or open")
+            .rect();
+        let import = harness.get_by_role_and_label(Role::Button, "Import…");
+        assert!(import.rect().left() > plus.right());
+        import.click();
+        harness.run();
+        assert_eq!(*harness.state(), [Action::Import]);
+
+        let mut narrow =
+            collections_drawn(egui::vec2(240.0, 700.0), wedding, recent, OPEN_ALL, true);
+        narrow.run();
+        assert!(
+            narrow
+                .query_by_role_and_label(Role::Button, "Import…")
+                .is_none()
+        );
+        narrow
+            .get_by_role_and_label(Role::Button, "New or open")
+            .click();
+        narrow.run();
+        let item = narrow.get_by_role_and_label(Role::MenuItem, "Import…");
+        let keys = item
+            .accesskit_node()
+            .data()
+            .keyboard_shortcut()
+            .map(str::to_owned);
+        assert_eq!(keys.as_deref(), Some("Ctrl+I"));
+        item.click();
+        narrow.run();
+        assert_eq!(*narrow.state(), [Action::Import]);
     }
 
     /// ⋯ shows the open folder in the platform's file manager.
@@ -2217,6 +2310,7 @@ mod tests {
             let keys = Keys {
                 folder: Some("Ctrl+Shift+O".to_owned()),
                 files: Some("Ctrl+O".to_owned()),
+                import: None,
             };
             actions.extend(empty_state(ui, slot, Empty::of(&what), &keys));
         })
@@ -2383,6 +2477,7 @@ mod tests {
                         inside: &inside,
                         keys: &keys,
                         home: None,
+                        import: true,
                     };
                     PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
                 },
@@ -2423,6 +2518,7 @@ mod tests {
                     inside: &inside,
                     keys: &keys,
                     home: None,
+                    import: true,
                 };
                 PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
             },
@@ -2449,6 +2545,7 @@ mod tests {
                     inside: &HashMap::new(),
                     keys: &keys,
                     home: None,
+                    import: true,
                 };
                 PanelBody::new().show(ui, |ui| actions.extend(drawn(ui, &mut collections)));
             },

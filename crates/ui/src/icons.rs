@@ -108,6 +108,8 @@ pub enum Icon {
     Guides,
     /// A new layer.
     Plus,
+    /// A place taken out of a list, as the Import tool's Places' − (decision 85).
+    Minus,
     ZoomIn,
     ZoomOut,
     /// The browser bar's Sort, showing the direction: lines narrow to wide under an arrow
@@ -259,7 +261,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    pub const ALL: [Icon; 128] = [
+    pub const ALL: [Icon; 129] = [
         Icon::Chevron,
         Icon::ChevronDown,
         Icon::ChevronEnd,
@@ -296,6 +298,7 @@ impl Icon {
         Icon::Grid,
         Icon::Guides,
         Icon::Plus,
+        Icon::Minus,
         Icon::ZoomIn,
         Icon::ZoomOut,
         Icon::SortAscending,
@@ -526,6 +529,7 @@ impl Icon {
             Icon::Grid => derived!("grid", "grid-3x3", 16.0),
             Icon::Guides => derived!("guides", "frame", 16.0),
             Icon::Plus => derived!("plus", "plus", 14.0),
+            Icon::Minus => derived!("minus", "minus", 14.0),
             // Their files mirrored, the lens at the top right and the handle at the bottom left.
             Icon::ZoomIn => derived!("zoom-in", "zoom-in", 16.0),
             Icon::ZoomOut => derived!("zoom-out", "zoom-out", 16.0),

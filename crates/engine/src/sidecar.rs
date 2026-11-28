@@ -1197,6 +1197,7 @@ pub(crate) mod tests {
             menus: &[],
             toolbar: &[],
             cursors: &[],
+            lives: apertrust_tools::Lives::ToolsPanel,
         },
         version: 2,
         layers: true,

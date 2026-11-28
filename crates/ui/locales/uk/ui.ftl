@@ -8,6 +8,8 @@ app-name = Apertrust
 
 action-import = Імпорт…
     .toolbar = Імпорт
+# Why Import… cannot run: a dialog or a sheet is up (decision 86).
+action-import-modal = Спершу закрийте відкритий діалог чи аркуш
 action-export = Експорт…
     .toolbar = Експорт
 action-export-again = Експортувати ще раз
@@ -804,6 +806,8 @@ section-info = Відомості
 collections-folders = Теки
 section-export = Експорт
     .search = Експорт
+section-import = Імпорт
+    .search = Імпорт
 collections-open-name = Що відкрито
 collections-no-folder = Жодної теки не відкрито
 collections-recents-none = Немає нещодавніх тек
@@ -1609,6 +1613,8 @@ pick-warning-short-tip = { $control } досягла межі { $value }
 export-button = Експортувати { photo-count }
 export-reset = Скинути налаштування експорту
 export-presets = Шаблони експорту
+import-reset = Скинути налаштування імпорту
+import-presets = Шаблони імпорту
 metadata-presets = Шаблони метаданих
 export-preset-default = Типові налаштування
 export-metadata-note = Ця версія ще не записує у файли EXIF, місце зйомки й авторські права.
@@ -2215,3 +2221,71 @@ import-problem-is-source = це і є джерело.
 import-problem-inside-source = це всередині джерела.
 import-problem-on-card = це на тій самій картці, що й джерело.
 import-problem-space = потрібно { $needed }; на { $volume } вільно { $available }.
+# The Import tool's groups and its rows with no setting yet (decision 85).
+import-group-source = Джерело
+import-group-destination = Призначення
+import-group-naming = Назви
+import-group-metadata = Метадані
+import-group-filters = Фільтри
+import-group-after-import = Після імпорту
+import-include-subfolders = Разом із підтеками
+import-select-new-photos = Позначати лише нові знімки
+import-keep-original-name = Лишати назву файлу
+import-open-destination = Відкривати призначення
+import-open-when-starts = Коли імпорт починається
+import-open-when-ends = Коли він закінчується
+import-open-no = Ні
+import-verify = Перевіряти копії
+# The Import tool's header, and its Destination and Naming rows (decision 85).
+import-presets-later = Шаблони з’являться в одній із наступних версій
+import-row-name = Назва імпорту
+import-name-tip = Заповнює $(IMPORT_NAME), де його вжито в теці чи назві файлу
+import-name-unused = Жодна тека чи назва файлу не вживає назви імпорту
+import-folder-choices = Варіанти теки
+import-subfolder-choices = Варіанти підтеки
+import-choose-folder = Вибрати теку
+import-choose-folder-title = Виберіть теку, до якої імпортувати
+import-subfolder-hint = Без підтеки: просто в теку
+import-subfolder-each-import = Одна на кожен імпорт · типово
+import-subfolder-each-day = Одна на кожен день зйомки
+import-subfolder-named = За назвою імпорту
+import-subfolder-none = Без підтеки: просто в теку
+import-subfolder-today = Одна тека на цей імпорт із сьогоднішньою датою, { $date }
+import-subfolder-by-day = Одна тека на кожен день зйомки
+import-folder-sample = { $photo } → { $path }
+import-folder-new = Нова тека в { $parent }
+import-folder-new-several =
+    { $count ->
+        [one] { $count } нова тека в { $parent }
+        [few] { $count } нові теки в { $parent }
+       *[other] { $count } нових тек у { $parent }
+    }
+import-folder-there-several = До { $count } наявних тек у { $parent }
+import-folder-into = До { $folder }, там уже { photo-count }
+import-folder-never-replaces = Ніколи не замінює файл: до зайнятої назви додається _01; знімок, що вже там є, пропускається
+import-folder-diverged =
+    { $count ->
+        [one] { $count } знімок уже там із власним редагуванням; його редагування на { $source } лишається там
+        [few] { $count } знімки вже там із власним редагуванням; їхні редагування на { $source } лишаються там
+       *[other] { $count } знімків уже там із власним редагуванням; їхні редагування на { $source } лишаються там
+    }
+import-did-you-mean = Може, $({ $variable })?
+import-fix-use = Вжити $({ $variable })
+import-fix-choose-folder = Вибрати теку…
+import-file-name = Назва файлу
+import-file-name-kept = Знімки зберігають назви з камери, поки ввімкнено «Лишати назву файлу»
+import-keep-original-tip = Знімки зберігають назви з камери; вибір інших назв з’явиться в одній із наступних версій
+import-include-subfolders-card = DCIM картки завжди показується цілим
+import-open-destination-tip = Призначення відкривається, коли імпорт закінчується; інші варіанти з’являться в одній із наступних версій
+import-group-no-rating = Без оцінки
+import-group-show-imported = Показувати імпортовані
+# The Import tool's Source group (decision 85).
+import-places = Місця
+import-places-add = Додати місце
+import-places-remove = Прибрати місце
+import-places-reset = Скинути місця
+import-place-pictures = Зображення
+import-place-home = Домівка
+import-folders = Теки
+import-folders-local = Ці знімки вже на цьому комп’ютері
+import-source-card = Картка: { $name }

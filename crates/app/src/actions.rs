@@ -413,6 +413,8 @@ pub enum Intent {
     ClearRecent,
     /// File › Close: what is open closed, its edit saved, and nothing open after it.
     Close,
+    /// Import…: opens the Import sheet (decision 86; `import`).
+    Import,
     /// Export…: reveals the Export tool in the Photos tab (`export`).
     Export,
     /// The export with the settings as last kept, with no dialog (`export_again`).
@@ -980,11 +982,14 @@ fn never(_: &State) -> bool {
 
 /// Whether no modal dialog is open, for an action that opens a dialog.
 /// Why the action `id` cannot run in `state`, as its menu item's tooltip says, where the
-/// reason is one the person can act on: Discard History… where it would ask and the
-/// platform shows no alert; the Tools panel's positions where `--conf` sets it for this
+/// reason is one the person can act on: Import… under a dialog or a sheet; Discard
+/// History… where it would ask and the platform shows no alert; the Tools panel's positions where `--conf` sets it for this
 /// run, [`SET_BY_CONF`], and Reset Toolbar where it sets the workspace; Guides' flips while the guide type is one darktable never
 /// flips. The message's id, or none.
 pub fn why_unavailable(id: ActionId, state: &State) -> Option<&'static str> {
+    if id == ActionId::IMPORT && state.modal {
+        return Some("action-import-modal");
+    }
     if state.panel_position_given && ActionId::TOOLS_PANEL_POSITION.contains(&id) {
         return Some(SET_BY_CONF);
     }
@@ -1359,8 +1364,9 @@ pub static ACTIONS: [Action; 176] = [
         keys: &[command(Key::I)],
         scope: Scope::App,
         trigger: Trigger::Press,
-        available: never,
-        emits: Emit::Later,
+        // Never over a dialog or a sheet, Import's own included (decision 86).
+        available: no_modal_dialog,
+        emits: Emit::Intent(Intent::Import),
     },
     Action {
         id: ActionId::EXPORT,

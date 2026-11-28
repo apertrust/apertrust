@@ -66,10 +66,6 @@ mod folder;
 mod frame_times;
 mod hardware;
 mod history;
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "the Import tool's ways in open its sheet (#754)")
-)]
 mod import;
 mod info;
 mod instance;
@@ -1530,6 +1526,11 @@ struct App {
     /// The Export tool's folder button, while whether its path is a folder is asked of the
     /// disk before the folder dialog opens.
     export_folder: export::folder::Looking,
+    /// An import's destination opening and the subfolder to choose once it has, over
+    /// several subfolders ([`destination_opened`]).
+    choose_after: Option<(PathBuf, PathBuf)>,
+    /// Where the Import tool's folder chooser starts, as the disk says ([`Shell::show_sheet`]).
+    import_folder: export::folder::Looking,
     /// The photo Discard History was asked for, until its question is answered.
     discarding: Option<alerts::Discarding>,
     /// The tool and preset Update or Delete asked about, until its alert is answered.
@@ -2006,6 +2007,14 @@ struct Shell {
     sheet: Option<Box<dyn sheet::Content>>,
     /// Its tool column's width, `import.column_width`.
     sheet_column: f32,
+    /// The Import tool's settings, `import.*`, kept as the sheet leaves them (decision 85).
+    import: settings::Import,
+    /// Those `--conf` gives for this run, by key in full, drawn disabled.
+    import_given: Vec<String>,
+    /// The photos each import this app started has landed so far, by its command's
+    /// number, its own or Try again's, the copies' paths: where it ends with one, its
+    /// destination opens (decision 85).
+    landed: HashMap<u64, Vec<PathBuf>>,
     /// What a sheet closed since the last frame sends as it goes, sent with the next.
     sheet_left: Vec<Command>,
     /// Where the customise menu open adds an item, by its place in the draft.
@@ -2124,6 +2133,10 @@ struct Shell {
     tree: BTreeMap<PathBuf, bool>,
     /// The missing recent Locate… asked about, for the folder dialog after the frame.
     locate: Option<PathBuf>,
+    /// Where the Import tool asked for the system's folder chooser since the last frame,
+    /// for its Folder: Folder with its variables filled in, empty where its pattern does not
+    /// read.
+    import_folder: Option<String>,
     /// The recent folders that could not be opened when tried this run, and why.
     missing: BTreeMap<PathBuf, String>,
     /// Whether the photos references were measured on are still there (decision 88).
@@ -2277,6 +2290,9 @@ impl Shell {
             customising: None,
             sheet: None,
             sheet_column: settings.sheet_column,
+            import: settings.import.clone(),
+            import_given: Vec::new(),
+            landed: HashMap::new(),
             sheet_left: Vec::new(),
             adding_at: 0,
             focus_tab: None,
@@ -2323,6 +2339,7 @@ impl Shell {
             collections_shown: false,
             tree: BTreeMap::new(),
             locate: None,
+            import_folder: None,
             missing: BTreeMap::new(),
             references: pickers::ReferencePhotos::new(),
             export_again: false,
@@ -2936,6 +2953,7 @@ impl Shell {
             style_mode: self.style_mode,
             rating_notes: self.rating_notes.clone(),
             sheet_column: self.sheet_column,
+            import: self.import.clone(),
         }
     }
 
@@ -3112,6 +3130,7 @@ impl Shell {
         library::Keys {
             folder: self.keymap.tip(ActionId::OPEN_FOLDER, os, &words),
             files: self.keymap.tip(ActionId::OPEN, os, &words),
+            import: self.keymap.tip(ActionId::IMPORT, os, &words),
         }
     }
 
@@ -4287,16 +4306,30 @@ impl Shell {
     /// Opens `content` as the main window's sheet (decision 86), where none is open and
     /// neither About nor the Toolbar's customise mode is up: one at a time. Returns whether
     /// it opened.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "Import's sheet opens one (#754)")
-    )]
     fn open_sheet(&mut self, content: Box<dyn sheet::Content>) -> bool {
         let busy = self.sheet.is_some() || self.about.is_open() || self.customising.is_some();
         if !busy {
             self.sheet = Some(content);
         }
         !busy
+    }
+
+    /// Opens the Import sheet (decisions 85 and 86) with the import settings kept, its
+    /// tool's groups as the person left them, the keys `--conf` gives and Source's place
+    /// and folder last used, where no sheet, About or the customise mode is up. It never
+    /// acts on what is open: one photo and folder mode alike.
+    fn open_import(&mut self) {
+        let settings = self.import.settings(export::places());
+        let groups = (self
+            .groups
+            .get(apertrust_tools::utility::import::ID)
+            .cloned())
+        .unwrap_or_default();
+        let tool = import::tool::Tool::new(settings)
+            .groups(groups)
+            .given(self.import_given.iter().cloned())
+            .source(&self.import.place, &self.import.folder);
+        self.open_sheet(Box::new(import::ImportSheet::with(None, tool)));
     }
 
     /// Closes the sheet open, if one is, keeping what it sends as it goes for the next
@@ -4310,18 +4343,51 @@ impl Shell {
     }
 
     /// Draws the sheet open, if one is, over the window below the Toolbar, `toolbar`, its
-    /// column on the Tools panel's side, keeping its column's width and closing it as it
+    /// column on the Tools panel's side, its tool's page drawn with the settings kept and
+    /// `mirror`, keeping its column's width, the settings its tool writes and its groups'
+    /// open state, and where it asks for the system's folder chooser, and closing it as it
     /// asks; what it, or a sheet closed since the last frame, asks of the session goes
-    /// through `send`.
-    fn show_sheet(&mut self, ctx: &egui::Context, toolbar: egui::Rect, send: &mut SendCommand<'_>) {
+    /// through `send`. Returns the job it started, by its command's number.
+    fn show_sheet(
+        &mut self,
+        ctx: &egui::Context,
+        toolbar: egui::Rect,
+        mirror: &Mirror,
+        send: &mut SendCommand<'_>,
+    ) -> Option<u64> {
         let place = sheet::Place {
             column: self.sheet_column,
             at_start: self.panel_position.at_start(),
         };
-        if let Some(content) = self.sheet.as_deref_mut() {
-            let shown = sheet::show(ctx, toolbar, content, place, send);
+        let mut started = None;
+        if self.sheet.is_some() {
+            let settings = self.to_settings(ctx);
+            let given = sheet::Given {
+                mirror,
+                settings: &settings,
+            };
+            let content = self.sheet.as_deref_mut().expect("a sheet is open");
+            let shown = sheet::show(ctx, toolbar, content, place, &given, send);
             if let Some(action) = shown.column {
                 self.sheet_column = sheet::resized(action);
+            }
+            for (key, value) in &shown.settings {
+                self.import.set(key, value);
+            }
+            for (group, open) in shown.groups {
+                let groups = self
+                    .groups
+                    .entry(apertrust_tools::utility::import::ID.to_owned())
+                    .or_default();
+                groups.insert(group.to_owned(), open);
+            }
+            if shown.choose_folder {
+                let start = shown.folder_start.as_deref().map(Path::display);
+                self.import_folder = Some(start.map(|s| s.to_string()).unwrap_or_default());
+            }
+            started = shown.started;
+            if let Some(number) = started {
+                self.landed.insert(number, Vec::new());
             }
             if shown.closed {
                 self.close_sheet();
@@ -4330,6 +4396,7 @@ impl Shell {
         for command in self.sheet_left.drain(..) {
             send(command);
         }
+        started
     }
 
     /// The scrim over the window below the Toolbar, `toolbar`, while customising (decision
@@ -4724,6 +4791,7 @@ impl Shell {
             Intent::Close => self.close = true,
             // The tool's tab, the Photos tab in the Default workspace: chosen, opened, and
             // scrolled to.
+            Intent::Import => self.open_import(),
             Intent::Export => self.reveal(export::ID),
             Intent::ExportAgain => self.export_again = true,
             Intent::Step { next } => self.step = Some(next),
@@ -5283,6 +5351,15 @@ impl App {
             show_hidden_given: keeper.overridden(&settings::registry::TOOLS_PANEL_SHOW_HIDDEN),
             panel_position_given: keeper.overridden(&settings::registry::TOOLS_PANEL_POSITION),
             style_mode_given: keeper.overridden(&settings::registry::STYLES_MODE),
+            import_given: (apertrust_library::settings::registry::ALL.iter())
+                .copied()
+                .chain([
+                    &settings::registry::IMPORT_PLACE as &dyn apertrust_base::settings::Declared,
+                    &settings::registry::IMPORT_FOLDER,
+                ])
+                .filter(|declared| keeper.overridden(*declared))
+                .map(|declared| declared.id().to_owned())
+                .collect(),
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         // On the tab last shown in it, which the recents' `state.toml` keeps.
@@ -5428,6 +5505,8 @@ impl App {
             export_previews: export::Previews::default(),
             metadata,
             export_folder: export::folder::Looking::default(),
+            choose_after: None,
+            import_folder: export::folder::Looking::default(),
             discarding: None,
             preset_asked: None,
             quit_held: false,
@@ -5669,9 +5748,10 @@ impl App {
 
     /// Sends an export job, which the jobs window follows by its events, and quitting
     /// waits for until it is added.
-    fn send_job(&mut self, command: Command) {
+    fn send_job(&mut self, command: Command) -> u64 {
         let number = self.session.send(command);
         self.mirror.jobs.starting(number);
+        number
     }
 
     /// Sends the export of the selected photos, else the photo open, with the settings the
@@ -5863,7 +5943,12 @@ impl App {
                 false
             }
             jobs::Do::Start(command) => {
-                self.send_job(command);
+                // Try again on an import: its copies are kept by its own number too.
+                let import = lands(&command, &self.mirror.jobs);
+                let number = self.send_job(command);
+                if import {
+                    self.shell.landed.insert(number, Vec::new());
+                }
                 true
             }
             jobs::Do::Reveal(what) => {
@@ -5926,6 +6011,26 @@ impl App {
                 self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
             }
         }
+    }
+
+    /// Opens the destination of an import that ended having landed the copies `landed`
+    /// ([`open_destination`]), the fields' drafts sent first; over several subfolders, the
+    /// first is chosen once the root has opened ([`destination_opened`]).
+    fn open_destination(&mut self, landed: &[PathBuf], ctx: &egui::Context) {
+        if destination(landed).is_none() {
+            return;
+        }
+        self.send_drafts(ctx);
+        let (session, before) = (&self.session, self.shell.zoom);
+        self.choose_after = open_destination(
+            landed,
+            self.shell.recents.last(),
+            &mut self.remembered,
+            &mut self.shell.zoom,
+            &mut self.mirror,
+            &mut |command| session.send(command),
+        );
+        self.shell.fitted_from(before);
     }
 
     /// Opens the folder at `path` in the library, its photos going into the Browser, a way
@@ -6010,11 +6115,26 @@ impl App {
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     // Import's, for the sheet open, which keeps its own commands'.
-                    Reaction::Import(event) => {
-                        if let Some(sheet) = self.shell.sheet.as_deref_mut() {
-                            sheet.receive(&event);
+                    // What an import this app started landed, kept until it ends.
+                    Reaction::Import(event) => match *event {
+                        apertrust_engine::session::LibraryEvent::Imported { open, photos } => {
+                            if let Some(landed) = self.shell.landed.get_mut(&open) {
+                                landed.extend(photos.into_iter().filter_map(|photo| {
+                                    match photo.result {
+                                        apertrust_engine::session::library::ImportResult::Copied {
+                                            copy,
+                                        } => Some(copy),
+                                        _ => None,
+                                    }
+                                }));
+                            }
                         }
-                    }
+                        event => {
+                            if let Some(sheet) = self.shell.sheet.as_deref_mut() {
+                                sheet.receive(&event);
+                            }
+                        }
+                    },
                     // Settings a pick measured, kept as the user's own.
                     // A reference's L comes with the photo it was measured on (decision 88).
                     // The photo is the open one's: a reading of an earlier photo is stale
@@ -6084,6 +6204,25 @@ impl App {
         selection::open_first(&mut self.opening_first, &mut self.mirror, &mut |command| {
             session.send(command)
         });
+        // An import that ended having landed a photo opens its destination, choosing its
+        // first subfolder once the root has opened ([`choose_first_day`]).
+        if let Some(first) = destination_opened(&mut self.choose_after, &self.mirror) {
+            let (session, before) = (&self.session, self.shell.zoom);
+            choose_first_day(
+                first,
+                self.shell.recents.last(),
+                &mut self.remembered,
+                &mut self.shell.zoom,
+                &mut self.mirror,
+                &mut |command| session.send(command),
+            );
+            self.shell.fitted_from(before);
+        }
+        for number in self.mirror.jobs.imports_ended() {
+            if let Some(landed) = self.shell.landed.remove(&number) {
+                self.open_destination(&landed, ctx);
+            }
+        }
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
@@ -7225,6 +7364,7 @@ impl App {
             inside: self.mirror.folder.inside(),
             keys: &keys,
             home: self.places.home.as_deref(),
+            import: actions::action(ActionId::IMPORT).is_some_and(|a| a.enabled(&state)),
         };
         // Where Collections lives while Find Tool… lists it; Export's header says so as
         // every header the shell gives does.
@@ -7475,6 +7615,7 @@ impl App {
             repaint |= !matches!(action, library::Action::Ask(_));
             match action {
                 library::Action::OpenFolder => self.shell.open_folder = true,
+                library::Action::Import => self.run_actions([ActionId::IMPORT], ctx, &[]),
                 library::Action::OpenFiles => self.shell.open = true,
                 // A field's draft goes to its photos before another folder leaves them.
                 library::Action::Open(path) => {
@@ -8495,11 +8636,16 @@ impl App {
         let destination = (open.is_none() && !state.modal)
             .then(|| self.export_folder.looked())
             .flatten();
+        // The Import tool's, over its sheet, at Folder where it is there.
+        let import_folder = (open.is_none() && destination.is_none())
+            .then(|| self.import_folder.looked())
+            .flatten();
         let asked = open
             .or_else(|| {
                 (destination.as_ref()).map(|look| dialogs::Pick::Destination(look.file.clone()))
             })
-            .or_else(|| self.shell.locate.take().map(dialogs::Pick::Locate));
+            .or_else(|| self.shell.locate.take().map(dialogs::Pick::Locate))
+            .or_else(|| import_folder.as_ref().map(|_| dialogs::Pick::ImportFolder));
         let (photo, pictures) = (&self.mirror.photo, self.pictures.as_deref());
         let shown = self.mirror.folder.shown();
         let mut dialog = dialogs::Native {
@@ -8509,6 +8655,7 @@ impl App {
         };
         let start = match &asked {
             Some(dialogs::Pick::Destination(_)) => destination.map(|look| look.start),
+            Some(dialogs::Pick::ImportFolder) => import_folder.map(|look| look.start),
             asked => dialogs::locate_start(asked.as_ref()),
         };
         let chosen = dialogs::open(&mut dialog, asked, || match start {
@@ -8516,6 +8663,17 @@ impl App {
             None => dialogs::folder(shown, photo.path(), pictures),
         });
         let chosen = chosen.and_then(|chosen| self.export_destination(chosen));
+        // The Import tool's Folder, handed to its sheet, which opens nothing.
+        let chosen = chosen.and_then(|chosen| match chosen.pick {
+            dialogs::Pick::ImportFolder => {
+                let folder = chosen.paths.first();
+                if let (Some(folder), Some(sheet)) = (folder, self.shell.sheet.as_deref_mut()) {
+                    sheet.folder_chosen(folder);
+                }
+                None
+            }
+            _ => Some(chosen),
+        });
         // Quit, held while the dialog asked, runs once it has answered, opening nothing.
         let overwrite = self.alerts.pending() == Some(alerts::Purpose::Overwrite);
         if self.quit_held && self.asking.is_none() && !overwrite {
@@ -9585,10 +9743,19 @@ impl eframe::App for App {
         // While customising, the window below the Toolbar dims and takes no input; a sheet
         // covers it.
         self.shell.scrim(&ctx, toolbar.response.rect);
-        let session = &self.session;
-        (self.shell).show_sheet(&ctx, toolbar.response.rect, &mut |command| {
-            session.send(command)
-        });
+        let (session, mirror) = (&self.session, &self.mirror);
+        let started =
+            (self.shell).show_sheet(&ctx, toolbar.response.rect, mirror, &mut |command| {
+                session.send(command)
+            });
+        // The chooser opens a later frame, once the disk has said what of Folder is there.
+        if let Some(start) = self.shell.import_folder.take() {
+            self.import_folder
+                .start(start, self.places.home.clone(), &ctx);
+        }
+        if let Some(number) = started {
+            self.mirror.jobs.starting(number);
+        }
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
 
@@ -10156,6 +10323,86 @@ fn change_folder(
     }
 }
 
+/// Opens the destination of an import that ended having landed the copies `landed`,
+/// whether it finished, stopped or was cancelled, as Collections opens a folder: a way in
+/// and a recent, the photo open closed, which saves its edit, and none opened, whatever was
+/// last active there. Returns the root and the subfolder to choose once it has opened,
+/// over several subfolders, the folders of several days taken; nothing opens where none
+/// landed.
+fn open_destination(
+    landed: &[PathBuf],
+    last: Option<&recents::Last>,
+    remembered: &mut Remembered,
+    zoom: &mut zoom::Zoomed,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) -> Option<(PathBuf, PathBuf)> {
+    let (root, first) = destination(landed)?;
+    close_photo(mirror, send);
+    let way_in = FolderChange::WayIn;
+    change_folder(root.clone(), way_in, last, remembered, zoom, mirror, send);
+    // The new photos' folder: no photo opens there, even one active there this run.
+    remembered.waiting = None;
+    first.map(|first| (root, first))
+}
+
+/// Whether `command`, a job the jobs window starts, lands photos whose destination opens
+/// as it ends: Try again on an import.
+fn lands(command: &Command, jobs: &jobs::Mirror) -> bool {
+    matches!(command, Command::RetryJob { job } if jobs.is_import(*job))
+}
+
+/// The subfolder to choose now that the destination `pending` waits for has opened, its
+/// root a way in, with its `Opened` and recent of its own; none while it opens, and none
+/// for good where something else is open or its opening failed.
+fn destination_opened(
+    pending: &mut Option<(PathBuf, PathBuf)>,
+    mirror: &Mirror,
+) -> Option<PathBuf> {
+    let (root, _) = pending.as_ref()?;
+    match &mirror.folder.folder {
+        folder::Folder::Opening { path } if path == root => None,
+        folder::Folder::Open(listing) if listing.path == *root => {
+            pending.take().map(|(_, first)| first)
+        }
+        _ => {
+            *pending = None;
+            None
+        }
+    }
+}
+
+/// Chooses `first`, the first day of an import's destination now open
+/// ([`destination_opened`]), as Collections' tree chooses a folder, where no photo opens
+/// either, even one active there this run.
+fn choose_first_day(
+    first: PathBuf,
+    last: Option<&recents::Last>,
+    remembered: &mut Remembered,
+    zoom: &mut zoom::Zoomed,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) {
+    let choose = FolderChange::Choose;
+    change_folder(first, choose, last, remembered, zoom, mirror, send);
+    remembered.waiting = None;
+}
+
+/// The folder an import opens as it ends having landed the copies `landed`, and the folder
+/// its tree then chooses: their one folder, or over several, their deepest common folder
+/// with the first of them chosen. None where none landed.
+fn destination(landed: &[PathBuf]) -> Option<(PathBuf, Option<PathBuf>)> {
+    let mut folders: Vec<&Path> = landed.iter().filter_map(|copy| copy.parent()).collect();
+    folders.sort_unstable();
+    folders.dedup();
+    let common = import::common(folders.iter().copied())?;
+    let chosen = match folders.as_slice() {
+        [first, _, ..] if *first != common => Some(first.to_path_buf()),
+        _ => None,
+    };
+    Some((common, chosen))
+}
+
 /// Whether each of `paths`, Open Recent's as a menu shows them, can be opened, by place:
 /// all but one a check of `recents` found gone. One whose opening failed this run can,
 /// which tries again.
@@ -10358,7 +10605,7 @@ fn answered(shell: &mut Shell, chosen: dialogs::Chosen) -> Option<Opening> {
     let dialogs::Chosen { pick, paths } = chosen;
     match pick {
         // The Export tool's, which opens nothing ([`App::export_destination`]).
-        dialogs::Pick::Destination(_) => None,
+        dialogs::Pick::Destination(_) | dialogs::Pick::ImportFolder => None,
         dialogs::Pick::Files => dropped::chosen(&paths).map(dropped_opens),
         dialogs::Pick::Folder => paths.into_iter().next().map(|p| Ok(Opens::Folder(p))),
         dialogs::Pick::Locate(from) => {
@@ -23950,6 +24197,7 @@ mod tests {
                         inside: &std::collections::HashMap::new(),
                         keys: &keys,
                         home: None,
+                        import: true,
                     };
                     // As the Photos tab draws it ([`photos_tool`]).
                     let (mirror, settings) = (crate::mirror::tests::mirror(), Settings::default());
@@ -24562,9 +24810,10 @@ mod tests {
                     run.extend(bench.shell.customise(&ctx, edited, &state));
                     bench.shell.scrim(&ctx, top.response.rect);
                     let commands = &mut bench.commands;
+                    let mirror = crate::mirror::tests::mirror();
                     bench
                         .shell
-                        .show_sheet(&ctx, top.response.rect, &mut |command| {
+                        .show_sheet(&ctx, top.response.rect, &mirror, &mut |command| {
                             commands.push(command);
                             commands.len() as u64
                         });
@@ -24609,6 +24858,7 @@ mod tests {
                                 inside: &HashMap::new(),
                                 keys: &collections_keys,
                                 home: None,
+                                import: bench.shell.sheet.is_none(),
                             };
                             let (mirror, settings) =
                                 (crate::mirror::tests::mirror(), Settings::default());
@@ -28987,6 +29237,15 @@ mod tests {
 
     /// Shows a person's own workspace, `listed`, whose Toolbar is `list` (decision 92), read
     /// from its file in `folder` as the app reads it at its start.
+    /// The Toolbar's control named `label`, where it draws one, Collections' Import… aside.
+    fn on_toolbar<'h>(
+        harness: &'h Harness<'static, Bench>,
+        label: &'h str,
+    ) -> Option<egui_kittest::Node<'h>> {
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        (harness.query_all_by_label(label)).find(|node| bar.contains(node.rect().center()))
+    }
+
     fn show_toolbar(
         harness: &mut Harness<'_, Bench>,
         folder: &settings::testing::Folder,
@@ -29015,7 +29274,7 @@ mod tests {
         let folder = settings::testing::Folder::new("toolbar-switching");
         let mut harness = bench(OperatingSystem::Mac);
         harness.run();
-        assert!(harness.query_by_label("Import…").is_some());
+        assert!(on_toolbar(&harness, "Import…").is_some());
         let list = [
             "settings",
             "a-newer-build-s",
@@ -29025,7 +29284,7 @@ mod tests {
         ];
         show_toolbar(&mut harness, &folder, &list);
         for gone in ["Import…", "Export…", "Copy edit"] {
-            assert!(harness.query_by_label(gone).is_none(), "{gone}");
+            assert!(on_toolbar(&harness, gone).is_none(), "{gone}");
         }
         assert!(harness.query_by_role(Role::RadioGroup).is_none(), "no well");
         let bar = harness.get_by_role(Role::Toolbar).rect();
@@ -29042,7 +29301,7 @@ mod tests {
         assert_eq!(opened, 1, "Settings runs its action");
         harness.state_mut().shell.switch_workspace(layout::DEFAULT);
         harness.run();
-        assert!(harness.query_by_label("Import…").is_some());
+        assert!(on_toolbar(&harness, "Import…").is_some());
         assert!((harness.query_by_role_and_label(Role::Button, "Settings")).is_none());
         assert!(harness.query_by_role(Role::RadioGroup).is_some());
     }
@@ -29081,7 +29340,8 @@ mod tests {
         let bar = harness.get_by_role(Role::Toolbar).rect();
         let button = harness.get_by_role_and_label(Role::Button, "Menu").rect();
         assert_eq!(button.left(), bar.left() + 8.0);
-        assert!(button.right() < harness.get_by_label("Import…").rect().left());
+        let import = on_toolbar(&harness, "Import…").expect("drawn");
+        assert!(button.right() < import.rect().left());
         harness.key_press(Key::F10);
         harness.run();
         assert!(menu_open(&harness, "Menu"));
@@ -29120,7 +29380,7 @@ mod tests {
             };
             assert_eq!(names, expected, "{os:?}");
             // Import… and Undo side by side, nothing between them.
-            let import = harness.get_by_label("Import…").rect();
+            let import = on_toolbar(&harness, "Import…").expect("drawn").rect();
             let undo = harness.get_by_label("Undo").rect();
             assert!(
                 undo.left() - import.right() < 8.0,
@@ -31764,9 +32024,10 @@ mod tests {
         harness.state_mut().dialog.answer = Some(None);
         harness.run();
         alt(&mut harness, Key::F, Some("f"));
-        harness
-            .get_by_role_and_label(Role::MenuItem, "Import…")
-            .click();
+        let disabled = (harness.get_all_by_role(Role::MenuItem))
+            .find(|item| item.accesskit_node().is_disabled())
+            .expect("a disabled item");
+        disabled.click();
         harness.run();
         assert_eq!(harness.state().chosen.len(), 2);
     }
@@ -31818,6 +32079,7 @@ mod tests {
             &mut self,
             ui: &mut egui::Ui,
             place: sheet::Place,
+            _given: &sheet::Given<'_>,
             _send: &mut SendCommand<'_>,
         ) -> sheet::Shown {
             use apertrust_ui::components::{Sheet, SheetCell, TextFieldRow};
@@ -31859,6 +32121,7 @@ mod tests {
             sheet::Shown {
                 closed: out.close,
                 column: out.column,
+                ..sheet::Shown::default()
             }
         }
     }
@@ -31986,6 +32249,186 @@ mod tests {
             pressed: std::rc::Rc::default(),
         };
         assert!(!harness.state_mut().shell.open_sheet(Box::new(second)));
+    }
+
+    /// Decision 85: an import's destination opens as a way in: the photo open closed first,
+    /// which saves its edit, the root opened, a recent once its `Opened` comes, and over two
+    /// days taken the first chosen only then, so the root's open is neither cancelled nor
+    /// filtered; no photo last active there reopens. A cancel that landed one photo opens
+    /// its folder; an import that landed none opens nothing and sends nothing.
+    #[test]
+    fn an_import_s_destination_opens_as_a_way_in_with_the_first_day_chosen_once_open() {
+        let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
+        let base = PathBuf::from("/photos/Apertrust");
+        let landed = [
+            base.join("20261116_Trip/B.RAF"),
+            base.join("20261115_Trip/A.RAF"),
+        ];
+        let before = sent.len();
+        let mut pending = open_destination(
+            &landed,
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        let open_root = Command::Library(LibraryCommand::Open(Source::Folder(base.clone())));
+        assert_eq!(sent[before..before + 2], [Command::Close, open_root]);
+        let first = base.join("20261115_Trip");
+        assert_eq!(pending, Some((base.clone(), first.clone())));
+        assert!(remembered.waiting.is_none());
+        // Nothing is chosen while the root opens.
+        assert_eq!(destination_opened(&mut pending, &m), None);
+        let opened = m.apply(folder_opened(before as u64 + 2, &base));
+        assert!(
+            opened.contains(&Reaction::FolderOpened(base.clone())),
+            "{opened:?}"
+        );
+        assert_eq!(destination_opened(&mut pending, &m), Some(first.clone()));
+        assert_eq!(pending, None);
+        // The first day chosen opens no photo once listed, even one active there this run.
+        let photo = first.join("A.RAF");
+        remembered.photos.insert(first.clone(), photo.clone());
+        let chosen = sent.len() as u64 + 1;
+        choose_first_day(
+            first.clone(),
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        let choose = Command::Library(LibraryCommand::Open(Source::Folder(first.clone())));
+        assert_eq!(sent[chosen as usize - 1], choose);
+        m.apply(folder_opened(chosen, &first));
+        m.apply(listed(chosen, &["A.RAF"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert!(!sent.contains(&Command::Open(photo)), "{sent:?}");
+
+        // A cancel after one photo: its folder opens, nothing to choose after.
+        let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
+        let wedding = base.join("20261115_Wedding");
+        let pending = open_destination(
+            &[wedding.join("A.RAF")],
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(pending, None);
+        let open = Command::Library(LibraryCommand::Open(Source::Folder(wedding)));
+        assert!(sent.contains(&open));
+
+        // Nothing landed: the folder open stays, nothing sent.
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        let before = sent.len();
+        let none = open_destination(
+            &[],
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!((none, sent.len()), (None, before));
+        assert_eq!(m.folder.root(), Some(at.as_path()));
+    }
+
+    /// Decision 85: Try again on an import lands photos whose destination opens, its copies
+    /// kept by its own number; Try again on an export does not.
+    #[test]
+    fn try_again_on_an_import_keeps_its_copies() {
+        let ids = jobs::tests::ids(2);
+        let mut jobs = jobs::Mirror::new(None);
+        jobs.apply(&jobs::tests::import_added(ids[0], 3, 7, None));
+        let export = apertrust_base::jobs::Queue::UserExport;
+        jobs.apply(&jobs::tests::added(ids[1], export, Some(8)));
+        assert!(lands(&Command::RetryJob { job: ids[0] }, &jobs));
+        assert!(!lands(&Command::RetryJob { job: ids[1] }, &jobs));
+        assert!(!lands(&Command::Close, &jobs));
+    }
+
+    /// Decision 85: an import that ended having landed photos opens their folder; over two
+    /// days taken, their deepest common folder with the first day's chosen; one that
+    /// landed nothing opens nothing.
+    #[test]
+    fn an_import_opens_its_destination_where_a_photo_landed() {
+        let wedding = Path::new("/Users/anna/Pictures/Apertrust/20261115_Wedding");
+        let landed = [wedding.join("DSCF1011.RAF"), wedding.join("DSCF1012.RAF")];
+        assert_eq!(destination(&landed), Some((wedding.to_owned(), None)));
+        // A cancel after one photo landed opens it too.
+        assert_eq!(destination(&landed[..1]), Some((wedding.to_owned(), None)));
+        let base = Path::new("/Users/anna/Pictures/Apertrust");
+        let days = [
+            base.join("20261116_Trip/B.RAF"),
+            base.join("20261115_Trip/A.RAF"),
+        ];
+        assert_eq!(
+            destination(&days),
+            Some((base.to_owned(), Some(base.join("20261115_Trip"))))
+        );
+        assert_eq!(destination(&[]), None);
+    }
+
+    /// File › Import…'s item in the menu `shell` builds in `state`.
+    fn file_import(shell: &Shell, ctx: &egui::Context, state: &State) -> popup::Item {
+        let lists = menus::Lists {
+            recents: &[],
+            workspaces: &[],
+        };
+        let anchor = egui::Rect::NOTHING;
+        let menu = menus::request(ctx, &shell.keymap, state, lists, &shell.steps, anchor);
+        (menu.entries.iter())
+            .filter_map(|entry| match entry {
+                popup::Entry::Submenu(menu) => Some(menu),
+                _ => None,
+            })
+            .flat_map(|menu| &menu.entries)
+            .find_map(|entry| match entry {
+                popup::Entry::Item(item) if item.id == ActionId::IMPORT.0 => Some(item.clone()),
+                _ => None,
+            })
+            .expect("File › Import…")
+    }
+
+    /// Decision 86: Ctrl+I, File › Import… and the Toolbar's Import… open the Import sheet,
+    /// in one photo and folder mode alike, acting on nothing open; under a dialog or the
+    /// sheet itself the action, its menu item and its button are disabled, saying why.
+    #[test]
+    fn ctrl_i_file_import_and_the_toolbar_open_the_import_sheet() {
+        for way in ["keys", "menu", "toolbar"] {
+            let mut harness = bench(OperatingSystem::Nix);
+            harness.state_mut().photo = true;
+            harness.run();
+            let state = harness.state().state(&harness.ctx);
+            let item = file_import(&harness.state().shell, &harness.ctx, &state);
+            assert!(item.enabled, "{way}");
+            match way {
+                "keys" => harness.key_press_modifiers(Modifiers::COMMAND, Key::I),
+                "menu" => {
+                    let ctx = harness.ctx.clone();
+                    let bench = harness.state_mut();
+                    let state = bench.state(&ctx);
+                    bench.shell.run(ActionId::IMPORT, &state, &ctx, &[]);
+                }
+                _ => harness
+                    .get_by_role_and_label(Role::Button, "Import…")
+                    .click(),
+            }
+            harness.run();
+            harness.run();
+            assert!(harness.state().shell.sheet.is_some(), "{way}");
+            let state = harness.state().state(&harness.ctx);
+            let action = actions::action(ActionId::IMPORT).expect("declared");
+            assert!(!action.enabled(&state), "{way}");
+            assert_eq!(
+                actions::why_unavailable(ActionId::IMPORT, &state),
+                Some("action-import-modal")
+            );
+            assert!(!file_import(&harness.state().shell, &harness.ctx, &state).enabled);
+        }
     }
 
     /// Decision 86: the sheet's own keys reach it: Return on its grid presses its primary

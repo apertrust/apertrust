@@ -144,6 +144,7 @@ static DEFINITION: ProcessingDefinition = ProcessingDefinition {
             },
         ],
         cursors: &[],
+        lives: crate::Lives::ToolsPanel,
     },
     version: 1,
     layers: false,
