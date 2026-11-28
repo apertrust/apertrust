@@ -362,7 +362,7 @@ Goal: usable for daily editing, and the editor sets the sliders for a goal. Migr
   - [ ] the preview sent only while the tool is in view, with `focus` once it covers the whole selection;
   - [x] Select › Previous Selection on Ctrl+Shift+D;
   - [ ] Collections' Import…, opening the Import sheet, with Import's 20a1 (the library's step 20).
-- [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)), built with Import's first slice (the library's step 20a1): the sheet bar, the Browser's grid with check boxes as its choosing, a column on the Tools panel's side, the footer with Help, drawn disabled until Help is built, Close and the primary button, its keys and its modality in the app built; left: the Import tool in its column, each tool kept to its place, and the Toolbar's actions at rest under the pointer. Day headings, Checked only, Sort, Zoom and Keep open come with 20a2, not drawn until then.
+- [ ] The Import sheet's frame (decision 86; [gui.md](gui.md#sheets)), built with Import's first slice (the library's step 20a1): the sheet bar, the Browser's grid with check boxes as its choosing, a column on the Tools panel's side, the footer with Help, drawn disabled until Help is built, Close and the primary button, its keys and its modality in the app built; left: the Import tool in its column, and each tool kept to its place. Day headings, Checked only, Sort, Zoom and Keep open come with 20a2, not drawn until then.
 - [ ] Alerts on Windows, for Overwrite and the quit question; Linux's are built.
 - [ ] Several presets in one go, Multi-preset export ([gui.md](gui.md#the-export-tool), step 17).
 - [ ] Metadata in exported files, and styles applied on export.

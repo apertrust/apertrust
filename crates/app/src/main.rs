@@ -3795,8 +3795,9 @@ impl Shell {
         if let Some(draft) = &self.customising {
             return self.customising_toolbar(ui, draft, saved, title_bar, caption, jobs);
         }
-        // Under a sheet the actions rest, drawn as they are without it, never greyed
-        // (decision 86): what the sheet alone holds them from is left out of their look.
+        // Under a sheet the actions rest, drawn as they are without it, never greyed, and at
+        // rest under the pointer (decision 86): what the sheet alone holds them from is left
+        // out of their look.
         let resting = self.sheet.is_some();
         let at_rest = State {
             dialog: false,
@@ -3836,6 +3837,7 @@ impl Shell {
                     let mut button = ToolbarButton::new(action.id.0, placed.icon?, name)
                         .label(word)
                         .enabled(can(action))
+                        .at_rest(resting)
                         .folds_first(placed.folds_first())
                         .folds_last(TOOLBAR_LAST.contains(&action.id));
                     // On while what it turns on is, as its menu item's check mark says.
