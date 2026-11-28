@@ -481,6 +481,13 @@ fn fits<'a>(
         })
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The round tiles [`Tiles::at`] has planned on this thread, which a test of the
+    /// search counts.
+    static PLANNED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// What a round's tiles are planned from: the detail's instances after the raw stage,
 /// its image context, its source's image, its scale, how its plans plan their operations
 /// as the region's do ([`pipeline::plan_as`]), the operations whose results the
@@ -540,8 +547,20 @@ impl Tiles<'_> {
             let mut edge = 8192;
             while edge >= SMALLEST_TILE {
                 let regions = export::regions(op.output_desc.scaled_extent, [edge, edge]);
-                let plans = self.at(op, &regions, skip)?;
                 let fit = |plan: &Plan| own(plan) <= budget && plan.binds_within(self.limits);
+                // One tile that does not fit rules its size out: the last, planned alone as
+                // the round plans it, comes first, so a size that cannot fit costs one plan,
+                // not one a tile (issue 771).
+                let last = self.at(op, &regions[regions.len() - 1..], skip)?;
+                if !last.iter().all(fit) {
+                    edge /= 2;
+                    continue;
+                }
+                let plans = if regions.len() == 1 {
+                    last
+                } else {
+                    self.at(op, &regions, skip)?
+                };
                 if plans.iter().all(fit) {
                     let largest = largest(&plans);
                     if tried > 0 {
@@ -570,6 +589,8 @@ impl Tiles<'_> {
         regions: &[[u32; 4]],
         skip: usize,
     ) -> Result<Vec<Plan>, PlanError> {
+        #[cfg(test)]
+        PLANNED.set(PLANNED.get() + regions.len());
         let round = Round {
             run: op.id,
             extent: op.output_desc.scaled_extent,
@@ -602,5 +623,60 @@ impl Tiles<'_> {
             });
         }
         Ok(plans)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use apertrust_operations::colorequal::{self, ColorEqual, Settings};
+    use apertrust_plugin::{ImageContext, ImageDesc, Operation};
+
+    use super::*;
+
+    /// A round tile size that cannot fit is ruled out with one plan, not one a tile (issue
+    /// 771): the Colour equalizer's round at darktable's defaults, its guided filter on,
+    /// on a 16 MP photo, within the 345 MiB the fitted pipeline leaves, which its
+    /// whole-image scratch alone passes at every size, then within a 2 GiB budget, where
+    /// the whole stage fits as one tile. The search tried every tile of every size, 5,300
+    /// plans and 29 seconds; now one a size, and the fitting size's.
+    #[test]
+    fn a_round_tile_size_that_cannot_fit_is_ruled_out_with_one_plan() {
+        let (width, height) = (4928, 3264);
+        let image = ImageContext::full(width, height);
+        let source = ImageDesc::rgba(width, height);
+        let params = ColorEqual
+            .schema()
+            .resolve(&colorequal::values(&Settings::default()));
+        let after = [Instance {
+            operation: &ColorEqual,
+            params: params.expect("darktable's defaults"),
+        }];
+        let limits = Limits {
+            budget: 2 << 30,
+            ..Limits::NONE
+        };
+        let whole = pipeline::plan(&after, &image, source, Pipe::Export, &limits).expect("a plan");
+        let tiles = Tiles {
+            after: &after,
+            image: &image,
+            source,
+            scale: 1.0,
+            as_region: None,
+            earlier: &[],
+            kept: 0,
+            left: 345 << 20,
+            limits: &limits,
+        };
+        PLANNED.set(0);
+        let (plans, _) = tiles
+            .plan(operation(&whole, "colorequal"), 0)
+            .expect("a round");
+        assert_eq!(plans.len(), 1, "the whole stage as one tile");
+        let sizes = (8192 / SMALLEST_TILE).ilog2() as usize + 1;
+        assert_eq!(
+            PLANNED.get(),
+            sizes + 1,
+            "one plan a size, then the fitting one"
+        );
     }
 }
