@@ -314,7 +314,7 @@ fn dry_run(preview: &ImportPreview, photos: &ImportPhotos, before: usize, shown:
                 )
             }
             ImportFate::Diverged { at, .. } => format!(
-                "{name}: skipped, there already with an edit of its own as {}",
+                "{name}: skipped if identical, there already with an edit of its own as {}",
                 shown.destination(at)
             ),
             ImportFate::Unreadable { reason } => format!("{name}: skipped, {reason}"),
