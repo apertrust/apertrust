@@ -41,6 +41,12 @@ tracing.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 muda.workspace = true
 
+# With Use the system's title bar, GNOME on Wayland's frame: winit's Adwaita frame without
+# its title, a feature that unifies into eframe's winit (decision 39; docs/dependencies.md).
+# Never `wayland-csd-adwaita`, whose title's font parser `cargo deny` refuses.
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { workspace = true, features = ["wayland-csd-adwaita-notitle"] }
+
 [build-dependencies]
 # The settings generator: the app's settings, generated from the schema (decision 43);
 # and the version and the banner's versions, read in the app's own build (decision 44).

@@ -32,7 +32,8 @@
 //! condensed to the width unless `verbose` is on ([`condense`]), an error kept whole on
 //! [`one_line`], and a line repeated is written once with how often it repeated.
 //! rawler's lens lookups are the raw domain's: Apertrust does not use the lens yet.
-//! arboard's fallback to the X11 clipboard on Wayland shows only with `verbose`.
+//! arboard's fallback to the X11 clipboard on Wayland shows only with `verbose`, and so do
+//! sctk-adwaita's button-layout warnings, of the frame it draws on GNOME's Wayland.
 //! Binaries call [`init`] with their `-d` switches, keeping the [`Logging`] it returns,
 //! then [`starting`] with the [`Program`] that [`program!`](crate::program) names, which
 //! prints the [`banner()`] when a domain is on.
@@ -239,13 +240,17 @@ impl Switches {
 
     /// rawler's lens lookups are the raw domain's lines, not warnings: Apertrust does not
     /// use the lens yet, so they show only with `raw` on. arboard's clipboard fallback is
-    /// detail, shown only with `verbose` ([`is_clipboard_fallback`]).
+    /// detail, shown only with `verbose` ([`is_clipboard_fallback`]), as are sctk-adwaita's
+    /// button-layout warnings ([`is_button_layout`]).
     fn admits_event(&self, event: &Event<'_>) -> bool {
         let normalized = event.normalized_metadata();
         let metadata = normalized.as_ref().unwrap_or_else(|| event.metadata());
         let target = metadata.target();
         if target.starts_with("rawler") {
             return self.domains.contains(&"raw") || !is_lens(&message_of(event));
+        }
+        if target.starts_with("sctk_adwaita") {
+            return self.verbose || !is_button_layout(&message_of(event));
         }
         !target.starts_with("arboard") || self.verbose || !is_clipboard_fallback(&message_of(event))
     }
@@ -522,6 +527,16 @@ fn is_lens(message: &str) -> bool {
     .any(|start| message.starts_with(start))
 }
 
+/// sctk-adwaita's warnings about the desktop's button layout, as it reads it for the frame
+/// it draws with the system's title bar on GNOME's Wayland: GNOME's default layout,
+/// `:minimize,maximize,close`, has an empty side, which it warns of at every start as a
+/// button it does not know. The frame is drawn all the same.
+fn is_button_layout(message: &str) -> bool {
+    ["Ignoring unknown button type", "No valid buttons found"]
+        .iter()
+        .any(|start| message.starts_with(start))
+}
+
 /// arboard's warning that it falls back to the X11 clipboard, on a Wayland compositor
 /// without the data-control protocol, as GNOME's: egui's other clipboard,
 /// smithay-clipboard, carries copy and paste on Wayland, so it reports nothing a person
@@ -781,6 +796,39 @@ mod tests {
         assert!(
             lines[1].starts_with("[smithay_clipboard] warning: Tried to initialize"),
             "{lines:?}"
+        );
+    }
+
+    /// sctk-adwaita's button-layout warnings, as GNOME's default layout brings at every
+    /// start, show only with `verbose`; its other warnings and its errors always.
+    #[test]
+    fn sctk_adwaitas_button_layout_warnings_show_only_with_verbose() {
+        let frame = || {
+            tracing::warn!(target: "sctk_adwaita::buttons", "Ignoring unknown button type: ");
+            tracing::warn!(
+                target: "sctk_adwaita::buttons",
+                "No valid buttons found in configuration"
+            );
+            tracing::warn!(target: "sctk_adwaita", "a frame warning");
+            tracing::error!(target: "sctk_adwaita", "trying to resize the hidden frame.");
+        };
+        let others = [
+            "[sctk_adwaita] warning: a frame warning",
+            "[sctk_adwaita] error: trying to resize the hidden frame.",
+        ];
+        let (lines, _) = written(&[], frame);
+        assert_eq!(lines, others);
+        let (lines, _) = written(&["all"], frame);
+        assert_eq!(lines, others);
+        let (lines, _) = written(&["verbose"], frame);
+        assert_eq!(
+            lines,
+            [
+                "[sctk_adwaita] warning: Ignoring unknown button type: ",
+                "[sctk_adwaita] warning: No valid buttons found in configuration",
+                others[0],
+                others[1],
+            ]
         );
     }
 
