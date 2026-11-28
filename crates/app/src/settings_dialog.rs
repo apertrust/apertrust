@@ -2117,6 +2117,50 @@ mod tests {
         assert!(!alone.holds(Page::Processing, OperatingSystem::Nix));
     }
 
+    /// Use the system's title bar is drawn on Windows and Linux alone (`platforms`;
+    /// decision 39), off, after Menu button in General's Interface group; the Mac, whose
+    /// window keeps its frame, has no row. `--conf` turns
+    /// it on for the run, the row drawn disabled.
+    #[test]
+    fn use_the_system_s_title_bar_shows_on_windows_and_linux_alone() {
+        let name = "Use the system's title bar";
+        let keeper = Keeper::nowhere().0;
+        for os in [
+            OperatingSystem::Windows,
+            OperatingSystem::Mac,
+            OperatingSystem::Nix,
+        ] {
+            let harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, os);
+            let framed = os != OperatingSystem::Mac;
+            let row = harness.query_by_role_and_label(Role::Switch, name);
+            assert_eq!(row.is_some(), framed, "{os:?}");
+            if let Some(row) = row {
+                assert_eq!(row.accesskit_node().toggled(), Some(Toggled::False));
+                assert!(!row.accesskit_node().is_disabled());
+            }
+            let rows: Vec<String> = harness
+                .get_all_by_role(Role::Label)
+                .filter_map(|node| node.accesskit_node().value())
+                .filter(|label| ["Menu button", name, "Toolbar labels"].contains(&label.as_str()))
+                .collect();
+            let expected: &[&str] = if framed {
+                &["Menu button", name, "Toolbar labels"]
+            } else {
+                &["Toolbar labels"]
+            };
+            assert_eq!(rows, expected, "{os:?}");
+        }
+        let row = Settings::new(&keeper, false);
+        let row = row.row("window.system_title_bar").expect("a row");
+        assert_eq!(row.value, Some(false.into()));
+        let conf = ["window.system_title_bar=true".to_owned()];
+        let (keeper, _) = Keeper::open_in(None, &settings::overrides(&conf).expect("read"));
+        let harness = dialog_on(&keeper, Builtin::Dark, Locale::EnGb, OperatingSystem::Nix);
+        let row = harness.get_by_role_and_label(Role::Switch, name);
+        assert_eq!(row.accesskit_node().toggled(), Some(Toggled::True));
+        assert!(row.accesskit_node().is_disabled());
+    }
+
     /// A row is dimmed while the boolean it requires is off, saying so, and enabled again
     /// once it is on: the cache's limit while the cache is unlimited.
     #[test]

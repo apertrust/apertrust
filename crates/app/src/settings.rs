@@ -212,6 +212,9 @@ pub struct Settings {
     pub marker: Marker,
     /// How the Toolbar's menu button is drawn on Windows and Linux, `toolbar.menu_button`.
     pub menu_button: MenuButtonStyle,
+    /// Whether the window has the system's title bar on Windows and Linux,
+    /// `window.system_title_bar` (decision 39); the Mac keeps its frame.
+    pub system_title_bar: bool,
     /// Whether the Toolbar's actions show their words under their icons, `toolbar.labels`
     /// (decision 92).
     pub toolbar_labels: bool,
@@ -289,6 +292,7 @@ impl Default for Settings {
             scale: SCALE.default(),
             marker: SLIDERS_MARKER.default(),
             menu_button: TOOLBAR_MENU_BUTTON.default(),
+            system_title_bar: WINDOW_SYSTEM_TITLE_BAR.default(),
             toolbar_labels: TOOLBAR_LABELS.default(),
             window: Window {
                 size: None,
@@ -360,6 +364,7 @@ impl Settings {
             scale: store.get(&SCALE),
             marker: store.get(&SLIDERS_MARKER),
             menu_button: store.get(&TOOLBAR_MENU_BUTTON),
+            system_title_bar: store.get(&WINDOW_SYSTEM_TITLE_BAR),
             toolbar_labels: store.get(&TOOLBAR_LABELS),
             window: Window {
                 size: store.kept(&WINDOW_SIZE),
@@ -450,6 +455,9 @@ impl Settings {
         }
         if s.menu_button != was.menu_button {
             store.set(&TOOLBAR_MENU_BUTTON, s.menu_button);
+        }
+        if s.system_title_bar != was.system_title_bar {
+            store.set(&WINDOW_SYSTEM_TITLE_BAR, s.system_title_bar);
         }
         if s.toolbar_labels != was.toolbar_labels {
             store.set(&TOOLBAR_LABELS, s.toolbar_labels);
@@ -1477,6 +1485,7 @@ mod tests {
             scale: 1.3,
             marker: Marker::Triangle,
             menu_button: MenuButtonStyle::Menu,
+            system_title_bar: true,
             toolbar_labels: false,
             window: Window {
                 size: Some([1280.0, 800.0]),
@@ -1683,6 +1692,7 @@ mod tests {
                 scale: 1.0,
                 marker: Marker::Square,
                 menu_button: MenuButtonStyle::Icon,
+                system_title_bar: false,
                 // A new user's Toolbar shows its labels (decision 92).
                 toolbar_labels: true,
                 window: Window {
@@ -2001,6 +2011,7 @@ maximized = true
 position = [-80, 50]
 scale_factor = 2.0
 size = [1280, 800]
+system_title_bar = true
 ";
         assert_eq!(folder.text(), expected);
         // Read back, and written afresh: the same bytes.

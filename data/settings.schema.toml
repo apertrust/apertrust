@@ -121,6 +121,19 @@ group = "interface"
 platforms = ["windows", "linux"]
 control = "segmented"
 
+# Whether the window has the system's title bar and frame on Windows and Linux, in place of
+# the Toolbar as its title bar with the caption buttons the app draws (decision 39): for
+# tiling window managers, desktops whose own frame a person prefers, and a drawn frame
+# that fails. The Mac keeps its frame whatever it says.
+[window.system_title_bar]
+owner = "app"
+kind = "boolean"
+default = false
+applies = "at-once"
+page = "general"
+group = "interface"
+platforms = ["windows", "linux"]
+
 # Whether the Toolbar's actions show their words under their icons (decision 92, Toolbar
 # Labels): one setting for the app, never a workspace's. The labels are the first thing
 # the Toolbar folds as it narrows.
