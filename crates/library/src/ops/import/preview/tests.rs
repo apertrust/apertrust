@@ -310,6 +310,31 @@ fn a_name_taken_is_continued_with_01() {
     assert_eq!((counts.copied, counts.renamed), (5, 4));
 }
 
+/// Two photos of one name and size in two folders of the card: the second is to be skipped
+/// if identical at the name the first takes, where the copy finds the first's copy, its
+/// bytes counted as those of one found there.
+#[test]
+fn a_photo_of_the_name_and_size_of_one_before_it_is_there() {
+    let setup = Setup::new();
+    fs::create_dir_all(setup.dcim().join("101CANON")).unwrap();
+    let mut files = vec![setup.raw("IMG_0001.CR2", b"first", 14)];
+    fs::write(setup.dcim().join("101CANON/IMG_0001.CR2"), b"FIRST").unwrap();
+    files.push(PathBuf::from("101CANON/IMG_0001.CR2"));
+    let preview = setup.preview(&files, &setup.settings(""), u64::MAX);
+    let at = setup.apertrust().join("IMG_0001.CR2");
+    assert_eq!(
+        preview.photos[0].fate,
+        ImportFate::Copy {
+            to: at.clone(),
+            renamed: false
+        }
+    );
+    assert_eq!(preview.photos[1].fate, ImportFate::There { at });
+    let counts = preview.counts();
+    assert_eq!((counts.copied, counts.there), (1, 1));
+    assert_eq!(preview.size, 5 + 5);
+}
+
 /// A file of a photo's size at its destination, under its name or a `_01` one, is to be
 /// skipped if identical and left out of the count of photos copied again, its bytes still
 /// in the size, since the copy writes it under `_01` where the files differ; a photo whose

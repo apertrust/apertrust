@@ -21,7 +21,7 @@
 //! source or the destination: a folder that is not there is asked about through the
 //! deepest folder of its path that is.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -327,6 +327,7 @@ pub(crate) fn preview_in(
         ..ImportPreview::default()
     };
     let mut claimed = HashSet::new();
+    let mut claimed_sizes = HashMap::new();
     let mut folders: BTreeMap<PathBuf, usize> = BTreeMap::new();
     let mut order = Vec::new();
     let mut copied = Vec::new();
@@ -338,6 +339,7 @@ pub(crate) fn preview_in(
             &photos.folder.join(file),
             &into,
             &mut claimed,
+            &mut claimed_sizes,
             &mut preview.size,
         );
         if !folders.contains_key(&into) {
@@ -464,10 +466,18 @@ pub(crate) fn shots(
 }
 
 /// What the copy would do with the photo at `path` going into `into`, `claimed` holding the
-/// names the photos before it take, which it adds its own to, and `size` the bytes to copy,
-/// which it adds its own to, whether a copy there is found or not: a copy under the first
-/// name free, or its copy there, found by a file of its size on the way.
-fn fate(path: &Path, into: &Path, claimed: &mut HashSet<PathBuf>, size: &mut u64) -> ImportFate {
+/// names the photos before it take and `claimed_sizes` their main files' sizes, which it
+/// adds its own to, and `size` the bytes to copy, which it adds its own to, whether a copy
+/// there is found or not: a copy under the first name free, or its copy there, found by a
+/// file of its size on the way, or by a photo of its size before it claiming the name, whose
+/// copy the job finds there.
+fn fate(
+    path: &Path,
+    into: &Path,
+    claimed: &mut HashSet<PathBuf>,
+    claimed_sizes: &mut HashMap<PathBuf, u64>,
+    size: &mut u64,
+) -> ImportFate {
     let unreadable = |error: io::Error| ImportFate::Unreadable {
         reason: format!("cannot read {}: {error}", path.display()),
     };
@@ -484,7 +494,12 @@ fn fate(path: &Path, into: &Path, claimed: &mut HashSet<PathBuf>, size: &mut u64
         Ok(raw) => raw,
         Err(error) => return unreadable(error),
     };
-    let mut same = |there: &Path| Ok(fs::metadata(there).is_ok_and(|meta| meta.len() == raw));
+    let mut same = |there: &Path| {
+        Ok(match claimed_sizes.get(there) {
+            Some(&claimed) => claimed == raw,
+            None => fs::metadata(there).is_ok_and(|meta| meta.len() == raw),
+        })
+    };
     let place = match plan::place(into, &source.main, claimed, &mut same) {
         Ok(place) => place,
         Err(error) => {
@@ -504,6 +519,7 @@ fn fate(path: &Path, into: &Path, claimed: &mut HashSet<PathBuf>, size: &mut u64
         Place::Free(name) => {
             *size += raw + companions(&source, &source.companions);
             claimed.extend(plan::names(&name).map(|name| into.join(name)));
+            claimed_sizes.insert(into.join(&name), raw);
             ImportFate::Copy {
                 renamed: name != source.main,
                 to: into.join(name),
