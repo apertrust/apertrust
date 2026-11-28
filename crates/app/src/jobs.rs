@@ -133,6 +133,12 @@ pub struct Mirror {
     /// The export added last, whichever client sent it: the one whose failure the Export
     /// tool shows, until the next export is added or its row goes.
     last_export: Option<JobId>,
+    /// The imports this app started, by their jobs, with their commands' numbers, which
+    /// their `Imported` events carry.
+    imports: Vec<(JobId, u64)>,
+    /// The commands of the imports ended since the app last took them
+    /// ([`Mirror::imports_ended`]), however they ended.
+    imports_ended: Vec<u64>,
 }
 
 /// What a button of the jobs window asks the app to do.
@@ -163,7 +169,23 @@ impl Mirror {
             home,
             exports_ended: 0,
             last_export: None,
+            imports: Vec::new(),
+            imports_ended: Vec::new(),
         }
+    }
+
+    /// Whether `job` is an import, which Try again starts again.
+    pub fn is_import(&self, job: JobId) -> bool {
+        self.rows
+            .iter()
+            .any(|row| row.id == job && row.kind == "import")
+    }
+
+    /// The numbers of the commands of the imports this app started that have ended since
+    /// the last call, finished, failed or cancelled: the app opens their destinations
+    /// where a photo landed (decision 85).
+    pub fn imports_ended(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.imports_ended)
     }
 
     /// How many exports have ended, which makes the Export tool's preview stale.
@@ -234,6 +256,10 @@ impl Mirror {
                 if *kind == "export" {
                     self.last_export = Some(*job);
                 }
+                // An import this app started, its own or Try again's.
+                if let (true, Some(number)) = (*kind == "import", command) {
+                    self.imports.push((*job, number));
+                }
                 // A row under this id is the same job's, or a retry's that reuses it; the
                 // job it tries again gives it its place.
                 self.rows
@@ -292,6 +318,10 @@ impl Mirror {
                 at,
                 offers,
             } => {
+                if let Some(at) = self.imports.iter().position(|(id, _)| id == job) {
+                    let (_, number) = self.imports.remove(at);
+                    self.imports_ended.push(number);
+                }
                 if *state == State::Discarded {
                     // Dropped unrun: there is nothing to show of it.
                     let before = self.rows.len();

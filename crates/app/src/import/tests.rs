@@ -1899,3 +1899,58 @@ fn a_card_opens_with_the_focus_in_import_name_unless_it_is_disabled() {
     let harness = bench_of(Some(card()), tool, Builtin::Dark, Locale::EnGb);
     assert!(!field(&harness, "Import name").is_focused());
 }
+
+// Starting the import.
+
+/// The `Import` commands the bench sent.
+fn imports(harness: &Harness<'static, Bench>) -> Vec<(ImportPhotos, ImportSettings)> {
+    (harness.state().sent.iter())
+        .filter_map(|command| match command {
+            Command::Library(LibraryCommand::Import { photos, settings }) => {
+                Some((photos.clone(), settings.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Import pressed sends `Import` with the photos checked and the settings, once, and
+/// closes the sheet.
+#[test]
+fn import_sends_the_checked_photos_with_the_settings_and_closes() {
+    let mut harness = bench(Some(card()));
+    ready(&mut harness);
+    primary(&harness, "Import 30 photos").click();
+    harness.run();
+    let sent = imports(&harness);
+    assert_eq!(sent.len(), 1);
+    let (photos, sent_settings) = &sent[0];
+    assert_eq!(photos.files.len(), 30);
+    assert_eq!(photos.folder, PathBuf::from("/Volumes/EOS_DIGITAL/DCIM"));
+    assert_eq!(sent_settings, &settings());
+    assert!(harness.state().closed);
+    // A second press as it closes is ignored.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Enter);
+    harness.run();
+    assert_eq!(imports(&harness).len(), 1);
+}
+
+/// Return in Import name commits it and presses Import, a card's import being the name
+/// typed and Return; Return in Subfolder commits the field and presses nothing.
+#[test]
+fn return_in_import_name_presses_import_and_in_subfolder_it_does_not() {
+    let mut harness = bench(Some(card()));
+    ready(&mut harness);
+    field(&harness, "Subfolder").click();
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert!(imports(&harness).is_empty());
+    assert!(!harness.state().closed);
+    field(&harness, "Import name").click();
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    assert_eq!(imports(&harness).len(), 1);
+    assert!(harness.state().closed);
+}

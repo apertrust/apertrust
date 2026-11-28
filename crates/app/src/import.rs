@@ -641,6 +641,8 @@ pub struct ImportSheet {
     preview: Option<ImportPreview>,
     /// The number of the `PreviewImport` the preview held answers.
     previewed: Option<u64>,
+    /// The `Import` it sent, by its number: a second press is ignored as it closes.
+    started: Option<u64>,
 }
 
 impl ImportSheet {
@@ -671,7 +673,24 @@ impl ImportSheet {
             asked: None,
             previewed: None,
             preview: None,
+            started: None,
         }
+    }
+
+    /// Sends `Import` with the photos checked and the settings, once: the sheet then
+    /// closes. Returns its number, where it sent it now.
+    fn start(&mut self, send: &mut SendCommand<'_>) -> Option<u64> {
+        if self.started.is_some() {
+            return None;
+        }
+        let photos = self.listing.photos().filter(|p| !p.files.is_empty())?;
+        let settings = self.tool.settings.clone();
+        let number = send(Command::Library(LibraryCommand::Import {
+            photos,
+            settings,
+        }));
+        self.started = Some(number);
+        Some(number)
     }
 
     /// The settings the sheet lists and checks with, which the Import tool changes.
@@ -1004,7 +1023,7 @@ pub fn footer(
 }
 
 /// The deepest folder the `folders` share, none where they share none.
-fn common<'a>(mut folders: impl Iterator<Item = &'a Path>) -> Option<PathBuf> {
+pub fn common<'a>(mut folders: impl Iterator<Item = &'a Path>) -> Option<PathBuf> {
     let mut shared = folders.next()?.to_owned();
     for folder in folders {
         while !folder.starts_with(&shared) {
@@ -1233,6 +1252,9 @@ impl sheet::Content for ImportSheet {
                 self.set_source(source);
             }
         }
+        // Import pressed: the copy starts as a job and the sheet closes (Keep open is
+        // 20a2's).
+        let started = if out.primary { self.start(send) } else { None };
         let opened = self.listing.opened();
         if let Some(gesture) = out.gesture {
             self.listing.apply(gesture);
@@ -1260,7 +1282,8 @@ impl sheet::Content for ImportSheet {
             announce(ui, said);
         }
         Shown {
-            closed: out.close,
+            closed: out.close || started.is_some(),
+            started,
             column: out.column,
             settings: self.tool.take_written(),
             groups: self.tool.take_toggled(),

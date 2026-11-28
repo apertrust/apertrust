@@ -128,8 +128,8 @@ A folder open, the main way in; built first, and partly built.
 - The listing and the sidecars, read 16 at a time, make an index in memory, gone when the folder closes ([Listing and the index](#listing-and-the-index)); with Phase 5 it is saved per folder tree ([The saved index](#the-saved-index)).
 - Collections, the Photos tab's first tool, shows the open folder's tree in Folders, and from Phase 3 the folder's own Albums and Smart albums ([In the window](#in-the-window)). Filters filters the open folder from its index (planned, decision 73).
 - Its keyword list is the keywords its photos hold; their properties (synonyms, private, category) and Recent are in the user data folder's `keywords.toml`, shared by every folder and Library (planned, decision 73).
-- Import… (planned, decision 85) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it ([Import in folder mode](#import-in-folder-mode)).
-- The CLI works on folders this way too: `library scan` built, `import` planned ([The CLI](#the-cli)).
+- Import… (decision 85) copies photos from a card or another folder into a destination named with darktable's patterns, then opens it: in 20a1 as the copy ends, where at least one photo landed ([Import in folder mode](#import-in-folder-mode)).
+- The CLI works on folders this way too: `library scan` and `import` ([The CLI](#the-cli)).
 
 ### Images other than raws
 

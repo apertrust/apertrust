@@ -1353,3 +1353,72 @@ fn the_window_at_the_narrowest_in_the_pseudo_locale() {
         ],
     );
 }
+
+/// An import's outcome, as the engine words it (`job-import-*`).
+fn import_outcome(id: &str, copied: f64, skipped: f64, total: f64) -> JobMessage {
+    JobMessage::new(id)
+        .number("copied", copied)
+        .number("skipped", skipped)
+        .number("failed", 0.0)
+        .number("total", total)
+}
+
+/// An import of 214 photos from EOS_DIGITAL, its rows as the window draws them (decision
+/// 85): running, the photo under way and the destination; finished; stopped by the card
+/// going, with Try again; and cancelled.
+fn imports() -> Vec<Job> {
+    let title = JobMessage::new("job-import").number("count", 214.0);
+    let row = |id: u64, phase: JobPhase, done: u64| {
+        Job::new(id, phase, title.clone())
+            .kind("import")
+            .progress(done, Some(214))
+            .destination("~/Pictures/Apertrust/20261115_Wedding")
+    };
+    vec![
+        row(1, JobPhase::Finished, 214)
+            .outcome(import_outcome("job-import-finished", 212.0, 2.0, 214.0))
+            .ended_at(two()),
+        row(2, JobPhase::Failed, 120)
+            .outcome(import_outcome(
+                "job-import-failed-outcome",
+                120.0,
+                0.0,
+                214.0,
+            ))
+            .failure(JobFailure {
+                item: "DSCF1121.RAF".to_owned(),
+                file: String::new(),
+                cause: "the folder, or its disk, is no longer there".to_owned(),
+            })
+            .retry(true),
+        row(3, JobPhase::Cancelled, 120).outcome(import_outcome(
+            "job-import-cancelled",
+            120.0,
+            0.0,
+            214.0,
+        )),
+        row(4, JobPhase::Running, 120)
+            .cancellable(true)
+            .detail(JobMessage::new("job-import-now").text("photo", "DSCF1120.RAF")),
+    ]
+}
+
+#[test]
+fn an_import_s_rows() {
+    snapshot("jobs-window-import", Locale::EnGb, 400.0, imports());
+}
+
+#[test]
+fn an_import_s_rows_in_american_english() {
+    snapshot("jobs-window-import-en-us", Locale::EnUs, 400.0, imports());
+}
+
+#[test]
+fn an_import_s_rows_in_ukrainian() {
+    snapshot("jobs-window-import-uk", Locale::Uk, 400.0, imports());
+}
+
+#[test]
+fn an_import_s_rows_in_polish() {
+    snapshot("jobs-window-import-pl", Locale::Pl, 400.0, imports());
+}

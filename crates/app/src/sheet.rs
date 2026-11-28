@@ -61,6 +61,9 @@ pub struct Shown {
     /// starting at `folder_start` where it is given and there, else its nearest folder.
     pub choose_folder: bool,
     pub folder_start: Option<PathBuf>,
+    /// The job it started this frame, by its command's number, as Import's primary button
+    /// sends `Import`: quitting waits for it, and its destination opens as it ends.
+    pub started: Option<u64>,
 }
 
 /// What the shell gives a sheet's content each frame: what the session reported and the

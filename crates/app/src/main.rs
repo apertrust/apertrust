@@ -1526,6 +1526,9 @@ struct App {
     /// The Export tool's folder button, while whether its path is a folder is asked of the
     /// disk before the folder dialog opens.
     export_folder: export::folder::Looking,
+    /// An import's destination opening and the subfolder to choose once it has, over
+    /// several subfolders ([`destination_opened`]).
+    choose_after: Option<(PathBuf, PathBuf)>,
     /// Where the Import tool's folder chooser starts, as the disk says ([`Shell::show_sheet`]).
     import_folder: export::folder::Looking,
     /// The photo Discard History was asked for, until its question is answered.
@@ -2008,6 +2011,10 @@ struct Shell {
     import: settings::Import,
     /// Those `--conf` gives for this run, by key in full, drawn disabled.
     import_given: Vec<String>,
+    /// The photos each import this app started has landed so far, by its command's
+    /// number, its own or Try again's, the copies' paths: where it ends with one, its
+    /// destination opens (decision 85).
+    landed: HashMap<u64, Vec<PathBuf>>,
     /// What a sheet closed since the last frame sends as it goes, sent with the next.
     sheet_left: Vec<Command>,
     /// Where the customise menu open adds an item, by its place in the draft.
@@ -2285,6 +2292,7 @@ impl Shell {
             sheet_column: settings.sheet_column,
             import: settings.import.clone(),
             import_given: Vec::new(),
+            landed: HashMap::new(),
             sheet_left: Vec::new(),
             adding_at: 0,
             focus_tab: None,
@@ -4339,18 +4347,19 @@ impl Shell {
     /// `mirror`, keeping its column's width, the settings its tool writes and its groups'
     /// open state, and where it asks for the system's folder chooser, and closing it as it
     /// asks; what it, or a sheet closed since the last frame, asks of the session goes
-    /// through `send`.
+    /// through `send`. Returns the job it started, by its command's number.
     fn show_sheet(
         &mut self,
         ctx: &egui::Context,
         toolbar: egui::Rect,
         mirror: &Mirror,
         send: &mut SendCommand<'_>,
-    ) {
+    ) -> Option<u64> {
         let place = sheet::Place {
             column: self.sheet_column,
             at_start: self.panel_position.at_start(),
         };
+        let mut started = None;
         if self.sheet.is_some() {
             let settings = self.to_settings(ctx);
             let given = sheet::Given {
@@ -4376,6 +4385,10 @@ impl Shell {
                 let start = shown.folder_start.as_deref().map(Path::display);
                 self.import_folder = Some(start.map(|s| s.to_string()).unwrap_or_default());
             }
+            started = shown.started;
+            if let Some(number) = started {
+                self.landed.insert(number, Vec::new());
+            }
             if shown.closed {
                 self.close_sheet();
             }
@@ -4383,6 +4396,7 @@ impl Shell {
         for command in self.sheet_left.drain(..) {
             send(command);
         }
+        started
     }
 
     /// The scrim over the window below the Toolbar, `toolbar`, while customising (decision
@@ -5491,6 +5505,7 @@ impl App {
             export_previews: export::Previews::default(),
             metadata,
             export_folder: export::folder::Looking::default(),
+            choose_after: None,
             import_folder: export::folder::Looking::default(),
             discarding: None,
             preset_asked: None,
@@ -5733,9 +5748,10 @@ impl App {
 
     /// Sends an export job, which the jobs window follows by its events, and quitting
     /// waits for until it is added.
-    fn send_job(&mut self, command: Command) {
+    fn send_job(&mut self, command: Command) -> u64 {
         let number = self.session.send(command);
         self.mirror.jobs.starting(number);
+        number
     }
 
     /// Sends the export of the selected photos, else the photo open, with the settings the
@@ -5927,7 +5943,12 @@ impl App {
                 false
             }
             jobs::Do::Start(command) => {
-                self.send_job(command);
+                // Try again on an import: its copies are kept by its own number too.
+                let import = lands(&command, &self.mirror.jobs);
+                let number = self.send_job(command);
+                if import {
+                    self.shell.landed.insert(number, Vec::new());
+                }
                 true
             }
             jobs::Do::Reveal(what) => {
@@ -5990,6 +6011,26 @@ impl App {
                 self.alerts.ask(&mut self.dialogs, purpose, &request, ctx);
             }
         }
+    }
+
+    /// Opens the destination of an import that ended having landed the copies `landed`
+    /// ([`open_destination`]), the fields' drafts sent first; over several subfolders, the
+    /// first is chosen once the root has opened ([`destination_opened`]).
+    fn open_destination(&mut self, landed: &[PathBuf], ctx: &egui::Context) {
+        if destination(landed).is_none() {
+            return;
+        }
+        self.send_drafts(ctx);
+        let (session, before) = (&self.session, self.shell.zoom);
+        self.choose_after = open_destination(
+            landed,
+            self.shell.recents.last(),
+            &mut self.remembered,
+            &mut self.shell.zoom,
+            &mut self.mirror,
+            &mut |command| session.send(command),
+        );
+        self.shell.fitted_from(before);
     }
 
     /// Opens the folder at `path` in the library, its photos going into the Browser, a way
@@ -6074,11 +6115,26 @@ impl App {
                     }
                     Reaction::FolderOpened(path) => self.shell.remember_folder(path),
                     // Import's, for the sheet open, which keeps its own commands'.
-                    Reaction::Import(event) => {
-                        if let Some(sheet) = self.shell.sheet.as_deref_mut() {
-                            sheet.receive(&event);
+                    // What an import this app started landed, kept until it ends.
+                    Reaction::Import(event) => match *event {
+                        apertrust_engine::session::LibraryEvent::Imported { open, photos } => {
+                            if let Some(landed) = self.shell.landed.get_mut(&open) {
+                                landed.extend(photos.into_iter().filter_map(|photo| {
+                                    match photo.result {
+                                        apertrust_engine::session::library::ImportResult::Copied {
+                                            copy,
+                                        } => Some(copy),
+                                        _ => None,
+                                    }
+                                }));
+                            }
                         }
-                    }
+                        event => {
+                            if let Some(sheet) = self.shell.sheet.as_deref_mut() {
+                                sheet.receive(&event);
+                            }
+                        }
+                    },
                     // Settings a pick measured, kept as the user's own.
                     // A reference's L comes with the photo it was measured on (decision 88).
                     // The photo is the open one's: a reading of an earlier photo is stale
@@ -6148,6 +6204,25 @@ impl App {
         selection::open_first(&mut self.opening_first, &mut self.mirror, &mut |command| {
             session.send(command)
         });
+        // An import that ended having landed a photo opens its destination, choosing its
+        // first subfolder once the root has opened ([`choose_first_day`]).
+        if let Some(first) = destination_opened(&mut self.choose_after, &self.mirror) {
+            let (session, before) = (&self.session, self.shell.zoom);
+            choose_first_day(
+                first,
+                self.shell.recents.last(),
+                &mut self.remembered,
+                &mut self.shell.zoom,
+                &mut self.mirror,
+                &mut |command| session.send(command),
+            );
+            self.shell.fitted_from(before);
+        }
+        for number in self.mirror.jobs.imports_ended() {
+            if let Some(landed) = self.shell.landed.remove(&number) {
+                self.open_destination(&landed, ctx);
+            }
+        }
         // The spinner and the window show the jobs as they stand, in the language now.
         self.jobs_view = self.mirror.jobs.view(&translator(ctx));
         let place = self.shell.jobs_window;
@@ -9669,13 +9744,17 @@ impl eframe::App for App {
         // covers it.
         self.shell.scrim(&ctx, toolbar.response.rect);
         let (session, mirror) = (&self.session, &self.mirror);
-        (self.shell).show_sheet(&ctx, toolbar.response.rect, mirror, &mut |command| {
-            session.send(command)
-        });
+        let started =
+            (self.shell).show_sheet(&ctx, toolbar.response.rect, mirror, &mut |command| {
+                session.send(command)
+            });
         // The chooser opens a later frame, once the disk has said what of Folder is there.
         if let Some(start) = self.shell.import_folder.take() {
             self.import_folder
                 .start(start, self.places.home.clone(), &ctx);
+        }
+        if let Some(number) = started {
+            self.mirror.jobs.starting(number);
         }
         self.shell.about.show(&ctx);
         run.extend(self.shell.popups(&ctx));
@@ -10242,6 +10321,86 @@ fn change_folder(
     if !stays {
         fit_view(zoom, send);
     }
+}
+
+/// Opens the destination of an import that ended having landed the copies `landed`,
+/// whether it finished, stopped or was cancelled, as Collections opens a folder: a way in
+/// and a recent, the photo open closed, which saves its edit, and none opened, whatever was
+/// last active there. Returns the root and the subfolder to choose once it has opened,
+/// over several subfolders, the folders of several days taken; nothing opens where none
+/// landed.
+fn open_destination(
+    landed: &[PathBuf],
+    last: Option<&recents::Last>,
+    remembered: &mut Remembered,
+    zoom: &mut zoom::Zoomed,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) -> Option<(PathBuf, PathBuf)> {
+    let (root, first) = destination(landed)?;
+    close_photo(mirror, send);
+    let way_in = FolderChange::WayIn;
+    change_folder(root.clone(), way_in, last, remembered, zoom, mirror, send);
+    // The new photos' folder: no photo opens there, even one active there this run.
+    remembered.waiting = None;
+    first.map(|first| (root, first))
+}
+
+/// Whether `command`, a job the jobs window starts, lands photos whose destination opens
+/// as it ends: Try again on an import.
+fn lands(command: &Command, jobs: &jobs::Mirror) -> bool {
+    matches!(command, Command::RetryJob { job } if jobs.is_import(*job))
+}
+
+/// The subfolder to choose now that the destination `pending` waits for has opened, its
+/// root a way in, with its `Opened` and recent of its own; none while it opens, and none
+/// for good where something else is open or its opening failed.
+fn destination_opened(
+    pending: &mut Option<(PathBuf, PathBuf)>,
+    mirror: &Mirror,
+) -> Option<PathBuf> {
+    let (root, _) = pending.as_ref()?;
+    match &mirror.folder.folder {
+        folder::Folder::Opening { path } if path == root => None,
+        folder::Folder::Open(listing) if listing.path == *root => {
+            pending.take().map(|(_, first)| first)
+        }
+        _ => {
+            *pending = None;
+            None
+        }
+    }
+}
+
+/// Chooses `first`, the first day of an import's destination now open
+/// ([`destination_opened`]), as Collections' tree chooses a folder, where no photo opens
+/// either, even one active there this run.
+fn choose_first_day(
+    first: PathBuf,
+    last: Option<&recents::Last>,
+    remembered: &mut Remembered,
+    zoom: &mut zoom::Zoomed,
+    mirror: &mut Mirror,
+    send: &mut SendCommand<'_>,
+) {
+    let choose = FolderChange::Choose;
+    change_folder(first, choose, last, remembered, zoom, mirror, send);
+    remembered.waiting = None;
+}
+
+/// The folder an import opens as it ends having landed the copies `landed`, and the folder
+/// its tree then chooses: their one folder, or over several, their deepest common folder
+/// with the first of them chosen. None where none landed.
+fn destination(landed: &[PathBuf]) -> Option<(PathBuf, Option<PathBuf>)> {
+    let mut folders: Vec<&Path> = landed.iter().filter_map(|copy| copy.parent()).collect();
+    folders.sort_unstable();
+    folders.dedup();
+    let common = import::common(folders.iter().copied())?;
+    let chosen = match folders.as_slice() {
+        [first, _, ..] if *first != common => Some(first.to_path_buf()),
+        _ => None,
+    };
+    Some((common, chosen))
 }
 
 /// Whether each of `paths`, Open Recent's as a menu shows them, can be opened, by place:
@@ -32090,6 +32249,127 @@ mod tests {
             pressed: std::rc::Rc::default(),
         };
         assert!(!harness.state_mut().shell.open_sheet(Box::new(second)));
+    }
+
+    /// Decision 85: an import's destination opens as a way in: the photo open closed first,
+    /// which saves its edit, the root opened, a recent once its `Opened` comes, and over two
+    /// days taken the first chosen only then, so the root's open is neither cancelled nor
+    /// filtered; no photo last active there reopens. A cancel that landed one photo opens
+    /// its folder; an import that landed none opens nothing and sends nothing.
+    #[test]
+    fn an_import_s_destination_opens_as_a_way_in_with_the_first_day_chosen_once_open() {
+        let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
+        let base = PathBuf::from("/photos/Apertrust");
+        let landed = [
+            base.join("20261116_Trip/B.RAF"),
+            base.join("20261115_Trip/A.RAF"),
+        ];
+        let before = sent.len();
+        let mut pending = open_destination(
+            &landed,
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        let open_root = Command::Library(LibraryCommand::Open(Source::Folder(base.clone())));
+        assert_eq!(sent[before..before + 2], [Command::Close, open_root]);
+        let first = base.join("20261115_Trip");
+        assert_eq!(pending, Some((base.clone(), first.clone())));
+        assert!(remembered.waiting.is_none());
+        // Nothing is chosen while the root opens.
+        assert_eq!(destination_opened(&mut pending, &m), None);
+        let opened = m.apply(folder_opened(before as u64 + 2, &base));
+        assert!(
+            opened.contains(&Reaction::FolderOpened(base.clone())),
+            "{opened:?}"
+        );
+        assert_eq!(destination_opened(&mut pending, &m), Some(first.clone()));
+        assert_eq!(pending, None);
+        // The first day chosen opens no photo once listed, even one active there this run.
+        let photo = first.join("A.RAF");
+        remembered.photos.insert(first.clone(), photo.clone());
+        let chosen = sent.len() as u64 + 1;
+        choose_first_day(
+            first.clone(),
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        let choose = Command::Library(LibraryCommand::Open(Source::Folder(first.clone())));
+        assert_eq!(sent[chosen as usize - 1], choose);
+        m.apply(folder_opened(chosen, &first));
+        m.apply(listed(chosen, &["A.RAF"], true));
+        remembered.restore(&mut m, &mut sender(&mut sent));
+        assert!(!sent.contains(&Command::Open(photo)), "{sent:?}");
+
+        // A cancel after one photo: its folder opens, nothing to choose after.
+        let (mut m, mut sent, mut remembered, _) = at_with_its_photo();
+        let wedding = base.join("20261115_Wedding");
+        let pending = open_destination(
+            &[wedding.join("A.RAF")],
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!(pending, None);
+        let open = Command::Library(LibraryCommand::Open(Source::Folder(wedding)));
+        assert!(sent.contains(&open));
+
+        // Nothing landed: the folder open stays, nothing sent.
+        let (mut m, mut sent, mut remembered, at) = at_with_its_photo();
+        let before = sent.len();
+        let none = open_destination(
+            &[],
+            None,
+            &mut remembered,
+            &mut any_zoom(),
+            &mut m,
+            &mut sender(&mut sent),
+        );
+        assert_eq!((none, sent.len()), (None, before));
+        assert_eq!(m.folder.root(), Some(at.as_path()));
+    }
+
+    /// Decision 85: Try again on an import lands photos whose destination opens, its copies
+    /// kept by its own number; Try again on an export does not.
+    #[test]
+    fn try_again_on_an_import_keeps_its_copies() {
+        let ids = jobs::tests::ids(2);
+        let mut jobs = jobs::Mirror::new(None);
+        jobs.apply(&jobs::tests::import_added(ids[0], 3, 7, None));
+        let export = apertrust_base::jobs::Queue::UserExport;
+        jobs.apply(&jobs::tests::added(ids[1], export, Some(8)));
+        assert!(lands(&Command::RetryJob { job: ids[0] }, &jobs));
+        assert!(!lands(&Command::RetryJob { job: ids[1] }, &jobs));
+        assert!(!lands(&Command::Close, &jobs));
+    }
+
+    /// Decision 85: an import that ended having landed photos opens their folder; over two
+    /// days taken, their deepest common folder with the first day's chosen; one that
+    /// landed nothing opens nothing.
+    #[test]
+    fn an_import_opens_its_destination_where_a_photo_landed() {
+        let wedding = Path::new("/Users/anna/Pictures/Apertrust/20261115_Wedding");
+        let landed = [wedding.join("DSCF1011.RAF"), wedding.join("DSCF1012.RAF")];
+        assert_eq!(destination(&landed), Some((wedding.to_owned(), None)));
+        // A cancel after one photo landed opens it too.
+        assert_eq!(destination(&landed[..1]), Some((wedding.to_owned(), None)));
+        let base = Path::new("/Users/anna/Pictures/Apertrust");
+        let days = [
+            base.join("20261116_Trip/B.RAF"),
+            base.join("20261115_Trip/A.RAF"),
+        ];
+        assert_eq!(
+            destination(&days),
+            Some((base.to_owned(), Some(base.join("20261115_Trip"))))
+        );
+        assert_eq!(destination(&[]), None);
     }
 
     /// File › Import…'s item in the menu `shell` builds in `state`.
