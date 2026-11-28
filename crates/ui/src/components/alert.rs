@@ -40,9 +40,9 @@ pub const WIDTH: f32 = 360.0;
 /// Where the default button sits among the others.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonOrder {
-    /// Last, so the others come before it: the Mac's and the GNOME and KDE alerts'.
+    /// Last, so the others come before it: the Mac's and GNOME's.
     DefaultLast,
-    /// First, the others after it as the request lists them: Windows'.
+    /// First, the others after it as the request lists them: Windows' and KDE's.
     DefaultFirst,
 }
 

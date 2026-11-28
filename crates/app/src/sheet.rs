@@ -94,10 +94,10 @@ pub fn show(
         .inner
 }
 
-/// The order of a sheet's footer buttons where Linux's desktop is `desktop`, as
-/// `XDG_CURRENT_DESKTOP` names it, none elsewhere: on KDE the primary first, as on Windows
-/// (`docs/gui.md`, The footer); on every other desktop the platform's, GNOME's on Linux,
-/// the primary last.
+/// The order of a sheet's footer buttons, and of an alert's the app draws, where Linux's
+/// desktop is `desktop`, as `XDG_CURRENT_DESKTOP` names it, none elsewhere: on KDE the
+/// primary or default first, as on Windows (`docs/gui.md`, The footer); on every other
+/// desktop the platform's, GNOME's on Linux, last.
 pub fn order(desktop: Option<&str>) -> ButtonOrder {
     if desktop.is_some_and(|desktop| desktop.contains("KDE")) {
         ButtonOrder::DefaultFirst
