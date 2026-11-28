@@ -944,6 +944,11 @@ impl AppDialogs {
         self.host.ask(request, main)
     }
 
+    /// Whether an alert the host draws is open or asked ([`Dialogs::alert_shown`]).
+    pub fn alert_shown(&self) -> bool {
+        self.host.alert_shown()
+    }
+
     /// The answer to the alert asked, once, when it has gone.
     pub fn answer(&mut self) -> Option<Answer> {
         self.host.answer()
