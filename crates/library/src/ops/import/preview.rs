@@ -398,7 +398,7 @@ fn pattern_problem((row, error): (Row, PatternError)) -> ImportProblem {
 }
 
 /// Each photo's [`Shot`] for the patterns, in the order of `files`: its name alone where no
-/// pattern reads the photo, else its EXIF's capture time, make and model, [`READERS`] at a
+/// pattern reads its capture time or camera ([`Patterns::reads_exif`]), else its EXIF's capture time, make and model, [`READERS`] at a
 /// time, its file's modified time where its EXIF holds no time, the import's where it has
 /// neither ([`destination::taken`]); a cloud file not on the disk's EXIF never read. `None`
 /// once `cancel` answers true.
@@ -412,9 +412,7 @@ pub(crate) fn shots(
     let name = |file: &Path| {
         (file.file_name()).map_or_else(String::new, |name| name.to_string_lossy().into_owned())
     };
-    let (folder_uses, subfolder_uses) = patterns.uses();
-    let reads = |uses: Uses| uses.taken || uses.photo;
-    if !reads(folder_uses) && !reads(subfolder_uses) {
+    if !patterns.reads_exif() {
         return Some(
             (files.iter())
                 .map(|file| Shot {

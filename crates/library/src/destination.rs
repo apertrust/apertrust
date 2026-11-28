@@ -158,11 +158,22 @@ impl Patterns {
             Uses {
                 today: reads.now,
                 taken: reads.taken,
-                photo: reads.photo,
+                photo: reads.file || reads.camera,
             }
         };
         let subfolder = self.subfolder.as_ref().map(uses).unwrap_or_default();
         (uses(&self.folder), subfolder)
+    }
+
+    /// Whether Folder's pattern or Subfolder's reads what a photo's EXIF gives, its capture
+    /// time or its camera, so that each photo's EXIF is read; its file name comes from the
+    /// listing ([`Pattern::reads`]).
+    pub fn reads_exif(&self) -> bool {
+        let exif = |pattern: &Pattern| {
+            let reads = pattern.reads();
+            reads.taken || reads.camera
+        };
+        exif(&self.folder) || self.subfolder.as_ref().is_some_and(exif)
     }
 
     /// What the variables expand to for `shot` in the import at `now`: darktable's import

@@ -1395,7 +1395,7 @@ The cache's `Cache::remove(kind, slot)` removes one limited entry and adjusts th
 - D8's refusals: `Unknown`, with the nearest name; `Unclosed`; `NoOperation`; and `TooDeep`, past 64 levels.
 - `list`, darktable's entries with their descriptions.
 - `Pattern::expand_fixed`: the pattern expanded up to its first variable that is not the person's own folder or name, and whether it went to the end, the part of Import's Folder pattern its check walks (decision 85).
-- `Pattern::reads`: what its variables read of `Values`, nested ones included, told from the variables themselves (`Reads`): the time it is expanded at, the photo's capture time, and its path or camera; Import's preview reads a photo's EXIF only where its patterns need it (decision 85).
+- `Pattern::reads`: what its variables read of `Values`, nested ones included, told from the variables themselves (`Reads`): the time it is expanded at, the photo's capture time, its path, and its camera apart; Import's preview reads a photo's EXIF only where its patterns read its capture time or camera (`Patterns::reads_exif`), the path the listing's (decision 85).
 - `Places`, the person's home, Pictures and desktop folders and login name, which a client sends beside a pattern, the engine reading no platform folder (decision 43).
 - It uses `wire::Id`, serde and thiserror alone.
 

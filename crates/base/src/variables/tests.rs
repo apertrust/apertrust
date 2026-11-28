@@ -521,3 +521,39 @@ fn the_import_name_is_the_job_code() {
             .is_empty()
     );
 }
+
+/// What a pattern reads, told from its variables: the file name apart from the camera,
+/// which only a photo's EXIF gives.
+#[test]
+fn a_pattern_reads_the_file_name_apart_from_the_camera() {
+    let none = Reads::default();
+    let cases = [
+        ("$(FILE_NAME)", Reads { file: true, ..none }),
+        (
+            "$(MODEL)",
+            Reads {
+                camera: true,
+                ..none
+            },
+        ),
+        (
+            "$(MAKER)_$(FILE_EXTENSION)",
+            Reads {
+                file: true,
+                camera: true,
+                ..none
+            },
+        ),
+        (
+            "$(EXIF.YEAR)",
+            Reads {
+                taken: true,
+                ..none
+            },
+        ),
+        ("$(JOBCODE)", none),
+    ];
+    for (text, expected) in cases {
+        assert_eq!(Pattern::parse(text).unwrap().reads(), expected, "{text}");
+    }
+}
