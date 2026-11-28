@@ -52,7 +52,7 @@ Light and colour together, since a scene-referred edit interleaves them. The tab
 | RGB curve | rgb curve | `rgbcurve`, working 42 | Yes | Operation ported; built as the Tone curve's Luma curve, to be reshaped into RGB curve | [page](tone-curve.md), [port](../ports/rgbcurve.md) |
 | RGB levels | rgb levels | `rgblevels`, working 43 | Yes | Operation ported; tool planned (Phase 3), switched | [port](../ports/rgblevels.md) |
 | Colour balance RGB | color balance rgb | `colorbalancergb`, working 41.5 | Yes | Built, switched (decision 32), with its six pickers; the graph and mask display to come | [page](colour-balance-rgb.md), [port](../ports/colorbalancergb.md) |
-| Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Built, switched (decision 32), darktable's page with its sliders; the graph, the painted tracks, the mask displays and presets to come | [page](colour-equalizer.md), [port](../ports/colorequal.md) |
+| Colour equalizer | color equalizer | `colorequal`, working 41.2 | Yes | Built, switched (decision 32), darktable's page in its default layout, the graph alone; the mask displays and presets to come | [page](colour-equalizer.md), [port](../ports/colorequal.md) |
 | RGB primaries | rgb primaries | `primaries`, working 28.9 | Yes | Built, switched (decision 32); the painted tracks to come | [page](rgb-primaries.md), [port](../ports/primaries.md) |
 
 - **Colour calibration's** grey tab is darktable's black and white: any grey weight off 0 makes the photo grey.
@@ -254,8 +254,7 @@ Each operation parameter has at most one owning tool, and gets one as its tool i
 
 darktable draws some stored values twice: the tone equalizer's bands as sliders and as a curve, the colour equalizer's hues as sliders and as a curve, colour calibration's illuminant as its type's controls and as hue and chroma, and White balance's coefficients as temperature and tint. In the first pass:
 
-- **Built:** Colour calibration's hue and chroma of `x` and `y`, and White balance's temperature and tint of its coefficients (decision 27). The tone equalizer's graph shows the bands themselves, the identity view, so it is a custom row naming the band controls (`Widget::Equalizer`), with no coordinates of its own.
-- **To come:** the colour equalizer's curves, once their widget exists.
+- **Built:** Colour calibration's hue and chroma of `x` and `y`, and White balance's temperature and tint of its coefficients (decision 27). The tone equalizer's graph shows the bands themselves, the identity view, so it is a custom row naming the band controls (`Widget::Equalizer`), with no coordinates of its own; the colour equalizer's graphs show its nodes so (`Widget::HueCurve`).
 
 How a view with coordinates works ([engine.md](../engine.md), Preset rows and lossless views):
 

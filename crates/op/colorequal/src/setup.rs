@@ -27,14 +27,14 @@
 
 use std::f32::consts::PI;
 
+pub use apertrust_color::colour_equalizer::NODES;
+use apertrust_color::colour_equalizer::periodic_rbf;
 use apertrust_color::gaussian::Deriche;
 use apertrust_color::{self as color, Mat3, WorkingProfile, ucs};
 use apertrust_plugin::{
     Binding, ImageDesc, NotPorted, Pass, PassKind, Prepared, Resource, Scratch,
 };
 
-/// darktable `NODES`: the nodes of each curve, red to magenta.
-pub const NODES: usize = 8;
 /// darktable `LUT_ELEM`: the entries of a hue-indexed table over [-π, π).
 pub const LUT_SIZE: usize = color::GAMUT_LUT_SIZE;
 /// darktable `SATSIZE`: the saturation weights' table holds `2 · SATSIZE + 1` entries.
@@ -43,9 +43,6 @@ pub const SATSIZE: usize = 4096;
 /// curve's departure from 1 changes the pixel.
 pub const SAT_EFFECT: f32 = 2.0;
 pub const BRIGHT_EFFECT: f32 = 8.0;
-/// darktable `ANGLE_SHIFT`: red sits at 20° of hue in darktable UCS, so the nodes are
-/// offset to put it at the curves' origin.
-const ANGLE_SHIFT: f32 = 20.0;
 /// darktable `chroma_feathering` and `param_feathering`, `powf(10, -5)` and
 /// `powf(10, -6)`: the guided filters' regularisation.
 pub const CHROMA_FEATHERING: f32 = 1e-5;
@@ -86,136 +83,6 @@ impl Default for Settings {
             hue_shift: 0.0,
         }
     }
-}
-
-/// darktable `_get_hue_node`: the k-th node's hue in darktable UCS, in radians, with the
-/// node placement.
-pub fn hue_node(k: usize, hue_shift: f32) -> f32 {
-    color::deg_to_rad(k as f32 * 360.0 / NODES as f32 + hue_shift + ANGLE_SHIFT)
-}
-
-/// darktable `pseudo_solve` (`src/iop/choleski.h`) for a square system: `A x = y` by the
-/// normal equations `A'A x = A'y`, Choleski-Banachiewicz on their lower triangle, then
-/// the triangular descent and ascent, in f32 and darktable's order. `None` where
-/// darktable's solve fails (`A'A` not positive definite), where darktable leaves `y`
-/// unsolved.
-pub fn pseudo_solve(a: &[[f32; NODES]; NODES], y: &[f32; NODES]) -> Option<[f32; NODES]> {
-    const N: usize = NODES;
-    let mut a_square = [[0.0f32; N]; N];
-    for i in 0..N {
-        for j in 0..=i {
-            let mut sum = 0.0f32;
-            for row in a {
-                sum += row[i] * row[j];
-            }
-            a_square[i][j] = sum;
-        }
-    }
-    let mut y_square = [0.0f32; N];
-    for (i, value) in y_square.iter_mut().enumerate() {
-        let mut sum = 0.0f32;
-        for (row, &y) in a.iter().zip(y) {
-            sum += row[i] * y;
-        }
-        *value = sum;
-    }
-
-    // _choleski_decompose
-    if a_square[0][0] <= 0.0 {
-        return None;
-    }
-    let mut l = [[0.0f32; N]; N];
-    for i in 0..N {
-        for j in 0..=i {
-            let mut sum = 0.0f32;
-            for (a, b) in l[i][..j].iter().zip(&l[j][..j]) {
-                sum += a * b;
-            }
-            if i == j {
-                let temp = a_square[i][i] - sum;
-                if temp < 0.0 {
-                    return None;
-                }
-                l[i][j] = (a_square[i][i] - sum).sqrt();
-            } else {
-                let temp = l[j][j];
-                if temp == 0.0 {
-                    return None;
-                }
-                l[i][j] = (a_square[i][j] - sum) / temp;
-            }
-        }
-    }
-    // _triangular_descent: L b = A'y.
-    let mut b = [0.0f32; N];
-    for i in 0..N {
-        let mut sum = y_square[i];
-        for j in 0..i {
-            sum -= l[i][j] * b[j];
-        }
-        if l[i][i] == 0.0 {
-            return None;
-        }
-        b[i] = sum / l[i][i];
-    }
-    // _triangular_ascent: L' x = b.
-    let mut x = [0.0f32; N];
-    for i in (0..N).rev() {
-        let mut sum = b[i];
-        for j in (i + 1..N).rev() {
-            sum -= l[j][i] * x[j];
-        }
-        if l[i][i] == 0.0 {
-            return None;
-        }
-        x[i] = sum / l[i][i];
-    }
-    Some(x)
-}
-
-/// darktable `_cosine_coeffs`.
-fn cosine_coeff(l: f32, c: f32) -> f32 {
-    (-l * l / c).exp()
-}
-
-/// The radial basis of `_periodic_RBF_interpolate` at angular distance `distance`:
-/// `exp(Σ_l exp(-l²/c) · cos(l · |distance|))` over its `m` terms.
-fn basis(distance: f32, smoothing: f32, terms: i32) -> f32 {
-    let mut sum = 0.0f32;
-    for l in 0..terms {
-        sum += cosine_coeff(l as f32, smoothing) * (l as f32 * distance.abs()).cos();
-    }
-    sum.exp()
-}
-
-/// darktable `_periodic_RBF_interpolate`: the curve through `nodes` at the nodes' hues,
-/// a periodic interpolation by radial basis functions, sampled every 360/512 degrees from
-/// -π, the table [`LUT_SIZE`] entries long, clipped at 0 with `clip`. In f32 as
-/// darktable; where darktable's solve fails, the nodes themselves weigh the bases, as
-/// darktable leaves them.
-pub fn periodic_rbf(nodes: &[f32; NODES], smoothing: f32, hue_shift: f32, clip: bool) -> Vec<f32> {
-    let terms = (3.0 * smoothing.sqrt()).ceil() as i32;
-    let mut a = [[0.0f32; NODES]; NODES];
-    for (i, row) in a.iter_mut().enumerate() {
-        for (j, value) in row.iter_mut().enumerate() {
-            *value = basis(
-                hue_node(i, hue_shift) - hue_node(j, hue_shift),
-                smoothing,
-                terms,
-            );
-        }
-    }
-    let weights = pseudo_solve(&a, nodes).unwrap_or(*nodes);
-    (0..LUT_SIZE)
-        .map(|i| {
-            let hue = color::deg_to_rad(i as f32 * 360.0 / LUT_SIZE as f32) - PI;
-            let mut value = 0.0f32;
-            for (k, &weight) in weights.iter().enumerate() {
-                value += weight * basis(hue - hue_node(k, hue_shift), smoothing, terms);
-            }
-            if clip { value.max(0.0) } else { value }
-        })
-        .collect()
 }
 
 /// darktable `_init_satweights`: the logistic weight of a saturation, `2 · SATSIZE + 1`
@@ -986,6 +853,8 @@ pub fn prepare(
 
 #[cfg(test)]
 mod tests {
+    use apertrust_color::colour_equalizer::hue_node;
+
     use super::*;
 
     fn profile() -> WorkingProfile {
@@ -1058,24 +927,6 @@ mod tests {
                 d_saturation[i]
             );
         }
-    }
-
-    #[test]
-    fn the_solve_solves() {
-        let mut a = [[0.0f32; NODES]; NODES];
-        for (i, row) in a.iter_mut().enumerate() {
-            for (j, value) in row.iter_mut().enumerate() {
-                *value = basis(hue_node(i, 3.0) - hue_node(j, 3.0), PI, 6);
-            }
-        }
-        let y = [1.0, 2.0, -1.0, 0.5, 0.0, 3.0, 1.0, -2.0];
-        let x = pseudo_solve(&a, &y).unwrap();
-        for i in 0..NODES {
-            let ax: f32 = (0..NODES).map(|j| a[i][j] * x[j]).sum();
-            assert!((ax - y[i]).abs() < 1e-3, "{i}: {ax}");
-        }
-        let singular = [[1.0f32; NODES]; NODES];
-        assert_eq!(pseudo_solve(&singular, &y), None);
     }
 
     #[test]

@@ -128,6 +128,18 @@ pub const TOOLS: &[&dyn ProcessingTool] = &[
 /// a tool takes its id again. Empty until then.
 pub const RETIRED: &[&str] = &[];
 
+/// What a hue curve graph paints behind its curve ([`ProcessingTool::curve_paint`]):
+/// colours that are data, encoded sRGB, each channel from 0 to 1.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CurvePaint {
+    /// The strip under the graph, evenly spaced from its start to its end.
+    pub strip: Vec<[f32; 3]>,
+    /// The background, a grid's corners row by row from the top, `columns` a row, evenly
+    /// spaced from the graph's start to its end and from its top to its foot.
+    pub background: Vec<[f32; 3]>,
+    pub columns: usize,
+}
+
 /// The contract between the engine's session and a tool (decision 28).
 pub trait ProcessingTool: Send + Sync {
     fn definition(&self) -> &'static ProcessingDefinition;
@@ -254,6 +266,21 @@ pub trait ProcessingTool: Send + Sync {
     /// pointer by a Gaussian its curve smoothing widens. `None`, as provided, for a curve
     /// of no such width, where a band graph takes darktable's default, √2.
     fn curve_width(&self, _control: &str, _values: &Controls) -> Option<f32> {
+        None
+    }
+
+    /// Where a hue curve graph's first node, `control`, sits across the graph while the
+    /// tool's controls hold `values`, a share of its width from 0, the others evenly spaced
+    /// after it around the hue circle: the colour equalizer's Node placement over 360°.
+    /// The curve [`Self::curve`] gives runs from that node. `None`, as provided, for 0.
+    fn curve_offset(&self, _control: &str, _values: &Controls) -> Option<f32> {
+        None
+    }
+
+    /// What a hue curve graph paints for its curve of `control`, while the tool's controls
+    /// hold `values`: the hue strip under it and its background, colours that are data.
+    /// `None`, as provided, paints the graph's ground and no strip.
+    fn curve_paint(&self, _control: &str, _values: &Controls) -> Option<CurvePaint> {
         None
     }
 

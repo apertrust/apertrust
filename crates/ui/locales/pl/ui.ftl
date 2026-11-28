@@ -1479,6 +1479,8 @@ equalizer-keys-mac = Page Up i Page Down (Fn+↑ i Fn+↓) wybierają pasmo, str
 equalizer-overflows-shadows = Cienie maski wychodzą poza pasmo −8 EV.
 equalizer-overflows-highlights = Światła maski wychodzą poza pasmo +0 EV.
 equalizer-overflows-both = Cienie maski wychodzą poza pasmo −8 EV, a światła poza pasmo +0 EV.
+hue-curve-keys = Page Up i Page Down wybierają węzeł, strzałki go przesuwają, Delete go resetuje, a Shift+Delete resetuje wszystkie.
+hue-curve-keys-mac = Page Up i Page Down (Fn+↑ i Fn+↓) wybierają węzeł, strzałki go przesuwają, Delete go resetuje, a Shift+Delete resetuje wszystkie.
 
 ## Histogram i inne wykresy; $shadows i $highlights to udział pikseli zdjęcia, w procentach
 

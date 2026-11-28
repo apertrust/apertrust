@@ -1476,6 +1476,8 @@ equalizer-keys-mac = Page Up і Page Down (Fn+↑ і Fn+↓) вибирають 
 equalizer-overflows-shadows = Тіні маски виходять за смугу −8 EV.
 equalizer-overflows-highlights = Світлі тони маски виходять за смугу +0 EV.
 equalizer-overflows-both = Тіні маски виходять за смугу −8 EV, а світлі тони — за смугу +0 EV.
+hue-curve-keys = Page Up і Page Down вибирають вузол, стрілки переміщують його, Delete скидає його, а Shift+Delete — усі.
+hue-curve-keys-mac = Page Up і Page Down (Fn+↑ і Fn+↓) вибирають вузол, стрілки переміщують його, Delete скидає його, а Shift+Delete — усі.
 
 ## Гістограма й інші графіки; $shadows і $highlights — частки пікселів знімка, у відсотках
 

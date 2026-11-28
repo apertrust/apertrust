@@ -4,24 +4,34 @@ Tool `colorequal`, version 1. It works on layers, has no Auto and is switched (d
 
 Its header's tooltip says what it is for (`tool-colorequal-description`, [gui.md](../gui.md#the-headers-tooltip)): "Changes the hue, saturation and brightness of each range of hues on its own. Reach for it to turn greens towards yellow, deepen blues or brighten skin."
 
-It is darktable's color equalizer in the first pass (decision 2): darktable's page with its sliders shown, its controls in `gui_init`'s order under darktable's labels in British spelling (decision 29).
+It is darktable's color equalizer in the first pass (decision 2): darktable's page in its default layout, each curve's nodes on its graph, its controls in `gui_init`'s order under darktable's labels in British spelling (decision 29).
 
 It drives one operation, `colorequal` ([../ports/colorequal.md](../ports/colorequal.md)), which an unedited photo does not run. The operation is planned while the tool is on, as in darktable, where color equalizer is off until the user turns it on (decision 32). The tool owns all 32 of the operation's parameters; none is fixed.
 
 **Status:** built, in `crates/tools/src/colour_equalizer.rs`. The app draws it from its definition (`docs/gui.md`, Tool panels from definitions). Its tab is the Default workspace's Adjust, after Colour balance RGB and before RGB primaries (decision 38).
 
 - Its rows are tests in `crates/tools/tests/colour_equalizer.rs`; [Results](#results) gives what they measured.
-- To come: darktable's curve graph, with Node placement's picker; the nodes' painted tracks; the show-mask quads; darktable's presets, with the presets API every tool shares ([To come](#to-come)).
+- To come: Node placement's picker, which marks the picked hue on the graph; the show-mask quads; darktable's presets, with the presets API every tool shares ([To come](#to-come)).
 
 **Switched** (decision 32; [README.md](README.md), rule 4). The Colour equalizer is off on a new photo, as darktable's color equalizer is, and renders nothing. No value of its is an identity: at darktable's defaults the guided filter's prefilter smooths the chromaticity the output is rebuilt from, and without the filter the curves still ripple between their nodes and the gamut mapping compresses saturations past 0.8 of the boundary (`docs/ports/colorequal.md`, Tool binding notes). Any write of a control turns it on, whatever the value, with darktable's defaults for the others, until its reset turns it off; resetting one control leaves it on. Its defaults are darktable's, the operation's own: on at its defaults, the operation runs at its own defaults, darktable's new instance.
 
 ## The page
 
-darktable has two layouts, which a middle-click on its graph switches (`plugins/darkroom/colorequal/show_sliders`): the graph alone, its default, or the graph with each tab's sliders and the options as a fourth tab. The graph is a widget still to come, so the page is darktable's layout with the sliders, laid out as the tool model holds darktable's rows outside its notebook (`before` and `after`, [gui.md](../gui.md)):
+darktable has two layouts, which a middle-click on its graph switches (`plugins/darkroom/colorequal/show_sliders`): the graph alone, its default, or the graph with each tab's sliders and the options as a fourth tab. The page is darktable's default, the graph alone, laid out as the tool model holds darktable's rows outside its notebook (`before` and `after`, [gui.md](../gui.md)):
 
-- **Tabs:** Hue, Saturation and Brightness, darktable's notebook, each its curve's eight nodes from red to magenta.
-- **Under every tab:** Node placement, the nodes' hue moved together, after the tab's eight nodes.
+- **Tabs:** Hue, Saturation and Brightness, darktable's notebook, each darktable's graph of its curve's eight nodes from red to magenta ([The graph](#the-graph)), their only row.
+- **Under every tab:** Node placement, the nodes' hue moved together, after the tab's graph.
 - **Options,** collapsible, under every tab, after Node placement: White level, Hue curve, Use guided filter, then Hue analysis radius, Saturation threshold, Contrast and Effect radius, shown only while the guided filter is in use, as darktable's `gui_changed` shows them (`Row::When`). darktable shows Hue curve among its options on the Hue tab alone.
+
+## The graph
+
+Each tab is darktable's graph of its curve, `Widget::HueCurve` over the tab's eight nodes ([gui.md](../gui.md#the-hue-curve)), their only row (decision 31): a node is set by the pointer, the wheel or the keys, and a screen reader reaches each as a slider with its value, range and step.
+
+- **Across,** the hue: each node at its hue, `k · 45° + Node placement` from red, red drawn again at the far end; under the graph a strip of each hue at the graph's saturation.
+- **Up,** the node's range, its default in the middle: −180° to +180° on Hue, −100 % to +100 % on Saturation and Brightness.
+- **The curve** is the operation's (`ProcessingTool::curve`), darktable's periodic RBF through the nodes, with Hue curve's smoothing on Hue, clipped at no gain on the others, from `apertrust-color` as the operation's setup has it.
+- **Behind it,** darktable's backgrounds (`ProcessingTool::curve_paint`): on Hue each hue turned by the height, as a node there turns it; on Saturation from grey to full; on Brightness from black to 1.25 times the sliders' brightness.
+- **A press on a node** and a drag move it to the pointer's height; a double-click resets it, or every node of the tab off the nodes; the wheel steps the nearest node as a slider row's wheel does.
 
 ## Controls
 
@@ -51,7 +61,7 @@ The promises, the tooltips, are darktable's in British English where it has them
 
 ### Sliders against darktable
 
-Audited against darktable's `src/iop/colorequal.c`, its params, `gui_init` and `_init_sliders`, and `dt_bauhaus_slider_from_params` in `src/develop/imageop_gui.c` ([README.md](README.md), Sliders against darktable). `its_sliders_are_darktable_s`, in `crates/tools/src/colour_equalizer.rs`, holds the definition to this table, and the binding's factor and offset to darktable's.
+Audited against darktable's `src/iop/colorequal.c`, its params, `gui_init` and `_init_sliders`, and `dt_bauhaus_slider_from_params` in `src/develop/imageop_gui.c` ([README.md](README.md), Sliders against darktable). `its_sliders_are_darktable_s`, in `crates/tools/src/colour_equalizer.rs`, holds the definition to this table, and the binding's factor and offset to darktable's. The nodes have no slider of their own: their graph draws each over darktable's range, steps it by darktable's step and rounds it to its digits.
 
 | Sliders | darktable: range, soft range | Shown as | Digits | darktable's step, the control's | Differs |
 | --- | --- | --- | --- | --- | --- |
@@ -88,14 +98,17 @@ Measured on the Radeon 780M (RADV):
 
 ## Design choices
 
-1. **darktable's layout with its sliders,** not its default of the graph alone: until the graph's widget exists, the sliders are the only way to set the nodes, and darktable's own layout shows them.
+1. **darktable's default layout, the graph alone,** with no slider for each node: the graph sets every node by pointer, wheel and keys, and reads each out to a screen reader, so slider rows would only repeat it.
 2. **Options under every tab,** collapsible, where darktable's sliders layout makes them a fourth tab: the tool model holds rows outside the notebook (`after`), as darktable's graph layout draws them. Hue curve, which darktable shows among them only while the Hue tab is chosen, is there on every tab, after White level, so it is in one place whichever tab is chosen.
-3. **Node placement under every tab** (`after`), after the nodes it moves and before Options; darktable's graph goes over the tabs once it is built.
+3. **Node placement under every tab** (`after`), after the graph whose nodes it moves and before Options, as darktable draws it under its graph: each tab draws its own graph, so the graph sits under the tab strip.
+4. **The graph's height is each node's range,** so a hue node follows the pointer. darktable's drag sets a hue node to `(0.5 − y) · 349°` (`_area_set_value`), reaching ±174.5° at the graph's edges while it draws ±180° there.
+5. **The backgrounds run with the strip.** darktable's `_init_graph_backgrounds` runs each column's hue backwards, 270° to −90°, and writes red, green and blue into cairo's `RGB24`, which holds them blue first, two faults that nearly cancel. Here each column is the strip's hue.
+6. **sRGB.** darktable paints the colours in the display's profile; they are painted in sRGB, darktable's own fallback (`dt_XYZ_to_sRGB`), until the display's colour reaches the panel.
+7. **No middle-click, Ctrl+click or Alt+wheel on the graph:** the page has the one layout, and the tab strip is the tool's.
 
 ## To come
 
-- **The curve graph,** darktable's, a second view of the nodes (decision 31), as the tone equalizer's equalizer is of its bands, with Node placement's picker, which only marks the picked hue on it.
-- **The nodes' painted tracks,** each node's hue, saturation or brightness, as darktable's `_draw_sliders_*_gradient` paints them.
+- **Node placement's picker,** which only marks the picked hue on the graph (`_draw_color_picker`).
 - **The show-mask quads** of Saturation threshold and Effect radius, with Show mask (Phase 3).
 - **darktable's presets,** with the presets API.
 - **The viewport's target** on four corpus renders, which `docs/engine.md` puts before the tool ships ([Pipes](../engine.md)).

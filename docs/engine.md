@@ -1530,7 +1530,7 @@ The session runs processing tools alone, the tools that edit the photo; utilitie
 
 **Where a control appears.** Each control appears in one row; or in one row per mode, where darktable labels it by mode or shows it under conditions one `Row::When` cannot join (highlight reconstruction's Noise level under guided laplacians, and under segmentation based with a rebuild mode, one shown at a time); or only in the rows of its lossless views (decision 29).
 
-A number control may also appear in one equalizer row, `Row::Custom` with `Widget::Equalizer`, the tone equalizer's graph of its bands. It is the identity view of controls that have slider rows of their own: it names the controls themselves, has no coordinates and stores nothing, and a drag sends `SetControl` on the bands. It is the one widget `ProcessingDefinition::check` allows as such a second row (decision 31).
+A number control may also appear in one band graph's row, `Row::Custom` with `Widget::Equalizer`, the tone equalizer's graph of its bands, or `Widget::HueCurve`, the colour equalizer's graph of a curve's nodes. Each is the identity view of its controls: it names the controls themselves, has no coordinates and stores nothing, and a drag sends `SetControl` on them. The tone equalizer's bands have slider rows of their own as well, the colour equalizer's nodes none, the graph their only row. They are the widgets `ProcessingDefinition::check` allows as such a second row (decision 31).
 
 **Ranges.** In the first pass a number control's range is darktable's hard range in the units its slider shows, and its slider row carries darktable's soft range, digits and step. Each tool's table is audited against darktable's `gui_init` and held to it by `testing::slider_differences` (decision 30). Where darktable's range follows other controls, as AgX's pivot spans black to white relative exposure, the definition's range is the widest any values give, its soft range and step those at the tool's defaults, and `ProcessingTool::range` gives them for the values (below).
 
@@ -1553,6 +1553,10 @@ pub trait ProcessingTool: Send + Sync {
         -> Option<Box<dyn Fn(f32) -> f32>>;                  // the curve a curve row or a band graph draws; None: straight lines
     fn curve_width(&self, control: &str, values: &Controls)
         -> Option<f32>;                                      // a band graph's drag reach, its curve's σ; None: darktable's √2
+    fn curve_offset(&self, control: &str, values: &Controls)
+        -> Option<f32>;                                      // where a hue curve's first node sits across; None: 0
+    fn curve_paint(&self, control: &str, values: &Controls)
+        -> Option<CurvePaint>;                               // a hue curve's strip and background colours; None: the ground
     fn preset(&self, preset: &str, option: &str, tuning: i32, values: &Controls, image: &ImageContext)
         -> Option<Controls>;                                 // a preset row's option at a tuning, for this photo (decision 27)
     fn matching(&self, preset: &str, values: &Controls, image: &ImageContext)
@@ -1573,12 +1577,13 @@ pub trait ProcessingTool: Send + Sync {
 
 **`available`** (decision 30) says whether a control can change anything on the photo, with the tool's controls at their values: the edit's over the defaults. Use camera bias cannot on a photo that records no bias, and vignetting's width/height ratio follows automatic ratio. The session asks again after every change and reports it with each control. A panel draws a control that cannot as disabled, while it still takes a value and keeps it; while a change is pending, the app follows it through the same pure function ([gui.md](gui.md), Tool panels from definitions).
 
-**`curve` and `curve_width`** (decision 31).
+**`curve`, `curve_width`, `curve_offset` and `curve_paint`** (decision 31).
 
 - `curve` gives the curve a curve row draws through a control's points, its output at an input on the row's axes, so the curve drawn is the curve the operation renders. The renderer calls it with the values it shows, so the curve follows a drag at once, and the tool's invariant rows hold it to the kernel (the Tone curve's T4). As provided it returns `None`, and the row joins the points with straight lines.
 - A band graph, the tone equalizer's, takes its curve from `curve` of its first band: the operation's own, from the fit `apertrust-color` holds for the setup and the graph alike. `ProcessingTool::curve` always returns the fit, the panel drawing it flat while the tool is off (decision 32), and `None` where the fit fails, which the graph draws in the warning colour. A drag settles the bands on that curve after each step, as darktable's does.
 - `curve_width`, provided as `None`, gives the width σ of the Gaussians the curve is a sum of, which sets how far the drag reaches; with `None` the graph takes darktable's default, √2.
-- Both are pure, and the app calls them guarded, as it calls `view` and `unview`, so a tool that panics draws no curve and moves nothing.
+- A hue curve, the colour equalizer's, takes its curve from `curve` of its first node, as a function of the hue in degrees from that node: the operation's own periodic RBF, from `apertrust-color` as the setup's. `curve_offset` says where that node sits across the graph, Node placement over 360°, and `curve_paint` the colours behind the curve, its hue strip and background (`CurvePaint`), colours that are data.
+- All are pure, and the app calls them guarded, as it calls `view` and `unview`, so a tool that panics draws no curve and moves nothing.
 
 **`options`** (decision 30) gives the options a choice lists on this photo, as darktable lists them: demosaic's methods for the sensor, highlight reconstruction's, the photo's own input profiles, as shot in camera on a colour raw.
 
@@ -1695,7 +1700,7 @@ pub enum Row {
 - control, coordinate and preset ids are unique together;
 - a view covers only number controls, none twice;
 - a preset's controls exist;
-- each control appears in one row, or in none and only in the rows of the views covering it (decision 2's widened rule). Besides that, a number control may appear in one equalizer's row at most: the tone equalizer's graph of its bands (`Row::Custom` with `Widget::Equalizer`, a second view of them), the one widget allowed beside the controls' own rows until another needs it;
+- each control appears in one row, or in none and only in the rows of the views covering it (decision 2's widened rule). Besides that, a number control may appear in one band graph's row at most: the tone equalizer's graph of its bands (`Row::Custom` with `Widget::Equalizer`) or the colour equalizer's of a curve's nodes (`Widget::HueCurve`), the widgets allowed beside the controls' own rows, or as their only row;
 - each coordinate and each preset row is in one row at most.
 
 **Words.** A coordinate's words are a control's (`tool-<tool>-control-<coordinate>-label`, `-full`, `-promise`). A preset row's are `tool-<tool>-preset-<preset>-label`, `-full` and `-promise`, its options `tool-<tool>-preset-<preset>-option-<option>`, and Custom the shared `preset-custom`.
@@ -1939,7 +1944,7 @@ In `apertrust-tools`, `apertrust-engine::edit` and `session`.
   - The app shows a pending change through `ProcessingTool::view` and `unview` (`tools::Pending::show` in `crates/app`), the coordinates it shows standing in for the session's held ones. So a drag of one leaves the others exactly as the session holds them, and every other view of the same controls shows the tool's view of the values, as `Held` drops its hold.
   - It calls them with the image context `Photo` carries (decision 27), and a test in `crates/app/src/main.rs` holds a White balance temperature drag to the coefficients the camera's matrix gives, not sRGB's.
   - A test in `crates/app/src/main.rs` runs one sequence of changes through `Edit` with `Held` and through the pending display, comparing every control, mark and coordinate after each.
-- **Still to come:** the CLI's `--set` taking a coordinate, and a `Row::Custom` widget naming coordinates. The tone equalizer's bands as a curve need none: its graph shows the bands themselves on their own axes, the identity view, so its custom row names the band controls (`Widget::Equalizer`) and sends `SetControl` on them.
+- **Still to come:** the CLI's `--set` taking a coordinate, and a `Row::Custom` widget naming coordinates. The tone equalizer's bands as a curve need none, nor the colour equalizer's nodes: each graph shows the controls themselves on their own axes, the identity view, so its custom row names them (`Widget::Equalizer`, `Widget::HueCurve`) and sends `SetControl` on them.
 
 ## Scopes
 

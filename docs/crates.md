@@ -706,7 +706,8 @@ Photo › Next Photo (`next-photo`, Space and →) and Previous Photo (`previous
 - **Unavailable controls.** A control another's value disables is drawn disabled, keeping its value, as the session reports, and while a change is pending at once through the tool's own `available` (decision 30).
 - **Custom rows:**
   - the Tone curve's `Curve`;
-  - the Tone equalizer's graph of its bands, `Equalizer`, a second view of them. The tool's curve is sampled at darktable's 256 points; each drag step settles the bands on it as darktable's does, and every band whose rounded value moves is sent as `SetControl`, the release's `done` writes of several bands as one `Step { source: You }` (`Change::Step`), one history step with the drag. A double-click and Shift+Delete reset the nine, as one `Step`. It has no histogram until the readouts (decision 19).
+  - the Tone equalizer's graph of its bands, `Equalizer`, a second view of them. The tool's curve is sampled at darktable's 256 points; each drag step settles the bands on it as darktable's does, and every band whose rounded value moves is sent as `SetControl`, the release's `done` writes of several bands as one `Step { source: You }` (`Change::Step`), one history step with the drag. A double-click and Shift+Delete reset the nine, as one `Step`. It has no histogram until the readouts (decision 19);
+  - the Colour equalizer's graph of a curve's nodes, `HueCurve`, their only row. The tool's curve is sampled one a degree from where `curve_offset` puts the first node, over the colours `curve_paint` gives; a node moved is sent as `SetControl`, rounded to a slider's decimals, the release `done`. A double-click off the nodes and Shift+Delete reset the eight, as one `Step`.
 - **Colour pickers** (decision 79; [pickers.md](pickers.md#the-picker-button)): a slider's `End::Picker(id)` is a `PickerButton` in its quad mode (`SliderRow::picker`), and a line of pickers (`Row::Line`) its label and toggle `PickerButton`s at the row's end, each on while the mirror shows its picker on (`tools::Pickers`), disabled with the reason on a photo opening or open for viewing only, but drawn as on a live photo, taking no input, within `HELD_PLAIN` of a switch (`Mirror::inert`), its words `messages::picker`'s. A press is `Change::Picker` with the keys held, sent as `PickerCommand::On`, or `Off` for the picker on (`pickers::pressed`). Only the tools in `tools::PICKING`, those whose pick is built, draw theirs: Exposure's, White balance's, turned on from Settings, Colour calibration's, on its readout row, which draws the readout the session reports (`ToolState::readouts`) as its text and a `ColourSwatch` before the button, and Colour balance RGB's six quads. `On` carries the tool's settings as the app keeps them.
 - **A tool's settings** (decisions 29 and 43): kept in the app's store with its own (`settings::ToolSettings`, `[tools.<module>]`), each `Row::Setting` that has one drawn live, a change reported as `Change::Setting`, kept at once and sent with the tool's others as `PickerCommand::Settings` as the gesture ends; one with none drawn disabled at darktable's default. A pick's measured settings are kept as the user's own (`Reaction::Measured`). Rows following a setting (`Row::WhenSetting`) show while the setting the app keeps holds one of their options; a choice setting lists an option still to come disabled, and, where a picker's words follow it, each option with its own tooltip. A picker's tooltip and the viewer bar's words follow such a setting (`pickers::by_setting`, decision 88). A reference (`Row::Reference`, decision 88) is drawn as the design system's `ReferenceRow`, its two settings optional, a number and a text, kept together, its L handed back by its picker with the open photo's path, cleared together (`Change::ClearReference`); whether its photo is still there is asked off the interface's thread as each photo opens and as it is set (`pickers::ReferencePhotos`). A picker its tool says is not ready (`ProcessingTool::picker_ready`) is drawn disabled with its reason. What a tool's last pick did and its warnings (`Row::LastPick`) are kept with its patch (`pickers::Picked::last`), drawn as warning rows over a readout with two patches, and said by the live region in place of the controls the pick changed (`pickers::LastPickWords`).
 - **Patches** (`Row::Patches`, Colour calibration's): the design system's `Patches`, the input the tool's last pick showed on the photo with its L readout, or its L, h and c for a target of three settings (`pickers::Picked`, gone as darktable's `gui_update` zeroes it: undo, redo, a move through history, the edit's or the tool's reset, another photo; a pick measured before the command that took it away, or carried again by a later reading, never brings it back), the target from the tool's settings, disabled until the tool's pickers are drawn.
@@ -1165,6 +1166,14 @@ In `crates/ui/src/components`. Each reports its role, full name and value to Acc
 - The mask's histogram is `MaskHistogram` (bins, their EV range, the 5th and 95th percentiles), drawn in `graph_histogram` with darktable's warning signs; `None` until the engine measures it (decision 19).
 - Its open choices are in [docs/gui.md](gui.md), The equalizer.
 
+**`HueCurve`:** darktable's colour equalizer graph of one curve's nodes, in the theme's tokens but for its colours, which the caller gives.
+
+- The nodes around the hue circle across, from where the caller puts the first, their range down; the curve the caller samples over one circle; the bars and ring nodes; the background and the hue strip under it, colours that are data.
+- A press on a node and a drag move it to the pointer's height; a double-click resets it, or every node off them; the wheel steps the node nearest across, as a slider row's.
+- Page Up and Page Down choose a node, the arrows move it, a tenth with Ctrl (Option on the Mac), Delete and Shift+Delete reset.
+- To AccessKit, a group of sliders, one per node.
+- Its behaviour is in [docs/gui.md](gui.md), The hue curve.
+
 **`Histogram`**, the scopes: the histogram, waveform, RGB parade and vectorscope, from counts the caller passes.
 
 - A graph is chosen with buttons over it, not tabs.
@@ -1450,6 +1459,7 @@ Colour maths shared by operations, and the numerical helpers their ports share o
 - darktable's recursive Gaussian (`gaussian.slang`, its coefficients and Rust restatement `gaussian`) and bilinear resampling between grids (`bilinear.slang`, `bilinear`), which the colour equalizer's kernel uses and the tone equalizer's EIGF is to.
 - The tone equalizer's correction curve (`tone_equalizer`): eight Gaussians fitted to the nine bands' gains by least squares in f64, `None` where the fit fails, as `pseudo_solve` can. Its operation's setup and the Tone equalizer tool's band graph share it.
 - AgX's tone curve (`agx_curve`): `Curve::new` of the range and curve settings (`CurveSettings`), in f32 but for `_scale` in the log domain, and `encode` and `eval` as the kernel evaluates them. Its operation's setup packs it; the AgX tool's Pivot target output picker evaluates it too.
+- The colour equalizer's curves (`colour_equalizer`): darktable's periodic RBF through the eight nodes, as a table over the hue, and the `pseudo_solve` that fits it; and the colours darktable paints its graph in (`Gradients`, `_build_dt_UCS_HSB_gradients` on sRGB, its gamut mapping and `max_saturation`). Its operation's setup uses the curves, and the Colour equalizer tool's hue curve graph both.
 
 ## apertrust-tools
 
@@ -1465,7 +1475,7 @@ Tools (decision 28): what the user edits with, bound to operation parameters. No
 - `visible(control, image)` (decision 88): whether a control's row shows on the photo, true by default, read from its metadata alone; only Exposure's two camera rows are ever hidden, which a test holds.
 - `label_value(control, image)` (decision 88): a value of the photo's for a row's label, none by default: `LabelValue { value, unit, format }`, its `ValueFormat` `Thirds` ("−⅔", "+1⅓", "0", one decimal where it is no third or half) or `Decimals(n)`, written by `LabelValue::write` through the client's number format.
 - `range(control, values)` (decision 30): a number's `Range`, track and step for the tool's values, the definition's by default (`ProcessingDefinition::range`).
-- `curve`: the curve a curve row or a band graph draws, as its operation renders it (decision 31); `curve_width`, how far a band graph's drag reaches.
+- `curve`: the curve a curve row or a band graph draws, as its operation renders it (decision 31); `curve_width`, how far a band graph's drag reaches; `curve_offset`, where a hue curve's first node sits across; `curve_paint`, a hue curve's strip and background (`CurvePaint`).
 - `fixed`: the parameters it owns that no control sets; `--param` and `Command::Set` on them are refused as fixed (`EditError::Fixed`).
 - `preset` and `matching`, for a preset row's options.
 - `view` and `unview`, for a lossless view's coordinates (decision 2).
@@ -1653,10 +1663,10 @@ darktable's color calibration with every tab, owning every `channelmixerrgb` par
 
 #### Colour equalizer
 
-- darktable's page with its sliders shown: the Hue, Saturation and Brightness tabs, each its eight nodes, Hue curve ending the Hue tab; Node placement over every tab (`before`); Options under every tab (`after`), collapsible, the guided filter's four rows shown only while it is in use (`Row::When`).
+- darktable's page in its default layout: the Hue, Saturation and Brightness tabs, each darktable's graph of its curve's eight nodes (`Widget::HueCurve`); under every tab (`after`), Node placement, then Options, collapsible, with White level and Hue curve first, the guided filter's four rows shown only while it is in use (`Row::When`).
 - Each control is one `colorequal` parameter; a saturation or brightness node is 100 times its gain less 100, Saturation threshold 100 times its parameter.
 - Switched (decision 32), version 1: no value of its is an identity, so it plans `colorequal` only while it is on, as in darktable.
-- The curve graph, with Node placement's picker, the nodes' painted tracks and the show-mask quads wait for the renderer; White level's picker, in the definition, for its pick ([pickers.md](pickers.md), decision 79).
+- The graph's curve is the operation's, through `ProcessingTool::curve`, from where `curve_offset` puts the red node, over darktable's colours from `curve_paint`. Node placement's picker and the show-mask quads wait for the renderer; White level's picker, in the definition, for its pick ([pickers.md](pickers.md), decision 79).
 - H4 holds the tool's values to darktable's two golden cases' parameters; H6 holds it on at darktable's defaults.
 
 #### Tone curve
