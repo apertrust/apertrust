@@ -389,7 +389,26 @@ fn interpret(root: &Element) -> Result<Xmp, Fail> {
             xmp.properties.extend(fields);
         }
     }
+    dropped(root, &mut xmp.dropped);
     Ok(xmp)
+}
+
+/// Adds to `found` each `rdf:datatype` or `xml:` attribute but `xml:lang` of `element` and
+/// the elements inside it, which the model holds nothing of, each name once.
+fn dropped(element: &Element, found: &mut Vec<Name>) {
+    for (name, _) in &element.attrs {
+        let kept = name.is(XML, "lang") || (name.namespace != XML && !name.is(RDF, "datatype"));
+        if !kept
+            && !found
+                .iter()
+                .any(|seen| seen.is(&name.namespace, &name.local))
+        {
+            found.push(name.clone());
+        }
+    }
+    for child in element.elements() {
+        dropped(child, found);
+    }
 }
 
 fn unexpected(element: &Element, place: &str) -> Fail {

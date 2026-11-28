@@ -131,8 +131,9 @@ pub(crate) fn place(
 /// naming its new photo, or a new one holding the name alone ([`crate::sidecar::preserving`]).
 /// `None` for a copy under its own name, which copies its sidecar as it is, and for a
 /// source's that is no XMP, copied as it is too, logged. An error where the source's names
-/// its photo otherwise than as plain text, so it opens for viewing only: the photo's
-/// failure, its sidecar never rewritten without that field.
+/// its photo otherwise than as plain text or holds an attribute the XMP layer keeps nothing
+/// of, so it opens for viewing only: the photo's failure, its sidecar never rewritten
+/// without them.
 pub(crate) fn renamed_sidecar(
     source: &PhotoFiles,
     name: &str,
@@ -152,7 +153,7 @@ pub(crate) fn renamed_sidecar(
         Ok(None) => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "{}: its apertrust:photo is no plain text, so it opens for viewing only",
+                "{}: holds what this build cannot keep, so it opens for viewing only",
                 source.folder.join(&own).display()
             ),
         )),

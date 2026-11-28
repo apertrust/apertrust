@@ -409,12 +409,18 @@ impl Edits {
     /// What cannot be read as written, a clock or a note, is read as far as it can be and
     /// told in [`Edits::problems`] (decision 48); a value missing elsewhere reads as empty
     /// text. The properties of other namespaces are kept ([`Edits::other`]); a property or
-    /// field of Apertrust's own that this build does not know, or any field in a copy or a
-    /// step that it does not write, is a [`Problem::UnknownField`].
+    /// field of Apertrust's own that this build does not know, any field in a copy or a step
+    /// that it does not write, or an attribute the XMP layer keeps nothing of
+    /// ([`Xmp::dropped`]), is a [`Problem::UnknownField`].
     pub fn parse(xml: &str, modified: u64) -> Result<Edits, SidecarError> {
         let xmp = Xmp::parse(xml)?;
         let version = version(&xmp)?;
         let (other, mut problems) = top_level(&xmp, version);
+        // An attribute the XMP layer keeps nothing of would go at the next save.
+        problems.extend((xmp.dropped.iter()).map(|name| Problem::UnknownField {
+            place: "the file".to_owned(),
+            field: format!("{}:{}", name.prefix, name.local),
+        }));
         if version < COPIES_VERSION {
             // Every list, each read as the document reads it, is checked as a step's entries
             // are, so a field this build does not write makes the file view-only rather than
@@ -639,8 +645,9 @@ fn plain_fields(fields: &[Property], names: &[&str], place: &str, problems: &mut
 /// where the source has none, a new one of version [`COPIES_VERSION`] by `build`, naming
 /// `photo`, with no copy, holding the camera name alone. A source's that is no XMP is an
 /// error, and its bytes are the caller's to keep. `None` where its `apertrust:photo` is no
-/// plain text, a field that opens the photo for viewing only, which a copy may neither drop
-/// nor rename.
+/// plain text or it holds an attribute the XMP layer keeps nothing of ([`Xmp::dropped`]),
+/// each of which opens the photo for viewing only, which a copy may neither drop nor
+/// rename.
 pub fn preserving(
     xml: Option<&[u8]>,
     camera: &str,
@@ -658,6 +665,9 @@ pub fn preserving(
         return Ok(Some(edits.to_xml()));
     };
     let mut xmp = Xmp::parse_bytes(xml)?;
+    if !xmp.dropped.is_empty() {
+        return Ok(None);
+    }
     if xmp.get(MEDIA_MANAGEMENT, "PreservedFileName").is_none() {
         xmp.set(preserved);
     }
