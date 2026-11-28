@@ -85,8 +85,9 @@ pub struct ImportPreview {
     /// and the default folder's trees, and will be copied again: those to be skipped as
     /// already at their destination left out.
     pub imported_before: usize,
-    /// The bytes the copy writes: the photos' files, and the sidecars copied beside a copy
-    /// already there.
+    /// The bytes the copy may write: the photos' files, those of a photo to be skipped if
+    /// identical among them, which the copy writes under the next `_01` name where the
+    /// whole files differ.
     pub size: u64,
     /// The free space of the destination's volume, where every destination is on one,
     /// read at the deepest folder of each that is there; `None` where it cannot be read or
@@ -148,8 +149,8 @@ pub enum ImportFate {
     /// missing sidecars copied alone.
     There { at: PathBuf },
     /// A file of its size is at `at` with a sidecar of its own that differs from the
-    /// source's, `sidecar`: skipped, its sidecar not copied, its edit on the source left
-    /// there.
+    /// source's, `sidecar`: skipped if identical, its sidecar not copied, its edit on the
+    /// source left there.
     Diverged { at: PathBuf, sidecar: PathBuf },
     /// Its files could not be read, in plain words.
     Unreadable { reason: String },
@@ -464,8 +465,8 @@ pub(crate) fn shots(
 
 /// What the copy would do with the photo at `path` going into `into`, `claimed` holding the
 /// names the photos before it take, which it adds its own to, and `size` the bytes to copy,
-/// which it adds its own to: a copy under the first name free, or its copy there, found by
-/// a file of its size on the way.
+/// which it adds its own to, whether a copy there is found or not: a copy under the first
+/// name free, or its copy there, found by a file of its size on the way.
 fn fate(path: &Path, into: &Path, claimed: &mut HashSet<PathBuf>, size: &mut u64) -> ImportFate {
     let unreadable = |error: io::Error| ImportFate::Unreadable {
         reason: format!("cannot read {}: {error}", path.display()),
@@ -517,13 +518,13 @@ fn fate(path: &Path, into: &Path, claimed: &mut HashSet<PathBuf>, size: &mut u64
                 Ok(beside) => beside,
                 Err(error) => return unreadable(error),
             };
+            // Found by its size alone: the copy compares the whole files and writes the
+            // photo under the next `_01` name where they differ, so its files are counted.
+            *size += raw + companions(&source, &source.companions);
             let at = into.join(&name);
             match beside.diverged {
                 Some(sidecar) => ImportFate::Diverged { at, sidecar },
-                None => {
-                    *size += companions(&source, &beside.missing);
-                    ImportFate::There { at }
-                }
+                None => ImportFate::There { at },
             }
         }
     }

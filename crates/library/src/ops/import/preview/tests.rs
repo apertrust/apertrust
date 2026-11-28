@@ -311,7 +311,8 @@ fn a_name_taken_is_continued_with_01() {
 }
 
 /// A file of a photo's size at its destination, under its name or a `_01` one, is to be
-/// skipped if identical and left out of the count of photos copied again; a photo whose
+/// skipped if identical and left out of the count of photos copied again, its bytes still
+/// in the size, since the copy writes it under `_01` where the files differ; a photo whose
 /// copy is elsewhere in the tree is copied again and counted.
 #[test]
 fn a_photo_there_already_is_skipped_and_not_counted_as_copied_again() {
@@ -333,12 +334,12 @@ fn a_photo_there_already_is_skipped_and_not_counted_as_copied_again() {
     assert_eq!(fates[1], &ImportFate::There { at: renamed });
     assert!(matches!(fates[2], ImportFate::Copy { renamed: false, .. }));
     assert_eq!(preview.imported_before, 1);
-    assert_eq!(preview.size, 5);
+    assert_eq!(preview.size, 5 + 6 + 5);
 }
 
 /// A photo there with an `.apxmp` that differs from the source's is skipped and named; one
-/// whose sidecar there is the same, or missing, is there, its missing sidecar's bytes
-/// counted.
+/// whose sidecar there is the same, or missing, is there; both found by their size alone,
+/// their files' bytes counted.
 #[test]
 fn a_diverged_edit_is_counted_and_named() {
     let setup = Setup::new();
@@ -357,7 +358,8 @@ fn a_diverged_edit_is_counted_and_named() {
     assert!(matches!(preview.photos[1].fate, ImportFate::There { .. }));
     let counts = preview.counts();
     assert_eq!((counts.diverged, counts.there, counts.copied), (1, 1, 0));
-    assert_eq!(preview.size, "the card's edit".len() as u64);
+    let edit = "the card's edit".len() as u64;
+    assert_eq!(preview.size, (5 + edit) + (6 + edit));
 }
 
 /// An unknown variable, with Use $(MONTH) for its fix, and nothing else worked out.
