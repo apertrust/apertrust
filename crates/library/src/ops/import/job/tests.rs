@@ -688,6 +688,43 @@ fn a_destination_unplugged_stops_the_job() {
     assert_eq!(end.left.len(), 2);
 }
 
+/// The deepest folder of the destination there as the import started gone between two
+/// photos, its disk unplugged, its mount point's folder left: the job stops, gone, before
+/// the next photo's folders are made where the path now leads.
+#[test]
+fn a_destination_gone_between_photos_stops_the_job_with_nothing_made() {
+    let setup = Setup::new();
+    let files = setup.raws(3);
+    let volume = setup.root.path().join("NAS");
+    fs::create_dir_all(volume.join("Photos")).unwrap();
+    let settings = ImportSettings {
+        base_folder: volume.join("Photos").to_string_lossy().replace('\\', "/"),
+        ..setup.settings("$(IMPORT_NAME)")
+    };
+    let gone = volume.join("Photos");
+    let (photos, end) = setup.import(
+        &files,
+        &settings,
+        &mut |_, _| Ok(()),
+        &|photo| {
+            if photo == 1 {
+                fs::remove_dir_all(&gone).unwrap();
+            }
+        },
+        &|| false,
+    );
+    assert_eq!(names(&photos), ["IMG_0001.CR2", "IMG_0002.CR2"]);
+    assert_eq!(
+        end.failure.as_ref().map(|f| f.cause),
+        Some(ImportCause::Gone)
+    );
+    assert_eq!((end.copied, end.failed, end.not_reached), (1, 1, 1));
+    assert!(
+        volume.is_dir() && !gone.exists(),
+        "nothing made for the next photo"
+    );
+}
+
 /// A write error on a destination still there fails that photo alone.
 #[test]
 fn a_write_error_with_the_destination_there_fails_the_photo_alone() {
