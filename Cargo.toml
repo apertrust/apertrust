@@ -88,6 +88,9 @@ eframe = { version = "0.37.0", default-features = false, features = ["accesskit"
 egui = { version = "0.37.0", default-features = false }
 # eframe's own, for its winit: the app places its window where settings say.
 egui-winit = { version = "0.37.0", default-features = false }
+# eframe's winit, on Linux: a dialog's Wayland parent in apertrust-display, and the
+# app's Adwaita frame with the system's title bar (decision 39).
+winit = { version = "0.30.13", default-features = false }
 # About's Credits, CREDITS.md drawn as Markdown: the parser alone, no image loading.
 egui_commonmark = { version = "0.26.0", default-features = false, features = ["pulldown_cmark"] }
 egui_kittest = { version = "0.37.0", features = ["wgpu", "snapshot"] }

@@ -16,7 +16,7 @@ thiserror.workspace = true
 wayland-client = { version = "0.31.15", features = ["system"] }
 # `staging` for xdg-activation, which winit's toolkit turns on already.
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
-winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "wayland", "wayland-dlopen"] }
+winit = { workspace = true, features = ["rwh_06", "wayland", "wayland-dlopen"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The blocks a sheet's calls are scheduled on the run loop with; objc2-app-kit's already.

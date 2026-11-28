@@ -403,6 +403,7 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - rustversion 1.0.23: MIT OR Apache-2.0
 - scoped-tls 1.0.1: MIT/Apache-2.0
 - scopeguard 1.2.0: MIT OR Apache-2.0
+- sctk-adwaita 0.10.1: MIT
 - self_cell 1.3.0: Apache-2.0 OR GPL-2.0-only
 - send_wrapper 0.6.0: MIT/Apache-2.0
 - serde 1.0.229: MIT OR Apache-2.0
@@ -444,7 +445,9 @@ The libraries Apertrust and its command line are built from, on every platform, 
 - thiserror-impl 2.0.21: MIT OR Apache-2.0
 - thread_local 1.1.10: MIT OR Apache-2.0
 - tiff 0.11.3: MIT
+- tiny-skia 0.11.4: BSD-3-Clause
 - tiny-skia 0.12.0: BSD-3-Clause
+- tiny-skia-path 0.11.4: BSD-3-Clause
 - tiny-skia-path 0.12.0: BSD-3-Clause
 - tinystr 0.8.5: Unicode-3.0
 - tokio 1.54.1: MIT
