@@ -341,17 +341,17 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
             pos2(rect.left(), bar.bottom()),
             pos2(rect.right(), footer.top()),
         );
-        let most = (rect.width() / 2.0).clamp(COLUMN_LEAST, COLUMN_MOST);
+        // The grid keeps two cells at its Zoom before the column gives way, down to 296; the
+        // edge takes no more, so it reports the width drawn and its keys step from it.
+        let two = grid_least(self.size.side());
+        let most = (rect.width() / 2.0)
+            .clamp(COLUMN_LEAST, COLUMN_MOST)
+            .min(rect.width() - two)
+            .max(COLUMN_LEAST);
         let edge_name = tr(&ctx, "sheet-column-width");
         let edge = PanelEdge::new(&edge_name, self.column_width, COLUMN_LEAST..=most)
             .at_start(self.column_at_start);
-        // The grid keeps two cells at its Zoom before the column gives way, down to 296.
-        let wanted = edge.width(&ctx);
-        let two = grid_least(self.size.side());
-        let width = wanted
-            .min(rect.width() - two)
-            .max(COLUMN_LEAST)
-            .min(rect.width());
+        let width = edge.width(&ctx).min(rect.width());
         let (grid, column_rect) = if self.column_at_start {
             let column = Rect::from_min_size(middle.min, vec2(width, middle.height()));
             (
@@ -936,18 +936,27 @@ impl Keys {
                 .and_then(|id| widgets.iter().find(|(w, _, _)| *w == id))
                 .and_then(|(_, rect, _)| region_of(*rect));
             let n = last.regions.len();
-            let next = match (current, forward) {
-                (Some(c), true) => (c + 1) % n,
-                (Some(c), false) => (c + n - 1) % n,
-                (None, true) => 0,
-                (None, false) => n - 1,
+            let step = |r: usize| {
+                if forward {
+                    (r + 1) % n
+                } else {
+                    (r + n - 1) % n
+                }
             };
-            if next == 0 && count > 0 {
-                keys.focus_active = true;
-            } else if let Some((id, _, _)) =
-                (widgets.iter()).find(|(_, rect, _)| region_of(*rect) == Some(next))
-            {
-                ctx.memory_mut(|m| m.request_focus(*id));
+            let mut next = current.map_or(if forward { 0 } else { n - 1 }, step);
+            // A region with nothing to focus, as a column with no control, is passed over.
+            for _ in 0..n {
+                if next == 0 && count > 0 {
+                    keys.focus_active = true;
+                    break;
+                }
+                if let Some((id, _, _)) =
+                    (widgets.iter()).find(|(_, rect, _)| region_of(*rect) == Some(next))
+                {
+                    ctx.memory_mut(|m| m.request_focus(*id));
+                    break;
+                }
+                next = step(next);
             }
         }
         // Tab and Shift+Tab stay inside the sheet: past its last stop to its first, and

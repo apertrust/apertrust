@@ -23,7 +23,9 @@
 //! Accepted with `UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test sheet`, reviewed like
 //! a golden image.
 
-use apertrust_ui::components::{ButtonOrder, COLUMN_LEAST, Checks};
+use apertrust_ui::components::{
+    ButtonOrder, COLUMN_LEAST, Checks, PanelEdgeAction, Sheet, SheetCell, ThumbnailSize,
+};
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme};
 use egui::accesskit::Role;
@@ -98,7 +100,7 @@ fn checks(harness: &Harness<'_, State>) -> Checks {
     harness.state().gallery.sheet_checks().clone()
 }
 
-fn focused(harness: &Harness<'_, State>) -> Option<String> {
+fn focused<S>(harness: &Harness<'_, S>) -> Option<String> {
     harness
         .query_by(|node| node.is_focused())
         .and_then(|node| node.accesskit_node().label())
@@ -119,7 +121,7 @@ fn it_opens_with_the_focus_on_the_active_cell_and_return_there_presses_the_prima
 /// focus to its active cell once it has one: Space, with no click, turns its check.
 #[test]
 fn a_grid_empty_as_the_sheet_opens_takes_the_focus_once_its_photos_come() {
-    use apertrust_ui::components::{CheckGesture, Sheet, SheetCell};
+    use apertrust_ui::components::CheckGesture;
     struct Filling {
         count: usize,
         checks: Checks,
@@ -400,6 +402,46 @@ fn shift_with_an_arrow_after_a_check_box_s_click_checks_from_that_cell() {
     assert_eq!(after.active(), Some(2));
 }
 
+/// → pressed in two passes one after the other keeps the focus and the active photo on
+/// the same cell, so Space then turns the active photo's check: egui's own move of the
+/// focus by the arrows never runs on past the cell the grid moved it to.
+#[test]
+fn arrows_in_consecutive_passes_keep_the_focus_on_the_active_photo() {
+    let mut harness = wide();
+    assert_eq!(checks(&harness).active(), Some(8));
+    for _ in 0..2 {
+        harness.key_press(Key::ArrowRight);
+        harness.step();
+    }
+    harness.run();
+    let active = checks(&harness).active().expect("an active photo");
+    assert_eq!(active, 10);
+    let name = format!("DSCF{}.RAF", 1001 + active);
+    assert_eq!(focused(&harness).as_deref(), Some(name.as_str()));
+    let before = checks(&harness).is_checked(active);
+    harness.key_press(Key::Space);
+    harness.run();
+    let after = checks(&harness);
+    assert_eq!(after.is_checked(active), !before);
+    assert!(
+        after.is_checked(active + 1),
+        "the next photo left as it was"
+    );
+    // ↓ likewise, a line at a time.
+    for _ in 0..2 {
+        harness.key_press(Key::ArrowDown);
+        harness.step();
+    }
+    harness.run();
+    let down = checks(&harness).active().expect("an active photo");
+    assert!(
+        down > active + 1,
+        "moved down two lines from {active} to {down}"
+    );
+    let name = format!("DSCF{}.RAF", 1001 + down);
+    assert_eq!(focused(&harness).as_deref(), Some(name.as_str()));
+}
+
 #[test]
 fn tab_stays_inside_the_sheet() {
     let mut harness = wide();
@@ -559,6 +601,85 @@ fn the_column_follows_its_edge_within_its_widths() {
     harness.key_press(Key::End);
     harness.run();
     assert_eq!(harness.state().widths.last(), Some(&600.0));
+}
+
+/// A sheet of one photo, `size` points large edge to edge, at `zoom`, its column empty,
+/// and the widths its edge reported.
+fn one_photo(size: egui::Vec2, zoom: ThumbnailSize) -> Harness<'static, Vec<f32>> {
+    let mut harness = Harness::builder()
+        .with_size(size)
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui_state(
+            move |ui, widths: &mut Vec<f32>| {
+                let whole = ui.ctx().content_rect();
+                let ui = &mut ui.new_child(egui::UiBuilder::new().max_rect(whole));
+                let out = Sheet::new("Import · CARD", "Import, CARD", 1, Some(0), |_| {
+                    SheetCell {
+                        name: "DSCF1001.RAF",
+                        picture: None,
+                        no_preview: true,
+                        checked: false,
+                        check_name: "Import DSCF1001.RAF",
+                        check_description: "",
+                        dimmed: false,
+                        mark: None,
+                        tip: None,
+                    }
+                })
+                .size(zoom)
+                .column(440.0, false)
+                .primary("Import", None)
+                .show(ui, |_, _| {});
+                if let Some(PanelEdgeAction::Resize(width)) = out.column {
+                    widths.push(width);
+                }
+            },
+            Vec::new(),
+        );
+    harness.run();
+    harness.run();
+    harness
+}
+
+/// F6 passes over a column with nothing to focus, either way.
+#[test]
+fn f6_passes_over_a_column_with_nothing_to_focus() {
+    let mut harness = one_photo(vec2(1280.0, 720.0), ThumbnailSize::Medium);
+    assert_eq!(focused(&harness).as_deref(), Some("DSCF1001.RAF"));
+    let first = match ButtonOrder::platform().arrange(2, 0)[0] {
+        0 => "Import",
+        _ => "Close",
+    };
+    harness.key_press(Key::F6);
+    harness.run();
+    harness.run();
+    assert_eq!(focused(&harness).as_deref(), Some(first));
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::F6);
+    harness.run();
+    harness.run();
+    assert_eq!(focused(&harness).as_deref(), Some("DSCF1001.RAF"));
+}
+
+/// A sheet whose grid keeps two Large cells draws its column narrower than the kept 440:
+/// its edge reports the width drawn, and an arrow key steps from it.
+#[test]
+fn a_column_giving_way_reports_the_width_drawn_and_steps_from_it() {
+    let mut harness = one_photo(vec2(700.0, 600.0), ThumbnailSize::Large);
+    // 700 points less two Large cells with their gaps, the room round them and the scroll
+    // bar's lane: 312.
+    let grid = harness.get_by_role(Role::List).rect();
+    let drawn = 700.0 - grid.width();
+    assert_eq!(drawn, 312.0);
+    let edge = harness.get_by_role_and_label(Role::Splitter, "Tool column width");
+    assert_eq!(
+        edge.accesskit_node().numeric_value(),
+        Some(f64::from(drawn))
+    );
+    edge.focus();
+    harness.run();
+    harness.key_press(Key::ArrowRight);
+    harness.run();
+    assert_eq!(harness.state().as_slice(), [302.0]);
 }
 
 /// The sheet in a window `size` points large, less the Toolbar, in `which` and `locale`, its

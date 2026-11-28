@@ -10402,6 +10402,11 @@ fn run_action(
     may_leave: &mut dyn FnMut() -> bool,
 ) -> Option<Command> {
     let enabled = actions::action(id).is_some_and(|a| a.enabled(state));
+    // Under an alert the host draws, Close Window does nothing, as Quit does
+    // (`AppDialogs::quit`): the alert is the person's to answer, and a sheet under it stays.
+    if id == ActionId::CLOSE_WINDOW && dialogs.alert_shown() {
+        return None;
+    }
     // A dialog's own window with the focus closes; else the main window's sheet does, as
     // the shell runs it.
     let sheet = shell.sheet.is_some();
@@ -32138,5 +32143,33 @@ mod tests {
         harness.run();
         assert!(harness.state().shell.sheet.is_none());
         assert!(!harness.state().shell.leaving);
+    }
+
+    /// Decision 86: under a sheet, Close Window with an alert the host draws up, Quit's
+    /// here, leaves both, as it leaves the alert with no sheet, whether the alert has the
+    /// focus or the main window has.
+    #[test]
+    fn close_window_under_a_sheet_leaves_a_drawn_alert_and_the_sheet() {
+        let host = with_drawn_alerts();
+        let mut harness = dialogged(host.clone());
+        harness.run();
+        let stub = StubSheet {
+            count: 3,
+            checks: apertrust_ui::components::Checks::new(3),
+            pressed: std::rc::Rc::default(),
+        };
+        assert!(harness.state_mut().shell.open_sheet(Box::new(stub)));
+        start_export(&mut harness);
+        press_action(&mut harness, ActionId::QUIT);
+        assert_eq!(asked_alerts(&host), 1);
+        for focused in [true, false] {
+            host.0.borrow_mut().alert.as_mut().expect("up").focused = focused;
+            press_action(&mut harness, ActionId::CLOSE_WINDOW);
+            harness.step();
+            assert!(host.0.borrow().alert.is_some(), "still up");
+            assert!(host.0.borrow().answer.is_none(), "not dismissed");
+            assert!(harness.state().shell.sheet.is_some(), "the sheet stays");
+            assert!(!closing(&harness));
+        }
     }
 }
