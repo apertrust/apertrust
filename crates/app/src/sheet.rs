@@ -26,19 +26,23 @@
 //! the jobs spinner and View › Jobs stay live. Close Window, the window's close button and
 //! the Toolbar's drawn close close the sheet first; Quit asks only where a job runs, as
 //! always. The sheet's own keys are the frame's (`apertrust_ui::components::Sheet`).
+//!
+//! The footer's buttons come in the platform's order, and on KDE the primary first, as on
+//! Windows, the desktop read once at start ([`order`]).
 
 use apertrust_engine::session::{Command, LibraryEvent};
-use apertrust_ui::components::PanelEdgeAction;
+use apertrust_ui::components::{ButtonOrder, PanelEdgeAction};
 use eframe::egui;
 
 use crate::SendCommand;
 
 /// Where the sheet's tool column is: its kept width, and whether it is at the window's
-/// start, as the Tools panel is.
+/// start, as the Tools panel is; and the order of the footer's buttons on this desktop.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Place {
     pub column: f32,
     pub at_start: bool,
+    pub order: ButtonOrder,
 }
 
 /// What a frame of the sheet came to, for the shell: whether it closed, and what was done
@@ -90,6 +94,18 @@ pub fn show(
         .inner
 }
 
+/// The order of a sheet's footer buttons where Linux's desktop is `desktop`, as
+/// `XDG_CURRENT_DESKTOP` names it, none elsewhere: on KDE the primary first, as on Windows
+/// (`docs/gui.md`, The footer); on every other desktop the platform's, GNOME's on Linux,
+/// the primary last.
+pub fn order(desktop: Option<&str>) -> ButtonOrder {
+    if desktop.is_some_and(|desktop| desktop.contains("KDE")) {
+        ButtonOrder::DefaultFirst
+    } else {
+        ButtonOrder::platform()
+    }
+}
+
 /// The column's kept width after `action` on its edge: the width dragged to, or
 /// `import.column_width`'s default.
 pub fn resized(action: PanelEdgeAction) -> f32 {
@@ -99,5 +115,21 @@ pub fn resized(action: PanelEdgeAction) -> f32 {
             width.clamp(*setting.range().start(), *setting.range().end())
         }
         PanelEdgeAction::Reset => setting.default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kde_puts_the_primary_button_first_and_every_other_desktop_the_platform_s_way() {
+        for desktop in ["KDE", "KDE:plasma"] {
+            assert_eq!(order(Some(desktop)), ButtonOrder::DefaultFirst, "{desktop}");
+        }
+        for desktop in ["GNOME", "ubuntu:GNOME", "X-Cinnamon", "XFCE", "kde", ""] {
+            assert_eq!(order(Some(desktop)), ButtonOrder::platform(), "{desktop}");
+        }
+        assert_eq!(order(None), ButtonOrder::platform());
     }
 }

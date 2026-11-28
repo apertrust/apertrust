@@ -48,7 +48,10 @@
 //! it anywhere but an open list. Esc, and Cmd+. on the Mac, close the innermost first, a
 //! list, a menu, the variable list or a field being typed in, then the sheet. F6 and
 //! Shift+F6 move among three regions, the bar and the grid (landing on the active cell),
-//! the column and the footer; Tab and Shift+Tab stay inside the sheet. As it opens,
+//! the column and the footer; Tab and Shift+Tab stay inside the sheet. On Windows and
+//! Linux, Alt with the access key of the primary button or Close, which their words mark
+//! with `&` and underline while Alt is held, presses it from anywhere but an open list, a
+//! field being typed in included; the Mac has none. As it opens,
 //! whatever had the focus behind it lets go of it, and the grid's active cell takes it, or,
 //! with the grid still empty, the first active cell it has, unless something in the sheet
 //! took the focus meanwhile.
@@ -78,7 +81,7 @@ use super::{
     PanelEdgeAction, ThumbnailSize, ToolButton, ViewerBar, middle_cut, pull_down, truncated,
 };
 use crate::popup::{self, Item};
-use crate::{Icon, Theme, fonts, theme, tr};
+use crate::{Icon, Theme, access_key, fonts, theme, tr};
 
 /// The column's width at first, and the least and the most it takes, in points.
 pub const COLUMN_WIDTH: f32 = 440.0;
@@ -278,14 +281,16 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
         self
     }
 
-    /// The primary button's words, translated, and why it cannot press, where it cannot.
+    /// The primary button's words, translated, its access key marked with `&` ("&Import 209
+    /// photos"), and why it cannot press, where it cannot.
     pub fn primary(mut self, words: &'a str, why_not: Option<&'a str>) -> Self {
         self.primary = words;
         self.why_not = why_not;
         self
     }
 
-    /// Where the primary button sits; the platform's unless a test says otherwise.
+    /// Where the primary button sits: the platform's unless the caller says otherwise, as
+    /// the app does on KDE, the primary first.
     pub fn order(mut self, order: ButtonOrder) -> Self {
         self.order = order;
         self
@@ -328,7 +333,8 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
         }
 
         let enabled = self.why_not.is_none();
-        let keys = Keys::read(ui, last.as_ref(), self.count);
+        let close_words = tr(&ctx, "sheet-close");
+        let keys = Keys::read(ui, last.as_ref(), self.count, [self.primary, &close_words]);
         let mut primary = enabled && keys.primary;
         let mut close = keys.close;
         let mut gesture = keys.gesture;
@@ -408,7 +414,7 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
         let mut returned = Returned::default();
         let inner = column_area(&mut child, &t, &mut returned, column);
         let resized = edge.show(ui, column_rect);
-        let pressed = self.footer(ui, &t, footer);
+        let pressed = self.footer(ui, &t, footer, &close_words);
         primary |= pressed.primary;
         close |= pressed.close;
         primary |= enabled && returned.0;
@@ -672,8 +678,9 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
         out
     }
 
-    /// The footer in `rect`: Help, the summary, Close and the primary button.
-    fn footer(&self, ui: &mut Ui, t: &Theme, rect: Rect) -> Pressed {
+    /// The footer in `rect`: Help, the summary, Close and the primary button, their words
+    /// marking their access keys, Close's `close_words`.
+    fn footer(&self, ui: &mut Ui, t: &Theme, rect: Rect, close_words: &str) -> Pressed {
         let ctx = ui.ctx().clone();
         ui.painter().hline(
             rect.x_range(),
@@ -696,10 +703,9 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
         ctx.accesskit_node_builder(help.id, |node| node.set_description(later.clone()));
         // The buttons at the end, never cut, in the platform's order: the primary first in
         // the request, Close second.
-        let close_words = tr(&ctx, "sheet-close");
-        let words = [self.primary, close_words.as_str()];
+        let words = [self.primary, close_words];
         let buttons: f32 = (words.iter())
-            .map(|w| Button::new(w).natural_width(&row))
+            .map(|w| Button::new(w).access_key(true).natural_width(&row))
             .sum::<f32>()
             + t.spacing.m;
         let room = (row.available_width() - buttons - t.spacing.m).max(0.0);
@@ -709,6 +715,7 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
         for i in self.order.arrange(2, 0) {
             if i == 0 {
                 let mut button = Button::new(self.primary)
+                    .access_key(true)
                     .primary(true)
                     .held_off(self.why_not.is_some());
                 if let Some(why) = self.why_not {
@@ -716,7 +723,9 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
                 }
                 pressed.primary = button.show_pressed(&mut row);
             } else {
-                pressed.close = Button::new(&close_words).show(&mut row).clicked();
+                pressed.close = (Button::new(close_words).access_key(true))
+                    .show(&mut row)
+                    .clicked();
             }
         }
         pressed
@@ -877,7 +886,9 @@ struct Keys {
 }
 
 impl Keys {
-    fn read(ui: &mut Ui, last: Option<&Last>, count: usize) -> Keys {
+    /// `footer` holds the words of the primary button and Close, each marking its access
+    /// key.
+    fn read(ui: &mut Ui, last: Option<&Last>, count: usize, footer: [&str; 2]) -> Keys {
         let ctx = ui.ctx().clone();
         let mut keys = Keys::default();
         let Some(last) = last else {
@@ -890,6 +901,21 @@ impl Keys {
         let list_open = popup::any_open(&ctx)
             || focused.is_some_and(|id| super::text_field::variables_open(&ctx, id));
         let typing = ctx.text_edit_focused();
+        // Alt with the access key of the primary button or Close, on Windows and Linux, but
+        // in an open list, whose keys are its own: taken before any widget sees it, a field
+        // being typed in included.
+        if !list_open && ctx.os() != OperatingSystem::Mac {
+            let letters = footer.map(|words| access_key::words(words).1.map(|(_, key)| key));
+            let found = access_key::pressed(&ctx, |letter| {
+                (letters.iter())
+                    .position(|key| key.is_some_and(|key| access_key::same(letter, key)))
+            });
+            match found {
+                Some(0) => keys.primary = true,
+                Some(_) => keys.close = true,
+                None => {}
+            }
+        }
         // Ctrl+Return (Cmd+Return) anywhere but an open list, whose keys are its own.
         if !list_open && ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter)) {
             keys.primary = true;

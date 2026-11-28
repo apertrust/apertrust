@@ -42,6 +42,8 @@ use std::sync::Arc;
 
 use egui::{Context, Id, Rect};
 
+use crate::access_key::words;
+
 /// One line of a menu.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Entry {
@@ -469,31 +471,6 @@ pub fn answer(ctx: &Context, id: Id) -> Option<Answer> {
     drawn::with(ctx, |popups| popups.answer(id))
 }
 
-/// `text` as shown, without its `&`, and its access key with the key's index among the
-/// shown text's characters.
-fn words(text: &str) -> (String, Option<(usize, char)>) {
-    let mut shown = String::with_capacity(text.len());
-    let mut key = None;
-    let mut chars = text.chars();
-    while let Some(c) = chars.next() {
-        if c != '&' {
-            shown.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('&') => shown.push('&'),
-            Some(next) => {
-                if key.is_none() {
-                    key = Some((shown.chars().count(), next));
-                }
-                shown.push(next);
-            }
-            None => {}
-        }
-    }
-    (shown, key)
-}
-
 fn lowercase(c: char) -> char {
     c.to_lowercase().next().unwrap_or(c)
 }
@@ -501,15 +478,6 @@ fn lowercase(c: char) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn an_ampersand_marks_the_access_key_and_two_make_one() {
-        assert_eq!(words("&File"), ("File".to_owned(), Some((0, 'F'))));
-        assert_eq!(words("Ed&it"), ("Edit".to_owned(), Some((2, 'i'))));
-        assert_eq!(words("Copy && Paste"), ("Copy & Paste".to_owned(), None));
-        assert_eq!(words("&Довідка"), ("Довідка".to_owned(), Some((0, 'Д'))));
-        assert_eq!(words("Help&"), ("Help".to_owned(), None));
-    }
 
     #[test]
     fn a_letter_finds_the_menu_at_the_top_with_its_access_key() {

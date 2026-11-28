@@ -21,7 +21,7 @@ The pseudo-locale (`en-XA`) has no folder: it is English, accented, 40% longer a
 - Let the language choose its own forms: a count is a variable with a selector (`{ $count -> [one] … *[other] … }`), and Ukrainian and Polish add `few` and `many`. Never build a sentence from pieces in code.
 - Numbers passed as variables are written in the language's format (`1,5` in Ukrainian and Polish) and pick its plural form.
 
-## The menus' access keys
+## Access keys
 
 The top-level menus' names (`menu-file`, `menu-edit` and the rest) carry an access key: the `&` marks the letter after it, which Alt opens the menu at on Windows and Linux (`docs/gui.md`, The menu bar, Translation; decision 39). The Mac shows no `&`.
 
@@ -29,10 +29,10 @@ The top-level menus' names (`menu-file`, `menu-edit` and the rest) carry an acce
 - Choose a letter typed without AltGr: in Polish never ą, ć, ę, ł, ń, ó, ś, ź or ż.
 - Write `&&` for an ampersand that is shown.
 - Where the first letter is taken, mark another: Polish Help is `Po&moc`, since Plik has P.
-- Only the top-level menus have one; the items inside need none.
+- Only the top-level menus and a sheet's footer buttons (`sheet-close`, `import-primary`) have one; the menus' items need none. A footer button's is neither the other's nor a top-level menu's in its language, Window's included.
 - File's word is also a term, `-file-menu`, and `menu-file` is `&{ -file-menu }`, so a sentence that names the menu uses the term and shows no `&`.
 
-A test fails when a menu lacks an access key, when two share one in a language, or when one needs AltGr.
+A test fails when a menu lacks an access key, when two share one in a language, or when one needs AltGr; and when a sheet's footer button's is a menu's or needs AltGr.
 
 ## Adding a language
 

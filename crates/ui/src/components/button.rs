@@ -23,13 +23,20 @@
 //! as the Export tool's fills its section. One that cannot act yet but stays a stop for the
 //! keyboard, with the reason as its tooltip and its description, is [`Button::held_off`]:
 //! drawn disabled, said disabled to screen readers, its presses the caller's to ignore.
+//!
+//! One whose words mark an access key ([`Button::access_key`]), as a sheet's footer
+//! buttons' do, underlines it while Alt is held on Windows and Linux and tells screen
+//! readers; the caller reads Alt with it, as the sheet does before its widgets see the
+//! press ([`crate::access_key::pressed`]). The Mac shows no `&` and has none.
 
+use egui::os::OperatingSystem;
 use egui::{Color32, FontId, Response, Role, Ui, WidgetInfo, pos2, vec2};
 
 use super::plate::{
     ButtonState, Plate, Touch, allocate, paint_focus, paint_plate, undimmed_painter, words_colour,
 };
 use super::report_shortcut;
+use crate::access_key::{underlined, words};
 use crate::theme;
 
 pub struct Button<'a> {
@@ -43,6 +50,7 @@ pub struct Button<'a> {
     centred: bool,
     held_off: bool,
     height: Option<f32>,
+    access_key: bool,
 }
 
 impl<'a> Button<'a> {
@@ -59,6 +67,7 @@ impl<'a> Button<'a> {
             centred: false,
             held_off: false,
             height: None,
+            access_key: false,
         }
     }
 
@@ -119,6 +128,24 @@ impl<'a> Button<'a> {
         self
     }
 
+    /// Its words mark its access key with an `&`, the letter after it (`&Close`), `&&`
+    /// being an ampersand shown; the `&` is never shown. Off the Mac the letter is
+    /// underlined while Alt is held and is its access key to screen readers.
+    pub fn access_key(mut self, on: bool) -> Self {
+        self.access_key = on;
+        self
+    }
+
+    /// Its words as shown, and its access key with the key's index among them, off the
+    /// Mac: none where its words mark none.
+    fn words(&self, ui: &Ui) -> (String, Option<(usize, char)>) {
+        if !self.access_key {
+            return (self.text.to_owned(), None);
+        }
+        let (shown, key) = words(self.text);
+        (shown, key.filter(|_| ui.ctx().os() != OperatingSystem::Mac))
+    }
+
     /// Draws it in `state` whatever the pointer and the keys do, as the gallery shows each
     /// state.
     pub fn state(mut self, state: ButtonState) -> Self {
@@ -145,7 +172,7 @@ impl<'a> Button<'a> {
             galley.size().x
         };
         let keys = self.keys.map_or(0.0, |keys| t.spacing.l + measure(keys));
-        (measure(self.text) + keys + 2.0 * t.spacing.m).max(self.width)
+        (measure(&self.words(ui).0) + keys + 2.0 * t.spacing.m).max(self.width)
     }
 
     pub fn show(self, ui: &mut Ui) -> Response {
@@ -155,9 +182,11 @@ impl<'a> Button<'a> {
             && ui.is_enabled()
             && self.state != Some(ButtonState::Disabled);
         let font = FontId::proportional(t.text.body);
+        let (shown, access_key) = self.words(ui);
+        // The access key underlined while Alt is held; the colour given as it is drawn.
+        let underline = access_key.filter(|_| ui.input(|i| i.modifiers.alt));
         let galley =
-            ui.painter()
-                .layout_no_wrap(self.text.to_owned(), font.clone(), Color32::PLACEHOLDER);
+            (ui.painter()).layout_job(underlined(&shown, underline, &t, Color32::PLACEHOLDER));
         let keys = self.keys.map(|keys| {
             ui.painter()
                 .layout_no_wrap(keys.to_owned(), font, Color32::PLACEHOLDER)
@@ -205,10 +234,13 @@ impl<'a> Button<'a> {
             }
             paint_focus(painter, rect, t.shape.radius, touch, &t);
         }
-        let text = self.text;
-        response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, text));
+        response.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, &shown));
         if let Some(keys) = self.keys {
             report_shortcut(ui, response.id, keys);
+        }
+        if let Some((_, key)) = access_key {
+            ui.ctx()
+                .accesskit_node_builder(response.id, |node| node.set_access_key(key.to_string()));
         }
         if let (true, Some(tip)) = (self.held_off, self.tip) {
             ui.ctx()

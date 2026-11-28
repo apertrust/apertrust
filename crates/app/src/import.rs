@@ -1138,6 +1138,7 @@ impl sheet::Content for ImportSheet {
         })
         .size(ThumbnailSize::Medium)
         .column(place.column, place.at_start)
+        .order(place.order)
         .primary(&primary, why_not.as_deref())
         .show(ui, |_, _| {});
         let opened = self.listing.opened();
