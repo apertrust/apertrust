@@ -103,6 +103,7 @@ Goal: open, edit, save and reopen a photo with the first pass's tools. Migration
 - [x] The Mac's window: the traffic lights in the Toolbar, and the native menu bar.
 - [x] Linux's window (X11 and Wayland): its own title bar, caption buttons and one menu button.
 - [x] Windows' window: its own title bar, caption buttons and one menu button.
+- [x] Use the system's title bar on Windows and Linux, a setting off by default, for tiling window managers and desktops whose own frame a person prefers (decision 39).
 - [x] The menu button drawn as the app's icon, or ☰ as the Menu button setting chooses, and no separate mark: About in the app menu on the Mac and in Help elsewhere (decision 39).
 - [ ] Windows' Alt pressed and released alone, and native hit testing.
 - [x] Actions with a default keyboard map, shown in tooltips and menus; keys can be overridden in the settings file.
