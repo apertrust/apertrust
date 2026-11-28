@@ -2277,3 +2277,13 @@ import-include-subfolders-card = DCIM картки завжди показуєт
 import-open-destination-tip = Призначення відкривається, коли імпорт закінчується; інші варіанти з’являться в одній із наступних версій
 import-group-no-rating = Без оцінки
 import-group-show-imported = Показувати імпортовані
+# The Import tool's Source group (decision 85).
+import-places = Місця
+import-places-add = Додати місце
+import-places-remove = Прибрати місце
+import-places-reset = Скинути місця
+import-place-pictures = Зображення
+import-place-home = Домівка
+import-folders = Теки
+import-folders-local = Ці знімки вже на цьому комп’ютері
+import-source-card = Картка: { $name }

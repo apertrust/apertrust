@@ -2720,3 +2720,13 @@ import-include-subfolders-card = A card’s DCIM is always listed whole
 import-open-destination-tip = The destination opens when the import ends; the other choices come in a later version
 import-group-no-rating = No rating
 import-group-show-imported = Show imported
+# The Import tool's Source group (decision 85).
+import-places = Places
+import-places-add = Add a place
+import-places-remove = Remove the place
+import-places-reset = Reset the places
+import-place-pictures = Pictures
+import-place-home = Home
+import-folders = Folders
+import-folders-local = These photos are already on this computer
+import-source-card = Card: { $name }

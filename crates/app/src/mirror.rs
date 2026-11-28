@@ -889,7 +889,9 @@ impl Mirror {
                     | LibraryEvent::SourceTaken { .. }
                     | LibraryEvent::SourceFailed { .. }
                     | LibraryEvent::SourceChecked { .. }
-                    | LibraryEvent::ImportPreview { .. } => true,
+                    | LibraryEvent::ImportPreview { .. }
+                    | LibraryEvent::Volumes { .. }
+                    | LibraryEvent::SubfoldersOf { .. } => true,
                     _ => false,
                 };
                 if import {

@@ -39,10 +39,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use apertrust_engine::session::ControlValue;
 use apertrust_engine::session::library::{
     Fix, ImportFate, ImportPreview, ImportProblem, ImportSettings, Problem, Row as ProblemRow,
 };
+use apertrust_engine::session::{ControlValue, LibraryEvent};
 use apertrust_export::variables::{self, PatternError};
 use apertrust_library::destination::{self, Patterns, Shot};
 use apertrust_library::settings::registry::{IMPORT_JOB_CODE, IMPORT_SUBFOLDER};
@@ -55,16 +55,19 @@ use apertrust_ui::components::{
 use apertrust_ui::i18n::{Args, Translator};
 use eframe::egui;
 
+use super::source::Places;
 use super::{Source, common, problem_words};
 use crate::utility::{Context, UtilityTool};
 
 /// What the tool asks the sheet for, beyond its settings.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Asked {
     /// The system's folder chooser, for Folder: its folder button, or a problem's fix.
     ChooseFolder,
     /// Return in Import name: the sheet presses Import where it can.
     Returned,
+    /// Source chose where to import from: the sheet lists it.
+    Source(Source),
 }
 
 /// Subfolder's fixed choices in its ⌄, each by its id, its words and its pattern.
@@ -105,6 +108,8 @@ pub struct Tool {
     opened_for: Vec<ProblemRow>,
     /// The row a problem has just opened its group for, scrolled into view as drawn.
     reveal: Option<ProblemRow>,
+    /// Source: the places, the place and the folder chosen, and the tree.
+    pub places: Places,
 }
 
 impl Tool {
@@ -112,6 +117,7 @@ impl Tool {
     /// `--conf`, for an import today.
     pub fn new(settings: ImportSettings) -> Self {
         Tool {
+            places: Places::new(settings.places.clone(), "", ""),
             settings,
             given: BTreeSet::new(),
             groups: BTreeMap::new(),
@@ -120,6 +126,29 @@ impl Tool {
             toggled: Vec::new(),
             opened_for: Vec::new(),
             reveal: None,
+        }
+    }
+
+    /// Source on `place` and `folder` as last used, by their paths, empty for none.
+    pub fn source(mut self, place: &str, folder: &str) -> Self {
+        self.places = Places::new(self.settings.places.clone(), place, folder);
+        self
+    }
+
+    /// Takes in one of the library's events, Source's: the volumes, and the subfolders it
+    /// asked for. Returns the source chosen as the first volumes come, a card among them,
+    /// kept as the place and folder last used.
+    pub fn receive(&mut self, event: &LibraryEvent) -> Option<Source> {
+        let source = self.places.receive(event)?;
+        self.keep_source();
+        Some(source)
+    }
+
+    /// Writes the place and the folder chosen, as `import.place` and `import.folder`.
+    fn keep_source(&mut self) {
+        for (key, value) in self.places.kept() {
+            self.written.retain(|(written, _)| *written != key);
+            self.written.push((key, value));
         }
     }
 
@@ -561,6 +590,16 @@ impl UtilityTool for Drawn<'_> {
     fn body(&mut self, widget: Widget, ui: &mut egui::Ui, cx: &mut Context<'_>) -> Vec<Asked> {
         let words = cx.words;
         let mut asked = Vec::new();
+        let chose = match widget {
+            Widget::ImportPlaces => self.tool.places.show_places(ui, words),
+            Widget::ImportFolders => self.tool.places.show_folders(ui, words),
+            _ => None,
+        };
+        if let Some(source) = chose {
+            self.tool.keep_source();
+            asked.push(Asked::Source(source));
+        }
+        cx.commands.extend(self.tool.places.take_commands());
         match widget {
             Widget::ImportName => self.name_row(ui, words, &mut asked),
             Widget::ImportFolder => self.path_row(ui, words, ProblemRow::Folder, &mut asked),
@@ -614,6 +653,7 @@ impl UtilityTool for Drawn<'_> {
 
     fn group_summary(&self, group: &str, words: &Translator) -> Option<String> {
         match group {
+            "source" => self.tool.places.summary(words),
             "metadata" => Some(words.text("import-group-no-rating")),
             "filters" => Some(words.text("import-group-show-imported")),
             _ => None,

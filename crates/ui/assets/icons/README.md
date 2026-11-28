@@ -36,6 +36,7 @@ The interface's icons, one SVG file each, drawn by `apertrust-ui` (`src/icons.rs
 | `grid`, `grid-filled` | Lucide's `grid-3x3` |
 | `guides` | Lucide's `frame`: the Toolbar's Guides (decision 92) |
 | `plus` | Lucide's `plus`, from Feather |
+| `minus` | Lucide's `minus`, from Feather |
 | `zoom-in`, `zoom-out` | Lucide's `zoom-in` and `zoom-out`, from Feather, mirrored left to right: the lens at the top right, the handle at the bottom left |
 | `sort-ascending`, `sort-descending` | Lucide's `arrow-up-narrow-wide` and `arrow-down-wide-narrow` |
 | `check` | Lucide's `check`, from Feather |

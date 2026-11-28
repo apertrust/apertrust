@@ -284,13 +284,17 @@ pub struct Settings {
 
 /// The Import tool's settings as the store keeps them, those the library declares
 /// (`apertrust_library::settings::registry`): Folder, the default folder, Subfolder and
-/// Import name, written at once as they change, with no history step (decision 85).
+/// Import name; and the app's own, Source's place and folder last used, each a path, empty
+/// for none (`import.place`, `import.folder`); written at once as they change, with no
+/// history step (decision 85).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Import {
     pub base_folder: String,
     pub default_folder: String,
     pub subfolder: String,
     pub job_code: String,
+    pub place: String,
+    pub folder: String,
 }
 
 impl Default for Import {
@@ -302,6 +306,8 @@ impl Default for Import {
             default_folder: IMPORT_DEFAULT_FOLDER.default().to_owned(),
             subfolder: IMPORT_SUBFOLDER.default().to_owned(),
             job_code: IMPORT_JOB_CODE.default().to_owned(),
+            place: registry::IMPORT_PLACE.default().to_owned(),
+            folder: registry::IMPORT_FOLDER.default().to_owned(),
         }
     }
 }
@@ -315,6 +321,8 @@ impl Import {
             default_folder: store.get(&IMPORT_DEFAULT_FOLDER),
             subfolder: store.get(&IMPORT_SUBFOLDER),
             job_code: store.get(&IMPORT_JOB_CODE),
+            place: store.get(&registry::IMPORT_PLACE),
+            folder: store.get(&registry::IMPORT_FOLDER),
         }
     }
 
@@ -333,6 +341,12 @@ impl Import {
         if self.job_code != was.job_code {
             store.set(&IMPORT_JOB_CODE, self.job_code.clone());
         }
+        if self.place != was.place {
+            store.set(&registry::IMPORT_PLACE, self.place.clone());
+        }
+        if self.folder != was.folder {
+            store.set(&registry::IMPORT_FOLDER, self.folder.clone());
+        }
     }
 
     /// The setting `key`, named in full, set to `value`; another key is none of these.
@@ -342,6 +356,8 @@ impl Import {
             "import.default_folder" => &mut self.default_folder,
             "import.subfolder" => &mut self.subfolder,
             "import.job_code" => &mut self.job_code,
+            "import.place" => &mut self.place,
+            "import.folder" => &mut self.folder,
             _ => return,
         };
         value.clone_into(kept);
@@ -1697,6 +1713,8 @@ mod tests {
                 default_folder: "$(PICTURES_FOLDER)/Studio".to_owned(),
                 subfolder: "$(IMPORT_NAME)".to_owned(),
                 job_code: "Wedding".to_owned(),
+                place: "/Volumes/EOS_DIGITAL".to_owned(),
+                folder: "/Volumes/EOS_DIGITAL/DCIM".to_owned(),
             },
         }
     }
@@ -2006,7 +2024,9 @@ ask_before_discard = false
 base_folder = \"/Volumes/Photos NAS\"
 column_width = 512
 default_folder = \"$(PICTURES_FOLDER)/Studio\"
+folder = \"/Volumes/EOS_DIGITAL/DCIM\"
 job_code = \"Wedding\"
+place = \"/Volumes/EOS_DIGITAL\"
 subfolder = \"$(IMPORT_NAME)\"
 
 [jobs_window]

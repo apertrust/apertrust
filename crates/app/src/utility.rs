@@ -357,7 +357,9 @@ impl<T: UtilityTool> Page<'_, '_, T> {
                 }
                 // A setting row's, or each field's of a line of fields.
                 Row::Setting(_) | Row::Fields(_) => {
-                    for setting in row.setting_rows() {
+                    // A setting with no key yet is the utility's to give, never the
+                    // person's to set.
+                    for setting in row.setting_rows().filter(|setting| setting.key.is_some()) {
                         let shown = self.setting(setting).map(|(value, _)| value);
                         set += usize::from(shown.is_some_and(|value| value != setting.default()));
                     }

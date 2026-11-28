@@ -665,6 +665,21 @@ decimals = 0
 default = 440
 applies = "at-once"
 
+# The Import tool's Source as last used (decision 85; docs/gui.md, The Import tool): the
+# place, a volume's mount point or Pictures or Home, and the folder in its tree, each a
+# path, empty for none. The sheet opens on a card where one is in, else on these.
+[import.place]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+
+[import.folder]
+owner = "app"
+kind = "text"
+default = ""
+applies = "at-once"
+
 # The Scopes section's graph.
 [scopes.graph]
 owner = "app"

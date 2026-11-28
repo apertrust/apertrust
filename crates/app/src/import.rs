@@ -69,6 +69,7 @@ use crate::sheet::{self, Place, Shown};
 use crate::tools::Head;
 use crate::utility;
 
+pub mod source;
 #[cfg(test)]
 mod tests;
 pub mod tool;
@@ -650,9 +651,10 @@ impl ImportSheet {
     }
 
     /// The sheet for `source`, or none yet, with its Import tool `tool`.
+    /// Where it is given none, Source's place and folder last used are the source.
     pub fn with(source: Option<Source>, tool: tool::Tool) -> Self {
         ImportSheet {
-            source,
+            source: source.or_else(|| tool.places.source()),
             tool,
             listing: Listing::default(),
             checked_with: None,
@@ -677,6 +679,33 @@ impl ImportSheet {
     #[cfg(test)]
     pub fn listing(&self) -> &Listing {
         &self.listing
+    }
+
+    /// Makes `source` the sheet's, as Source chose it: what the sheet showed of the one
+    /// before goes, its listing, pictures, words and preview, and the next frame lists it
+    /// with a new `ListSource`, which drops the listing before. The same folder told anew,
+    /// a card's name and kind once the volumes have come, keeps its listing.
+    fn set_source(&mut self, source: Source) {
+        let was = self.source.as_ref();
+        if was == Some(&source) {
+            return;
+        }
+        // The same folder, now known for a card or by another name: its listing stays.
+        if was.is_some_and(|was| was.folder == source.folder) {
+            self.source = Some(source);
+            return;
+        }
+        self.source = Some(source);
+        self.listing = Listing::default();
+        self.checked_with = None;
+        self.words = Vec::new();
+        self.words_of = None;
+        self.textures = HashMap::new();
+        self.textures_of = None;
+        self.said = None;
+        self.asked = None;
+        self.preview = None;
+        self.previewed = None;
     }
 
     /// Lists the source where it has not been, and checks it again where Folder or the
@@ -1181,8 +1210,18 @@ impl sheet::Content for ImportSheet {
             };
             let asked = utility::section(ui, &mut drawn, &mut cx, head, resettable).actions;
             returned.0 |= asked.contains(&tool::Asked::Returned);
-            asked.contains(&tool::Asked::ChooseFolder)
+            (asked, commands)
         });
+        let (asked, commands) = out.inner;
+        for command in commands {
+            send(command);
+        }
+        let choose_folder = asked.contains(&tool::Asked::ChooseFolder);
+        for asked in asked {
+            if let tool::Asked::Source(source) = asked {
+                self.set_source(source);
+            }
+        }
         let opened = self.listing.opened();
         if let Some(gesture) = out.gesture {
             self.listing.apply(gesture);
@@ -1214,8 +1253,8 @@ impl sheet::Content for ImportSheet {
             column: out.column,
             settings: self.tool.take_written(),
             groups: self.tool.take_toggled(),
-            choose_folder: out.inner,
-            folder_start: out.inner.then(|| self.tool.folder_start()).flatten(),
+            choose_folder,
+            folder_start: choose_folder.then(|| self.tool.folder_start()).flatten(),
         }
     }
 
@@ -1224,6 +1263,15 @@ impl sheet::Content for ImportSheet {
             if self.asked.as_ref().is_some_and(|(asked, ..)| asked == open) {
                 self.preview = Some(preview.as_ref().clone());
                 self.previewed = Some(*open);
+            }
+            return;
+        }
+        if matches!(
+            event,
+            LibraryEvent::Volumes { .. } | LibraryEvent::SubfoldersOf { .. }
+        ) {
+            if let Some(source) = self.tool.receive(event) {
+                self.set_source(source);
             }
             return;
         }
