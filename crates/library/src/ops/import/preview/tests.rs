@@ -262,6 +262,19 @@ fn a_card_of_two_days_makes_two_new_folders_by_the_day_taken() {
     );
 }
 
+/// A Subfolder of the file name reads no photo's EXIF, the listing giving the name; one of
+/// the camera reads each photo's.
+#[test]
+fn only_the_capture_time_or_camera_reads_a_photo_s_exif() {
+    for (subfolder, reads) in [("$(FILE_NAME)", 0), ("$(MODEL)", 1)] {
+        let setup = Setup::new();
+        let files = [setup.raw("IMG_0001.CR2", b"first", 14)];
+        setup.preview(&files, &setup.settings(subfolder), u64::MAX);
+        let raw = setup.dcim().join(&files[0]);
+        assert_eq!(crate::testing::reads(&raw), reads, "{subfolder}");
+    }
+}
+
 /// A name taken by the raw, by a sidecar alone, and by `_01` already: `_01`, `_01` and
 /// `_02`; and two photos of one name in two folders of the card take two names.
 #[test]

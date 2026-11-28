@@ -244,9 +244,11 @@ pub struct Reads {
     pub now: bool,
     /// [`Values::taken`]: `$(EXIF.YEAR)` and its kin, `$(EXIF.DATE)`.
     pub taken: bool,
-    /// [`Values::path`], `maker` or `model`: `$(FILE_NAME)` and its kin, `$(MAKER)`,
-    /// `$(MODEL)`.
-    pub photo: bool,
+    /// [`Values::path`]: `$(FILE_NAME)` and its kin, `$(FILE_FOLDER)`, `$(ROLL.NAME)`.
+    pub file: bool,
+    /// [`Values::maker`] or [`Values::model`], what a photo's EXIF gives of its camera:
+    /// `$(MAKER)`, `$(MODEL)`.
+    pub camera: bool,
 }
 
 fn reads_of(parts: &[Part], reads: &mut Reads) {
@@ -281,13 +283,12 @@ fn reads_of(parts: &[Part], reads: &mut Reads) {
             | Key::ExifSecond
             | Key::ExifMsec
             | Key::ExifDate => reads.taken = true,
-            Key::Maker
-            | Key::Model
-            | Key::RollName
+            Key::Maker | Key::Model => reads.camera = true,
+            Key::RollName
             | Key::FileFolder
             | Key::ImageFilename
             | Key::FileName
-            | Key::FileExtension => reads.photo = true,
+            | Key::FileExtension => reads.file = true,
             _ => {}
         }
         match &variable.operation {
