@@ -65,6 +65,44 @@ pub fn corpus_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
+/// A raw developed up to an operation, as decision 15's corpus measurements take their
+/// input (`docs/engine.md`, Pipes): its default pipeline, every operation before `place`,
+/// exported at full resolution, with the raw's image context. `None` for a raw that is no
+/// colour mosaic the pipeline takes.
+pub fn developed_before(
+    gpu: &apertrust_engine::gpu::GpuContext,
+    raw: &apertrust_raw::RawImage,
+    place: &apertrust_plugin::Slot,
+) -> Result<
+    Option<(
+        apertrust_plugin::ImageContext,
+        apertrust_engine::export::Exported,
+    )>,
+> {
+    use std::cmp::Ordering;
+
+    use apertrust_engine::edit::{self, Edit};
+    use apertrust_engine::export::{BUDGET, Tiling, export};
+
+    let Some(mosaic) = apertrust_engine::raw::upload(gpu, raw) else {
+        return Ok(None);
+    };
+    let context = apertrust_engine::raw::image_context(raw);
+    let before: Vec<_> = edit::instances(
+        &Edit::default(),
+        apertrust_operations::OPERATIONS,
+        apertrust_tools::TOOLS,
+        &context,
+    )
+    .all()?
+    .into_iter()
+    .filter(|i| i.operation.manifest().slot.pipeline_order(place) == Ordering::Less)
+    .collect();
+    let tiling = Tiling::Auto { budget: BUDGET };
+    let developed = pollster::block_on(export(gpu, &before, &context, mosaic?, tiling))?;
+    Ok(Some((context, developed)))
+}
+
 /// The darktable integration-test images, from `APERTRUST_TEST_IMAGES`.
 pub fn images_dir() -> Result<PathBuf> {
     let dir: PathBuf = std::env::var_os("APERTRUST_TEST_IMAGES")
