@@ -605,7 +605,7 @@ fn main() -> eframe::Result {
         platform.as_deref(),
     );
     let options = eframe::NativeOptions {
-        viewport: window(&placement, starts, &title),
+        viewport: window(&placement, starts, &title, settings.system_title_bar),
         // The start window with no place kept, as on the first run, in the screen's middle.
         centered: starts && placement.position.is_none(),
         renderer: eframe::Renderer::Wgpu,
@@ -1007,7 +1007,9 @@ const OWN_TITLE_BAR: bool = cfg!(target_os = "macos");
 /// minimise, maximise or restore and close at its end, and the window resizes from bands
 /// inside its edges ([`RESIZE_BAND`]). Moves, resizes and the window menu are the
 /// system's: on Windows winit keeps the styles Aero Snap and Win+arrows need, and the
-/// window keeps its shadow ([`frame_shadow`]).
+/// window keeps its shadow ([`frame_shadow`]). Use the system's title bar
+/// (`window.system_title_bar`) gives the window the system's decorations back there, at
+/// start and live ([`Shell::draws_frame`]).
 const CAPTION_BUTTONS: bool = cfg!(any(target_os = "linux", target_os = "windows"));
 
 /// The style of the caption buttons the app draws ([`CAPTION_BUTTONS`]), on the Toolbar,
@@ -1049,8 +1051,14 @@ fn window_title(user_data: Option<&Path>, platform: Option<&Path>) -> String {
 /// its pixels over its scale factor. Its title is kept where it is not drawn, for
 /// Mission Control, the Window menu and screen readers, `title` ([`window_title`]). As the
 /// start window (`start`), the size `placement` holds, `start_placement`'s, and neither
-/// resized nor maximised.
-fn window(placement: &settings::Window, start: bool, title: &str) -> egui::ViewportBuilder {
+/// resized nor maximised. On Windows and Linux it has the system's decorations where
+/// `system_title_bar` says (`window.system_title_bar`), none otherwise.
+fn window(
+    placement: &settings::Window,
+    start: bool,
+    title: &str,
+    system_title_bar: bool,
+) -> egui::ViewportBuilder {
     let size = inner_size(placement, start);
     let viewport = egui::ViewportBuilder::default()
         .with_title(title)
@@ -1076,7 +1084,7 @@ fn window(placement: &settings::Window, start: bool, title: &str) -> egui::Viewp
             .with_title_shown(false)
             .with_titlebar_buttons_shown(true)
     } else if CAPTION_BUTTONS {
-        viewport.with_decorations(false)
+        viewport.with_decorations(system_title_bar)
     } else {
         viewport
     };
@@ -2161,6 +2169,10 @@ struct Shell {
     /// The style of the Toolbar's caption buttons, where it draws them: the platform's,
     /// [`CAPTION_STYLE`], which a snapshot of another platform's frame sets to its own.
     caption_style: CaptionStyle,
+    /// Whether the platform's window has the app's own frame, Windows' and Linux's
+    /// ([`CAPTION_BUTTONS`]), which a test of another platform's frame sets to its own;
+    /// [`Shell::draws_frame`] says whether it is drawn now.
+    caption_buttons: bool,
     /// Whether the menu button or F10 asked for its menu, opened after the frame, or closed
     /// there where it is open ([`Shell::open_menu`]).
     menu: bool,
@@ -2330,6 +2342,7 @@ impl Shell {
             tool_action: None,
             drawn_menus: os != OperatingSystem::Mac,
             caption_style: CAPTION_STYLE,
+            caption_buttons: CAPTION_BUTTONS,
             menu: false,
             close_menu: false,
             steps: menus::Steps::default(),
@@ -4065,6 +4078,41 @@ impl Shell {
         (self.customising.as_ref()).map_or(self.toolbar_labels, |draft| draft.labels())
     }
 
+    /// Whether the app draws the window's frame now: on Windows and Linux
+    /// (`caption_buttons`) while Use the system's title bar is off
+    /// (`window.system_title_bar`; decision 39). The Toolbar is then the title bar, the
+    /// caption buttons at its end, and the bands inside the window's edges resize it.
+    fn draws_frame(&self) -> bool {
+        self.caption_buttons && !self.system_title_bar
+    }
+
+    /// Whether the system draws the window's frame where the app would draw its own: on
+    /// Windows and Linux with Use the system's title bar on.
+    fn system_frame(&self) -> bool {
+        self.caption_buttons && self.system_title_bar
+    }
+
+    /// The room the Toolbar keeps at its start for the window's buttons where the app draws
+    /// the frame ([`Shell::draws_frame`]): none, the caption buttons being at its end, the
+    /// Toolbar the title bar. Not the title bar (`None`) in full screen, where the frame
+    /// is gone, nor where the system draws it.
+    fn title_bar(&self, full_screen: bool) -> Option<f32> {
+        (self.draws_frame() && !full_screen).then_some(0.0)
+    }
+
+    /// Whether the Toolbar draws the caption buttons, as the window is `maximised` or not,
+    /// where it is the title bar (`title_bar`) of the frame the app draws: none on the Mac,
+    /// in full screen or with the system's title bar.
+    fn caption(&self, title_bar: Option<f32>, maximised: bool) -> Option<bool> {
+        (self.draws_frame() && title_bar.is_some()).then_some(maximised)
+    }
+
+    /// The width of the bands inside the window's edges that resize it, where the app draws
+    /// the frame ([`RESIZE_BAND`]); none where the system's frame resizes it.
+    fn resize_band(&self) -> Option<f32> {
+        self.draws_frame().then_some(RESIZE_BAND)
+    }
+
     /// Puts the main window into the Toolbar's customise mode (decision 92), `item` the one
     /// the toolbar menu opened on selected, and says so.
     fn start_customising(&mut self, item: Option<&str>, ctx: &egui::Context) {
@@ -4977,10 +5025,10 @@ impl Shell {
 
     /// Takes in what the Settings dialog's rows show of `settings` and shows it in the main
     /// window, `ctx`'s: the theme, the language, the interface's size, the sliders' marker,
-    /// the menu button, the tab names, what the wheel does over the Tools panel, whether one
-    /// processing tool is open at a time, square thumbnails and whether Export asks before
-    /// overwriting. The engine's settings are the session's at its next start, and nothing
-    /// of the shell's.
+    /// the menu button, the system's title bar, the tab names, what the wheel does over the
+    /// Tools panel, whether one processing tool is open at a time, square thumbnails and
+    /// whether Export asks before overwriting. The engine's settings are the session's at
+    /// its next start, and nothing of the shell's.
     fn follow(&mut self, settings: &Settings, ctx: &egui::Context) {
         if settings.theme != self.theme {
             self.theme = settings.theme;
@@ -5002,7 +5050,15 @@ impl Shell {
         self.marker = settings.marker;
         apertrust_ui::components::set_marker(ctx, self.marker);
         self.menu_button = settings.menu_button;
-        self.system_title_bar = settings.system_title_bar;
+        // The system's frame comes or goes at once where the app would draw its own; the
+        // Mac keeps its frame.
+        if settings.system_title_bar != self.system_title_bar {
+            self.system_title_bar = settings.system_title_bar;
+            if self.caption_buttons {
+                let decorations = egui::ViewportCommand::Decorations(self.system_title_bar);
+                ctx.send_viewport_cmd(decorations);
+            }
+        }
         self.toolbar_labels = settings.toolbar_labels;
         self.tab_names = settings.tab_names;
         self.wheel_scrolls_panel = settings.wheel_scrolls_panel;
@@ -7060,7 +7116,8 @@ impl App {
     /// Every frame, since the system lays them out again as the window changes. Buttons
     /// that cannot be placed keep the Toolbar the title bar, with room for them where
     /// they are, so the window can still be moved. Where the app draws the caption
-    /// buttons itself ([`CAPTION_BUTTONS`]), at the panel's end, none at its start.
+    /// buttons itself ([`CAPTION_BUTTONS`]), at the panel's end, none at its start, and
+    /// no title bar where the system draws it ([`Shell::title_bar`]).
     fn window_buttons(
         &mut self,
         frame: &eframe::Frame,
@@ -7069,7 +7126,7 @@ impl App {
     ) -> Option<f32> {
         let full_screen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
         if CAPTION_BUTTONS {
-            return (!full_screen).then_some(0.0);
+            return self.shell.title_bar(full_screen);
         }
         // The window system's points are egui's times the interface's scale.
         let zoom = ctx.zoom_factor();
@@ -8379,7 +8436,7 @@ impl App {
         let shown = start::Shown {
             home: self.places.home.as_deref(),
             // Where the app draws the window's frame, but in full screen.
-            close: CAPTION_BUTTONS && room.is_some(),
+            close: self.shell.caption(room, false).is_some(),
             keys: !state.modal,
             version: apertrust_base::program!().version,
         };
@@ -8394,6 +8451,8 @@ impl App {
                     self.start.close = true;
                     ctx.request_repaint();
                 }
+                // The system's title bar moves the window and opens its menu where it has one.
+                start::Asked::Move | start::Asked::Menu if self.shell.system_frame() => {}
                 start::Asked::Move => gesture = Some(TitleBar::Move),
                 start::Asked::Menu => gesture = Some(TitleBar::Menu),
                 asked => library.extend(asked.library()),
@@ -8493,12 +8552,12 @@ impl App {
             };
             run_title_bar(gesture, ctx, &mut system);
             // The compositor or window manager moving the window keeps the release too.
-            let moved = CAPTION_BUTTONS && gesture == TitleBar::Move;
+            let moved = self.shell.draws_frame() && gesture == TitleBar::Move;
             self.handed_off |= system.handed_off || moved;
         }
         // The start window is never resized.
-        if CAPTION_BUTTONS && !self.start.shown {
-            resize_hover(ctx, RESIZE_BAND);
+        if let Some(band) = self.shell.resize_band().filter(|_| !self.start.shown) {
+            resize_hover(ctx, band);
         }
         // The menus follow what ran: the keys, what can run now, the focus, the language;
         // Open Recent the recents as they are, kept for its choices, which `logic` runs
@@ -9407,7 +9466,7 @@ impl eframe::App for App {
         let toolbar_height = Toolbar::height(&t, self.shell.labels_shown());
         let title_bar = self.window_buttons(frame, &ctx, toolbar_height);
         let maximised = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-        let caption = (CAPTION_BUTTONS && title_bar.is_some()).then_some(maximised);
+        let caption = self.shell.caption(title_bar, maximised);
         // A press in the bands inside the window's edges, taken from egui's input.
         if let Some(way) = self.resize.take() {
             ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(way));
@@ -9733,8 +9792,8 @@ impl eframe::App for App {
         // What Undo or Redo, chosen from a menu, hand the focused text field.
         raw_input.events.append(&mut self.shell.field_keys);
         // The start window is never resized.
-        if CAPTION_BUTTONS && !self.start.shown {
-            self.resize = resize_press(ctx, raw_input, RESIZE_BAND);
+        if let Some(band) = self.shell.resize_band().filter(|_| !self.start.shown) {
+            self.resize = resize_press(ctx, raw_input, band);
         }
         // On the Mac the close button closes the start window, the app running on, and on
         // the main window with something open does what Close does, so eframe never sees
@@ -24950,6 +25009,107 @@ mod tests {
         harness.get_by_role_and_label(Role::Button, "Restore");
     }
 
+    /// The Toolbar on `os` as the app draws it with `settings`, its caption buttons in
+    /// `style`: Windows' or Linux's frame on whatever machine draws it.
+    fn framed(
+        os: OperatingSystem,
+        style: CaptionStyle,
+        settings: &Settings,
+    ) -> Harness<'static, Bench> {
+        let mut harness = bench_with(os, settings);
+        let bench = harness.state_mut();
+        bench.shell.caption_buttons = true;
+        bench.shell.caption_style = style;
+        bench.title_bar = bench.shell.title_bar(false);
+        bench.caption = bench.shell.caption(bench.title_bar, false);
+        harness.run();
+        harness
+    }
+
+    /// Use the system's title bar on Windows and Linux (decision 39): the Toolbar is no
+    /// longer the title bar, with no caption buttons in either style and no move or
+    /// double-click from its empty areas, the menu button still first; off, it is the
+    /// title bar with its caption buttons.
+    #[test]
+    fn with_the_system_s_title_bar_the_toolbar_draws_no_caption_buttons() {
+        let on = Settings {
+            system_title_bar: true,
+            ..Settings::default()
+        };
+        let caption = ["Minimise", "Maximise", "Close"];
+        for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+            for style in [CaptionStyle::Windows, CaptionStyle::Linux] {
+                let mut harness = framed(os, style, &on);
+                assert_eq!(harness.state().title_bar, None, "{os:?}, {style:?}");
+                for name in caption {
+                    assert!(harness.query_by_label(name).is_none(), "{os:?}: {name}");
+                }
+                let bar = harness.get_by_role(Role::Toolbar).rect();
+                let first = (harness.get_all_by_role(Role::Button))
+                    .filter(|b| bar.contains(b.rect().center()))
+                    .min_by(|a, b| a.rect().left().total_cmp(&b.rect().left()))
+                    .and_then(|b| b.accesskit_node().label().map(|l| l.to_string()));
+                assert_eq!(first.as_deref(), Some("Menu"), "{os:?}, {style:?}");
+                // A drag or a double-click on an empty area asks nothing of the window.
+                let empty = empty_point(&harness);
+                let moved = empty + egui::vec2(0.0, 12.0);
+                frame(
+                    &mut harness,
+                    [egui::Event::PointerMoved(empty), pointer(empty, true)],
+                );
+                frame(&mut harness, [egui::Event::PointerMoved(moved)]);
+                assert!(!asked(&harness, &egui::ViewportCommand::StartDrag));
+                frame(&mut harness, [pointer(moved, false)]);
+                harness.run_steps(30);
+                frame(
+                    &mut harness,
+                    [
+                        egui::Event::PointerMoved(empty),
+                        pointer(empty, true),
+                        pointer(empty, false),
+                        pointer(empty, true),
+                        pointer(empty, false),
+                    ],
+                );
+                assert!(!asked(&harness, &egui::ViewportCommand::Maximized(true)));
+                assert_eq!(harness.state().system.drags, 0);
+                // Off, the caption buttons are back at the Toolbar's end.
+                let harness = framed(os, style, &Settings::default());
+                for name in caption {
+                    harness.get_by_role_and_label(Role::Button, name);
+                }
+            }
+        }
+    }
+
+    /// With the system's title bar the system's frame resizes the window: no band inside
+    /// its edges takes a press, which stays egui's; off, the bands take it.
+    #[test]
+    fn with_the_system_s_title_bar_no_resize_band_takes_a_press() {
+        let window = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0));
+        let ctx = egui::Context::default();
+        let corner = egui::pos2(2.0, 2.0);
+        let mut shell = Shell::new(&Settings::default(), Locale::EnGb, OperatingSystem::Nix);
+        shell.caption_buttons = true;
+        let press = |shell: &Shell| {
+            let mut input = egui::RawInput {
+                screen_rect: Some(window),
+                events: vec![egui::Event::PointerMoved(corner), pointer(corner, true)],
+                ..Default::default()
+            };
+            let way = (shell.resize_band()).and_then(|band| resize_press(&ctx, &mut input, band));
+            (way, input.events.len())
+        };
+        assert_eq!(press(&shell), (Some(egui::ResizeDirection::NorthWest), 1));
+        shell.system_title_bar = true;
+        assert_eq!(shell.resize_band(), None);
+        assert_eq!(press(&shell), (None, 2));
+        // Nor where the platform keeps a frame of its own, as the Mac does.
+        shell.caption_buttons = false;
+        shell.system_title_bar = false;
+        assert_eq!(press(&shell), (None, 2));
+    }
+
     /// A right-click at `at` on the bench, its press and its release in one frame.
     fn right_click_bench(harness: &mut Harness<'_, Bench>, at: egui::Pos2) {
         let right = |pressed| egui::Event::PointerButton {
@@ -26824,6 +26984,55 @@ mod tests {
             Theme::builtin(Builtin::Light).colors
         );
         assert_eq!(translator(&harness.ctx).locale(), Locale::Uk);
+    }
+
+    /// Use the system's title bar turned on in Settings gives the window the system's
+    /// decorations at once, asked once, and turned off takes them away, on Windows and
+    /// Linux; the Mac, whose window keeps its frame, is asked nothing. It is kept, and the
+    /// next start's window is made with them from its first frame.
+    #[test]
+    fn turning_it_on_sends_decorations_once() {
+        use settings_dialog::Change;
+        let on = egui::ViewportCommand::Decorations(true);
+        let off = egui::ViewportCommand::Decorations(false);
+        for caption_buttons in [true, false] {
+            let host = FakeHost::default();
+            let mut harness = dialogged(host.clone());
+            harness.state_mut().shell.caption_buttons = caption_buttons;
+            harness.run();
+            press_action(&mut harness, ActionId::SETTINGS);
+            let set = |value: bool| {
+                let change = Change::Set("window.system_title_bar", value.into());
+                vec![dialog_host::Output::Settings(change)]
+            };
+            host.0.borrow_mut().outputs = set(true);
+            harness.step();
+            assert!(harness.state().shell.system_title_bar);
+            assert_eq!(commanded(&harness, &on), caption_buttons);
+            let ctx = harness.ctx.clone();
+            assert!(harness.state().shell.to_settings(&ctx).system_title_bar);
+            // Once: neither the next frames nor the same value again ask again.
+            harness.step();
+            assert!(!commanded(&harness, &on));
+            host.0.borrow_mut().outputs = set(true);
+            harness.step();
+            assert!(!commanded(&harness, &on));
+            host.0.borrow_mut().outputs = set(false);
+            harness.step();
+            assert_eq!(commanded(&harness, &off), caption_buttons);
+            assert!(!harness.state().shell.system_title_bar);
+        }
+        // The next start's window, on Windows and Linux.
+        let placement = settings::Window {
+            size: None,
+            position: None,
+            maximized: false,
+        };
+        for system_title_bar in [true, false] {
+            let built = super::window(&placement, false, APP_NAME, system_title_bar);
+            let decorations = CAPTION_BUTTONS.then_some(system_title_bar);
+            assert_eq!(built.decorations, decorations);
+        }
     }
 
     /// Square thumbnails, the Photos page's, and the Tools panel's tab names and what the
