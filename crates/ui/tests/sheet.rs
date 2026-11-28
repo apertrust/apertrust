@@ -400,6 +400,46 @@ fn shift_with_an_arrow_after_a_check_box_s_click_checks_from_that_cell() {
     assert_eq!(after.active(), Some(2));
 }
 
+/// → pressed in two passes one after the other keeps the focus and the active photo on
+/// the same cell, so Space then turns the active photo's check: egui's own move of the
+/// focus by the arrows never runs on past the cell the grid moved it to.
+#[test]
+fn arrows_in_consecutive_passes_keep_the_focus_on_the_active_photo() {
+    let mut harness = wide();
+    assert_eq!(checks(&harness).active(), Some(8));
+    for _ in 0..2 {
+        harness.key_press(Key::ArrowRight);
+        harness.step();
+    }
+    harness.run();
+    let active = checks(&harness).active().expect("an active photo");
+    assert_eq!(active, 10);
+    let name = format!("DSCF{}.RAF", 1001 + active);
+    assert_eq!(focused(&harness).as_deref(), Some(name.as_str()));
+    let before = checks(&harness).is_checked(active);
+    harness.key_press(Key::Space);
+    harness.run();
+    let after = checks(&harness);
+    assert_eq!(after.is_checked(active), !before);
+    assert!(
+        after.is_checked(active + 1),
+        "the next photo left as it was"
+    );
+    // ↓ likewise, a line at a time.
+    for _ in 0..2 {
+        harness.key_press(Key::ArrowDown);
+        harness.step();
+    }
+    harness.run();
+    let down = checks(&harness).active().expect("an active photo");
+    assert!(
+        down > active + 1,
+        "moved down two lines from {active} to {down}"
+    );
+    let name = format!("DSCF{}.RAF", 1001 + down);
+    assert_eq!(focused(&harness).as_deref(), Some(name.as_str()));
+}
+
 #[test]
 fn tab_stays_inside_the_sheet() {
     let mut harness = wide();
