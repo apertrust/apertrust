@@ -8,6 +8,8 @@ app-name = Apertrust
 
 action-import = Імпорт…
     .toolbar = Імпорт
+# Why Import… cannot run: a dialog or a sheet is up (decision 86).
+action-import-modal = Спершу закрийте відкритий діалог чи аркуш
 action-export = Експорт…
     .toolbar = Експорт
 action-export-again = Експортувати ще раз

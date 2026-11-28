@@ -156,6 +156,7 @@ use apertrust_base::folders::Folders;
 use apertrust_base::settings::{
     CONF_FLAG, Declared, FileStorage, OverrideError, Overrides, Setting, Storage, Store, Stored,
 };
+use apertrust_engine::session::library::ImportSettings;
 use apertrust_engine::session::{ControlValue, StyleMode};
 use apertrust_engine::settings as engine;
 use apertrust_tools::{ControlKind, Row, SettingRow, TOOLS};
@@ -361,6 +362,17 @@ impl Import {
             _ => return,
         };
         value.clone_into(kept);
+    }
+
+    /// As the preview and the copy are given them, with the client's `places`.
+    pub fn settings(&self, places: apertrust_library::settings::Places) -> ImportSettings {
+        ImportSettings {
+            base_folder: self.base_folder.clone(),
+            default_folder: self.default_folder.clone(),
+            subfolder: self.subfolder.clone(),
+            job_code: self.job_code.clone(),
+            places,
+        }
     }
 }
 

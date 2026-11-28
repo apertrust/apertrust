@@ -8,6 +8,8 @@ app-name = Apertrust
 
 action-import = Importuj…
     .toolbar = Importuj
+# Why Import… cannot run: a dialog or a sheet is up (decision 86).
+action-import-modal = Najpierw zamknij otwarte okno dialogowe lub arkusz
 action-export = Eksportuj…
     .toolbar = Eksportuj
 action-export-again = Eksportuj ponownie

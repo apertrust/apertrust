@@ -646,15 +646,20 @@ pub struct ImportSheet {
 impl ImportSheet {
     /// The sheet for `source`, or none yet, with the import settings `settings`: it lists
     /// the source as it is first drawn.
+    #[cfg(test)]
     pub fn new(source: Option<Source>, settings: ImportSettings) -> Self {
         ImportSheet::with(source, tool::Tool::new(settings))
     }
 
     /// The sheet for `source`, or none yet, with its Import tool `tool`.
     /// Where it is given none, Source's place and folder last used are the source.
-    pub fn with(source: Option<Source>, tool: tool::Tool) -> Self {
+    pub fn with(source: Option<Source>, mut tool: tool::Tool) -> Self {
+        let source = source.or_else(|| tool.places.source());
+        if source.as_ref().is_some_and(|source| source.card) {
+            tool.focus_name();
+        }
         ImportSheet {
-            source: source.or_else(|| tool.places.source()),
+            source,
             tool,
             listing: Listing::default(),
             checked_with: None,
@@ -689,6 +694,9 @@ impl ImportSheet {
         let was = self.source.as_ref();
         if was == Some(&source) {
             return;
+        }
+        if source.card && !was.is_some_and(|was| was.card) {
+            self.tool.focus_name();
         }
         // The same folder, now known for a card or by another name: its listing stays.
         if was.is_some_and(|was| was.folder == source.folder) {
@@ -1140,6 +1148,7 @@ impl sheet::Content for ImportSheet {
             self.preview.as_ref(),
             home,
         );
+        let name_first = self.source.as_ref().is_some_and(|s| s.card) && self.tool.name_enabled();
         let listing = &self.listing;
         let cells = &self.words;
         let textures = &self.textures;
@@ -1193,6 +1202,8 @@ impl sheet::Content for ImportSheet {
         .size(ThumbnailSize::Medium)
         .column(place.column, place.at_start)
         .primary(&primary, why_not.as_deref())
+        // A card's import is the name typed and Return: Import name has the focus.
+        .focus_given(name_first)
         .show(ui, |ui, returned| {
             let mut commands = Vec::new();
             let mut cx = utility::Context {

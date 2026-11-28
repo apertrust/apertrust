@@ -66,10 +66,6 @@ mod folder;
 mod frame_times;
 mod hardware;
 mod history;
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "the Import tool's ways in open its sheet (#754)")
-)]
 mod import;
 mod info;
 mod instance;
@@ -2010,6 +2006,8 @@ struct Shell {
     sheet_column: f32,
     /// The Import tool's settings, `import.*`, kept as the sheet leaves them (decision 85).
     import: settings::Import,
+    /// Those `--conf` gives for this run, by key in full, drawn disabled.
+    import_given: Vec<String>,
     /// What a sheet closed since the last frame sends as it goes, sent with the next.
     sheet_left: Vec<Command>,
     /// Where the customise menu open adds an item, by its place in the draft.
@@ -2286,6 +2284,7 @@ impl Shell {
             sheet: None,
             sheet_column: settings.sheet_column,
             import: settings.import.clone(),
+            import_given: Vec::new(),
             sheet_left: Vec::new(),
             adding_at: 0,
             focus_tab: None,
@@ -3123,6 +3122,7 @@ impl Shell {
         library::Keys {
             folder: self.keymap.tip(ActionId::OPEN_FOLDER, os, &words),
             files: self.keymap.tip(ActionId::OPEN, os, &words),
+            import: self.keymap.tip(ActionId::IMPORT, os, &words),
         }
     }
 
@@ -4298,16 +4298,30 @@ impl Shell {
     /// Opens `content` as the main window's sheet (decision 86), where none is open and
     /// neither About nor the Toolbar's customise mode is up: one at a time. Returns whether
     /// it opened.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "Import's sheet opens one (#754)")
-    )]
     fn open_sheet(&mut self, content: Box<dyn sheet::Content>) -> bool {
         let busy = self.sheet.is_some() || self.about.is_open() || self.customising.is_some();
         if !busy {
             self.sheet = Some(content);
         }
         !busy
+    }
+
+    /// Opens the Import sheet (decisions 85 and 86) with the import settings kept, its
+    /// tool's groups as the person left them, the keys `--conf` gives and Source's place
+    /// and folder last used, where no sheet, About or the customise mode is up. It never
+    /// acts on what is open: one photo and folder mode alike.
+    fn open_import(&mut self) {
+        let settings = self.import.settings(export::places());
+        let groups = (self
+            .groups
+            .get(apertrust_tools::utility::import::ID)
+            .cloned())
+        .unwrap_or_default();
+        let tool = import::tool::Tool::new(settings)
+            .groups(groups)
+            .given(self.import_given.iter().cloned())
+            .source(&self.import.place, &self.import.folder);
+        self.open_sheet(Box::new(import::ImportSheet::with(None, tool)));
     }
 
     /// Closes the sheet open, if one is, keeping what it sends as it goes for the next
@@ -4763,6 +4777,7 @@ impl Shell {
             Intent::Close => self.close = true,
             // The tool's tab, the Photos tab in the Default workspace: chosen, opened, and
             // scrolled to.
+            Intent::Import => self.open_import(),
             Intent::Export => self.reveal(export::ID),
             Intent::ExportAgain => self.export_again = true,
             Intent::Step { next } => self.step = Some(next),
@@ -5322,6 +5337,15 @@ impl App {
             show_hidden_given: keeper.overridden(&settings::registry::TOOLS_PANEL_SHOW_HIDDEN),
             panel_position_given: keeper.overridden(&settings::registry::TOOLS_PANEL_POSITION),
             style_mode_given: keeper.overridden(&settings::registry::STYLES_MODE),
+            import_given: (apertrust_library::settings::registry::ALL.iter())
+                .copied()
+                .chain([
+                    &settings::registry::IMPORT_PLACE as &dyn apertrust_base::settings::Declared,
+                    &settings::registry::IMPORT_FOLDER,
+                ])
+                .filter(|declared| keeper.overridden(*declared))
+                .map(|declared| declared.id().to_owned())
+                .collect(),
             ..Shell::new(&settings, system_locale(), cc.egui_ctx.os())
         };
         // On the tab last shown in it, which the recents' `state.toml` keeps.
@@ -7265,6 +7289,7 @@ impl App {
             inside: self.mirror.folder.inside(),
             keys: &keys,
             home: self.places.home.as_deref(),
+            import: actions::action(ActionId::IMPORT).is_some_and(|a| a.enabled(&state)),
         };
         // Where Collections lives while Find Tool… lists it; Export's header says so as
         // every header the shell gives does.
@@ -7515,6 +7540,7 @@ impl App {
             repaint |= !matches!(action, library::Action::Ask(_));
             match action {
                 library::Action::OpenFolder => self.shell.open_folder = true,
+                library::Action::Import => self.run_actions([ActionId::IMPORT], ctx, &[]),
                 library::Action::OpenFiles => self.shell.open = true,
                 // A field's draft goes to its photos before another folder leaves them.
                 library::Action::Open(path) => {
@@ -24012,6 +24038,7 @@ mod tests {
                         inside: &std::collections::HashMap::new(),
                         keys: &keys,
                         home: None,
+                        import: true,
                     };
                     // As the Photos tab draws it ([`photos_tool`]).
                     let (mirror, settings) = (crate::mirror::tests::mirror(), Settings::default());
@@ -24672,6 +24699,7 @@ mod tests {
                                 inside: &HashMap::new(),
                                 keys: &collections_keys,
                                 home: None,
+                                import: bench.shell.sheet.is_none(),
                             };
                             let (mirror, settings) =
                                 (crate::mirror::tests::mirror(), Settings::default());
@@ -29050,6 +29078,15 @@ mod tests {
 
     /// Shows a person's own workspace, `listed`, whose Toolbar is `list` (decision 92), read
     /// from its file in `folder` as the app reads it at its start.
+    /// The Toolbar's control named `label`, where it draws one, Collections' Import… aside.
+    fn on_toolbar<'h>(
+        harness: &'h Harness<'static, Bench>,
+        label: &'h str,
+    ) -> Option<egui_kittest::Node<'h>> {
+        let bar = harness.get_by_role(Role::Toolbar).rect();
+        (harness.query_all_by_label(label)).find(|node| bar.contains(node.rect().center()))
+    }
+
     fn show_toolbar(
         harness: &mut Harness<'_, Bench>,
         folder: &settings::testing::Folder,
@@ -29078,7 +29115,7 @@ mod tests {
         let folder = settings::testing::Folder::new("toolbar-switching");
         let mut harness = bench(OperatingSystem::Mac);
         harness.run();
-        assert!(harness.query_by_label("Import…").is_some());
+        assert!(on_toolbar(&harness, "Import…").is_some());
         let list = [
             "settings",
             "a-newer-build-s",
@@ -29088,7 +29125,7 @@ mod tests {
         ];
         show_toolbar(&mut harness, &folder, &list);
         for gone in ["Import…", "Export…", "Copy edit"] {
-            assert!(harness.query_by_label(gone).is_none(), "{gone}");
+            assert!(on_toolbar(&harness, gone).is_none(), "{gone}");
         }
         assert!(harness.query_by_role(Role::RadioGroup).is_none(), "no well");
         let bar = harness.get_by_role(Role::Toolbar).rect();
@@ -29105,7 +29142,7 @@ mod tests {
         assert_eq!(opened, 1, "Settings runs its action");
         harness.state_mut().shell.switch_workspace(layout::DEFAULT);
         harness.run();
-        assert!(harness.query_by_label("Import…").is_some());
+        assert!(on_toolbar(&harness, "Import…").is_some());
         assert!((harness.query_by_role_and_label(Role::Button, "Settings")).is_none());
         assert!(harness.query_by_role(Role::RadioGroup).is_some());
     }
@@ -29144,7 +29181,8 @@ mod tests {
         let bar = harness.get_by_role(Role::Toolbar).rect();
         let button = harness.get_by_role_and_label(Role::Button, "Menu").rect();
         assert_eq!(button.left(), bar.left() + 8.0);
-        assert!(button.right() < harness.get_by_label("Import…").rect().left());
+        let import = on_toolbar(&harness, "Import…").expect("drawn");
+        assert!(button.right() < import.rect().left());
         harness.key_press(Key::F10);
         harness.run();
         assert!(menu_open(&harness, "Menu"));
@@ -29183,7 +29221,7 @@ mod tests {
             };
             assert_eq!(names, expected, "{os:?}");
             // Import… and Undo side by side, nothing between them.
-            let import = harness.get_by_label("Import…").rect();
+            let import = on_toolbar(&harness, "Import…").expect("drawn").rect();
             let undo = harness.get_by_label("Undo").rect();
             assert!(
                 undo.left() - import.right() < 8.0,
@@ -31827,9 +31865,10 @@ mod tests {
         harness.state_mut().dialog.answer = Some(None);
         harness.run();
         alt(&mut harness, Key::F, Some("f"));
-        harness
-            .get_by_role_and_label(Role::MenuItem, "Import…")
-            .click();
+        let disabled = (harness.get_all_by_role(Role::MenuItem))
+            .find(|item| item.accesskit_node().is_disabled())
+            .expect("a disabled item");
+        disabled.click();
         harness.run();
         assert_eq!(harness.state().chosen.len(), 2);
     }
@@ -32051,6 +32090,65 @@ mod tests {
             pressed: std::rc::Rc::default(),
         };
         assert!(!harness.state_mut().shell.open_sheet(Box::new(second)));
+    }
+
+    /// File › Import…'s item in the menu `shell` builds in `state`.
+    fn file_import(shell: &Shell, ctx: &egui::Context, state: &State) -> popup::Item {
+        let lists = menus::Lists {
+            recents: &[],
+            workspaces: &[],
+        };
+        let anchor = egui::Rect::NOTHING;
+        let menu = menus::request(ctx, &shell.keymap, state, lists, &shell.steps, anchor);
+        (menu.entries.iter())
+            .filter_map(|entry| match entry {
+                popup::Entry::Submenu(menu) => Some(menu),
+                _ => None,
+            })
+            .flat_map(|menu| &menu.entries)
+            .find_map(|entry| match entry {
+                popup::Entry::Item(item) if item.id == ActionId::IMPORT.0 => Some(item.clone()),
+                _ => None,
+            })
+            .expect("File › Import…")
+    }
+
+    /// Decision 86: Ctrl+I, File › Import… and the Toolbar's Import… open the Import sheet,
+    /// in one photo and folder mode alike, acting on nothing open; under a dialog or the
+    /// sheet itself the action, its menu item and its button are disabled, saying why.
+    #[test]
+    fn ctrl_i_file_import_and_the_toolbar_open_the_import_sheet() {
+        for way in ["keys", "menu", "toolbar"] {
+            let mut harness = bench(OperatingSystem::Nix);
+            harness.state_mut().photo = true;
+            harness.run();
+            let state = harness.state().state(&harness.ctx);
+            let item = file_import(&harness.state().shell, &harness.ctx, &state);
+            assert!(item.enabled, "{way}");
+            match way {
+                "keys" => harness.key_press_modifiers(Modifiers::COMMAND, Key::I),
+                "menu" => {
+                    let ctx = harness.ctx.clone();
+                    let bench = harness.state_mut();
+                    let state = bench.state(&ctx);
+                    bench.shell.run(ActionId::IMPORT, &state, &ctx, &[]);
+                }
+                _ => harness
+                    .get_by_role_and_label(Role::Button, "Import…")
+                    .click(),
+            }
+            harness.run();
+            harness.run();
+            assert!(harness.state().shell.sheet.is_some(), "{way}");
+            let state = harness.state().state(&harness.ctx);
+            let action = actions::action(ActionId::IMPORT).expect("declared");
+            assert!(!action.enabled(&state), "{way}");
+            assert_eq!(
+                actions::why_unavailable(ActionId::IMPORT, &state),
+                Some("action-import-modal")
+            );
+            assert!(!file_import(&harness.state().shell, &harness.ctx, &state).enabled);
+        }
     }
 
     /// Decision 86: the sheet's own keys reach it: Return on its grid presses its primary

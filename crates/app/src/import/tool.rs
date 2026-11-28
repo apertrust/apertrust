@@ -110,6 +110,9 @@ pub struct Tool {
     reveal: Option<ProblemRow>,
     /// Source: the places, the place and the folder chosen, and the tree.
     pub places: Places,
+    /// Whether Import name takes the focus, its text selected, as it is next drawn: a card
+    /// is the source as the sheet opens.
+    focus_name: bool,
 }
 
 impl Tool {
@@ -126,7 +129,20 @@ impl Tool {
             toggled: Vec::new(),
             opened_for: Vec::new(),
             reveal: None,
+            focus_name: false,
         }
+    }
+
+    /// Import name takes the focus as it is next drawn, its text selected, unless it is
+    /// disabled: a card's import is the name typed and Return.
+    pub fn focus_name(&mut self) {
+        self.focus_name = true;
+    }
+
+    /// Whether Import name can take the focus: a pattern in use names it, and `--conf`
+    /// gives it not.
+    pub fn name_enabled(&self) -> bool {
+        self.uses_name() && !self.is_given("import.job_code")
     }
 
     /// Source on `place` and `folder` as last used, by their paths, empty for none.
@@ -165,6 +181,7 @@ impl Tool {
     }
 
     /// The import's day, which Subfolder's tooltip names.
+    #[cfg(test)]
     pub fn today(mut self, today: chrono::NaiveDate) -> Self {
         self.today = today;
         self
@@ -454,6 +471,17 @@ impl Drawn<'_> {
             row = row.disabled(why);
         } else if !self.tool.uses_name() {
             row = row.disabled(&unused);
+        }
+        let id = egui::Id::unique("import name");
+        if std::mem::take(&mut self.tool.focus_name) && self.tool.name_enabled() {
+            ui.memory_mut(|m| m.request_focus(id));
+            let mut state = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+            let all = egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(text.chars().count()),
+            );
+            state.cursor.set_char_range(Some(all));
+            state.store(ui.ctx(), id);
         }
         let out = row.show(ui);
         if let Some(text) = out.text {

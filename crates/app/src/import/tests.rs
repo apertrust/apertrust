@@ -593,6 +593,10 @@ fn the_sheet_lists_its_source_as_it_opens_and_cancels_the_listing_as_it_closes()
         ),
         "{sent:?}"
     );
+    // The first Esc leaves Import name, which a card's sheet opens in; the second closes.
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert!(!harness.state().closed);
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert!(harness.state().closed);
@@ -765,7 +769,13 @@ fn a_check_box_click_space_and_ctrl_a_change_the_checks() {
 
 #[test]
 fn the_keys_reach_the_active_cell_once_the_listing_opens_with_no_click() {
-    let mut harness = bench(Some(card()));
+    // A folder's sheet: a card's opens in Import name.
+    let trips = Source {
+        folder: PathBuf::from("/Users/anna/Trips"),
+        name: "Trips".to_owned(),
+        card: false,
+    };
+    let mut harness = bench_of(Some(trips), anna_s_tool(), Builtin::Dark, Locale::EnGb);
     forty(&mut harness);
     harness.run();
     // DSCF1011, the first new photo, is active and checked: Space unchecks it.
@@ -1800,7 +1810,7 @@ looks! {
 }
 
 /// The card last used, opened again with no source given, is told for a card once the
-/// volumes come: its name, Include subfolders on, and its listing,
+/// volumes come: its name, Include subfolders on, Import name focused, and its listing,
 /// of the same DCIM, kept.
 #[test]
 fn the_card_last_used_is_a_card_once_the_volumes_come() {
@@ -1817,6 +1827,7 @@ fn the_card_last_used_is_a_card_once_the_volumes_come() {
         include.accesskit_node().toggled(),
         Some(egui::accesskit::Toggled::True)
     );
+    assert!(field(&harness, "Import name").is_focused());
     assert_eq!(listed_sources(&harness).len(), 1, "listed once");
 }
 
@@ -1866,4 +1877,25 @@ fn places_is_a_list_folders_a_tree_whose_arrows_open_and_close() {
             .query_by_role_and_label(Role::TreeItem, "Lisbon")
             .is_none()
     );
+}
+
+/// With a card as the source the sheet opens with the focus in Import name, a card's
+/// import being the name typed and Return; not for a folder, nor where Import name is
+/// disabled.
+#[test]
+fn a_card_opens_with_the_focus_in_import_name_unless_it_is_disabled() {
+    let harness = bench(Some(card()));
+    assert!(field(&harness, "Import name").is_focused());
+    let trips = Source {
+        folder: PathBuf::from("/Users/anna/Trips"),
+        name: "Trips".to_owned(),
+        card: false,
+    };
+    let harness = bench_of(Some(trips), anna_s_tool(), Builtin::Dark, Locale::EnGb);
+    assert!(!field(&harness, "Import name").is_focused());
+    let mut unused = settings();
+    unused.subfolder = String::new();
+    let tool = tool::Tool::new(unused).today(today());
+    let harness = bench_of(Some(card()), tool, Builtin::Dark, Locale::EnGb);
+    assert!(!field(&harness, "Import name").is_focused());
 }

@@ -12,6 +12,8 @@ app-name = Apertrust
 # message (tools.ftl).
 action-import = Import…
     .toolbar = Import
+# Why Import… cannot run: a dialog or a sheet is up (decision 86).
+action-import-modal = Close the open dialog or sheet first
 action-export = Export…
     .toolbar = Export
 # File › Export Again: the export with the settings as last kept, with no dialog.
