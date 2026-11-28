@@ -9795,18 +9795,12 @@ impl eframe::App for App {
         if let Some(band) = self.shell.resize_band().filter(|_| !self.start.shown) {
             self.resize = resize_press(ctx, raw_input, band);
         }
+        // Closing the window with a sheet open closes the sheet first, unless a modal dialog
+        // or an alert is up, which holds the close (decision 86).
+        close_sheet_first(&mut self.shell, raw_input, modal || alert);
         // On the Mac the close button closes the start window, the app running on, and on
         // the main window with something open does what Close does, so eframe never sees
         // that close; the close Quit asks for still ends the app.
-        // Closing the window with a sheet open closes the sheet first; the close Quit asks
-        // for still ends the app (decision 86).
-        if raw_input.viewport().close_requested()
-            && !self.shell.leaving
-            && self.shell.close_sheet()
-            && let Some(viewport) = raw_input.viewports.get_mut(&raw_input.viewport_id)
-        {
-            viewport.events.retain(|e| *e != egui::ViewportEvent::Close);
-        }
         if raw_input.viewport().close_requested() {
             let quitting = std::mem::take(&mut self.shell.leaving);
             // The customise mode holds no close: it cancels, then the close runs as at rest.
@@ -10603,6 +10597,20 @@ fn close_window_runs(os: OperatingSystem, state: &State) -> ActionId {
         ActionId::CLOSE
     } else {
         ActionId::CLOSE_WINDOW
+    }
+}
+
+/// Closes the sheet open for a close asked of the window in `input`, taking the close from
+/// it (decision 86), but not the close Quit asks for, which still ends the app, nor under a
+/// modal dialog or an alert (`held`), which hold the close for Quit to close them first.
+fn close_sheet_first(shell: &mut Shell, input: &mut egui::RawInput, held: bool) {
+    if input.viewport().close_requested()
+        && !shell.leaving
+        && !held
+        && shell.close_sheet()
+        && let Some(viewport) = input.viewports.get_mut(&input.viewport_id)
+    {
+        viewport.events.retain(|e| *e != egui::ViewportEvent::Close);
     }
 }
 
@@ -32079,6 +32087,38 @@ mod tests {
         .map(|id| id.0)
         .into();
         assert_eq!(available, allowed);
+    }
+
+    /// A close asked of the window, by the system's close button with Use the system's title
+    /// bar or by the window manager, closes the sheet first, but not under an alert the host
+    /// draws: the close stays for the alert to hold it, the sheet open under it.
+    #[test]
+    fn a_close_under_the_sheet_s_alert_leaves_the_sheet_and_the_close() {
+        let closing = || {
+            let mut input = egui::RawInput::default();
+            let viewport = input.viewports.entry(input.viewport_id).or_default();
+            viewport.events.push(egui::ViewportEvent::Close);
+            input
+        };
+        let (mut harness, _) = sheet_bench(OperatingSystem::Nix);
+        let host = with_drawn_alerts();
+        let mut dialogs = dialog_host::AppDialogs::new(host);
+        let ctx = egui::Context::default();
+        let request = alerts::save_request(&ctx, "photo.raw", "disk full");
+        assert_eq!(dialogs.ask(&request, &ctx), dialog_host::Ask::Shown);
+        // As `raw_input_hook` reads it, an alert asking.
+        let held = dialogs.shown().is_some_and(|shown| shown.modal());
+        assert!(held);
+        let shell = &mut harness.state_mut().shell;
+        let mut input = closing();
+        close_sheet_first(shell, &mut input, held);
+        assert!(shell.sheet.is_some());
+        assert!(input.viewport().close_requested());
+        // With nothing over it, the sheet closes and takes the close.
+        let mut input = closing();
+        close_sheet_first(shell, &mut input, false);
+        assert!(shell.sheet.is_none());
+        assert!(!input.viewport().close_requested());
     }
 
     /// Decision 86: Close Window, Cmd+W on the Mac, closes the sheet first, the window
