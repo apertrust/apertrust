@@ -341,17 +341,17 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
             pos2(rect.left(), bar.bottom()),
             pos2(rect.right(), footer.top()),
         );
-        let most = (rect.width() / 2.0).clamp(COLUMN_LEAST, COLUMN_MOST);
+        // The grid keeps two cells at its Zoom before the column gives way, down to 296; the
+        // edge takes no more, so it reports the width drawn and its keys step from it.
+        let two = grid_least(self.size.side());
+        let most = (rect.width() / 2.0)
+            .clamp(COLUMN_LEAST, COLUMN_MOST)
+            .min(rect.width() - two)
+            .max(COLUMN_LEAST);
         let edge_name = tr(&ctx, "sheet-column-width");
         let edge = PanelEdge::new(&edge_name, self.column_width, COLUMN_LEAST..=most)
             .at_start(self.column_at_start);
-        // The grid keeps two cells at its Zoom before the column gives way, down to 296.
-        let wanted = edge.width(&ctx);
-        let two = grid_least(self.size.side());
-        let width = wanted
-            .min(rect.width() - two)
-            .max(COLUMN_LEAST)
-            .min(rect.width());
+        let width = edge.width(&ctx).min(rect.width());
         let (grid, column_rect) = if self.column_at_start {
             let column = Rect::from_min_size(middle.min, vec2(width, middle.height()));
             (

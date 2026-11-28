@@ -601,6 +601,61 @@ fn the_column_follows_its_edge_within_its_widths() {
     assert_eq!(harness.state().widths.last(), Some(&600.0));
 }
 
+/// A sheet whose grid keeps two Large cells draws its column narrower than the kept 440:
+/// its edge reports the width drawn, and an arrow key steps from it.
+#[test]
+fn a_column_giving_way_reports_the_width_drawn_and_steps_from_it() {
+    use apertrust_ui::components::{PanelEdgeAction, Sheet, SheetCell, ThumbnailSize};
+    let mut harness = Harness::builder()
+        .with_size(vec2(700.0, 600.0))
+        .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
+        .build_ui_state(
+            |ui, widths: &mut Vec<f32>| {
+                // The window from edge to edge.
+                let whole = ui.ctx().content_rect();
+                let ui = &mut ui.new_child(egui::UiBuilder::new().max_rect(whole));
+                let out = Sheet::new("Import · CARD", "Import, CARD", 1, Some(0), |_| {
+                    SheetCell {
+                        name: "DSCF1001.RAF",
+                        picture: None,
+                        no_preview: true,
+                        checked: false,
+                        check_name: "Import DSCF1001.RAF",
+                        check_description: "",
+                        dimmed: false,
+                        mark: None,
+                        tip: None,
+                    }
+                })
+                .size(ThumbnailSize::Large)
+                .column(440.0, false)
+                .primary("Import", None)
+                .show(ui, |_, _| {});
+                if let Some(PanelEdgeAction::Resize(width)) = out.column {
+                    widths.push(width);
+                }
+            },
+            Vec::new(),
+        );
+    harness.run();
+    harness.run();
+    // 700 points less two Large cells with their gaps, the room round them and the scroll
+    // bar's lane: 312.
+    let grid = harness.get_by_role(Role::List).rect();
+    let drawn = 700.0 - grid.width();
+    assert_eq!(drawn, 312.0);
+    let edge = harness.get_by_role_and_label(Role::Splitter, "Tool column width");
+    assert_eq!(
+        edge.accesskit_node().numeric_value(),
+        Some(f64::from(drawn))
+    );
+    edge.focus();
+    harness.run();
+    harness.key_press(Key::ArrowRight);
+    harness.run();
+    assert_eq!(harness.state().as_slice(), [302.0]);
+}
+
 /// The sheet in a window `size` points large, less the Toolbar, in `which` and `locale`, its
 /// column at the start where `at_start` says.
 fn photograph(
