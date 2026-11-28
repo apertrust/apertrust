@@ -23,7 +23,8 @@
 //!   the extension, so a sidecar a crash left is never overwritten ([`place`]).
 //! - **Already there:** on the way, a main file there of the source's that is the same
 //!   ([`place`]'s `same`: of the same size for the preview, the same byte for byte for the
-//!   copy) is the photo's copy, which is skipped, its missing sidecars copied alone
+//!   copy), or for the preview one a photo before it in the import claims of the same
+//!   size, is the photo's copy, which is skipped, its missing sidecars copied alone
 //!   ([`beside`]), unless one there differs from the source's, a diverged edit, when
 //!   nothing is copied.
 //! - **A copy named otherwise** keeps its camera name in its `.apxmp`
@@ -91,7 +92,7 @@ pub(crate) enum Place {
 /// The name the photo whose main file is `main` lands under in `folder`: its own, or the
 /// first `_01` name none of whose files is there or `claimed`, by the photos before it in
 /// the same import; or the name, its own or one of its `_01` names on the way, whose main
-/// file there `same` says is the photo's. A name the system cannot say is there or not, a
+/// file there, or claimed by a photo before it, `same` says is the photo's. A name the system cannot say is there or not, a
 /// folder it may not search or a name too long, is [`CopyError::Write`]: the photo's
 /// failure, never a reason to try the next name.
 pub(crate) fn place(
@@ -103,7 +104,7 @@ pub(crate) fn place(
     for n in 0.. {
         let name = numbered(main, n);
         let path = folder.join(&name);
-        if !claimed.contains(&path) && path.is_file() && same(&path)? {
+        if (claimed.contains(&path) || path.is_file()) && same(&path)? {
             return Ok(Place::There(name));
         }
         let mut taken = false;
