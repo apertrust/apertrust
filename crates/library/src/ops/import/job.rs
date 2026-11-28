@@ -306,8 +306,9 @@ pub(crate) fn import_in(
         step(ImportStep::Destination(destination));
     }
     // The deepest folder of each destination there as the import starts, which a write
-    // error after which it can no longer be listed tells gone: never a folder above it, such
-    // as `/Volumes`, which stays when its disk is unplugged.
+    // error after which it can no longer be listed tells gone, as does its absence before a
+    // photo's missing folders are made: never a folder above it, such as `/Volumes`, which
+    // stays when its disk is unplugged.
     let anchors: Vec<Option<PathBuf>> = (folders.iter())
         .map(|folder| crate::destination::deepest_existing(folder).map(Path::to_owned))
         .collect();
@@ -453,6 +454,16 @@ fn photo(
     };
     let copy = into.join(&name);
     let landed = match place {
+        // Its folder to make where the deepest folder there as the import started is gone:
+        // the path may now lead onto another disk, or the system's own, as an unplugged
+        // disk's mount point left behind.
+        Place::Free(_) if !into.is_dir() && !at.anchor.is_some_and(listed) => {
+            let gone = at.anchor.unwrap_or(into);
+            return Outcome::Stop(
+                ImportCause::Gone,
+                format!("{} is not there", gone.display()),
+            );
+        }
         Place::Free(_) => {
             let landing = Landing {
                 folder: into,
@@ -500,7 +511,6 @@ fn photo(
 /// for lack of space or after which the deepest folder of `at` there as the import started
 /// can no longer be listed; else the photo's own failure.
 fn judge(error: CopyError, root: &Path, at: Bound<'_>) -> Outcome {
-    let listed = |folder: &Path| std::fs::read_dir(folder).is_ok();
     let reason = error.to_string();
     match &error {
         CopyError::Cancelled { .. } => Outcome::Cancelled,
@@ -526,6 +536,11 @@ fn judge(error: CopyError, root: &Path, at: Bound<'_>) -> Outcome {
             })
         }
     }
+}
+
+/// Whether `folder` can be listed: still there, its disk connected.
+fn listed(folder: &Path) -> bool {
+    std::fs::read_dir(folder).is_ok()
 }
 
 /// Whether `error` says the disk is full or over its quota.
