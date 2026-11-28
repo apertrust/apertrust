@@ -115,6 +115,12 @@ Import's Source lists the cards and drives mounted, and its preview the destinat
 
 Copy and paste reach the system clipboard through eframe's `clipboard` feature, which brings egui-winit's arboard and, on Wayland, smithay-clipboard, both Rust, over the platform's own clipboard and, on Linux, libwayland and the X11 libraries loaded at run time.
 
+### The window frame on GNOME: sctk-adwaita
+
+With Use the system's title bar on, GNOME on Wayland, which draws no decorations, gets winit's Adwaita frame without a title through winit's `wayland-csd-adwaita-notitle` feature, a dependency of the app on Linux alone that unifies into eframe's winit (decision 39; [gui.md](gui.md#windows-and-linuxs-frames)). It brings sctk-adwaita 0.10.1 (MIT), all Rust, which draws the frame on the CPU into a Wayland buffer with tiny-skia 0.11.4 and tiny-skia-path 0.11.4 (BSD-3-Clause), a second version beside the 0.12 resvg brings the design system, and arrayref and strict-num, already in the tree.
+
+- **Not used:** `wayland-csd-adwaita`, the frame with its title, whose ab_glyph brings ttf-parser, which `cargo deny` refuses as unmaintained; the window's title is drawn nowhere in it, kept for the taskbar, the overview and screen readers.
+
 ### The session protocol on the wire: serde and serde_json
 
 The session protocol's types derive serde's `Serialize` and `Deserialize` (decision 108; [session-protocol.md](session-protocol.md#where-it-lives)), so serde, with its `derive` and `rc` features, is a plain dependency, behind no feature, of the seven crates whose types the protocol carries: the engine, base, plugin, raw, tools, library and export; the design system had it already. `rc` serializes the `Arc` fields, a thumbnail's pixels, the vectorscope's colours and the history's steps, each read back as an `Arc` of its own. serde_json (MIT OR Apache-2.0) is a dev-dependency of the engine and base alone, for the round-trip tests, shipped in no build; the MCP adapter is to make it a dependency of its own (decision 108).

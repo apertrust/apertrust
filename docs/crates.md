@@ -577,7 +577,7 @@ The shell comes from `apertrust-ui`: the Toolbar, the Tools panel, the viewer ba
 On macOS, Windows and Linux the Toolbar is the window's title bar, Windows and Linux with its caption buttons drawn in it (decision 39).
 
 - **Mac:** the traffic lights sit in it; a drag from its empty areas moves the window, and a double-click does what the system's setting says.
-- **Linux (X11 and Wayland):** decorations are off and the caption buttons are at its end. A drag is handed to the compositor, a double-click maximises, a right-click opens the toolbar menu (decision 92), the compositor's window menu staying on its own key, Alt+Space on GNOME, and a right-click on the menu button, and 6-point bands inside the edges resize.
+- **Linux (X11 and Wayland):** decorations are off, unless Use the system's title bar is on, and the caption buttons are at its end. A drag is handed to the compositor, a double-click maximises, a right-click opens the toolbar menu (decision 92), the compositor's window menu staying on its own key, Alt+Space on GNOME, and a right-click on the menu button, and 6-point bands inside the edges resize.
 
 ### The photo frame
 
@@ -752,7 +752,7 @@ Photo › Next Photo (`next-photo`, Space and →) and Previous Photo (`previous
 - AppKit's own full-screen item is kept out.
 - The app menu is titled Apertrust by an Info.plist the build embeds in the binary (`build.rs`).
 
-**The menu button on Windows and Linux** in the Toolbar (decision 39), the app's icon or ☰ as `toolbar.menu_button` says (`Settings::menu_button`, passed to `Toolbar::menu_button_style` each frame and followed at once): `MENUS` as one pull-down of submenus drawn by `apertrust_ui::popup` (`menus::request`, `menus::chosen`). The menu button, F10, or Alt with a top-level menu's access key opens it (`actions::access_key`; Alt with a letter is refused for actions). Its choice runs through `Shell::run`. On both the window has no decorations, the Toolbar drawing the caption buttons (`CAPTION_BUTTONS`) in the platform's style, Linux's on Linux (`CAPTION_STYLE`); on Windows winit's shadow is turned on for it (`frame_shadow`).
+**The menu button on Windows and Linux** in the Toolbar (decision 39), the app's icon or ☰ as `toolbar.menu_button` says (`Settings::menu_button`, passed to `Toolbar::menu_button_style` each frame and followed at once): `MENUS` as one pull-down of submenus drawn by `apertrust_ui::popup` (`menus::request`, `menus::chosen`). The menu button, F10, or Alt with a top-level menu's access key opens it (`actions::access_key`; Alt with a letter is refused for actions). Its choice runs through `Shell::run`. On both the window has no decorations, the Toolbar drawing the caption buttons (`CAPTION_BUTTONS`) in the platform's style, Linux's on Linux (`CAPTION_STYLE`); on Windows winit's shadow is turned on for it (`frame_shadow`). Use the system's title bar (`window.system_title_bar`, `Settings::system_title_bar`) gives the window the system's decorations instead, from its first frame (`window`) and at once (`Shell::follow`, which sends `ViewportCommand::Decorations` as it changes); `Shell::draws_frame` then says the app draws no frame, so `Shell::title_bar`, `Shell::caption` and `Shell::resize_band` give the Toolbar no title bar, no caption buttons and the window no resize bands, and the start window's strip no close; on GNOME on Wayland winit's `wayland-csd-adwaita-notitle` draws the frame. Tests hold the row on Windows and Linux alone, the Toolbar without caption buttons or moves in both styles, the bands taking no press and `Decorations` sent once.
 
 **Context menus** (decision 91; [docs/gui.md](gui.md#context-menus)), in `src/menus.rs`:
 
@@ -898,7 +898,7 @@ The actions registry and the default keyboard map:
 
 - the app's `Settings` is set where it differs from the app's reading of the store;
 - it is read before the window opens, and written a second after a change on a writer thread, which merges only what changed into the file as it is;
-- it holds the theme, the language once chosen, the scale, key overrides in a portable text form (clashing and clipboard ones refused), the workspace shown, tab names, the Tools panel's side and width, which sections and collapsible groups are open, the window's placement (restored on its monitor) and Settings' window's place;
+- it holds the theme, the language once chosen, the scale, key overrides in a portable text form (clashing and clipboard ones refused), the workspace shown, tab names, the Tools panel's side and width, which sections and collapsible groups are open, the window's placement (restored on its monitor), whether it uses the system's title bar, and Settings' window's place;
 - a damaged file is kept as `.bak`, and a newer one is never overwritten.
 
 ### The Export tool
