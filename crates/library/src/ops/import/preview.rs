@@ -26,6 +26,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
+use std::time::Duration;
 
 use apertrust_base::variables::{DateTime, PatternError};
 use apertrust_base::wire::Id;
@@ -255,9 +258,10 @@ pub(crate) struct World<'a> {
 /// photo's destination and fate, the folders, the dates the patterns read, how many were
 /// imported before (the check, its fingerprints through the session's memo), the size, the
 /// free space and the problems. A photo's EXIF is read only where a pattern reads its
-/// capture time or camera, [`READERS`] at a time, a cloud file not on the disk not at all.
-/// A blocking call, made by a job's body; once `cancel` answers true it returns and sends
-/// nothing. Nothing is written or made.
+/// capture time or camera, [`READERS`] at a time, a cloud file not on the disk not at all;
+/// the destination's folders are listed on a thread of their own, waited for while `cancel`
+/// is asked. A blocking call, made by a job's body; once `cancel` answers true it returns
+/// and sends nothing. Nothing is written or made.
 pub fn preview_import(
     preview: u64,
     photos: &ImportPhotos,
@@ -354,10 +358,11 @@ pub(crate) fn preview_in(
             fate,
         });
     }
-    preview.folders = (order.into_iter())
-        .map(|folder| FolderPreview {
+    let there = raws_in_each(&order, cancel)?;
+    preview.folders = (order.into_iter().zip(there))
+        .map(|(folder, there)| FolderPreview {
             photos: folders[&folder],
-            there: raws_in(&folder),
+            there,
             folder,
         })
         .collect();
@@ -542,6 +547,37 @@ fn fate(
                 Some(sidecar) => ImportFate::Diverged { at, sidecar },
                 None => ImportFate::There { at },
             }
+        }
+    }
+}
+
+/// How many raws each of `folders` holds ([`raws_in`]), read on a thread of its own and
+/// waited for while `cancel` is asked every 20 ms, so a destination that hangs holds that
+/// thread alone; listed here where the thread cannot start or ends without an answer.
+/// `None` once `cancel` answers true, returning without the listing's result.
+fn raws_in_each(
+    folders: &[PathBuf],
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Option<Vec<Option<usize>>> {
+    let count = |folders: &[PathBuf]| folders.iter().map(|folder| raws_in(folder)).collect();
+    let (sent, answer) = mpsc::sync_channel(1);
+    let owned = folders.to_vec();
+    let reading = thread::Builder::new()
+        .name("import destination".to_owned())
+        .spawn(move || {
+            let _ = sent.send(count(&owned));
+        });
+    if let Err(error) = reading {
+        tracing::warn!("the destination's listing cannot start on a thread: {error}");
+    }
+    loop {
+        if cancel() {
+            return None;
+        }
+        match answer.recv_timeout(Duration::from_millis(20)) {
+            Ok(there) => return Some(there),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return Some(count(folders)),
         }
     }
 }

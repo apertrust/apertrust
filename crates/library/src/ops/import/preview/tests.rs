@@ -619,3 +619,13 @@ fn the_preview_answers_in_its_number_and_a_cancel_sends_nothing() {
     };
     assert_eq!(preview.photos.len(), 1);
 }
+
+/// The destination's folders are listed on a thread of their own, a cancel returning at
+/// once without the listing's result.
+#[test]
+fn a_cancel_while_the_destination_is_listed_returns_without_it() {
+    let setup = Setup::new();
+    let folders = [setup.apertrust(), setup.root.path().join("Pictures")];
+    assert_eq!(raws_in_each(&folders, &|| false), Some(vec![None, Some(0)]));
+    assert_eq!(raws_in_each(&folders, &|| true), None);
+}
