@@ -936,18 +936,27 @@ impl Keys {
                 .and_then(|id| widgets.iter().find(|(w, _, _)| *w == id))
                 .and_then(|(_, rect, _)| region_of(*rect));
             let n = last.regions.len();
-            let next = match (current, forward) {
-                (Some(c), true) => (c + 1) % n,
-                (Some(c), false) => (c + n - 1) % n,
-                (None, true) => 0,
-                (None, false) => n - 1,
+            let step = |r: usize| {
+                if forward {
+                    (r + 1) % n
+                } else {
+                    (r + n - 1) % n
+                }
             };
-            if next == 0 && count > 0 {
-                keys.focus_active = true;
-            } else if let Some((id, _, _)) =
-                (widgets.iter()).find(|(_, rect, _)| region_of(*rect) == Some(next))
-            {
-                ctx.memory_mut(|m| m.request_focus(*id));
+            let mut next = current.map_or(if forward { 0 } else { n - 1 }, step);
+            // A region with nothing to focus, as a column with no control, is passed over.
+            for _ in 0..n {
+                if next == 0 && count > 0 {
+                    keys.focus_active = true;
+                    break;
+                }
+                if let Some((id, _, _)) =
+                    (widgets.iter()).find(|(_, rect, _)| region_of(*rect) == Some(next))
+                {
+                    ctx.memory_mut(|m| m.request_focus(*id));
+                    break;
+                }
+                next = step(next);
             }
         }
         // Tab and Shift+Tab stay inside the sheet: past its last stop to its first, and

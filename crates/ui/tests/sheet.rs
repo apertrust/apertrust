@@ -23,7 +23,9 @@
 //! Accepted with `UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test sheet`, reviewed like
 //! a golden image.
 
-use apertrust_ui::components::{ButtonOrder, COLUMN_LEAST, Checks};
+use apertrust_ui::components::{
+    ButtonOrder, COLUMN_LEAST, Checks, PanelEdgeAction, Sheet, SheetCell, ThumbnailSize,
+};
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme};
 use egui::accesskit::Role;
@@ -98,7 +100,7 @@ fn checks(harness: &Harness<'_, State>) -> Checks {
     harness.state().gallery.sheet_checks().clone()
 }
 
-fn focused(harness: &Harness<'_, State>) -> Option<String> {
+fn focused<S>(harness: &Harness<'_, S>) -> Option<String> {
     harness
         .query_by(|node| node.is_focused())
         .and_then(|node| node.accesskit_node().label())
@@ -119,7 +121,7 @@ fn it_opens_with_the_focus_on_the_active_cell_and_return_there_presses_the_prima
 /// focus to its active cell once it has one: Space, with no click, turns its check.
 #[test]
 fn a_grid_empty_as_the_sheet_opens_takes_the_focus_once_its_photos_come() {
-    use apertrust_ui::components::{CheckGesture, Sheet, SheetCell};
+    use apertrust_ui::components::CheckGesture;
     struct Filling {
         count: usize,
         checks: Checks,
@@ -601,17 +603,14 @@ fn the_column_follows_its_edge_within_its_widths() {
     assert_eq!(harness.state().widths.last(), Some(&600.0));
 }
 
-/// A sheet whose grid keeps two Large cells draws its column narrower than the kept 440:
-/// its edge reports the width drawn, and an arrow key steps from it.
-#[test]
-fn a_column_giving_way_reports_the_width_drawn_and_steps_from_it() {
-    use apertrust_ui::components::{PanelEdgeAction, Sheet, SheetCell, ThumbnailSize};
+/// A sheet of one photo, `size` points large edge to edge, at `zoom`, its column empty,
+/// and the widths its edge reported.
+fn one_photo(size: egui::Vec2, zoom: ThumbnailSize) -> Harness<'static, Vec<f32>> {
     let mut harness = Harness::builder()
-        .with_size(vec2(700.0, 600.0))
+        .with_size(size)
         .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::builtin(Builtin::Dark)))
         .build_ui_state(
-            |ui, widths: &mut Vec<f32>| {
-                // The window from edge to edge.
+            move |ui, widths: &mut Vec<f32>| {
                 let whole = ui.ctx().content_rect();
                 let ui = &mut ui.new_child(egui::UiBuilder::new().max_rect(whole));
                 let out = Sheet::new("Import · CARD", "Import, CARD", 1, Some(0), |_| {
@@ -627,7 +626,7 @@ fn a_column_giving_way_reports_the_width_drawn_and_steps_from_it() {
                         tip: None,
                     }
                 })
-                .size(ThumbnailSize::Large)
+                .size(zoom)
                 .column(440.0, false)
                 .primary("Import", None)
                 .show(ui, |_, _| {});
@@ -639,6 +638,33 @@ fn a_column_giving_way_reports_the_width_drawn_and_steps_from_it() {
         );
     harness.run();
     harness.run();
+    harness
+}
+
+/// F6 passes over a column with nothing to focus, either way.
+#[test]
+fn f6_passes_over_a_column_with_nothing_to_focus() {
+    let mut harness = one_photo(vec2(1280.0, 720.0), ThumbnailSize::Medium);
+    assert_eq!(focused(&harness).as_deref(), Some("DSCF1001.RAF"));
+    let first = match ButtonOrder::platform().arrange(2, 0)[0] {
+        0 => "Import",
+        _ => "Close",
+    };
+    harness.key_press(Key::F6);
+    harness.run();
+    harness.run();
+    assert_eq!(focused(&harness).as_deref(), Some(first));
+    harness.key_press_modifiers(Modifiers::SHIFT, Key::F6);
+    harness.run();
+    harness.run();
+    assert_eq!(focused(&harness).as_deref(), Some("DSCF1001.RAF"));
+}
+
+/// A sheet whose grid keeps two Large cells draws its column narrower than the kept 440:
+/// its edge reports the width drawn, and an arrow key steps from it.
+#[test]
+fn a_column_giving_way_reports_the_width_drawn_and_steps_from_it() {
+    let mut harness = one_photo(vec2(700.0, 600.0), ThumbnailSize::Large);
     // 700 points less two Large cells with their gaps, the room round them and the scroll
     // bar's lane: 312.
     let grid = harness.get_by_role(Role::List).rect();
