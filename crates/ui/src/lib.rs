@@ -25,6 +25,7 @@
 //! [`gallery`] shows everything here in every theme; `cargo run -p apertrust-ui
 //! --example gallery` opens it.
 
+pub mod access_key;
 pub mod alert;
 pub mod calculator;
 pub mod components;

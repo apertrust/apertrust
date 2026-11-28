@@ -70,7 +70,7 @@ use egui::{
 };
 
 use super::icon_button::colour;
-use super::plate::{Touch, paint_focus, undimmed_painter};
+use super::plate::{ButtonState, Touch, paint_focus, undimmed_painter};
 use super::{
     CursorWell, CursorWellAction, IconButton, Jobs, focus_ring, focus_ring_round, menu_asked,
     menu_asked_of, pull_down, report_shortcut,
@@ -158,8 +158,8 @@ pub enum ToolbarEntry {
 
 /// A button of the Toolbar that runs an action: its icon, drawn at 22 points with labels
 /// on or off, its translated name, its word under its icon while labels are on, whether it
-/// can run now, drawn disabled where it cannot, for a toggle whether it is on, and a menu of
-/// its own where its action has one.
+/// can run now, drawn disabled where it cannot, for a toggle whether it is on, a menu of
+/// its own where its action has one, and whether it rests under a sheet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolbarButton {
     id: &'static str,
@@ -171,6 +171,7 @@ pub struct ToolbarButton {
     menu: Option<OwnMenu>,
     first: bool,
     last: bool,
+    at_rest: bool,
 }
 
 /// A button's own menu (decision 92; [`ToolbarButton::menu`]).
@@ -198,6 +199,7 @@ impl ToolbarButton {
             menu: None,
             first: false,
             last: false,
+            at_rest: false,
         }
     }
 
@@ -213,6 +215,14 @@ impl ToolbarButton {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    /// Drawn at rest whatever the pointer does, as under a sheet (decision 86, Modality): no
+    /// light under the pointer, no pressed look and no focus ring, never greyed; a toggle
+    /// still shows whether it is on. A press is still reported, the caller's to ignore.
+    pub fn at_rest(mut self, at_rest: bool) -> Self {
+        self.at_rest = at_rest;
         self
     }
 
@@ -1100,6 +1110,11 @@ impl<'a> Toolbar<'a> {
                                     .icon_size(action_icon(button.icon))
                                     .stroke(ACTION_STROKE)
                                     .enabled(button.enabled);
+                                let icon = if button.at_rest {
+                                    icon.state(ButtonState::Rest)
+                                } else {
+                                    icon
+                                };
                                 let icon = match button.menu_tip() {
                                     Some(tip) => icon.tip_line(tip),
                                     None => icon,
@@ -1798,7 +1813,8 @@ impl<'b> Labelled<'b> {
         let response = ui.allocate_rect(rect, sense);
         if ui.is_rect_visible(rect) {
             let painter = &undimmed_painter(ui);
-            let touch = Touch::of(ui.ctx(), &response, enabled, None);
+            let rest = button.at_rest.then_some(ButtonState::Rest);
+            let touch = Touch::of(ui.ctx(), &response, enabled, rest);
             if touch.enabled && (touch.hovered || touch.pressed) && t.colors.button_edge.a() > 0 {
                 painter.rect_stroke(
                     rect,

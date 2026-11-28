@@ -55,6 +55,7 @@ use egui::{
 };
 
 use super::{Answer, Entry, Kind, Request, Service, filter, words};
+use crate::access_key::underlined;
 use crate::{Icon, Theme, fonts, theme};
 
 /// How long the pointer rests on a line before its submenu opens, or another closes.
@@ -1122,34 +1123,6 @@ fn filtered(text: &str, typed: &str, t: &Theme, colour: Color32, enabled: bool) 
     );
     job.append(&text[found.clone()], 0.0, TextFormat::simple(bold, colour));
     job.append(&text[found.end..], 0.0, TextFormat::simple(font, colour));
-    job
-}
-
-/// `text` in `colour`, the character at `key`'s index underlined.
-fn underlined(
-    text: &str,
-    key: Option<(usize, char)>,
-    t: &Theme,
-    colour: egui::Color32,
-) -> LayoutJob {
-    let plain = TextFormat::simple(FontId::proportional(t.text.body), colour);
-    let mut job = LayoutJob::default();
-    let Some((at, _)) = key else {
-        job.append(text, 0.0, plain);
-        return job;
-    };
-    let split = |n: usize| text.char_indices().nth(n).map_or(text.len(), |(i, _)| i);
-    let (start, end) = (split(at), split(at + 1));
-    job.append(&text[..start], 0.0, plain.clone());
-    job.append(
-        &text[start..end],
-        0.0,
-        TextFormat {
-            underline: Stroke::new(t.shape.hairline, colour),
-            ..plain.clone()
-        },
-    );
-    job.append(&text[end..], 0.0, plain);
     job
 }
 

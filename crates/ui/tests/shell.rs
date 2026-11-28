@@ -126,6 +126,77 @@ fn the_toolbar_reports_its_actions_with(labels: bool) {
     assert!(harness.query_by_label("About Apertrust").is_none());
 }
 
+/// A Toolbar of one button, Import…, at rest where `at_rest` says, with its label where
+/// `labels`; no tooltip comes and no pointer is drawn, so a picture shows the button alone.
+fn one_button(at_rest: bool, labels: bool) -> Harness<'static, Vec<ToolbarAction>> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(400.0, 80.0))
+        .with_context_setup(|ctx| {
+            install(ctx);
+            ctx.all_styles_mut(|style| style.interaction.tooltip_delay = f32::INFINITY);
+        })
+        .build_ui_state(
+            move |ui, actions: &mut Vec<ToolbarAction>| {
+                let button = ToolbarButton::new("import", Icon::Import, "Import…").at_rest(at_rest);
+                if let Some(action) = Toolbar::new()
+                    .entries(vec![ToolbarEntry::Button(button)])
+                    .labels(labels)
+                    .show(ui)
+                {
+                    actions.push(action);
+                }
+            },
+            Vec::new(),
+        );
+    harness.set_render_cursor(false);
+    harness.run();
+    harness
+}
+
+/// Whether the button of `harness`, Import…, is drawn otherwise under the pointer, and
+/// held down there, than at rest.
+fn lights(mut harness: Harness<'_, Vec<ToolbarAction>>) -> [bool; 2] {
+    let rect = harness.get_by_label("Import…").rect();
+    let ppp = harness.ctx.pixels_per_point();
+    let picture = |harness: &mut Harness<'_, Vec<ToolbarAction>>| {
+        let image = harness.render().expect("rendered");
+        let (x0, y0) = ((rect.left() * ppp) as u32, (rect.top() * ppp) as u32);
+        let (x1, y1) = ((rect.right() * ppp) as u32, (rect.bottom() * ppp) as u32);
+        let pixels: Vec<[u8; 4]> = (y0..y1)
+            .flat_map(|y| (x0..x1).map(move |x| (x, y)))
+            .map(|(x, y)| image.get_pixel(x, y).0)
+            .collect();
+        pixels
+    };
+    let rest = picture(&mut harness);
+    harness.hover_at(rect.center());
+    harness.run();
+    let hovered = picture(&mut harness);
+    harness.event(egui::Event::PointerButton {
+        pos: rect.center(),
+        button: PointerButton::Primary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    });
+    harness.run();
+    let pressed = picture(&mut harness);
+    [hovered != rest, pressed != rest]
+}
+
+/// Under a sheet (decision 86, Modality) a button at rest stays so under the pointer and
+/// held down, with labels or without; one not at rest lights.
+#[test]
+fn a_button_at_rest_takes_no_light_under_the_pointer() {
+    for labels in [false, true] {
+        assert_eq!(lights(one_button(true, labels)), [false, false], "{labels}");
+        assert_eq!(lights(one_button(false, labels)), [true, true], "{labels}");
+    }
+    // Never greyed: drawn as one that can run, and said so.
+    let harness = one_button(true, false);
+    let node = harness.get_by_role_and_label(Role::Button, "Import…");
+    assert!(!node.accesskit_node().is_disabled());
+}
+
 #[test]
 fn the_actions_come_first_in_order_and_saved_last() {
     let mut harness = toolbar(&[], false);

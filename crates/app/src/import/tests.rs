@@ -445,6 +445,7 @@ fn bench_in(source: Option<Source>, which: Builtin, locale: Locale) -> Harness<'
                 let place = Place {
                     column: apertrust_ui::components::COLUMN_WIDTH,
                     at_start: false,
+                    order: apertrust_ui::components::ButtonOrder::platform(),
                 };
                 let sent = &mut bench.sent;
                 let shown = bench.sheet.show(ui, place, &mut sender(sent));

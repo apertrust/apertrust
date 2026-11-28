@@ -2564,7 +2564,10 @@ metadata-flash_return-3 = Strobe return light detected
 ## bar's Select ▾, its footer's Help and Close, and its tool column's edge
 
 sheet-select = Select
-sheet-close = Close
+# The & marks Close's access key, Alt with it pressing it on Windows and Linux (decision
+# 39): neither the primary button's (import-primary) nor a top-level menu's in the
+# language, typed without AltGr. The Mac shows none.
+sheet-close = &Close
 sheet-help = Help
 sheet-help-later = Comes in a later version
 sheet-column-width = Tool column width
@@ -2591,7 +2594,9 @@ import-cell-probably = Probably in { $path }
 import-cell-said = Taken { $time }
 import-cell-said-imported = Taken { $time }, imported before
 import-cell-said-imported-only = Imported before
-import-primary = Import { photo-count }
+# The & marks the primary button's access key, as sheet-close's: neither Close's nor a
+# top-level menu's in the language.
+import-primary = &Import { photo-count }
 import-why-no-source = Choose where to import from.
 import-why-listing = Still listing { $source }
 import-why-none-checked = No photos checked

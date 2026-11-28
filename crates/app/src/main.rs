@@ -130,10 +130,10 @@ use apertrust_engine::view::{FramePlace, Placement};
 use apertrust_tools::{PickerKind, ProcessingTool, ToolDefinition};
 use apertrust_ui::components::{
     ActivityAction, Browser, BrowserAction, BrowserEdge, BrowserEdgeAction, BrowserPosition,
-    CaptionStyle, CellMenu, FindBar, FindBarAction, Jobs, Margin, Marker, MenuButtonStyle,
-    PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame, PickerAction,
-    Placed, RatingNotes, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction, Thumb, Toggle,
-    Toolbar, ToolbarAction, ToolbarButton, ToolbarEdit, ToolbarEntry, ToolbarSpot,
+    ButtonOrder, CaptionStyle, CellMenu, FindBar, FindBarAction, Jobs, Margin, Marker,
+    MenuButtonStyle, PanelBody, PanelEdge, PanelEdgeAction, PanelTab, PhotoCaption, PhotoFrame,
+    PickerAction, Placed, RatingNotes, SaveState, ScopeView, SpaceMenu, TabBar, TabBarAction,
+    Thumb, Toggle, Toolbar, ToolbarAction, ToolbarButton, ToolbarEdit, ToolbarEntry, ToolbarSpot,
     ToolsPanelPosition, ViewMarks, ViewerBar, ViewerBarAction, Zoom, browser_lines,
     browser_thickness,
 };
@@ -1029,6 +1029,16 @@ const RESIZE_BAND: f32 = 6.0;
 /// bar, in the window system's points, for when they cannot be measured: the zoom
 /// button ends about 70 points from the window's edge.
 const BUTTONS_ROOM: f32 = 78.0;
+
+/// The desktop Linux runs, as `XDG_CURRENT_DESKTOP` names it ("KDE", "ubuntu:GNOME"); none
+/// elsewhere, or where it is not set.
+fn linux_desktop() -> Option<String> {
+    if cfg!(target_os = "linux") {
+        std::env::var("XDG_CURRENT_DESKTOP").ok()
+    } else {
+        None
+    }
+}
 
 /// The window's title: the app's name, and where the user data folder `user_data` is
 /// another than the platform's, `platform`, compared by canonical path, that folder's name
@@ -2008,6 +2018,8 @@ struct Shell {
     sheet_column: f32,
     /// What a sheet closed since the last frame sends as it goes, sent with the next.
     sheet_left: Vec<Command>,
+    /// The order of its footer's buttons on this desktop, read once at start.
+    sheet_order: ButtonOrder,
     /// Where the customise menu open adds an item, by its place in the draft.
     adding_at: usize,
     /// The tab whose icon takes the focus at the next frame: where a section went.
@@ -2278,6 +2290,7 @@ impl Shell {
             sheet: None,
             sheet_column: settings.sheet_column,
             sheet_left: Vec::new(),
+            sheet_order: sheet::order(linux_desktop().as_deref()),
             adding_at: 0,
             focus_tab: None,
             focus_section: None,
@@ -3684,7 +3697,7 @@ impl Shell {
         };
         let mut request = None;
         let mut shown = None;
-        let opened = actions::access_key(ctx, |letter| {
+        let opened = apertrust_ui::access_key::pressed(ctx, |letter| {
             let request = request.get_or_insert_with(|| {
                 let recents = self.recent_items(ctx);
                 let paths: Vec<PathBuf> = recents.iter().map(|item| item.path.clone()).collect();
@@ -3795,8 +3808,9 @@ impl Shell {
         if let Some(draft) = &self.customising {
             return self.customising_toolbar(ui, draft, saved, title_bar, caption, jobs);
         }
-        // Under a sheet the actions rest, drawn as they are without it, never greyed
-        // (decision 86): what the sheet alone holds them from is left out of their look.
+        // Under a sheet the actions rest, drawn as they are without it, never greyed, and at
+        // rest under the pointer (decision 86): what the sheet alone holds them from is left
+        // out of their look.
         let resting = self.sheet.is_some();
         let at_rest = State {
             dialog: false,
@@ -3836,6 +3850,7 @@ impl Shell {
                     let mut button = ToolbarButton::new(action.id.0, placed.icon?, name)
                         .label(word)
                         .enabled(can(action))
+                        .at_rest(resting)
                         .folds_first(placed.folds_first())
                         .folds_last(TOOLBAR_LAST.contains(&action.id));
                     // On while what it turns on is, as its menu item's check mark says.
@@ -4317,6 +4332,7 @@ impl Shell {
         let place = sheet::Place {
             column: self.sheet_column,
             at_start: self.panel_position.at_start(),
+            order: self.sheet_order,
         };
         if let Some(content) = self.sheet.as_deref_mut() {
             let shown = sheet::show(ctx, toolbar, content, place, send);
@@ -31845,6 +31861,7 @@ mod tests {
                 },
             )
             .column(place.column, place.at_start)
+            .order(place.order)
             .primary("Import 3 photos", None)
             .show(ui, |ui, returned| {
                 let name =

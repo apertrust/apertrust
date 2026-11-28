@@ -2111,7 +2111,7 @@ metadata-flash_return-3 = Відбите світло спалаху виявл�
 ## bar's Select ▾, its footer's Help and Close, and its tool column's edge
 
 sheet-select = Вибрати
-sheet-close = Закрити
+sheet-close = За&крити
 sheet-help = Довідка
 sheet-help-later = З’явиться в наступній версії
 sheet-column-width = Ширина стовпця інструмента
@@ -2140,7 +2140,7 @@ import-cell-probably = Імовірно, у { $path }
 import-cell-said = Знято { $time }
 import-cell-said-imported = Знято { $time }, імпортовано раніше
 import-cell-said-imported-only = Імпортовано раніше
-import-primary = Імпортувати { photo-count }
+import-primary = &Імпортувати { photo-count }
 import-why-no-source = Виберіть, звідки імпортувати.
 import-why-listing = Ще триває перелік { $source }
 import-why-none-checked = Не позначено жодного знімка

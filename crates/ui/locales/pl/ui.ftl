@@ -2114,7 +2114,7 @@ metadata-flash_return-3 = Wykryto światło odbite lampy
 ## bar's Select ▾, its footer's Help and Close, and its tool column's edge
 
 sheet-select = Zaznacz
-sheet-close = Zamknij
+sheet-close = Zam&knij
 sheet-help = Pomoc
 sheet-help-later = Pojawi się w późniejszej wersji
 sheet-column-width = Szerokość kolumny narzędzia
@@ -2144,7 +2144,7 @@ import-cell-probably = Prawdopodobnie w { $path }
 import-cell-said = Zrobione { $time }
 import-cell-said-imported = Zrobione { $time }, zaimportowane wcześniej
 import-cell-said-imported-only = Zaimportowane wcześniej
-import-primary = Importuj { photo-count }
+import-primary = &Importuj { photo-count }
 import-why-no-source = Wybierz, skąd importować.
 import-why-listing = Trwa listowanie { $source }
 import-why-none-checked = Nie zaznaczono żadnych zdjęć

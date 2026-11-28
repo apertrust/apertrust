@@ -20,7 +20,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use apertrust_ui::alert::Request;
-use apertrust_ui::components::AlertBody;
+use apertrust_ui::components::{AlertBody, ButtonOrder};
 use eframe::egui::{self, accesskit::Role, os::OperatingSystem};
 
 use super::{Answer, Asks, Dialog, Form, Keys, Look};
@@ -29,6 +29,8 @@ use super::{Answer, Asks, Dialog, Form, Keys, Look};
 pub(super) struct AlertDialog {
     request: Request,
     ticked: bool,
+    /// Its buttons' order: KDE's, the default first, where the desktop is KDE.
+    order: ButtonOrder,
     answer: Rc<Cell<Option<Answer>>>,
     wake: egui::Context,
 }
@@ -42,6 +44,7 @@ impl AlertDialog {
         AlertDialog {
             request: request.clone(),
             ticked: false,
+            order: crate::sheet::order(crate::linux_desktop().as_deref()),
             answer,
             wake: wake.clone(),
         }
@@ -76,6 +79,7 @@ impl Dialog for AlertDialog {
 
     fn show(&mut self, ui: &mut egui::Ui) -> Asks {
         let answer = AlertBody::new(&self.request, &mut self.ticked)
+            .order(self.order)
             .in_alert_window()
             .show(ui);
         let Some(answer) = answer else {
