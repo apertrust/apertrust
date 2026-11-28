@@ -1866,3 +1866,40 @@ fn a_photo_field_that_is_no_plain_text_is_never_rewritten() {
         assert_eq!(copy, Ok(None), "{other}");
     }
 }
+
+/// An `rdf:datatype` or an `xml:` attribute but `xml:lang`, which the XMP layer keeps
+/// nothing of, opens the photo for viewing only, so a renamed copy's `.apxmp` is never
+/// written without it.
+#[test]
+fn an_attribute_the_xmp_layer_drops_opens_for_viewing_only() {
+    let mut edits = Edits::new("0.8.0");
+    edits.photo = Some("DSCF1033.RAF".to_owned());
+    let xml = edits.to_xml();
+    assert!(xml.contains("rdf:about=\"\""), "{xml}");
+    for (attribute, field) in [
+        (
+            r#"rdf:datatype="http://www.w3.org/2001/XMLSchema#string""#,
+            "rdf:datatype",
+        ),
+        (r#"xml:space="preserve""#, "xml:space"),
+    ] {
+        let other = xml.replacen("rdf:about=\"\"", &format!("rdf:about=\"\" {attribute}"), 1);
+        let unknown = Problem::UnknownField {
+            place: "the file".to_owned(),
+            field: field.to_owned(),
+        };
+        assert_eq!(
+            Edits::parse(&other, 0).unwrap().problems,
+            [unknown],
+            "{other}"
+        );
+        let copy = preserving(
+            Some(other.as_bytes()),
+            "DSCF1033.RAF",
+            "DSCF1033_01.RAF",
+            "x",
+        );
+        assert_eq!(copy, Ok(None), "{other}");
+    }
+    assert!(Edits::parse(&xml, 0).unwrap().problems.is_empty());
+}

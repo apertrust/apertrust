@@ -236,6 +236,10 @@ pub struct Xmp {
     pub namespaces: Vec<Namespace>,
     /// Every top-level property, unknown ones included, in the packet's order.
     pub properties: Vec<Property>,
+    /// The attributes the read met and the model holds nothing of, `rdf:datatype` and the
+    /// `xml:` ones but `xml:lang`, each name once, in the packet's order: what a write of
+    /// the tree would drop. A write writes none of them.
+    pub dropped: Vec<Name>,
 }
 
 impl Xmp {

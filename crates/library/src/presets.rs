@@ -341,6 +341,7 @@ impl Stored {
             about: String::new(),
             namespaces,
             properties,
+            dropped: Vec::new(),
         }
         .to_xml()
     }

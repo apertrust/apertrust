@@ -516,6 +516,7 @@ fn xmp(build: Option<&str>, more: Vec<Namespace>, properties: Vec<Property>) -> 
         about: String::new(),
         namespaces,
         properties,
+        dropped: Vec::new(),
     }
 }
 

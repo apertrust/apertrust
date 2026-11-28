@@ -36,8 +36,10 @@
 //! [`Xmp::to_xml`] writes the canonical form, the file a sidecar is; [`Xmp::to_packet`]
 //! wraps it as a file embeds it. Both are the same bytes for the same tree, and a packet
 //! this layer wrote is read back to the tree it was written from, but for these exceptions.
-//! A read keeps only the first description's `rdf:about`, the others merged away, and
-//! ignores `rdf:ID`, `rdf:nodeID` and `rdf:datatype`. A write declares the prefixes a tree
+//! A read keeps only the first description's `rdf:about`, the others merged away, ignores
+//! `rdf:ID` and `rdf:nodeID`, and keeps no `rdf:datatype` or `xml:` attribute but
+//! `xml:lang`, naming each it met in [`Xmp::dropped`] for a caller that may drop nothing. A
+//! write declares the prefixes a tree
 //! built by hand needs, which the read then lists in `namespaces`, and drops from a value
 //! any character XML 1.0 cannot hold (a control character other than tab, newline and
 //! carriage return, U+FFFE and U+FFFF), naming the property in a `tracing` warning. The
