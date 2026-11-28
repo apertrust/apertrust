@@ -289,7 +289,8 @@ impl<'a, F: Fn(usize) -> SheetCell<'a>> Sheet<'a, F> {
         self
     }
 
-    /// Where the primary button sits; the platform's unless a test says otherwise.
+    /// Where the primary button sits: the platform's unless the caller says otherwise, as
+    /// the app does on KDE, the primary first.
     pub fn order(mut self, order: ButtonOrder) -> Self {
         self.order = order;
         self
