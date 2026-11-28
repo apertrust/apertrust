@@ -363,7 +363,7 @@ fn sheet(ui: &mut Ui, demo: &mut SheetDemo, at_start: bool) -> SheetOutput<()> {
     let grid_name = format!("EOS_DIGITAL, {SHEET_PHOTOS} photos, {checked} checked");
     let said = format!("{checked} checked");
     let lead = format!("{checked} of {SHEET_PHOTOS} photos · 1.2 GB of 412 GB free → ");
-    let primary = format!("Import {checked} photos");
+    let primary = format!("&Import {checked} photos");
     let imported = |i: usize| i < IMPORTED_BEFORE;
     let mark = CellMark {
         icon: Icon::Import,

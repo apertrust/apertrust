@@ -3684,7 +3684,7 @@ impl Shell {
         };
         let mut request = None;
         let mut shown = None;
-        let opened = actions::access_key(ctx, |letter| {
+        let opened = apertrust_ui::access_key::pressed(ctx, |letter| {
             let request = request.get_or_insert_with(|| {
                 let recents = self.recent_items(ctx);
                 let paths: Vec<PathBuf> = recents.iter().map(|item| item.path.clone()).collect();

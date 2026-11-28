@@ -3822,6 +3822,35 @@ mod tests {
         assert_eq!(en.text("menu-file"), "&File");
     }
 
+    /// The sheet's footer buttons' access keys (`docs/gui.md`, Sheets, Keys): each its own,
+    /// no top-level menu's, Window's included, and typed without AltGr, in every language:
+    /// the Import sheet's primary button's and Close's.
+    #[test]
+    fn the_sheet_s_footer_buttons_have_access_keys_no_menu_has_in_any_language() {
+        const FOOTER: [&str; 2] = ["import-primary", "sheet-close"];
+        const ALTGR: &str = "ąćęłńóśźż";
+        let state = everything();
+        for locale in Locale::ALL {
+            let menu = drawn_menu(locale, &state);
+            let tr = Translator::new(locale);
+            let key_of = |id: &str| {
+                let words = popup::Submenu::new(id, tr.text(id), vec![]);
+                let key = (words.access_key())
+                    .unwrap_or_else(|| panic!("{}: {id} has none", locale.id()));
+                key.to_lowercase().next().unwrap_or(key)
+            };
+            let window = key_of("menu-window");
+            let mut keys = HashSet::new();
+            for id in FOOTER {
+                let key = key_of(id);
+                assert!(keys.insert(key), "{}: {key} twice", locale.id());
+                assert!(!ALTGR.contains(key), "{}: {key}", locale.id());
+                assert!(menu.access_key(key).is_none(), "{}: {key}", locale.id());
+                assert_ne!(key, window, "{}", locale.id());
+            }
+        }
+    }
+
     #[test]
     fn a_choice_names_its_action_by_id() {
         assert_eq!(chosen("settings"), Some(ActionId::SETTINGS));

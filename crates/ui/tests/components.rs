@@ -3945,3 +3945,43 @@ fn a_group_s_warning_button_opens_its_menu_and_not_the_group() {
     assert_eq!(harness.state().0, 0);
     assert_eq!(harness.state().1, ["select"]);
 }
+
+/// A button whose words mark an access key (`docs/gui.md`, Sheets, Keys): shown without
+/// its `&`, heard with its access key off the Mac, and underlined while Alt is held; the
+/// Mac shows the words alone.
+#[test]
+fn a_button_s_access_key_is_underlined_while_alt_is_held_off_the_mac() {
+    let buttons = |os| {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(220.0, 40.0))
+            .with_os(os)
+            .with_context_setup(|ctx| apertrust_ui::install(ctx, Theme::default()))
+            .build_ui(|ui| {
+                ui.horizontal(|ui| {
+                    Button::new("&Close").access_key(true).show(ui);
+                    (Button::new("&Import 32 photos").access_key(true))
+                        .primary(true)
+                        .show(ui);
+                });
+            });
+        harness.run();
+        harness
+    };
+    let key = |harness: &Harness<'_>, name: &str| {
+        let button = harness.get_by_role_and_label(Role::Button, name);
+        button
+            .accesskit_node()
+            .data()
+            .access_key()
+            .map(str::to_owned)
+    };
+    let mut harness = buttons(OperatingSystem::Nix);
+    assert_eq!(key(&harness, "Close").as_deref(), Some("C"));
+    assert_eq!(key(&harness, "Import 32 photos").as_deref(), Some("I"));
+    harness.event(egui::Event::ModifiersChanged(Modifiers::ALT));
+    harness.run();
+    harness.snapshot("button-access-key-alt");
+    let harness = buttons(OperatingSystem::Mac);
+    assert_eq!(key(&harness, "Close"), None);
+    assert_eq!(key(&harness, "Import 32 photos"), None);
+}

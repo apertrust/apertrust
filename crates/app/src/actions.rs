@@ -3602,48 +3602,6 @@ pub fn field_keys(id: ActionId, os: OperatingSystem) -> Option<[egui::Event; 2]>
     Some([key(true), key(false)])
 }
 
-/// Takes out of the frame's input the first press of Alt with a letter, and the text it
-/// typed, if `menu` finds a menu for that letter, and returns what it found: on Linux, Alt
-/// with a top-level menu's access key opens the menu button's menu at that menu, from
-/// anywhere (decision 39). The letter is the one the press typed on the current layout, as
-/// ф on a Ukrainian keyboard, which egui reports as its physical key, A; where `menu` finds
-/// nothing for it, or nothing was typed, the key's own Latin letter, so an English
-/// interface's Alt+F opens File on a Cyrillic layout too. Only Alt counts, so AltGr, which
-/// egui never sees as Alt, never opens a menu, and a key's repeat opens none again. A press
-/// `menu` finds nothing for is left alone. `menu` runs outside egui's lock, so it may read
-/// the context.
-pub fn access_key<T>(ctx: &egui::Context, mut menu: impl FnMut(char) -> Option<T>) -> Option<T> {
-    let (at, typed, own) = ctx.input(|input| {
-        input.events.iter().enumerate().find_map(|(i, event)| {
-            let egui::Event::Key {
-                key,
-                pressed: true,
-                repeat: false,
-                modifiers,
-                ..
-            } = *event
-            else {
-                return None;
-            };
-            if !(alt_only(modifiers) && is_letter(key)) {
-                return None;
-            }
-            let typed = match input.events.get(i + 1) {
-                Some(egui::Event::Text(text)) => text.chars().next(),
-                _ => None,
-            };
-            let own = key.name().chars().next()?;
-            Some((i, typed, own))
-        })
-    })?;
-    let found = typed.and_then(&mut menu).or_else(|| menu(own))?;
-    ctx.input_mut(|input| {
-        let end = (at + 1 + usize::from(typed.is_some())).min(input.events.len());
-        input.events.drain(at..end);
-    });
-    Some(found)
-}
-
 /// The widget F6 moves the focus to: the first that takes focus in the region after the
 /// focused widget's, or before it going back, in `regions`' order (the Toolbar, the
 /// viewer bar, the Tools panel, the Browser). With nothing focused, F6 starts at the
@@ -5458,29 +5416,6 @@ pub(crate) mod tests {
         assert_eq!(keymap.keys(ActionId::FULL_SCREEN), [f10]);
     }
 
-    /// What [`access_key`] finds for `events`, with a menu for each of `letters`, and the
-    /// events it leaves.
-    fn access(events: Vec<egui::Event>, letters: &str) -> (Option<char>, Vec<egui::Event>) {
-        let ctx = egui::Context::default();
-        let input = egui::RawInput {
-            events,
-            ..Default::default()
-        };
-        let mut found = None;
-        let mut left = Vec::new();
-        let mut output = ctx.run_ui(input, |ui| {
-            let ctx = ui.ctx();
-            found = access_key(ctx, |letter| {
-                let letter = letter.to_lowercase().next()?;
-                letters.contains(letter).then_some(letter)
-            });
-            left = ctx.input(|i| i.events.clone());
-        });
-        // No painter takes the font atlas.
-        output.textures_delta.clear();
-        (found, left)
-    }
-
     fn key_event(key: Key, modifiers: Modifiers) -> egui::Event {
         egui::Event::Key {
             key,
@@ -5489,42 +5424,5 @@ pub(crate) mod tests {
             repeat: false,
             modifiers,
         }
-    }
-
-    #[test]
-    fn alt_with_an_access_key_is_read_by_the_letter_it_typed() {
-        let text = |t: &str| egui::Event::Text(t.to_owned());
-        let alt_f = key_event(Key::F, Modifiers::ALT);
-        // Taken, with what it typed, so a focused field types nothing.
-        let (found, left) = access(vec![alt_f.clone(), text("f")], "fe");
-        assert_eq!(found, Some('f'));
-        assert!(left.is_empty(), "{left:?}");
-        // Without its text, by the key's own letter.
-        assert_eq!(access(vec![alt_f.clone()], "f").0, Some('f'));
-        // A Ukrainian layout's ф, on the key egui reports as A.
-        let alt_a = key_event(Key::A, Modifiers::ALT);
-        assert_eq!(access(vec![alt_a.clone(), text("ф")], "фa").0, Some('ф'));
-        // On a Cyrillic layout with an English interface, the key's own Latin letter.
-        let (found, left) = access(vec![alt_f.clone(), text("а")], "f");
-        assert_eq!(found, Some('f'));
-        assert!(left.is_empty(), "{left:?}");
-        assert_eq!(access(vec![alt_a, text("ф")], "e").0, None);
-        // A letter no menu has is left alone.
-        let (found, left) = access(vec![alt_f.clone(), text("f")], "e");
-        assert_eq!(found, None);
-        assert_eq!(left.len(), 2);
-        // Only Alt alone: neither with Ctrl or Shift, nor AltGr, nor a plain letter.
-        for modifiers in [
-            Modifiers::ALT | Modifiers::COMMAND,
-            Modifiers::ALT | Modifiers::SHIFT,
-            Modifiers::NONE,
-        ] {
-            let found = access(vec![key_event(Key::F, modifiers), text("f")], "f").0;
-            assert_eq!(found, None, "{modifiers:?}");
-        }
-        assert_eq!(
-            access(vec![key_event(Key::F4, Modifiers::ALT)], "f").0,
-            None
-        );
     }
 }

@@ -17,8 +17,8 @@
 //! The sheet frame (`docs/gui.md`, Sheets; decision 86), on the gallery's sample sheet with
 //! the Import tool's rows in its column: its keys (Return in each place, Ctrl+Return, Esc's
 //! order, F6's three stops, Tab kept inside), choosing by check boxes with the pointer and
-//! the keys, the Help button, what screen readers hear, the column's width and the least
-//! window; and the sheet photographed at 1280 points and at the least window, its column at
+//! the keys, the footer's access keys, the Help button, what screen readers hear, the
+//! column's width and the least window; and the sheet photographed at 1280 points and at the least window, its column at
 //! either side, in the dark and light themes, Ukrainian, Polish and the pseudo-locale.
 //! Accepted with `UPDATE_SNAPSHOTS=1 cargo test -p apertrust-ui --test sheet`, reviewed like
 //! a golden image.
@@ -27,6 +27,7 @@ use apertrust_ui::components::{ButtonOrder, COLUMN_LEAST, Checks};
 use apertrust_ui::gallery::Gallery;
 use apertrust_ui::{Builtin, Locale, Theme};
 use egui::accesskit::Role;
+use egui::os::OperatingSystem;
 use egui::{Key, Modifiers, vec2};
 use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use egui_kittest::{Harness, SnapshotResults};
@@ -50,6 +51,17 @@ fn sheet(
     locale: Locale,
     at_start: bool,
 ) -> Harness<'static, State> {
+    sheet_on(OperatingSystem::Nix, size, which, locale, at_start)
+}
+
+/// [`sheet`] as `os` draws it, where [`sheet`]'s is Linux.
+fn sheet_on(
+    os: OperatingSystem,
+    size: egui::Vec2,
+    which: Builtin,
+    locale: Locale,
+    at_start: bool,
+) -> Harness<'static, State> {
     let state = State {
         gallery: Gallery::new(which),
         at_start,
@@ -59,6 +71,7 @@ fn sheet(
     };
     let mut harness = Harness::builder()
         .with_size(size)
+        .with_os(os)
         .with_context_setup(move |ctx| {
             apertrust_ui::install(ctx, Theme::builtin(which));
             apertrust_ui::set_locale(ctx, locale);
@@ -500,6 +513,102 @@ fn screen_readers_hear_a_region_in_a_modal_dialog_a_list_and_named_check_boxes()
         said.accesskit_node().data().live(),
         Some(egui::accesskit::Live::Polite)
     );
+}
+
+/// The access key screen readers hear on the button `name`.
+fn access_key_of(harness: &Harness<'_, State>, name: &str) -> Option<String> {
+    let button = harness.get_by_role_and_label(Role::Button, name);
+    button
+        .accesskit_node()
+        .data()
+        .access_key()
+        .map(str::to_owned)
+}
+
+/// Alt with an access key, as a key `key` that types `typed` on the current layout, both
+/// in the next frame, as a press comes.
+fn alt_typing(harness: &mut Harness<'_, State>, key: Key, typed: &str) {
+    harness.input_mut().events.extend([
+        egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::ALT,
+        },
+        egui::Event::Text(typed.to_owned()),
+    ]);
+}
+
+#[test]
+fn alt_with_an_access_key_presses_close_or_the_primary_button_off_the_mac() {
+    for os in [OperatingSystem::Windows, OperatingSystem::Nix] {
+        let size = vec2(1280.0, 720.0);
+        let mut harness = sheet_on(os, size, Builtin::Dark, Locale::EnGb, false);
+        assert_eq!(access_key_of(&harness, "Close").as_deref(), Some("C"));
+        assert_eq!(
+            access_key_of(&harness, "Import 32 photos").as_deref(),
+            Some("I")
+        );
+        harness.key_press_modifiers(Modifiers::ALT, Key::I);
+        harness.run();
+        assert_eq!(harness.state().primary, 1, "{os:?}");
+        // From a field being typed in too, which types nothing.
+        let field = || harness.get_by_role_and_label(Role::TextInput, "Import name");
+        let before = field().value();
+        field().focus();
+        harness.run();
+        alt_typing(&mut harness, Key::C, "c");
+        harness.run();
+        assert_eq!(harness.state().close, 1, "{os:?}");
+        let field = harness.get_by_role_and_label(Role::TextInput, "Import name");
+        assert!(field.is_focused(), "{os:?}");
+        assert_eq!(field.value(), before, "{os:?}");
+        // A key's repeat, C still held, presses nothing and types nothing into the field.
+        harness.input_mut().events.extend([
+            egui::Event::Key {
+                key: Key::C,
+                physical_key: Some(Key::C),
+                pressed: true,
+                repeat: true,
+                modifiers: Modifiers::ALT,
+            },
+            egui::Event::Text("c".to_owned()),
+        ]);
+        harness.run();
+        assert_eq!(harness.state().close, 1, "{os:?}");
+        let field = harness.get_by_role_and_label(Role::TextInput, "Import name");
+        assert_eq!(field.value(), before, "{os:?}");
+    }
+}
+
+/// A Ukrainian layout's к, on the key egui reports as R, presses За&крити.
+#[test]
+fn alt_with_the_letter_the_layout_typed_presses_close_in_ukrainian() {
+    let size = vec2(1280.0, 720.0);
+    let mut harness = sheet_on(OperatingSystem::Nix, size, Builtin::Dark, Locale::Uk, false);
+    assert_eq!(access_key_of(&harness, "Закрити").as_deref(), Some("к"));
+    alt_typing(&mut harness, Key::R, "к");
+    harness.run();
+    assert_eq!(harness.state().close, 1);
+}
+
+#[test]
+fn the_mac_has_no_access_keys() {
+    let size = vec2(1280.0, 720.0);
+    let mut harness = sheet_on(
+        OperatingSystem::Mac,
+        size,
+        Builtin::Dark,
+        Locale::EnGb,
+        false,
+    );
+    assert_eq!(access_key_of(&harness, "Close"), None);
+    assert_eq!(access_key_of(&harness, "Import 32 photos"), None);
+    harness.key_press_modifiers(Modifiers::ALT, Key::C);
+    harness.key_press_modifiers(Modifiers::ALT, Key::I);
+    harness.run();
+    assert_eq!((harness.state().close, harness.state().primary), (0, 0));
 }
 
 #[test]
